@@ -1,0 +1,107 @@
+import { UserProfile, Transaction, AccountBalance, TwoFASettings } from "@/app/types";
+
+export const mockUserProfile: UserProfile = {
+  id: "user_123",
+  name: "Alex Johnson",
+  email: "alex.johnson@university.edu",
+  phone: "+1 (555) 234-5678",
+  location: "Campus District, Downtown",
+  avatar: "https://api.dicebear.com/7.x/avataaars/svg?seed=Alex",
+};
+
+export const mockAccountBalance: AccountBalance = {
+  available: 245.5,
+  pending: 32.0,
+  total: 277.5,
+};
+
+export const mockTwoFASettings: TwoFASettings = {
+  enabled: false,
+};
+
+export const mockTransactions: Transaction[] = [
+  {
+    id: "tx_001",
+    taskId: "task_001",
+    taskTitle: "Buy Coffee and Breakfast",
+    taskDescription: "Pick up coffee and bagel from campus cafe",
+    type: "earned",
+    amount: 25.0,
+    fee: 1.25,
+    status: "completed",
+    date: new Date("2024-03-12"),
+    category: "Food Delivery",
+  },
+  {
+    id: "tx_002",
+    taskId: "task_002",
+    taskTitle: "Print Document Package",
+    taskDescription: "Print 50 copies of document and bind them",
+    type: "earned",
+    amount: 15.0,
+    fee: 0.75,
+    status: "completed",
+    date: new Date("2024-03-11"),
+    category: "Errands",
+  },
+  {
+    id: "tx_003",
+    taskId: "task_003",
+    taskTitle: "Grocery Shopping",
+    taskDescription: "Buy groceries from list provided",
+    type: "spent",
+    amount: 45.99,
+    fee: 2.3,
+    status: "completed",
+    date: new Date("2024-03-10"),
+    category: "Shopping",
+  },
+  {
+    id: "tx_004",
+    taskId: "task_004",
+    taskTitle: "Pick up Package",
+    taskDescription: "Collect package from post office",
+    type: "spent",
+    amount: 0.0,
+    fee: 0.0,
+    status: "completed",
+    date: new Date("2024-03-09"),
+    category: "Delivery",
+  },
+  {
+    id: "tx_005",
+    taskId: "task_005",
+    taskTitle: "Library Research Help",
+    taskDescription: "Help find research papers for thesis",
+    type: "earned",
+    amount: 35.0,
+    fee: 1.75,
+    status: "completed",
+    date: new Date("2024-03-08"),
+    category: "Academic",
+  },
+  {
+    id: "tx_006",
+    taskId: "task_006",
+    taskTitle: "Room Organization",
+    taskDescription: "Organize and clean study room",
+    type: "earned",
+    amount: 40.0,
+    fee: 2.0,
+    status: "pending",
+    date: new Date("2024-03-15"),
+    category: "Services",
+  },
+  {
+    id: "tx_007",
+    taskId: "task_007",
+    taskTitle: "Late Night Snacks",
+    taskDescription: "Buy snacks from convenience store",
+    type: "spent",
+    amount: 18.5,
+    fee: 0.93,
+    status: "completed",
+    date: new Date("2024-03-07"),
+    category: "Food Delivery",
+  },
+];
