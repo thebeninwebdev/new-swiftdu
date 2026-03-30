@@ -4,6 +4,8 @@ import React, { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { authClient } from '@/lib/auth-client'
+import { getTaskerId } from '@/lib/utils'
 
 interface TaskerProfile {
   _id: string
@@ -23,6 +25,7 @@ interface TaskerProfile {
 }
 
 export default function ProfilePage() {
+  const [userId, setUserId] = useState<string | null>(null)
   const [taskerId, setTaskerId] = useState<string | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [isBankEditing, setIsBankEditing] = useState(false)
@@ -47,17 +50,11 @@ export default function ProfilePage() {
   })
 
   useEffect(() => {
-    const getTaskerId = async () => {
-      try {
-        const session = await fetch('/api/auth/session').then((r) => r.json())
-        if (session?.user?.id) {
-          setTaskerId(session.user.id)
-        }
-      } catch (error) {
-        console.error('Error fetching session:', error)
-      }
-    }
-    getTaskerId()
+    getTaskerId().then((id) => {
+      if (id) setTaskerId(id)
+    }).catch((err) => {
+      console.error('Failed to get tasker ID', err)
+    })
   }, [])
 
   // Fetch profile data
@@ -72,14 +69,14 @@ export default function ProfilePage() {
         if (!response.ok) {
           throw new Error('Failed to fetch profile')
         }
-        const result = await response.json()
-        setProfile(result)
+        const {tasker} = await response.json()
+        setProfile(tasker)
         setFormData({
-          phone: result.phone,
-          location: result.location,
-          profileImage: result.profileImage || '',
+          phone: tasker.phone,
+          location: tasker.location,
+          profileImage: tasker.profileImage || '',
         })
-        setBankData(result.bankDetails)
+        setBankData(tasker.bankDetails)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'An error occurred')
       } finally {
@@ -150,8 +147,8 @@ export default function ProfilePage() {
       })
       setIsBankEditing(false)
       // Refetch profile data
-      if (taskerId) {
-        const response = await fetch(`/api/taskers?taskerId=${taskerId}`)
+      if (userId) {
+        const response = await fetch(`/api/taskers?userId=${userId}`)
         if (response.ok) {
           const result = await response.json()
           setProfile(result)
@@ -213,37 +210,37 @@ export default function ProfilePage() {
         <Card className="p-6 mb-6">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-6">
-              <div className="w-20 h-20 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center">
+              <div className="w-20 h-20 rounded-full bg-linear-to-br from-blue-400 to-blue-600 flex items-center justify-center">
                 <span className="text-white text-3xl font-bold">
-                  {profile.phone.charAt(0).toUpperCase()}
+                  {profile?.phone?.charAt(0).toUpperCase()}
                 </span>
               </div>
               <div>
                 <h2 className="text-2xl font-bold">Tasker Profile</h2>
-                <p className="text-muted-foreground">ID: {profile.studentId}</p>
+                <p className="text-muted-foreground">ID: {profile?.studentId}</p>
                 <div className="flex gap-4 mt-2">
                   <div>
                     <p className="text-sm text-muted-foreground">Rating</p>
                     <p className="font-bold">
-                      {profile.rating.toFixed(1)} / 5.0
+                      {profile?.rating?.toFixed(1)} / 5.0
                     </p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">
                       Completed Tasks
                     </p>
-                    <p className="font-bold">{profile.completedTasks}</p>
+                    <p className="font-bold">{profile?.completedTasks}</p>
                   </div>
                   <div>
                     <p className="text-sm text-muted-foreground">Status</p>
                     <p
                       className={`font-bold ${
-                        profile.isVerified
+                        profile?.isVerified
                           ? 'text-green-600'
                           : 'text-orange-600'
                       }`}
                     >
-                      {profile.isVerified ? 'Verified' : 'Pending'}
+                      {profile?.isVerified ? 'Verified' : 'Pending'}
                     </p>
                   </div>
                 </div>
@@ -369,7 +366,7 @@ export default function ProfilePage() {
                 </label>
                 <Input
                   type="text"
-                  value={bankData.bankName}
+                  value={bankData?.bankName}
                   onChange={(e) =>
                     setBankData({ ...bankData, bankName: e.target.value })
                   }
@@ -433,18 +430,18 @@ export default function ProfilePage() {
             <div className="space-y-4">
               <div>
                 <p className="text-sm text-muted-foreground">Bank Name</p>
-                <p className="font-medium">{profile.bankDetails.bankName}</p>
+                <p className="font-medium">{profile?.bankDetails?.bankName}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Account Number</p>
                 <p className="font-medium">
                   ****
-                  {profile.bankDetails.accountNumber.slice(-4)}
+                  {profile?.bankDetails?.accountNumber.slice(-4)}
                 </p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Account Name</p>
-                <p className="font-medium">{profile.bankDetails.accountName}</p>
+                <p className="font-medium">{profile?.bankDetails?.accountName}</p>
               </div>
             </div>
           )}

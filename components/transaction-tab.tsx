@@ -1,19 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Transaction } from "@/app/types";
-import { mockTransactions } from "@/lib/mock-data";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ChevronDown, ChevronUp, ArrowUpRight, ArrowDownLeft } from "lucide-react";
 
 export function TransactionTab() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("en-NG", {
       style: "currency",
-      currency: "USD",
+      currency: "NGN",
     }).format(amount);
   };
 
@@ -36,6 +38,69 @@ export function TransactionTab() {
       : "text-red-600 dark:text-red-400";
   };
 
+  useEffect(() => {
+    const fetchTransactions = async () => {
+      setIsLoading(true);
+      setError(null);
+
+      try {
+        const response = await fetch('/api/orders');
+        if (!response.ok) {
+          throw new Error('Could not load transactions from server');
+        }
+
+        const orders = await response.json();
+        const mapped = orders.map((order: any): Transaction => ({
+          id: order._id ?? order.id,
+          taskId: order._id ?? order.id,
+          taskTitle: order.taskType ? `${order.taskType} task` : 'Task',
+          taskDescription: order.description ?? 'No description',
+          type: 'spent',
+          amount: order.amount ?? 0,
+          fee: order.fee ?? 0,
+          status:
+            order.status === 'pending'
+              ? 'pending'
+              : order.status === 'completed'
+              ? 'completed'
+              : 'refunded',
+          date: new Date(order.createdAt ?? order.createdAt ?? Date.now()),
+          category: order.taskType ?? 'General',
+        }));
+
+        setTransactions(mapped);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'An unknown error occurred');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchTransactions();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Transaction History</CardTitle>
+          <CardDescription>Loading your transactions...</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Transaction History</CardTitle>
+          <CardDescription className="text-red-600">{error}</CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -46,12 +111,12 @@ export function TransactionTab() {
       </CardHeader>
       <CardContent>
         <div className="space-y-2">
-          {mockTransactions.length === 0 ? (
+          {transactions.length === 0 ? (
             <div className="text-center py-8 text-muted-foreground">
               No transactions yet
             </div>
           ) : (
-            mockTransactions.map((transaction: Transaction) => (
+            transactions.map((transaction: Transaction) => (
               <div
                 key={transaction.id}
                 className="border rounded-lg overflow-hidden transition-colors hover:bg-secondary/50"

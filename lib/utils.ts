@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 import { CiBag1, CiDeliveryTruck, CiFileOn, CiMap, CiShoppingCart, CiTrash, CiUnlock, CiViewList } from "react-icons/ci";
+import { authClient } from "./auth-client";
 
 export const Menus = [
   {
@@ -92,4 +93,25 @@ export function formatDate(dateString: string) {
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
+}
+
+export const getTaskerId = async () => {
+    const {data, error} = await authClient.getSession()
+    if(data?.user){
+      return data.user.taskerId || null
+    }
+
+    if(error){
+        console.error('Failed to get session:', error)
+    }
+    return null
+}
+
+export function convertToNaira(amount:number) : string{
+  const formattedNaira = amount.toLocaleString('en-NG',{
+    style: 'currency',
+    currency: 'NGN',
+  })
+
+  return formattedNaira
 }

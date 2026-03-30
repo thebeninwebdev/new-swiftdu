@@ -8,9 +8,12 @@ const AppContext = createContext<any>(undefined)
 export function AppWrapper({children}:{
     children: React.ReactNode
 }){
+
     const [isOpen, setIsOpen] = useState(false)
+
+    const SERVICE_CHARGE_PERCENTAGE = 15
     return(
-        <AppContext.Provider value={{ isOpen, setIsOpen }}>{children}</AppContext.Provider>
+        <AppContext.Provider value={{ isOpen, setIsOpen, SERVICE_CHARGE_PERCENTAGE }}>{children}</AppContext.Provider>
     )
 }
 

@@ -60,12 +60,12 @@ export default function TaskerSignupPage() {
       try {
         const { data, error } = await authClient.getSession()
         if (error || !data?.user) {
-          router.push('/sign-in')
+          router.push('/login')
           return
         }
         setUser(data.user)
       } catch {
-        router.push('/sign-in')
+        router.push('/login')
       } finally {
         setIsLoading(false)
       }

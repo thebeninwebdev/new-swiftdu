@@ -1,8 +1,11 @@
 'use client'
 
 import React, { useEffect, useState } from 'react'
+import { ObjectId } from 'mongodb';
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { authClient } from '@/lib/auth-client'
+import { getTaskerId } from '@/lib/utils';
 
 interface Transaction {
   type: 'credit' | 'debit'
@@ -30,17 +33,11 @@ export default function WalletPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const getTaskerId = async () => {
-      try {
-        const session = await fetch('/api/auth/session').then((r) => r.json())
-        if (session?.user?.id) {
-          setTaskerId(session.user.id)
-        }
-      } catch (error) {
-        console.error('Error fetching session:', error)
-      }
-    }
-    getTaskerId()
+    getTaskerId().then((id) => {
+      if (id) setTaskerId(id)
+    }).catch((err) => {
+      console.error('Failed to get tasker ID', err)
+    })
   }, [])
 
   // Fetch wallet data
@@ -160,19 +157,19 @@ export default function WalletPage() {
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card className="p-6 bg-gradient-to-br from-green-50 to-green-100 border-green-200">
+          <Card className="p-6 bg-linear-to-br from-green-50 to-green-100 border-green-200">
             <p className="text-sm text-green-600 font-medium">Total Earnings</p>
             <p className="text-4xl font-bold text-green-900 mt-2">
               ${data.totalEarnings.toFixed(2)}
             </p>
           </Card>
-          <Card className="p-6 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+          <Card className="p-6 bg-linear-to-br from-blue-50 to-blue-100 border-blue-200">
             <p className="text-sm text-blue-600 font-medium">Current Balance</p>
             <p className="text-4xl font-bold text-blue-900 mt-2">
               ${data.currentBalance.toFixed(2)}
             </p>
           </Card>
-          <Card className="p-6 bg-gradient-to-br from-orange-50 to-orange-100 border-orange-200">
+          <Card className="p-6 bg-linear-to-br from-orange-50 to-orange-100 border-orange-200">
             <p className="text-sm text-orange-600 font-medium">
               Total Withdrawn
             </p>

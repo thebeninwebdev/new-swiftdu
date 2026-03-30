@@ -52,6 +52,10 @@ export const auth = betterAuth({
       location: {
         type: "string",
         required: true,
+      },
+      taskerId: {
+        type: "string",
+        required: false,
       }
     }
   },

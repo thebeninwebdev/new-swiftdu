@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 import { Geist } from "next/font/google";
 import "./globals.css";
 import {Toaster} from "sonner"
+import NavbarClientWrapper from "@/components/NavbarClientWrapper";
+import Wrapper from "@/components/wrapper";
+import { Footer } from "@/components/Footer";
 
 const geistSans = Geist({
   subsets: ["latin"],
@@ -23,7 +26,29 @@ export default function RootLayout({
       <body
         className={`${geistSans.className} antialiased tracking-wide`}
       >
+        <Wrapper path="/dashboard">
+        <Wrapper path="/tasker-signup">
+        <Wrapper path="/signup">
+        <Wrapper path="/admin">
+        <Wrapper path="/tasker-dashboard">
+          <NavbarClientWrapper />
+        </Wrapper></Wrapper>
+        </Wrapper>
+        </Wrapper>
+        </Wrapper>
         {children}
+        <Wrapper path="/dashboard">
+        <Wrapper path="/tasker-signup">
+        <Wrapper path="/signup">
+        <Wrapper path="/admin">
+        <Wrapper path="/tasker-dashboard">
+          <Footer />
+        </Wrapper></Wrapper>
+        </Wrapper>
+        </Wrapper>
+        </Wrapper>
+           
+
         <Toaster richColors position="bottom-right" />
       </body>
     </html>

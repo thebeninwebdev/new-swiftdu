@@ -1,5 +1,5 @@
 import { connectDB } from '@/lib/db';
-import Review from '@/models/review';
+import {Review} from '@/models/review';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
@@ -48,9 +48,11 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    await connect();
+    await connectDB();
 
     const { taskerId, orderId, userId, rating, comment } = await req.json();
+
+    console.log( taskerId, orderId, userId, rating, comment)
 
     // Validate input
     if (!taskerId || !orderId || !userId || !rating || !comment) {

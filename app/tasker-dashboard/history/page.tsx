@@ -4,12 +4,17 @@ import React, { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { convertToNaira, getTaskerId } from '@/lib/utils'
 
 interface Order {
   _id: string
   taskType: string
   description: string
   amount: number
+  commission?: number
+  platformFee?: number
+  taskerFee?: number
+  totalAmount?: number
   deadlineValue: number
   deadlineUnit: string
   location: string
@@ -25,7 +30,7 @@ interface TaskHistory {
   orders: Order[]
   stats: {
     completedOrders: number
-    totalEarnings: number
+    totalEarnings: number // will be recalculated as sum of taskerFee
   }
   pagination: {
     total: number
@@ -45,17 +50,11 @@ export default function HistoryPage() {
 
   // Get taskerId from session
   useEffect(() => {
-    const getTaskerId = async () => {
-      try {
-        const session = await fetch('/api/auth/session').then((r) => r.json())
-        if (session?.user?.id) {
-          setTaskerId(session.user.id)
-        }
-      } catch (error) {
-        console.error('Error fetching session:', error)
-      }
-    }
-    getTaskerId()
+    getTaskerId().then((id) => {
+      if (id) setTaskerId(id)
+    }).catch((err) => {
+      console.error('Failed to get tasker ID', err)
+    })
   }, [])
 
   // Fetch task history
@@ -110,6 +109,9 @@ export default function HistoryPage() {
     cancelled: 'bg-red-100 text-red-800',
   }
 
+  // Calculate total earnings as sum of taskerFee from all orders
+  const totalTaskerEarnings = data?.orders.reduce((sum, order) => sum + (order.taskerFee || 0), 0) || 0;
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
@@ -136,7 +138,7 @@ export default function HistoryPage() {
               <Card className="p-4">
                 <p className="text-sm text-muted-foreground">Total Earnings</p>
                 <p className="text-3xl font-bold mt-2">
-                  ${data.stats.totalEarnings.toFixed(2)}
+                  {convertToNaira(totalTaskerEarnings)}
                 </p>
               </Card>
             </div>
@@ -222,9 +224,9 @@ export default function HistoryPage() {
                     </div>
                     <div className="text-right">
                       <p className="text-2xl font-bold text-foreground">
-                        ${order.amount.toFixed(2)}
+                        {convertToNaira(order.totalAmount || order.amount)}
                       </p>
-                      <p className="text-xs text-muted-foreground">Amount</p>
+                      <p className="text-xs text-muted-foreground">Total Amount</p>
                     </div>
                   </div>
 
@@ -240,18 +242,29 @@ export default function HistoryPage() {
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">
-                        Requested by
-                      </p>
+                      <p className="text-xs text-muted-foreground">Requested by</p>
                       <p className="font-medium text-sm">{order.userId.name}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">
-                        Accepted Date
-                      </p>
+                      <p className="text-xs text-muted-foreground">Accepted Date</p>
                       <p className="font-medium text-sm">
                         {new Date(order.acceptedAt).toLocaleDateString()}
                       </p>
+                    </div>
+                  </div>
+                  {/* Fees and Amounts */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">Platform Fee</p>
+                      <p className="font-medium text-sm">{convertToNaira(order.platformFee || 0)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Amount</p>
+                      <p className="font-medium text-sm">{convertToNaira(order.amount)}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs text-muted-foreground">Tasker Fee</p>
+                      <p className="font-medium text-sm">{convertToNaira(order.taskerFee || 0)}</p>
                     </div>
                   </div>
                 </Card>

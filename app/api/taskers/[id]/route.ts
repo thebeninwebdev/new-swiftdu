@@ -1,7 +1,45 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import Tasker from '@/models/tasker'
-import { authClient } from '@/lib/auth-client'
+import { auth } from '@/lib/auth'
+
+// ─── GET /api/taskers/[id] ────────────────────────────────────────────────────
+// Retrieves basic tasker information including bank details by their Tasker document _id.
+// Public endpoint - anyone can view tasker details.
+
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    await connectDB()
+
+    const { id } = await params
+
+    const tasker:{_id: string; bankDetails:string} = await Tasker.findById(id).lean()
+
+    if (!tasker) {
+      return NextResponse.json(
+        { error: 'Tasker not found.' },
+        { status: 404 }
+      )
+    }
+
+    return NextResponse.json(
+      {
+        _id: tasker._id,
+        bankDetails: tasker.bankDetails,
+      },
+      { status: 200 }
+    )
+  } catch (error) {
+    console.error('[GET /api/taskers/[id]]', error)
+    return NextResponse.json(
+      { error: 'Internal server error.' },
+      { status: 500 }
+    )
+  }
+}
 
 // ─── PATCH /api/taskers/[id] ──────────────────────────────────────────────────
 // Approves or rejects a tasker by their Tasker document _id.
@@ -10,12 +48,15 @@ import { authClient } from '@/lib/auth-client'
 
 export async function PATCH(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     // ── Auth guard ─────────────────────────────────────────────────────────
-    const session = await authClient.getSession()
-    const user = session?.data?.user
+    const session = await auth.api.getSession({
+      headers: req.headers
+    })
+
+    const user = session?.user
 
     if (!user || user.role !== 'admin') {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
@@ -23,7 +64,7 @@ export async function PATCH(
 
     await connectDB()
 
-    const { id } = params
+    const { id } = await params
     const body = await req.json()
     const { action } = body
 

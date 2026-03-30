@@ -1,5 +1,6 @@
 import { createAuthClient } from "better-auth/react";
 import {inferAdditionalFields, twoFactorClient} from "better-auth/client/plugins"
+import { ObjectId } from "mongodb";
 
 export const authClient = createAuthClient({
   baseURL: process.env.BASE_URL || "http://localhost:3000",
@@ -19,6 +20,10 @@ export const authClient = createAuthClient({
         location: {
             type: "string",
             required: true,
+        },
+        taskerId: {
+          type: "string",
+          required: false,
         }
 }
     }),

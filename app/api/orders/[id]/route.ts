@@ -29,7 +29,7 @@ export async function PATCH(
     }
 
     // Verify ownership
-    if (order.userId !== session.user.id) {
+    if (order.userId !== session.user.id && order.taskerId !== session.user.taskerId) {
       return NextResponse.json(
         { error: 'Forbidden: You do not own this order' },
         { status: 403 }
@@ -47,9 +47,11 @@ export async function PATCH(
       store,
       packaging,
       status,
+      hasPaid,
     } = body;
 
     if (taskType !== undefined) order.taskType = taskType;
+    if (hasPaid !== undefined) order.hasPaid = hasPaid;
     if (description !== undefined) order.description = description;
     if (amount !== undefined) order.amount = parseFloat(amount);
     if (deadlineValue !== undefined) order.deadlineValue = parseInt(deadlineValue);
@@ -57,10 +59,27 @@ export async function PATCH(
     if (location !== undefined) order.location = location;
     if (store !== undefined) order.store = store || undefined;
     if (packaging !== undefined) order.packaging = packaging || undefined;
-    if (status !== undefined) order.status = status;
+    if (status !== undefined) {
+      order.status = status;
+      if (status === 'paid') {
+        order.hasPaid = true;
+      }
+      // If order is completed, increment tasker's completedTasks and update rating
+      if (status === 'completed' && order.taskerId) {
+        const Tasker = (await import('@/models/tasker')).default;
+        const Review = (await import('@/models/review')).Review;
+        // Increment completedTasks
+        await Tasker.findByIdAndUpdate(order.taskerId, { $inc: { completedTasks: 1 } });
+        // Recalculate rating
+        const reviews = await Review.find({ taskerId: order.taskerId });
+        if (reviews.length > 0) {
+          const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+          await Tasker.findByIdAndUpdate(order.taskerId, { rating: avgRating });
+        }
+      }
+    }
 
     await order.save();
-
     return NextResponse.json(order);
   } catch (error) {
     console.error('[Orders PATCH Error]:', error);
@@ -123,9 +142,9 @@ export async function GET(
     await connectDB();
 
     // Get the session
-const session = await auth.api.getSession({
-  headers: request.headers,
-});
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    });
 
     if (!session || !session.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -140,7 +159,7 @@ const session = await auth.api.getSession({
     }
 
     // Verify ownership
-    if (order.userId !== session.user.id) {
+    if (order.taskerId !== session.user.taskerId) {
       return NextResponse.json(
         { error: 'Forbidden: You do not own this order' },
         { status: 403 }

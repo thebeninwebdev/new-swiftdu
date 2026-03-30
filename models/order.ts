@@ -5,16 +5,22 @@ export interface IOrder extends Document {
   taskType: string;
   description: string;
   amount: number;
+  commission: number;
+  platformFee: number;
+  taskerFee: number;
+  totalAmount: number;
   deadlineValue: number;
   deadlineUnit: 'mins' | 'hours' | 'days';
   location: string;
   store?: string;
   packaging?: string;
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled';
   taskerId?: string;
   taskerName?: string;
   createdAt: Date;
+  hasPaid: boolean;
   updatedAt: Date;
+  taskerHasPaid:boolean;
 }
 
 const orderSchema = new Schema<IOrder>(
@@ -39,6 +45,26 @@ const orderSchema = new Schema<IOrder>(
       required: true,
       min: 0,
     },
+    commission: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    platformFee: {
+      type: Number,
+      required: true,
+      default: 100,
+    },
+    taskerFee: {
+      type: Number,
+      required: true,
+      default: 50,
+    },
+    totalAmount: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
     deadlineValue: {
       type: Number,
       required: true,
@@ -53,20 +79,30 @@ const orderSchema = new Schema<IOrder>(
       type: String,
       required: true,
     },
+    taskerHasPaid: {
+      type: Boolean,
+      default: false,
+    },
     store: String,
     packaging: String,
     status: {
       type: String,
-      enum: ['pending', 'in_progress', 'completed', 'cancelled'],
+      enum: ['pending', 'in_progress', 'paid', 'completed', 'cancelled'],
       default: 'pending',
     },
     taskerId: {
       type: String,
       index: true,
     },
+    hasPaid: {
+      type: Boolean,
+      default: false
+    },
     taskerName: String,
   },
   { timestamps: true }
 );
+
+
 
 export const Order = mongoose.models.Order || mongoose.model<IOrder>('Order', orderSchema);

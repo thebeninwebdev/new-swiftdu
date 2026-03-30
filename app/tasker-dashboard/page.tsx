@@ -1,10 +1,13 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { authClient } from '@/lib/auth-client'
 import { useRouter } from 'next/navigation'
+import { convertToNaira } from '@/lib/utils'
+import Link from 'next/link'
 
 interface Errand {
   _id: string
@@ -12,6 +15,10 @@ interface Errand {
   taskType: string
   description: string
   amount: number
+  commission?: number
+  platformFee?: number
+  taskerFee?: number
+  totalAmount?: number
   deadlineValue: number
   deadlineUnit: string
   location: string
@@ -31,10 +38,12 @@ interface TaskerData {
   rating: number
   completedTasks: number
   isVerified: boolean
+  profileImage?: string
 }
 
 export default function TaskerErrandsPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [errands, setErrands] = useState<Errand[]>([])
   const [acceptedErrands, setAcceptedErrands] = useState<Errand[]>([])
   const [loading, setLoading] = useState(true)
@@ -43,7 +52,22 @@ export default function TaskerErrandsPage() {
   const [taskerData, setTaskerData] = useState<TaskerData | null>(null)
   const [taskTypeFilter, setTaskTypeFilter] = useState('all')
   const [locationFilter, setLocationFilter] = useState('')
-  const [activeTab, setActiveTab] = useState<'available' | 'accepted'>('available')
+  const [activeTab, setActiveTab] = useState<'available' | 'accepted'>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search)
+      return params.get('accepted') === 'true' ? 'accepted' : 'available'
+    }
+    return 'available'
+  })
+
+  // Keep tab in sync if URL changes after mount
+  useEffect(() => {
+    if (searchParams?.get('accepted') === 'true') {
+      setActiveTab('accepted')
+    } else {
+      setActiveTab('available')
+    }
+  }, [searchParams])
 
   const taskTypes = [
     { value: 'all', label: 'All Tasks' },
@@ -57,7 +81,6 @@ export default function TaskerErrandsPage() {
     const fetchData = async () => {
       try {
         setLoading(true)
-        console.log("working")
         // Get current user session
         const { data } = await authClient.getSession()
         
@@ -67,22 +90,23 @@ export default function TaskerErrandsPage() {
         }
 
         // Fetch tasker profile
-        const taskerRes = await fetch(`/api/taskers?userId=${data.user.id}`)
+        const taskerRes = await fetch(`/api/taskers?taskerId=${data.user.taskerId}`)
         if (!taskerRes.ok) {
           setError('Failed to load tasker profile')
           return
         }
 
-        const tasker = await taskerRes.json()
+        const {tasker} = await taskerRes.json()
         setTaskerData(tasker)
 
         // Check if tasker is verified
-        if (!tasker.isVerified) {
+        if (!tasker?.isVerified) {
           setError('Your account must be verified to accept errands. Please complete your verification.')
             return
         }
 
-        // Fetch available errands
+
+        // Fetch available errands (pending)
         const params = new URLSearchParams()
         if (taskTypeFilter !== 'all') {
           params.append('taskType', taskTypeFilter)
@@ -90,20 +114,25 @@ export default function TaskerErrandsPage() {
         if (locationFilter) {
           params.append('location', locationFilter)
         }
+        params.append('status', 'pending')
 
         const errandsRes = await fetch(`/api/errands?${params}`)
-        console.log(errandsRes)
         if (!errandsRes.ok) {
           throw new Error('Failed to fetch errands')
         }
 
-        const res = await errandsRes.json()
-        console.log(res)
-        const pending = res.filter((e: Errand) => e.status === 'pending')
-        const accepted = res.filter((e: Errand) => e.acceptedBy === data.user.id)
-        
-        setErrands(pending)
-        setAcceptedErrands(accepted)
+        const pendingErrands = await errandsRes.json()
+
+        // Fetch the tasker-specific accepted/in-progress tasks, using accepted=true
+        const acceptedRes = await fetch(`/api/errands?accepted=true&taskerId=${tasker._id}`)
+        if (!acceptedRes.ok) {
+          throw new Error('Failed to fetch accepted errands')
+        }
+
+        const acceptedErrandsData = await acceptedRes.json()
+
+        setErrands(pendingErrands)
+        setAcceptedErrands(acceptedErrandsData)
         setError(null)
       } catch (err) {
         console.error('Error fetching data:', err)
@@ -133,7 +162,8 @@ export default function TaskerErrandsPage() {
         },
         body: JSON.stringify({
           orderId: errandId,
-          taskerId: session.data. user.id,
+          taskerId: session.data.user.id,
+          taskerName: session.data.user.name
         }),
       })
 
@@ -185,12 +215,6 @@ export default function TaskerErrandsPage() {
               <h1 className="text-3xl font-bold text-foreground">Available Errands</h1>
               <p className="text-sm text-muted-foreground mt-1">Find and accept tasks to earn money</p>
             </div>
-            {taskerData && (
-              <div className="text-right">
-                <div className="text-2xl font-bold text-foreground">{taskerData?.rating?.toFixed(1)} ⭐</div>
-                <div className="text-sm text-muted-foreground">{taskerData?.completedTasks} completed tasks</div>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -284,7 +308,7 @@ export default function TaskerErrandsPage() {
                         </div>
                         <div className="text-right">
                           <div className="text-2xl font-bold text-primary">
-                            ₦{errand.amount.toFixed(2)}
+                            ₦{(errand.totalAmount || errand.amount).toFixed(2)}
                           </div>
                         </div>
                       </div>
@@ -346,6 +370,7 @@ export default function TaskerErrandsPage() {
                     key={errand._id}
                     className="rounded-lg border border-border bg-card hover:shadow-lg transition-shadow overflow-hidden"
                   >
+                    <Link href={`/tasker-dashboard/${errand._id}`}>
                     <div className="p-6">
                       <div className="flex items-start justify-between mb-4">
                         <div>
@@ -355,7 +380,7 @@ export default function TaskerErrandsPage() {
                         </div>
                         <div className="text-right">
                           <div className="text-2xl font-bold text-primary">
-                            ${errand.amount.toFixed(2)}
+                            {convertToNaira(errand.totalAmount || errand.amount)}
                           </div>
                         </div>
                       </div>
@@ -389,6 +414,8 @@ export default function TaskerErrandsPage() {
                         In Progress
                       </Button>
                     </div>
+                    </Link>
+                    
                   </div>
                 ))}
               </div>

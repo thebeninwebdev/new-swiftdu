@@ -101,13 +101,23 @@ export async function POST(req: NextRequest) {
       completedTasks: 0,
     })
 
-    // ── Update user role ───────────────────────────────────────────────────
+    // ── Update user role and assign taskerId ──────────────────────────────
 
-    await User.findByIdAndUpdate(
+    const updatedUser = await User.findByIdAndUpdate(
       userId,
-      { role: 'tasker' },
+      { 
+        role: 'tasker', 
+        taskerId: tasker._id 
+      },
       { new: true }
     )
+
+    if (!updatedUser) {
+      return NextResponse.json(
+        { error: `Failed to update user with tasker role. User not found: ${userId}` },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json(
       {
@@ -141,16 +151,16 @@ export async function GET(req: NextRequest) {
     await connectDB()
 
     const { searchParams } = new URL(req.url)
-    const userId = searchParams.get('userId')
+    const taskerId = searchParams.get('taskerId')
 
-    if (!userId) {
+    if (!taskerId) {
       return NextResponse.json(
-        { error: 'userId query parameter is required.' },
+        { error: 'taskerId query parameter is required.' },
         { status: 400 }
       )
     }
 
-    const tasker = await Tasker.findOne({ userId }).lean()
+    const tasker = await Tasker.findById(taskerId).lean()
 
     if (!tasker) {
       return NextResponse.json(

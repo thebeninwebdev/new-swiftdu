@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { getTaskerId } from '@/lib/utils'
 
 interface SupportTicket {
   _id: string
@@ -45,18 +46,13 @@ export default function SupportPage() {
   })
 
   useEffect(() => {
-    const getTaskerId = async () => {
-      try {
-        const session = await fetch('/api/auth/session').then((r) => r.json())
-        if (session?.user?.id) {
-          setTaskerId(session.user.id)
-        }
-      } catch (error) {
-        console.error('Error fetching session:', error)
-      }
-    }
-    getTaskerId()
+    getTaskerId().then((id) => {
+      if (id) setTaskerId(id)
+    }).catch((err) => {
+      console.error('Failed to get tasker ID', err)
+    })
   }, [])
+
 
   // Fetch support tickets
   useEffect(() => {

@@ -11,6 +11,8 @@ export interface IUser extends Document {
   twoFactorEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
+  isSuspended?: boolean;
+  taskerId?: string;
 }
 
 const UserSchema = new Schema<IUser>(
@@ -28,6 +30,10 @@ const UserSchema = new Schema<IUser>(
       trim: true,
     },
     emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    isSuspended: {
       type: Boolean,
       default: false,
     },
@@ -51,6 +57,10 @@ const UserSchema = new Schema<IUser>(
       type: Boolean,
       default: false,
     },
+    taskerId: {
+      type: String,
+      required: false,
+    }
   },
   {
     timestamps: true,

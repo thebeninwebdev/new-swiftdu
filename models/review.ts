@@ -27,7 +27,7 @@ const ReviewSchema = new Schema<IReview>(
     userId: {
       type: Schema.Types.ObjectId,
       required: true,
-      ref: "User",
+      ref: "user",
       index: true,
     },
     rating: {
@@ -47,5 +47,5 @@ const ReviewSchema = new Schema<IReview>(
   }
 );
 
-export default mongoose.models.Review ||
+export const Review =  mongoose.models.Review ||
   mongoose.model<IReview>("Review", ReviewSchema);

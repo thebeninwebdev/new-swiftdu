@@ -58,7 +58,14 @@ export default function LoginPage() {
         return;
       }
 
-      router.push("/dashboard");
+      // Role-based redirect
+      if (data?.user?.role === 'admin') {
+        router.push('/admin');
+      } else if (data?.user?.role === 'tasker') {
+        router.push('/tasker-dashboard');
+      } else {
+        router.push('/dashboard');
+      }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setServerError(err?.message || "Invalid email or password.");

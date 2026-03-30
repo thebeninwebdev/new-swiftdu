@@ -12,6 +12,10 @@ interface Task {
   taskType: string
   description: string
   amount: number
+  commission?: number
+  platformFee?: number
+  taskerFee?: number
+  totalAmount?: number
   deadlineValue: number
   deadlineUnit: 'mins' | 'hours' | 'days'
   location: string
@@ -117,6 +121,7 @@ export default function AvailableTasksPage() {
                 taskType={task.taskType}
                 description={task.description}
                 amount={task.amount}
+                totalAmount={task.totalAmount}
                 deadlineValue={task.deadlineValue}
                 deadlineUnit={task.deadlineUnit}
                 location={task.location}

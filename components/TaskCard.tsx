@@ -12,6 +12,7 @@ interface TaskCardProps {
   taskType: string
   description: string
   amount: number
+  totalAmount?: number
   deadlineValue: number
   deadlineUnit: 'mins' | 'hours' | 'days'
   location: string
@@ -33,9 +34,10 @@ const taskTypeLabels: Record<string, string> = {
   others: 'Others',
 }
 
-export function TaskCard({ id, taskType, description, amount, deadlineValue, deadlineUnit, location, store, createdAt }: TaskCardProps) {
+export function TaskCard({ id, taskType, description, amount, totalAmount, deadlineValue, deadlineUnit, location, store, createdAt }: TaskCardProps) {
   const router = useRouter()
   const [isAccepting, setIsAccepting] = useState(false)
+  const displayAmount = totalAmount || amount
 
   const handleAcceptTask = async () => {
     try {
@@ -105,7 +107,7 @@ export function TaskCard({ id, taskType, description, amount, deadlineValue, dea
           {/* Budget */}
           <div>
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Budget</p>
-            <p className="text-lg font-semibold text-foreground">₦{amount.toLocaleString()}</p>
+            <p className="text-lg font-semibold text-foreground">₦{displayAmount.toLocaleString()}</p>
           </div>
 
           {/* Deadline */}

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
+import { convertToNaira, getTaskerId } from '@/lib/utils'
 
 interface Review {
   _id: string
@@ -53,18 +54,13 @@ export default function ReviewsPage() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const getTaskerId = async () => {
-      try {
-        const session = await fetch('/api/auth/session').then((r) => r.json())
-        if (session?.user?.id) {
-          setTaskerId(session.user.id)
-        }
-      } catch (error) {
-        console.error('Error fetching session:', error)
-      }
-    }
-    getTaskerId()
+    getTaskerId().then((id) => {
+      if (id) setTaskerId(id)
+    }).catch((err) => {
+      console.error('Failed to get tasker ID', err)
+    })
   }, [])
+
 
   // Fetch reviews
   useEffect(() => {
@@ -152,7 +148,7 @@ export default function ReviewsPage() {
         {data && (
           <>
             {/* Summary Card */}
-            <Card className="p-8 mb-8 bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+            <Card className="p-8 mb-8 bg-linear-to-br from-blue-50 to-indigo-50 border-blue-200">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-muted-foreground text-sm mb-1">
@@ -255,7 +251,7 @@ export default function ReviewsPage() {
                       <p className="text-sm font-medium">
                         {review.orderId.taskType.charAt(0).toUpperCase() +
                           review.orderId.taskType.slice(1)}{' '}
-                        - ${review.orderId.amount.toFixed(2)}
+                        - {convertToNaira(review.orderId.amount)}
                       </p>
                     </div>
                   </Card>

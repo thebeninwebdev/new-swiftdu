@@ -10,11 +10,32 @@ export async function GET(request: NextRequest) {
 
     const taskType = request.nextUrl.searchParams.get('taskType')
     const location = request.nextUrl.searchParams.get('location')
+    const status = request.nextUrl.searchParams.get('status')
+    const taskerId = request.nextUrl.searchParams.get('taskerId')
     const sortBy = request.nextUrl.searchParams.get('sortBy') || 'createdAt'
-
+    const accepted = request.nextUrl.searchParams.get('accepted')
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const filter: Record<string, any> = { status: 'pending' }
+    const filter: Record<string, any> = {}
+
+    if (accepted === 'true' && taskerId) {
+      // Accepted errands for this tasker: in_progress or paid
+      filter.taskerId = taskerId
+      filter.status = { $in: ['in_progress', 'paid'] }
+    } else if (status) {
+      const statuses = status.split(',').map((s) => s.trim())
+      if (statuses.length === 1) {
+        filter.status = statuses[0]
+      } else if (statuses.length > 1) {
+        filter.status = { $in: statuses }
+      }
+    } else {
+      filter.status = 'pending'
+    }
+
+    if (taskerId) {
+      filter.taskerId = taskerId
+    }
 
     if (taskType && taskType !== 'all') {
       filter.taskType = taskType
@@ -45,7 +66,7 @@ export async function POST(request: NextRequest) {
     await connectDB()
 
     const body = await request.json()
-    const { orderId, taskerId } = body
+    const { orderId, taskerId, taskerName } = body
 
     if (!orderId || !taskerId) {
       return NextResponse.json(
@@ -88,7 +109,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    if (order.status !== 'pending') {
+    if (
+      order.status !== 'pending'
+    ) {
       return NextResponse.json(
         { error: 'This errand has already been accepted or completed' },
         { status: 409 }
@@ -96,9 +119,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Update order with tasker info
+    // acceptedBy stays as the tasker's userId (for session-based matching)
     order.acceptedBy = taskerId
     order.acceptedAt = new Date()
-    order.status = 'accepted'
+    order.status = 'in_progress'
+
+    // taskerId should be tasker._id from the Tasker collection (not the userId)
+    order.taskerId = tasker._id
+    order.taskerName = taskerName || "Anonymous"
 
     const updatedOrder = await order.save()
 
