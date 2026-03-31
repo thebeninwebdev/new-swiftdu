@@ -31,11 +31,9 @@ import {
   Calendar,
   MapPin,
   Package,
-  ChevronDown,
   ChevronUp,
   Filter,
   RefreshCw,
-  MoreHorizontal
 } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
 
@@ -71,7 +69,7 @@ const itemVariants = {
     opacity: 1,
     y: 0,
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 100,
       damping: 15
     }
@@ -85,7 +83,7 @@ const expandVariants = {
     height: "auto",
     transition: {
       duration: 0.3,
-      ease: [0.04, 0.62, 0.23, 0.98]
+      ease: [0.04, 0.62, 0.23, 0.98] as const
     }
   },
   exit: {
@@ -103,7 +101,7 @@ const statsCardVariants = {
     opacity: 1,
     scale: 1,
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 200,
       damping: 20
     }
@@ -223,12 +221,11 @@ export default function AdminUsersPage() {
 
   // Calculate stats
   const verifiedCount = users.filter(u => u.emailVerified).length
-  const suspendedCount = users.filter(u => u.isSuspended).length
   const totalOrders = users.reduce((acc, u) => acc + (u.orderCount || 0), 0)
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20 flex items-center justify-center">
+      <div className="min-h-screen bg-linear-to-br from-background via-background to-muted/20 flex items-center justify-center">
         <motion.div 
           className="text-center"
           initial={{ opacity: 0, y: 20 }}
@@ -249,7 +246,7 @@ export default function AdminUsersPage() {
   if (!admin) return null
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+    <div className="min-h-screen bg-linear-to-br from-background via-background to-muted/20">
       {/* Animated Header */}
       <motion.div 
         className="border-b border-border/50 backdrop-blur-sm bg-background/80 sticky top-0 z-10"
@@ -261,7 +258,7 @@ export default function AdminUsersPage() {
           <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
             <div>
               <motion.h1 
-                className="text-3xl sm:text-4xl font-bold bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent"
+                className="text-3xl sm:text-4xl font-bold bg-linear-to-r from-foreground to-foreground/70 bg-clip-text text-transparent"
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: 0.1 }}
@@ -300,7 +297,7 @@ export default function AdminUsersPage() {
           animate="visible"
         >
           <motion.div variants={statsCardVariants}>
-            <Card className="bg-gradient-to-br from-card to-card/50 border-border/50 hover:shadow-lg transition-shadow duration-300">
+            <Card className="bg-linear-to-br from-card to-card/50 border-border/50 hover:shadow-lg transition-shadow duration-300">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total Users</p>
@@ -314,7 +311,7 @@ export default function AdminUsersPage() {
           </motion.div>
           
           <motion.div variants={statsCardVariants}>
-            <Card className="bg-gradient-to-br from-card to-card/50 border-border/50 hover:shadow-lg transition-shadow duration-300">
+            <Card className="bg-linear-to-br from-card to-card/50 border-border/50 hover:shadow-lg transition-shadow duration-300">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Verified</p>
@@ -328,7 +325,7 @@ export default function AdminUsersPage() {
           </motion.div>
           
           <motion.div variants={statsCardVariants}>
-            <Card className="bg-gradient-to-br from-card to-card/50 border-border/50 hover:shadow-lg transition-shadow duration-300">
+            <Card className="bg-linear-to-br from-card to-card/50 border-border/50 hover:shadow-lg transition-shadow duration-300">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground">Total Orders</p>
@@ -365,7 +362,7 @@ export default function AdminUsersPage() {
                   />
                 </div>
 
-                <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value || 'all')}>
+                <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value ?? 'all')}>
                   <SelectTrigger className="transition-all duration-300 hover:border-primary/50">
                     <SelectValue placeholder="Filter by role" />
                   </SelectTrigger>
@@ -439,7 +436,7 @@ export default function AdminUsersPage() {
                 </Card>
               </motion.div>
             ) : (
-              users.map((user, index) => (
+              users.map((user) => (
                 <motion.div
                   key={user._id}
                   variants={itemVariants}
@@ -452,7 +449,7 @@ export default function AdminUsersPage() {
                       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                         <div className="flex items-start md:items-center space-x-3 md:space-x-4">
                           <motion.div 
-                            className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center flex-shrink-0 ${user.isSuspended ? 'bg-red-100 dark:bg-red-900/30' : 'bg-gradient-to-br from-primary/20 to-primary/10'}`}
+                            className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center shrink-0 ${user.isSuspended ? 'bg-red-100 dark:bg-red-900/30' : 'bg-linear-to-br from-primary/20 to-primary/10'}`}
                             whileHover={{ scale: 1.1, rotate: 5 }}
                             transition={{ type: "spring", stiffness: 400 }}
                           >
@@ -470,12 +467,12 @@ export default function AdminUsersPage() {
                             </div>
                             <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 text-xs md:text-sm text-muted-foreground gap-1 sm:gap-0 mt-1">
                               <div className="flex items-center hover:text-foreground transition-colors">
-                                <Mail className="w-3.5 h-3.5 mr-1.5 flex-shrink-0" />
+                                <Mail className="w-3.5 h-3.5 mr-1.5 shrink-0" />
                                 <span className="truncate">{user.email}</span>
                               </div>
                               {user.phone && (
                                 <div className="flex items-center hover:text-foreground transition-colors">
-                                  <Phone className="w-3.5 h-3.5 mr-1.5 flex-shrink-0" />
+                                  <Phone className="w-3.5 h-3.5 mr-1.5 shrink-0" />
                                   {user.phone}
                                 </div>
                               )}

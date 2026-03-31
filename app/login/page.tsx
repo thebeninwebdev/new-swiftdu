@@ -53,7 +53,7 @@ export default function LoginPage() {
 
       // better-auth sets twoFactorRedirect when the account has 2FA enabled.
       // The session is in a pending state until the TOTP/backup code is verified.
-      if (data?.twoFactorRedirect) {
+      if (data && "twoFactorRedirect" in data) {
         router.push("/verify-2fa");
         return;
       }

@@ -1,17 +1,46 @@
 'use client'
 
+import { useEffect, useState } from "react";
 import { Menus } from "@/lib/utils";
 import { DesktopMenu } from "./DesktopMenu";
+import { authClient } from "@/lib/auth-client";
 import { MobMenu } from "./MobileMenu";
 import Image from "next/image";
 import Link from "next/link";
 import { LogOut, LogIn, Search, Clock, Mail, Phone } from "lucide-react";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { useRouter } from "next/navigation";
 
 export default function Header() {
-  const {data:session} = useSession();
+  const [userData, setUserData] = useState<
+  {user:{
+    id: string;
+    createdAt: Date;
+    updatedAt: Date;
+    email: string;
+    emailVerified: boolean;
+    name: string;
+    image?: string | null | undefined;
+}}>()
+  const router = useRouter()
   const isMobile = useMediaQuery("(max-width: 768px)")
   const isTablet = useMediaQuery("(max-width: 1024px)")
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+        const {data} =  authClient.useSession();
+        if(data?.user){
+          setUserData(data)
+        }
+    }
+    fetchUserData()
+  },[])
+
+    const signOut = async () => {
+      await authClient.signOut({
+        fetchOptions: { onSuccess: () => router.push('/login') }
+      })
+    }
 
   return (
     <div>
@@ -48,7 +77,7 @@ export default function Header() {
             ))}
           </ul>
           <div className="flex-center gap-x-3">
-            {session?.user ? 
+            {userData?.user ? 
             <button className="p-0" onClick={() => {signOut()}}><LogOut className="w-4 h-4"/></button>
             :
             <Link href="/auth/login"><LogIn className="w-4 h-4"/></Link>

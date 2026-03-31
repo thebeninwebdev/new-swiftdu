@@ -6,7 +6,6 @@ import { authClient } from '@/lib/auth-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Users,
   ShoppingBag,
@@ -27,6 +26,9 @@ interface DashboardStats {
   completedOrders: number
   totalReviews: number
   pendingTaskerApprovals: number
+  grossRevenue:number
+  profit: number
+  totalCompensation: number
 }
 
 interface RecentActivity {

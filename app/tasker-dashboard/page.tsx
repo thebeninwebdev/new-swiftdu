@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,7 +41,7 @@ interface TaskerData {
   profileImage?: string
 }
 
-export default function TaskerErrandsPage() {
+ function TaskerErrandsPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [errands, setErrands] = useState<Errand[]>([])
@@ -424,5 +424,13 @@ export default function TaskerErrandsPage() {
         )}
       </div>
     </div>
+  )
+}
+
+export default function TaskerPage (){
+  return(
+        <Suspense fallback={<div>Loading...</div>}>
+      <TaskerErrandsPage />
+    </Suspense>
   )
 }

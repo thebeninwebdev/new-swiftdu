@@ -101,7 +101,7 @@ export default function VerifyCodesPage() {
 
       {/* Glow */}
       <div
-        className="pointer-events-none fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] rounded-full opacity-20"
+        className="pointer-events-none fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-150 h-150 rounded-full opacity-20"
         style={{
           background: "radial-gradient(circle, #6366f1 0%, transparent 70%)",
           filter: "blur(60px)",

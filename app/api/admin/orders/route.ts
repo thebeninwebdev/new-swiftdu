@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import { Order } from '@/models/order'
-import User from '@/models/user'
+import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
 
 // ─── GET /api/admin/orders ──────────────────────────────────────────────────
@@ -104,63 +104,3 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// ─── PATCH /api/admin/orders/[id] ───────────────────────────────────────────
-// Update order status (cancel, complete).
-// Restricted to admin role only.
-
-export async function PATCH(
-  req: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    // TODO: Add admin auth check
-    // const session = await authClient.getSession()
-    // const user = session?.data?.user
-    // if (!user || user.role !== 'admin') {
-    //   return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
-    // }
-
-    await connectDB()
-
-    const { action } = await req.json()
-
-    if (!['cancel', 'complete'].includes(action)) {
-      return NextResponse.json(
-        { error: 'Invalid action' },
-        { status: 400 }
-      )
-    }
-
-    const updateData: any = {
-      updatedAt: new Date()
-    }
-
-    if (action === 'cancel') {
-      updateData.status = 'cancelled'
-    } else if (action === 'complete') {
-      updateData.status = 'completed'
-    }
-
-    const order = await Order.findByIdAndUpdate(
-      params.id,
-      updateData,
-      { new: true }
-    )
-
-    if (!order) {
-      return NextResponse.json(
-        { error: 'Order not found' },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json(order)
-
-  } catch (error) {
-    console.error('[PATCH /api/admin/orders/[id]]', error)
-    return NextResponse.json(
-      { error: 'Failed to update order' },
-      { status: 500 }
-    )
-  }
-}

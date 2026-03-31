@@ -4,20 +4,24 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import {
   MessageSquare,
   Search,
   User,
-  Mail,
-  Phone,
-  MoreHorizontal,
   Eye,
   CheckCircle,
   XCircle,
@@ -257,7 +261,7 @@ export default function AdminSupportPage() {
                 />
               </div>
 
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value ?? "all")}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
@@ -270,7 +274,7 @@ export default function AdminSupportPage() {
                 </SelectContent>
               </Select>
 
-              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+              <Select value={priorityFilter} onValueChange={(value) => setPriorityFilter(value ?? "all")}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by priority" />
                 </SelectTrigger>
@@ -337,7 +341,7 @@ export default function AdminSupportPage() {
 
                     <div className="flex space-x-2 ml-4">
                       <Dialog>
-                        <DialogTrigger asChild>
+                        <DialogTrigger>
                           <Button
                             variant="outline"
                             size="sm"
@@ -421,7 +425,7 @@ export default function AdminSupportPage() {
                                   placeholder="Type your response here..."
                                   value={responseMessage}
                                   onChange={(e) => setResponseMessage(e.target.value)}
-                                  className="min-h-[100px]"
+                                  className="min-h-25"
                                 />
                                 <Button
                                   onClick={handleResponse}

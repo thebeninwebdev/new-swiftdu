@@ -1,13 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 
-export default function ResetPasswordPage() {
+ function ResetPasswordClient() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [form, setForm] = useState({ newPassword: "", confirmPassword: "" });
@@ -238,4 +238,13 @@ export default function ResetPasswordPage() {
       </button>
     </div>
   );
+}
+
+export default function resetPasswordPage(){
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <ResetPasswordClient />
+    </Suspense>
+
+  )
 }

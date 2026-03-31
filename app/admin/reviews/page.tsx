@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent} from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,10 +13,8 @@ import {
   Star,
   Search,
   User,
-  MessageSquare,
   ThumbsUp,
   ThumbsDown,
-  MoreHorizontal,
   Eye,
   Trash2
 } from 'lucide-react'
@@ -185,7 +183,7 @@ export default function AdminReviewsPage() {
                 />
               </div>
 
-              <Select value={ratingFilter} onValueChange={setRatingFilter}>
+              <Select value={ratingFilter} onValueChange={(value) => setRatingFilter(value ?? "all")}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by rating" />
                 </SelectTrigger>
@@ -199,7 +197,7 @@ export default function AdminReviewsPage() {
                 </SelectContent>
               </Select>
 
-              <Select value={visibilityFilter} onValueChange={setVisibilityFilter}>
+              <Select value={visibilityFilter} onValueChange={(value) => setVisibilityFilter(value ?? "all")}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by visibility" />
                 </SelectTrigger>

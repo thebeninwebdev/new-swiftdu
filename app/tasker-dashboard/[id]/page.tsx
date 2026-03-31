@@ -5,6 +5,10 @@ import { authClient } from '@/lib/auth-client'
 import { useRouter, useParams } from 'next/navigation'
 
 interface ErrandDetail {
+  taskerFee: number
+  platformFee: number
+  commission: number
+  totalAmount: number
   _id: string
   userId: string
   taskType: string
@@ -343,11 +347,11 @@ export default function ErrandDetailPage() {
         )}
 
         {/* Amount Hero Card */}
-        <div className="bg-gradient-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-xl p-6 sm:p-7 relative overflow-hidden">
+        <div className="bg-linear-to-br from-primary/10 to-primary/5 border border-primary/20 rounded-xl p-6 sm:p-7 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-40 h-40 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2 blur-2xl"></div>
           <p className="text-muted-foreground text-xs uppercase tracking-wider font-semibold mb-3">Earnings</p>
           <div className="flex items-end gap-2 relative z-10">
-            <span className="text-4xl sm:text-5xl font-bold text-primary break-words">
+            <span className="text-4xl sm:text-5xl font-bold text-primary wrap-break-word">
               ₦{errand.amount.toLocaleString('en-NG', { minimumFractionDigits: 2 })}
             </span>
           </div>

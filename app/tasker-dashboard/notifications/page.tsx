@@ -37,7 +37,7 @@ export default function TaskerNotificationsPage() {
       {loading ? (
         <div>Loading...</div>
       ) : orders.length === 0 ? (
-        <div className="text-green-600 font-medium">No unpaid platform fees. You're all set!</div>
+        <div className="text-green-600 font-medium">No unpaid platform fees. You&apos;re all set!</div>
       ) : (
         <ul className="space-y-6">
           {orders.map(order => (

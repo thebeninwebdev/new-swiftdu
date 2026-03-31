@@ -4,7 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,9 +14,7 @@ import {
   Search,
   MapPin,
   Clock,
-  DollarSign,
   User,
-  MoreHorizontal,
   Eye,
   CheckCircle,
   XCircle,
@@ -213,7 +211,7 @@ export default function AdminOrdersPage() {
                 />
               </div>
 
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value ?? 'all')}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
@@ -226,7 +224,7 @@ export default function AdminOrdersPage() {
                 </SelectContent>
               </Select>
 
-              <Select value={taskTypeFilter} onValueChange={setTaskTypeFilter}>
+              <Select value={taskTypeFilter} onValueChange={(value) => setTaskTypeFilter(value ?? 'all')}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by task type" />
                 </SelectTrigger>

@@ -3,9 +3,7 @@
 import React, { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
 import { authClient } from '@/lib/auth-client'
-
 interface Order {
   taskerId: string
   _id: string
@@ -18,21 +16,11 @@ interface Order {
   acceptedAt: string
 }
 
-interface CompletedOrdersResponse {
-  orders: Order[]
-  pagination: {
-    total: number
-    page: number
-    pages: number
-  }
-}
-
 export default function CustomerReviewsPage() {
   const [userId, setUserId] = useState<string | null>(null)
   const [completedOrders, setCompletedOrders] = useState<Order[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null)
   const [reviewingOrderId, setReviewingOrderId] = useState<string | null>(null)
   const [isSubmittingReview, setIsSubmittingReview] = useState(false)
   const [message, setMessage] = useState<{ type: string; text: string } | null>(

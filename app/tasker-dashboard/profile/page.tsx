@@ -4,7 +4,6 @@ import React, { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { authClient } from '@/lib/auth-client'
 import { getTaskerId } from '@/lib/utils'
 
 interface TaskerProfile {
