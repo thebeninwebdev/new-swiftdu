@@ -3,7 +3,7 @@ import {inferAdditionalFields, twoFactorClient} from "better-auth/client/plugins
 import { ObjectId } from "mongodb";
 
 export const authClient = createAuthClient({
-  baseURL: process.env.BASE_URL || "http://localhost:3000",
+  baseURL: process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000",
   plugins: [
     inferAdditionalFields({
       user: {
