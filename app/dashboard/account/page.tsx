@@ -13,11 +13,8 @@ export default function AccountPage() {
   const [activeTab, setActiveTab] = useState("profile");
 
   return (
-    <div className="flex min-h-screen bg-background">
-      {/* Sidebar space for desktop */}
-      <div className="hidden lg:block w-72 shrink-0" />
-      <div className="flex-1 flex flex-col items-center py-12 px-4 md:px-8">
-        <div className="w-full max-w-3xl">
+    <div className="min-h-screen bg-background px-4 py-12 md:px-8">
+      <div className="mx-auto w-full max-w-3xl">
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-4xl font-bold tracking-tight">Account Settings</h1>
@@ -70,7 +67,6 @@ export default function AccountPage() {
               </TabsContent>
             </div>
           </Tabs>
-        </div>
       </div>
     </div>
   );

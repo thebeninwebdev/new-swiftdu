@@ -40,19 +40,20 @@ const FadeInWhenVisible = ({ children, delay = 0, direction = "up" }: {
   };
 
   return (
-    <motion.div
-      ref={ref}
-      initial={{ opacity: 0, ...directions[direction] }}
-      animate={isInView ? { opacity: 1, y: 0, x: 0 } : { opacity: 0, ...directions[direction] }}
-      transition={{ 
-        duration: 0.7, 
-        delay,
-        type: "spring",
-        stiffness: 100
-      }}
-    >
-      {children}
-    </motion.div>
+    <div ref={ref} className="overflow-x-hidden">
+      <motion.div
+        initial={{ opacity: 0, ...directions[direction] }}
+        animate={isInView ? { opacity: 1, y: 0, x: 0 } : { opacity: 0, ...directions[direction] }}
+        transition={{ 
+          duration: 0.7, 
+          delay,
+          type: "spring",
+          stiffness: 100
+        }}
+      >
+        {children}
+      </motion.div>
+    </div>
   );
 };
 
@@ -554,13 +555,13 @@ const MapSection = () => {
 
 export default function ContactPage() {
   return (
-    <div className="min-h-screen bg-white font-sans selection:bg-indigo-100 selection:text-indigo-900">
+    <div className="min-h-screen overflow-x-hidden bg-white font-sans selection:bg-indigo-100 selection:text-indigo-900">
       <Head>
         <title>Contact Us | Swiftdu - Get in Touch</title>
         <meta name="description" content="Contact Swiftdu - Reach out to us for support, partnerships, or general inquiries. We're here to help!" />
       </Head>
 
-      <main>
+      <main className="pt-16 md:pt-20">
         <Hero />
         <ContactCards />
         <ContactForm />

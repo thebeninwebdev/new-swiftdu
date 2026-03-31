@@ -1,8 +1,9 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { Menu, X, Zap } from "lucide-react";
+import { Menu, X } from "lucide-react";
 
+import Image from "next/image";
 import Link from "next/link";
 import React from "react"
 import { authClient } from '@/lib/auth-client';
@@ -23,11 +24,15 @@ export const Navbar = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
-          <Link href="/" className="shrink-0 flex items-center gap-2 cursor-pointer">
-            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-              <Zap className="text-white w-5 h-5" fill="currentColor" />
-            </div>
-            <span className="font-bold text-xl tracking-tight text-gray-900">Swiftdu</span>
+          <Link href="/" className="shrink-0 cursor-pointer">
+            <Image
+              src="/logo.png"
+              alt="Swiftdu"
+              width={342}
+              height={63}
+              className="h-10 w-auto object-contain"
+              priority
+            />
           </Link>
 
           {/* Desktop Menu */}

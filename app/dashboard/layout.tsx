@@ -12,11 +12,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <>
-    <DashboardMenu />
-        <main className='py-20'>
-              {children}
-        </main>
-        </>
+    <div className="lg:flex min-h-screen">
+      <DashboardMenu />
+      <main className="min-w-0 flex-1 pt-20 lg:pt-0">
+        {children}
+      </main>
+    </div>
   );
 }

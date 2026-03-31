@@ -76,7 +76,7 @@ export default function DashboardMenu() {
   return (
     <>
       {/* Desktop Sidebar Navigation */}
-      <aside className="hidden lg:flex fixed left-0 top-0 h-full w-72 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-r border-slate-200 dark:border-slate-800 flex-col z-50">
+      <aside className="hidden lg:flex sticky top-0 h-screen w-72 shrink-0 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-r border-slate-200 dark:border-slate-800 flex-col">
         {/* Logo Area */}
         <div className="p-6 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">

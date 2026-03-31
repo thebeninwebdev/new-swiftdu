@@ -106,7 +106,7 @@ export default function ErrandWizardPage() {
     description: '',
     amount: '',
     deadlineValue: '',
-    deadlineUnit: 'hours',
+    deadlineUnit: 'mins',
     location: '',
     store: '',
     packaging: '',
@@ -209,7 +209,7 @@ export default function ErrandWizardPage() {
       toast.success('Task posted successfully! Taskers will see your task soon.')
       setFormData({
         taskType: '', description: '', amount: '', deadlineValue: '',
-        deadlineUnit: 'hours', location: '', store: '', packaging: '',
+        deadlineUnit: 'mins', location: '', store: '', packaging: '',
       })
       setStep(1)
       router.push('/dashboard/tasks')
@@ -233,62 +233,61 @@ export default function ErrandWizardPage() {
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
 
-      {/* Main Content Area */}
-      <main className="lg:ml-72 pt-16 lg:pt-0 min-h-screen">
-        <div className="p-4 md:p-8 max-w-3xl mx-auto">
-          {/* Page Header */}
-          <div className="mb-8 flex justify-between items-start">
-            <div>
-              <h1 className="text-3xl font-bold bg-linear-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                Book a Task
-              </h1>
-              <p className="text-slate-500 dark:text-slate-400 mt-2">
-                Post a new errand and get help from verified runners
-              </p>
+      <div className="px-4 py-4 md:px-8 lg:py-8">
+        <div className="mx-auto w-full max-w-3xl">
+            {/* Page Header */}
+            <div className="mb-8 flex justify-between items-start">
+              <div>
+                <h1 className="text-3xl font-bold bg-linear-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+                  Book a Task
+                </h1>
+                <p className="text-slate-500 dark:text-slate-400 mt-2">
+                  Post a new errand and get help from verified runners
+                </p>
+              </div>
             </div>
-          </div>
 
-          {/* Progress Steps */}
-          <div className="mb-8">
-            <div className="flex justify-between relative">
-              <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200 dark:bg-slate-800 -translate-y-1/2 z-0" />
-              <div 
-                className="absolute top-1/2 left-0 h-0.5 bg-linear-to-r from-indigo-500 to-purple-500 -translate-y-1/2 z-0 transition-all duration-500"
-                style={{ width: `${((step - 1) / 3) * 100}%` }}
-              />
+            {/* Progress Steps */}
+            <div className="mb-8">
+              <div className="flex justify-between relative">
+                <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200 dark:bg-slate-800 -translate-y-1/2 z-0" />
+                <div 
+                  className="absolute top-1/2 left-0 h-0.5 bg-linear-to-r from-indigo-500 to-purple-500 -translate-y-1/2 z-0 transition-all duration-500"
+                  style={{ width: `${((step - 1) / 3) * 100}%` }}
+                />
               
-              {[1, 2, 3, 4].map((s, idx) => {
-                const Icon = stepIcons[idx]
-                const isActive = s === step
-                const isCompleted = s < step
-                
-                return (
-                  <div key={s} className="relative z-10 flex flex-col items-center gap-2">
-                    <div 
-                      className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 border-2 ${
-                        isCompleted 
-                          ? 'bg-linear-to-r from-indigo-500 to-purple-500 border-transparent text-white' 
-                          : isActive 
-                            ? 'bg-white dark:bg-slate-900 border-indigo-500 text-indigo-600 dark:text-indigo-400 shadow-lg shadow-indigo-500/25' 
-                            : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-400'
-                      }`}
-                    >
-                      {isCompleted ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
+                {[1, 2, 3, 4].map((s, idx) => {
+                  const Icon = stepIcons[idx]
+                  const isActive = s === step
+                  const isCompleted = s < step
+                  
+                  return (
+                    <div key={s} className="relative z-10 flex flex-col items-center gap-2">
+                      <div 
+                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 border-2 ${
+                          isCompleted 
+                            ? 'bg-linear-to-r from-indigo-500 to-purple-500 border-transparent text-white' 
+                            : isActive 
+                              ? 'bg-white dark:bg-slate-900 border-indigo-500 text-indigo-600 dark:text-indigo-400 shadow-lg shadow-indigo-500/25' 
+                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-400'
+                        }`}
+                      >
+                        {isCompleted ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
+                      </div>
+                      <span className={`text-xs font-medium transition-colors ${
+                        isActive ? 'text-indigo-600 dark:text-indigo-400' : 
+                        isCompleted ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'
+                      }`}>
+                        {stepTitles[idx]}
+                      </span>
                     </div>
-                    <span className={`text-xs font-medium transition-colors ${
-                      isActive ? 'text-indigo-600 dark:text-indigo-400' : 
-                      isCompleted ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'
-                    }`}>
-                      {stepTitles[idx]}
-                    </span>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
-          </div>
 
-          {/* Main Card */}
-          <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-slate-200/50 dark:shadow-slate-950/50 border border-white/50 dark:border-slate-800/50 overflow-hidden">
+            {/* Main Card */}
+            <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-slate-200/50 dark:shadow-slate-950/50 border border-white/50 dark:border-slate-800/50 overflow-hidden">
             
             {/* Step Content with Animation */}
             <div className="p-6 md:p-8 min-h-125 relative">
@@ -685,7 +684,7 @@ export default function ErrandWizardPage() {
             </div>
           </div>
         </div>
-      </main>
+      </div>
     </div>
   )
 }

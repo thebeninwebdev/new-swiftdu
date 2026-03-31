@@ -7,8 +7,10 @@ import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 
-const GREEN = "#1a6640";
-const GREEN_DARK = "#155534";
+const BRAND_PRIMARY = "#4f46e5";
+const BRAND_PRIMARY_DARK = "#4338ca";
+const CARD_BORDER = "rgba(255,255,255,0.6)";
+const CARD_SHADOW = "0 24px 80px rgba(79,70,229,0.18)";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -105,7 +107,7 @@ export default function LoginPage() {
           backgroundPosition: "center top",
         }}
       />
-      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.15)" }} />
+      <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.7)" }} />
 
       {/* Centered card */}
       <div style={{
@@ -115,10 +117,12 @@ export default function LoginPage() {
       }}>
         <div style={{
           width: "100%", maxWidth: "480px",
-          background: "#fff",
+          background: "rgba(255,255,255,0.92)",
+          border: `1px solid ${CARD_BORDER}`,
           borderRadius: "20px",
           padding: "44px 48px 40px",
-          boxShadow: "0 20px 60px rgba(0,0,0,0.2)",
+          boxShadow: CARD_SHADOW,
+          backdropFilter: "blur(18px)",
         }}>
 
           {/* Logo */}
@@ -153,7 +157,7 @@ export default function LoginPage() {
                 placeholder="Email Address"
                 value={form.email} onChange={handleChange}
                 style={errors.email ? errStyle : base}
-                onFocus={e => { e.currentTarget.style.borderColor = GREEN; e.currentTarget.style.boxShadow = `0 0 0 3px ${GREEN}22`; }}
+                onFocus={e => { e.currentTarget.style.borderColor = BRAND_PRIMARY; e.currentTarget.style.boxShadow = `0 0 0 3px ${BRAND_PRIMARY}22`; }}
                 onBlur={e => { e.currentTarget.style.borderColor = errors.email ? "#dc2626" : "#d1d5db"; e.currentTarget.style.boxShadow = "none"; }}
               />
               {errors.email && (
@@ -171,7 +175,7 @@ export default function LoginPage() {
                 placeholder="Password"
                 value={form.password} onChange={handleChange}
                 style={errors.password ? errStyle : base}
-                onFocus={e => { e.currentTarget.style.borderColor = GREEN; e.currentTarget.style.boxShadow = `0 0 0 3px ${GREEN}22`; }}
+                onFocus={e => { e.currentTarget.style.borderColor = BRAND_PRIMARY; e.currentTarget.style.boxShadow = `0 0 0 3px ${BRAND_PRIMARY}22`; }}
                 onBlur={e => { e.currentTarget.style.borderColor = errors.password ? "#dc2626" : "#d1d5db"; e.currentTarget.style.boxShadow = "none"; }}
               />
               {errors.password && (
@@ -183,7 +187,7 @@ export default function LoginPage() {
             <div style={{ marginBottom: "24px" }}>
               <Link
                 href="/password/reset"
-                style={{ fontSize: 14, fontWeight: 600, color: GREEN, textDecoration: "none" }}
+                style={{ fontSize: 14, fontWeight: 600, color: BRAND_PRIMARY, textDecoration: "none" }}
               >
                 Forgot password?
               </Link>
@@ -195,15 +199,16 @@ export default function LoginPage() {
               disabled={loading}
               style={{
                 width: "100%", borderRadius: "999px",
-                background: GREEN, color: "#fff", border: "none",
+                background: BRAND_PRIMARY, color: "#fff", border: "none",
                 padding: "15px", fontSize: "16px", fontWeight: 700,
                 cursor: loading ? "not-allowed" : "pointer",
                 opacity: loading ? 0.65 : 1,
-                transition: "background 0.15s, transform 0.1s",
+                transition: "background 0.15s, transform 0.1s, box-shadow 0.15s",
                 letterSpacing: "0.01em",
+                boxShadow: "0 16px 32px rgba(99,102,241,0.22)",
               }}
-              onMouseEnter={e => { if (!loading) e.currentTarget.style.background = GREEN_DARK; }}
-              onMouseLeave={e => { e.currentTarget.style.background = GREEN; }}
+              onMouseEnter={e => { if (!loading) e.currentTarget.style.background = BRAND_PRIMARY_DARK; }}
+              onMouseLeave={e => { e.currentTarget.style.background = BRAND_PRIMARY; }}
               onMouseDown={e => { e.currentTarget.style.transform = "scale(0.98)"; }}
               onMouseUp={e => { e.currentTarget.style.transform = "scale(1)"; }}
             >
@@ -214,7 +219,7 @@ export default function LoginPage() {
           {/* Sign up link */}
           <p style={{ marginTop: 16, textAlign: "center", fontSize: 13, color: "#6b7280" }}>
             Don&apos;t have an account?{" "}
-            <Link href="/signup" style={{ color: GREEN, fontWeight: 600, textDecoration: "none" }}>
+            <Link href="/signup" style={{ color: BRAND_PRIMARY, fontWeight: 600, textDecoration: "none" }}>
               Sign up
             </Link>
           </p>
@@ -226,9 +231,10 @@ export default function LoginPage() {
         style={{
           position: "fixed", bottom: 24, left: 24, zIndex: 50,
           display: "flex", alignItems: "center", gap: 6,
-          background: GREEN, color: "#fff", border: "none", borderRadius: "999px",
+          background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
+          color: "#fff", border: "none", borderRadius: "999px",
           padding: "10px 18px", fontSize: 14, fontWeight: 600,
-          cursor: "pointer", boxShadow: "0 4px 14px rgba(0,0,0,0.25)",
+          cursor: "pointer", boxShadow: "0 12px 30px rgba(79,70,229,0.28)",
         }}
       >
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
