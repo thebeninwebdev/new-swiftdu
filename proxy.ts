@@ -1,41 +1,84 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import {headers} from "next/headers"
-import {auth} from "@/lib/auth"
+import { auth } from '@/lib/auth';
+
+const PUBLIC_ROUTES = [
+  '/',
+  '/about-us',
+  '/contact-us',
+  '/login',
+  '/password',
+  '/password/reset',
+  '/reset-password',
+  '/signup',
+  '/terms',
+];
+
+function getDefaultRouteForRole(role?: string | null) {
+  switch (role) {
+    case 'admin':
+      return '/admin';
+    case 'tasker':
+      return '/tasker-dashboard';
+    case 'user':
+    default:
+      return '/dashboard';
+  }
+}
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
   const session = await auth.api.getSession({
-    headers: await headers()
+    headers: request.headers,
   });
+
   const user = session?.user;
+  const defaultRoute = getDefaultRouteForRole(user?.role);
 
-  // If not logged in, redirect to login
-  if (!user) {
-        console.log(session)
-    return NextResponse.redirect(new URL('/login', request.url));
+  const isPublicRoute = PUBLIC_ROUTES.some((route) =>
+    route === '/' ? pathname === '/' : pathname.startsWith(route)
+  );
 
+  if (isPublicRoute) {
+    if (user) {
+      return NextResponse.redirect(new URL(defaultRoute, request.url));
+    }
+
+    return NextResponse.next();
   }
 
-  // Role-based access control
-  if (pathname.startsWith('/admin')) {
-    if (user.role !== 'admin') {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
-    }
-  } else if (pathname.startsWith('/tasker-dashboard')) {
-    if (user.role !== 'tasker') {
-      return NextResponse.redirect(new URL('/dashboard', request.url));
-    }
-  } else if (pathname.startsWith('/dashboard')) {
-    if (user.role !== 'user' && user.role !== 'tasker') {
-        console.log(user.role)
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
+  if (!user) {
+    return NextResponse.redirect(new URL('/login', request.url));
+  }
+
+  if (pathname.startsWith('/admin') && user.role !== 'admin') {
+    return NextResponse.redirect(new URL(defaultRoute, request.url));
+  }
+
+  if (pathname.startsWith('/tasker-dashboard') && user.role !== 'tasker') {
+    return NextResponse.redirect(new URL(defaultRoute, request.url));
+  }
+
+  if (pathname.startsWith('/dashboard') && user.role !== 'user') {
+    return NextResponse.redirect(new URL(defaultRoute, request.url));
   }
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/tasker-dashboard/:path*', '/admin/:path*'],
+  matcher: [
+    '/',
+    '/about-us',
+    '/contact-us',
+    '/login',
+    '/password/:path*',
+    '/reset-password',
+    '/signup',
+    '/terms',
+    '/dashboard/:path*',
+    '/tasker-dashboard/:path*',
+    '/admin/:path*',
+  ],
 };
