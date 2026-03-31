@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
+import NextTopLoader from "nextjs-toploader";
 import "./globals.css";
 import {Toaster} from "sonner"
 import NavbarClientWrapper from "@/components/NavbarClientWrapper";
@@ -59,6 +60,7 @@ export default function RootLayout({
       <body
         className={`${geistSans.className} antialiased tracking-wide`}
       >
+        <NextTopLoader color="#2563eb" height={2} showSpinner={false} />
         <Wrapper path="/dashboard">
         <Wrapper path="/tasker-signup">
         <Wrapper path="/signup">
