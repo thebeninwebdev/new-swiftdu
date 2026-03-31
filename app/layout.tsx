@@ -12,8 +12,23 @@ const geistSans = Geist({
   weight: "400",
 });
 
+function getSiteUrl() {
+  const envUrl =
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
+    process.env.VERCEL_URL;
+
+  if (!envUrl) {
+    return "https://swiftdu.vercel.app";
+  }
+
+  return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
+}
+
+const siteUrl = getSiteUrl();
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://swiftdu.org"),
+  metadataBase: new URL(siteUrl),
   title: {
     default: "Swiftdu | Campus errands made easy",
     template: "%s | Swiftdu",
@@ -38,8 +53,16 @@ export const metadata: Metadata = {
     title: "Swiftdu | Campus errands made easy",
     description:
       "Swiftdu connects students with trusted campus runners for food delivery, shopping, printing, pickups, and everyday campus errands.",
-    url: "https://swiftdu.org",
+    url: "/",
     siteName: "Swiftdu",
+    images: [
+      {
+        url: "/opengraph-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Swiftdu",
+      },
+    ],
     type: "website",
   },
   twitter: {
@@ -47,6 +70,7 @@ export const metadata: Metadata = {
     title: "Swiftdu | Campus errands made easy",
     description:
       "Swiftdu connects students with trusted campus runners for food delivery, shopping, printing, pickups, and everyday campus errands.",
+    images: ["/opengraph-image.png"],
   },
 };
 
