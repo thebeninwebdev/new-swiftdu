@@ -3,7 +3,7 @@
 import {useState, useEffect} from 'react'
 import {useRouter, usePathname} from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import {LogOut, Menu, X, PlusCircle, ListTodo, User, Bell} from 'lucide-react'
+import {LogOut, Menu, X, PlusCircle, ListTodo, User, Bell, UserPlus} from 'lucide-react'
 
 
 // Navigation items configuration
@@ -35,6 +35,11 @@ const navigationItems = [
   }
 ]
 
+interface DashboardOrder {
+  hasPaid?: boolean
+  taskerId?: string | null
+}
+
 export default function DashboardMenu() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [hasNotification, setHasNotification] = useState(false)
@@ -48,9 +53,9 @@ export default function DashboardMenu() {
       try {
         const res = await fetch('/api/orders')
         if (!res.ok) throw new Error('Failed to fetch orders')
-        const orders = await res.json()
+        const orders: DashboardOrder[] = await res.json()
         const hasUnpaidAccepted = orders.some(
-          (order: any) => order.hasPaid === false && !!order.taskerId
+          (order) => order.hasPaid === false && !!order.taskerId
         )
         setHasNotification(hasUnpaidAccepted)
       } catch {
@@ -127,6 +132,25 @@ export default function DashboardMenu() {
           })}
         </nav>
 
+        <div className="px-4 pb-4">
+          <button
+            onClick={() => handleNavigation('/tasker-signup')}
+            className="w-full rounded-2xl bg-linear-to-r from-emerald-500 to-teal-500 p-4 text-left text-white shadow-lg shadow-emerald-500/20 transition-transform duration-300 hover:scale-[1.01]"
+          >
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-xl bg-white/20 p-2">
+                <UserPlus className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Become a Tasker</p>
+                <p className="mt-1 text-xs text-emerald-50">
+                  Apply to earn from errands while keeping your user account.
+                </p>
+              </div>
+            </div>
+          </button>
+        </div>
+
         {/* User Section */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-800">
           <button
@@ -183,6 +207,23 @@ export default function DashboardMenu() {
                       </button>
                     )
                   })}
+
+                  <div className="pt-2">
+                    <button
+                      onClick={() => handleNavigation('/tasker-signup')}
+                      className="w-full rounded-xl bg-linear-to-r from-emerald-500 to-teal-500 px-4 py-3 text-left text-white shadow-lg shadow-emerald-500/20 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="rounded-lg bg-white/20 p-2">
+                          <UserPlus className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Become a Tasker</p>
+                          <p className="text-xs text-emerald-50">Open the tasker signup page</p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
                   
                   <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
                     <button 

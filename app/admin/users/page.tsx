@@ -249,7 +249,7 @@ export default function AdminUsersPage() {
     <div className="min-h-screen bg-linear-to-br from-background via-background to-muted/20">
       {/* Animated Header */}
       <motion.div 
-        className="border-b border-border/50 backdrop-blur-sm bg-background/80 sticky top-0 z-10"
+        className="border-b border-border/50 backdrop-blur-sm bg-background/80 sticky top-16 lg:top-0 z-10"
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
