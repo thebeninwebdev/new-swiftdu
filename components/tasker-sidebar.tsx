@@ -77,12 +77,6 @@ const navigation = [
     icon: MessageSquare,
     badge: null,
   },
-  {
-    name: 'Reviews',
-    href: '/tasker-dashboard/reviews',
-    icon: Star,
-    badge: null,
-  },
 ]
 
 const secondaryNavigation = [

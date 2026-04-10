@@ -2,10 +2,9 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { ArrowRight, BellRing, CreditCard, Loader2 } from 'lucide-react'
+import { ArrowRight, BellRing, CreditCard, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
 import { io } from 'socket.io-client'
 
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { convertToNaira } from '@/lib/utils'
 
 interface UnpaidOrder {
@@ -71,15 +70,13 @@ export default function TaskerNotificationsPage() {
 
   if (loading) {
     return (
-      <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] px-4 py-6 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-        <div className="mx-auto flex min-h-[70vh] max-w-2xl items-center justify-center">
-          <div className="rounded-[2rem] border border-slate-200 bg-white/90 px-6 py-5 shadow-xl shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/60">
-            <div className="flex items-center gap-3">
-              <Loader2 className="h-5 w-5 animate-spin text-sky-600" />
-              <p className="text-sm text-slate-600 dark:text-slate-300">
-                Loading notifications...
-              </p>
-            </div>
+      <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+        <div className="flex min-h-[70vh] items-center justify-center px-4">
+          <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white/90 px-6 py-4 shadow-lg dark:border-slate-800 dark:bg-slate-900/90">
+            <Loader2 className="h-5 w-5 animate-spin text-sky-600" />
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              Loading notifications...
+            </p>
           </div>
         </div>
       </div>
@@ -87,103 +84,110 @@ export default function TaskerNotificationsPage() {
   }
 
   return (
-    <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] px-4 py-6 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 md:px-6 md:py-8">
-      <div className="mx-auto max-w-3xl space-y-5">
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-600 dark:text-sky-300">
-            Tasker dashboard
-          </p>
-          <h1 className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">
-            Notifications
-          </h1>
-          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            The layout only shows one toast at a time. Everything still waiting on you appears
-            here.
-          </p>
-        </div>
-
-        {error ? (
-          <div className="rounded-[1.5rem] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
-            {error}
+    <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 pt-10 sm:pt-0">
+      {/* Sticky Header */}
+      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95">
+        <div className="mx-auto flex max-w-3xl items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold text-slate-900 dark:text-white">Notifications</h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              {orders.length > 0 ? `${orders.length} pending` : 'All caught up'}
+            </p>
           </div>
-        ) : null}
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+            <BellRing className="h-5 w-5 text-slate-600 dark:text-slate-400" />
+          </div>
+        </div>
+      </div>
 
-        {!error && orders.length === 0 ? (
-          <Card className="rounded-[2rem] border-0 bg-white/90 shadow-xl shadow-slate-200/60 ring-1 ring-slate-200 dark:bg-slate-900/90 dark:shadow-slate-950/60 dark:ring-slate-800">
-            <CardContent className="px-5 py-8">
-              <div className="flex items-start gap-4">
-                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                  <BellRing className="h-6 w-6" />
+      <div className="mx-auto max-w-3xl px-3 py-4 sm:px-4 sm:py-6">
+        <div className="space-y-3">
+          {/* Error Message */}
+          {error ? (
+            <div className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 dark:border-rose-900 dark:bg-rose-950/30">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-400" />
+              <p className="text-sm text-rose-700 dark:text-rose-200">{error}</p>
+            </div>
+          ) : null}
+
+          {/* Empty State */}
+          {!error && orders.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl border border-slate-200 bg-white px-6 py-12 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950/50">
+                <CheckCircle2 className="h-8 w-8 text-emerald-600 dark:text-emerald-400" />
+              </div>
+              <h2 className="mt-4 text-lg font-bold text-slate-900 dark:text-white">
+                You&apos;re all caught up
+              </h2>
+              <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-slate-400">
+                No unpaid platform fee reminders waiting. Check back later for new notifications.
+              </p>
+            </div>
+          ) : null}
+
+          {/* Summary Card - Only show if there are orders */}
+          {!error && orders.length > 0 ? (
+            <div className="rounded-xl border border-amber-200 bg-linear-to-r from-amber-50 to-orange-50 px-4 py-3 dark:border-amber-900/50 dark:from-amber-950/30 dark:to-orange-950/20">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/50">
+                  <CreditCard className="h-5 w-5 text-amber-700 dark:text-amber-300" />
                 </div>
-                <div>
-                  <p className="text-xl font-bold text-slate-900 dark:text-white">
-                    You&apos;re all caught up
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                    Platform fees due
                   </p>
-                  <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    No unpaid platform fee reminders are waiting right now.
+                  <p className="text-xs text-slate-600 dark:text-slate-400">
+                    {orders.length} payment reminder{orders.length === 1 ? '' : 's'} waiting
                   </p>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        ) : !error ? (
-          <>
-            <Card className="rounded-[2rem] border-0 bg-white/90 shadow-lg shadow-slate-200/60 ring-1 ring-slate-200 dark:bg-slate-900/90 dark:shadow-slate-950/60 dark:ring-slate-800">
-              <CardHeader className="px-5 pt-5">
-                <div className="flex items-start gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
-                    <CreditCard className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-xl font-bold text-slate-900 dark:text-white">
-                      Platform fee reminders
-                    </CardTitle>
-                    <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                      {orders.length} payment reminder{orders.length === 1 ? '' : 's'} are still open.
-                    </p>
-                  </div>
-                </div>
-              </CardHeader>
-            </Card>
+            </div>
+          ) : null}
 
-            <div className="space-y-4">
+          {/* Orders List */}
+          {!error && orders.length > 0 ? (
+            <div className="space-y-3">
               {orders.map((order) => (
-                <Card
+                <div
                   key={order._id}
-                  className="rounded-[2rem] border-0 bg-white/90 shadow-lg shadow-slate-200/60 ring-1 ring-slate-200 dark:bg-slate-900/90 dark:shadow-slate-950/60 dark:ring-slate-800"
+                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
                 >
-                  <CardContent className="space-y-4 px-5 py-5">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600 dark:text-amber-300">
-                          Platform fee due
-                        </p>
-                        <p className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">
-                          {order.description}
-                        </p>
-                      </div>
-
-                      <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold capitalize text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                  {/* Card Header */}
+                  <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                        Platform fee due
+                      </span>
+                      <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold capitalize text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
                         {order.status.replace('_', ' ')}
                       </span>
                     </div>
+                  </div>
 
-                    <div className="rounded-[1.5rem] bg-slate-50 p-4 dark:bg-slate-950/70">
-                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        Amount due
-                      </p>
-                      <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
-                        {convertToNaira(order.platformFee)}
-                      </p>
-                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                        Customer payment confirmed {formatDate(order.paidAt)}.
+                  {/* Card Body */}
+                  <div className="space-y-3 p-4">
+                    <div>
+                      <h3 className="text-base font-semibold text-slate-900 dark:text-white">
+                        {order.description}
+                      </h3>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Customer paid {formatDate(order.paidAt)}
                       </p>
                     </div>
 
-                    <div className="flex flex-col gap-3 sm:flex-row">
+                    <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-950/50">
+                      <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
+                        Amount due
+                      </p>
+                      <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">
+                        {convertToNaira(order.platformFee)}
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
                       <Link
                         href={`/tasker-dashboard/payment/${order._id}`}
-                        className="inline-flex h-11 flex-1 items-center justify-center rounded-2xl bg-linear-to-r from-amber-500 to-orange-500 px-4 text-sm font-semibold text-white transition hover:from-amber-600 hover:to-orange-600"
+                        className="inline-flex h-11 items-center justify-center rounded-xl bg-linear-to-r from-amber-500 to-orange-500 px-4 text-sm font-semibold text-white transition active:scale-95 hover:from-amber-600 hover:to-orange-600"
                       >
                         Pay now
                         <ArrowRight className="ml-2 h-4 w-4" />
@@ -191,17 +195,17 @@ export default function TaskerNotificationsPage() {
 
                       <Link
                         href={`/tasker-dashboard/${order._id}`}
-                        className="inline-flex h-11 flex-1 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
+                        className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition active:scale-95 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                       >
-                        Open task page
+                        View task
                       </Link>
                     </div>
-                  </CardContent>
-                </Card>
+                  </div>
+                </div>
               ))}
             </div>
-          </>
-        ) : null}
+          ) : null}
+        </div>
       </div>
     </div>
   )

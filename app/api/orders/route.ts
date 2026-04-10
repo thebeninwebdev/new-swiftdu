@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
+import { notifyTaskersOfNewTask } from '@/lib/tasker-notifications';
 import { Order } from '@/models/order';
 import { auth } from '@/lib/auth';
 import { Review } from '@/models/review';
@@ -40,6 +41,7 @@ export async function POST(request: NextRequest) {
     }
 
     const parsedAmount = parseFloat(amount);
+    const parsedDeadlineValue = parseInt(deadlineValue, 10);
 
     const existingActiveOrder = await Order.findOne({
       userId: session.user.id,
@@ -71,7 +73,7 @@ export async function POST(request: NextRequest) {
       platformFee: orderPlatformFee,
       taskerFee: orderTaskerFee,
       totalAmount: orderTotalAmount,
-      deadlineValue: parseInt(deadlineValue),
+      deadlineValue: parsedDeadlineValue,
       deadlineUnit,
       location,
       store: store || undefined,
@@ -80,6 +82,21 @@ export async function POST(request: NextRequest) {
     });
 
     await order.save();
+
+    try {
+      await notifyTaskersOfNewTask({
+        taskType,
+        description,
+        amount: parsedAmount,
+        location,
+        deadlineValue: parsedDeadlineValue,
+        deadlineUnit,
+        userName: session.user.name || 'A customer',
+      });
+    } catch (notificationError) {
+      console.error('[Orders POST Tasker Notification Error]:', notificationError);
+    }
+
     emitOrderUpdated({
       _id: order._id.toString(),
       userId: order.userId,

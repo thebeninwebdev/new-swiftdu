@@ -1,8 +1,10 @@
-import { betterAuth } from "better-auth";
+import { betterAuth, type BetterAuthPlugin } from "better-auth";
+import { APIError, createAuthMiddleware } from "better-auth/api";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
-import clientPromise from "./db";
+import clientPromise, { connectDB } from "./db";
 import verifyEmail from "@/emails/verifyEmail";
 import resetEmail from "@/emails/resetEmail";
+import { User } from "@/models/user";
 import { Resend } from "resend";
 import { twoFactor } from "better-auth/plugins";
 
@@ -10,6 +12,41 @@ const resend = new Resend(process.env.RESEND_API_KEY as string);
 
 const client = await clientPromise;
 const db = client.db();
+
+const suspendedUserGuard = (): BetterAuthPlugin => ({
+  id: "suspended-user-guard",
+  hooks: {
+    before: [
+      {
+        matcher: (ctx) => ctx.path === "/sign-in/email",
+        handler: createAuthMiddleware(async (ctx) => {
+          const email =
+            typeof ctx.body?.email === "string"
+              ? ctx.body.email.trim().toLowerCase()
+              : "";
+
+          if (!email) {
+            return;
+          }
+
+          await connectDB();
+
+          const user = await User.findOne({ email })
+            .select("isSuspended")
+            .lean();
+
+          if (user?.isSuspended) {
+            throw APIError.from("FORBIDDEN", {
+              code: "USER_SUSPENDED",
+              message:
+                "Your account has been suspended. Please contact support.",
+            });
+          }
+        }),
+      },
+    ],
+  },
+});
 
 export const auth = betterAuth({
   appName: "SwiftDU",
@@ -60,7 +97,8 @@ export const auth = betterAuth({
     }
   },
   plugins:[
-    twoFactor()
+    twoFactor(),
+    suspendedUserGuard(),
   ]
 });
 

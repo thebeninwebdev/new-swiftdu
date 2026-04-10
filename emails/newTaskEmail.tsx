@@ -8,25 +8,44 @@ import {
   Html,
   Preview,
   Section,
-  Text,
   Tailwind,
+  Text,
 } from '@react-email/components';
 
 interface NewTaskEmailProps {
+  taskerName?: string;
+  taskType?: string;
   description: string;
   amount: number;
   location: string;
   deadline: string;
   userName: string;
+  taskUrl: string;
 }
 
 const NewTaskEmail = (props: NewTaskEmailProps) => {
-  const { description, amount, location, deadline, userName } = props;
+  const {
+    taskerName,
+    taskType,
+    description,
+    amount,
+    location,
+    deadline,
+    userName,
+    taskUrl,
+  } = props;
+
+  const formattedAmount = new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 2,
+  }).format(amount);
+
   return (
     <Html lang="en" dir="ltr">
       <Tailwind>
         <Head />
-        <Preview>New Task Posted on SwiftDU</Preview>
+        <Preview>New task posted on SwiftDU</Preview>
         <Body className="bg-gray-100 font-sans py-10">
           <Container className="bg-white rounded-[8px] shadow-sm max-w-145 mx-auto px-10 py-10">
             <Section className="text-center mb-8">
@@ -34,21 +53,25 @@ const NewTaskEmail = (props: NewTaskEmailProps) => {
                 SwiftDU
               </Heading>
             </Section>
+
             <Section className="mb-8">
               <Heading className="text-[22px] font-bold text-gray-900 mb-4 mt-0">
                 New Task Available
               </Heading>
+
               <Text className="text-[16px] text-gray-700 leading-6 mb-2 mt-0">
-                Hello Tasker,
+                Hello {taskerName || 'Tasker'},
               </Text>
+
               <Text className="text-[16px] text-gray-700 leading-5 mb-4 mt-0">
-                A new task has just been posted by {userName}:
+                A new {taskType || 'task'} has just been posted by {userName}.
               </Text>
+
               <Text className="text-[16px] text-gray-700 leading-5 mb-2 mt-0">
                 <b>Description:</b> {description}
               </Text>
               <Text className="text-[16px] text-gray-700 leading-5 mb-2 mt-0">
-                <b>Amount:</b> ₦{amount}
+                <b>Amount:</b> {formattedAmount}
               </Text>
               <Text className="text-[16px] text-gray-700 leading-5 mb-2 mt-0">
                 <b>Location:</b> {location}
@@ -56,12 +79,13 @@ const NewTaskEmail = (props: NewTaskEmailProps) => {
               <Text className="text-[16px] text-gray-700 leading-5 mb-2 mt-0">
                 <b>Deadline:</b> {deadline}
               </Text>
+
               <Section className="text-center mt-6">
                 <Button
-                  href="https://swiftdu.com/dashboard/available-tasks"
+                  href={taskUrl}
                   className="bg-indigo-600 text-white px-8 py-4 rounded-[8px] text-[16px] font-semibold no-underline box-border inline-block"
                 >
-                  View Available Tasks
+                  View Task Dashboard
                 </Button>
               </Section>
             </Section>

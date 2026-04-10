@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
-import {User} from '@/models/user'
+import { User } from '@/models/user'
 
 // ─── PATCH /api/admin/users/[id] ────────────────────────────────────────────
 // Update user status (verify, suspend, activate).
@@ -20,9 +20,8 @@ export async function PATCH(
 
     await connectDB()
 
-        const { id } = await params;
+    const { id } = await params
     const { action } = await req.json()
-
 
     if (!['verify', 'suspend', 'activate'].includes(action)) {
       return NextResponse.json(
@@ -31,7 +30,23 @@ export async function PATCH(
       )
     }
 
-    const updateData: any = {}
+    const existingUser = await User.findById(id).select('role')
+
+    if (!existingUser) {
+      return NextResponse.json(
+        { error: 'User not found' },
+        { status: 404 }
+      )
+    }
+
+    if (existingUser.role?.toLowerCase() === 'admin') {
+      return NextResponse.json(
+        { error: 'Admin accounts cannot be modified' },
+        { status: 403 }
+      )
+    }
+
+    const updateData: { isVerified?: boolean; isSuspended?: boolean } = {}
 
     if (action === 'verify') {
       updateData.isVerified = true
@@ -40,8 +55,6 @@ export async function PATCH(
     } else if (action === 'activate') {
       updateData.isSuspended = false
     }
-
-    console.log(id)
 
     const user = await User.findByIdAndUpdate(
       id,

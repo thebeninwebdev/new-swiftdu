@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -24,7 +24,6 @@ interface TaskerProfile {
 }
 
 export default function ProfilePage() {
-  const [userId, setUserId] = useState<string | null>(null)
   const [taskerId, setTaskerId] = useState<string | null>(null)
   const [isEditing, setIsEditing] = useState(false)
   const [isBankEditing, setIsBankEditing] = useState(false)
@@ -48,6 +47,32 @@ export default function ProfilePage() {
     accountName: '',
   })
 
+  const loadProfile = useCallback(async (id: string) => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const response = await fetch(`/api/taskers?taskerId=${id}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch profile')
+      }
+
+      const { tasker } = await response.json()
+
+      setProfile(tasker)
+      setFormData({
+        phone: tasker.phone,
+        location: tasker.location,
+        profileImage: tasker.profileImage || '',
+      })
+      setBankData(tasker.bankDetails)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'An error occurred')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     getTaskerId().then((id) => {
       if (id) setTaskerId(id)
@@ -60,31 +85,8 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!taskerId) return
 
-    const fetchProfile = async () => {
-      setIsLoading(true)
-      setError(null)
-      try {
-        const response = await fetch(`/api/taskers?taskerId=${taskerId}`)
-        if (!response.ok) {
-          throw new Error('Failed to fetch profile')
-        }
-        const {tasker} = await response.json()
-        setProfile(tasker)
-        setFormData({
-          phone: tasker.phone,
-          location: tasker.location,
-          profileImage: tasker.profileImage || '',
-        })
-        setBankData(tasker.bankDetails)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'An error occurred')
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    fetchProfile()
-  }, [taskerId])
+    void loadProfile(taskerId)
+  }, [loadProfile, taskerId])
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -106,13 +108,9 @@ export default function ProfilePage() {
 
       setMessage({ type: 'success', text: 'Profile updated successfully!' })
       setIsEditing(false)
-      // Refetch profile data
+
       if (taskerId) {
-        const response = await fetch(`/api/taskers?taskerId=${taskerId}`)
-        if (response.ok) {
-          const result = await response.json()
-          setProfile(result)
-        }
+        await loadProfile(taskerId)
       }
     } catch (error) {
       console.error('Update error:', error)
@@ -145,13 +143,9 @@ export default function ProfilePage() {
         text: 'Bank details updated successfully!',
       })
       setIsBankEditing(false)
-      // Refetch profile data
-      if (userId) {
-        const response = await fetch(`/api/taskers?userId=${userId}`)
-        if (response.ok) {
-          const result = await response.json()
-          setProfile(result)
-        }
+
+      if (taskerId) {
+        await loadProfile(taskerId)
       }
     } catch (error) {
       console.error('Update error:', error)

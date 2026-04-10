@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
+import { syncTaskerStats } from '@/lib/tasker-stats';
 import {Order} from "@/models/order"
 import { auth } from '@/lib/auth'; 
 import { canCustomerCancelOrder } from '@/lib/order-status';
@@ -116,6 +117,8 @@ export async function PATCH(
       order.paidAt = hasPaid ? new Date() : undefined;
     }
 
+    let shouldSyncTaskerStats = false;
+
     if (status !== undefined) {
       if (status === 'cancelled' && isUserOwner) {
         if (!canCustomerCancelOrder(order)) {
@@ -177,22 +180,18 @@ export async function PATCH(
         );
       }
 
-      // If order is completed, increment tasker's completedTasks and update rating
-      if (status === 'completed' && previousStatus !== 'completed' && order.taskerId) {
-        const Tasker = (await import('@/models/tasker')).default;
-        const Review = (await import('@/models/review')).Review;
-        // Increment completedTasks
-        await Tasker.findByIdAndUpdate(order.taskerId, { $inc: { completedTasks: 1 } });
-        // Recalculate rating
-        const reviews = await Review.find({ taskerId: order.taskerId });
-        if (reviews.length > 0) {
-          const avgRating = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
-          await Tasker.findByIdAndUpdate(order.taskerId, { rating: avgRating });
-        }
-      }
+      shouldSyncTaskerStats =
+        Boolean(order.taskerId) &&
+        previousStatus !== order.status &&
+        (previousStatus === 'completed' || order.status === 'completed');
     }
 
     await order.save();
+
+    if (shouldSyncTaskerStats && order.taskerId) {
+      await syncTaskerStats(order.taskerId);
+    }
+
     emitOrderUpdated({
       _id: order._id.toString(),
       userId: order.userId,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
+import { calculateTaskerStats } from '@/lib/tasker-stats'
 import Tasker from "@/models/tasker"
 import {User} from "@/models/user"
 
@@ -143,8 +144,8 @@ export async function POST(req: NextRequest) {
 }
 
 // ─── GET /api/taskers?userId=... ──────────────────────────────────────────────
-// Fetches a tasker profile by userId.
-// Useful for checking if the current user is already a tasker.
+// Fetches a tasker profile by taskerId.
+// Returns live-computed stats so rating and completed task counts stay accurate.
 
 export async function GET(req: NextRequest) {
   try {
@@ -169,7 +170,18 @@ export async function GET(req: NextRequest) {
       )
     }
 
-    return NextResponse.json({ tasker }, { status: 200 })
+    const stats = await calculateTaskerStats(taskerId)
+
+    return NextResponse.json(
+      {
+        tasker: {
+          ...tasker,
+          completedTasks: stats.completedTasks,
+          rating: stats.rating,
+        },
+      },
+      { status: 200 }
+    )
   } catch (error) {
     console.error('[GET /api/taskers]', error)
     return NextResponse.json(

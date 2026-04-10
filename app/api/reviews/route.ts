@@ -1,43 +1,17 @@
 import { connectDB } from '@/lib/db';
+import { syncTaskerStats } from '@/lib/tasker-stats';
 import {Review} from '@/models/review';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     await connectDB();
 
-    const taskerId = req.nextUrl.searchParams.get('taskerId');
-    const page = parseInt(req.nextUrl.searchParams.get('page') || '1');
-    const limit = parseInt(req.nextUrl.searchParams.get('limit') || '10');
-
-    if (!taskerId) {
-      return NextResponse.json(
-        { error: 'taskerId is required' },
-        { status: 400 }
-      );
-    }
-
-    const skip = (page - 1) * limit;
-
-    const reviews = await Review.find({ taskerId })
-      .skip(skip)
-      .limit(limit)
-      .populate('userId', 'name profileImage')
-      .populate('orderId', 'taskType amount')
-      .sort({ createdAt: -1 });
-
-    const total = await Review.countDocuments({ taskerId });
-
-    return NextResponse.json({
-      reviews,
-      pagination: {
-        total,
-        page,
-        limit,
-        pages: Math.ceil(total / limit),
-      },
-    });
+    return NextResponse.json(
+      { error: 'Detailed tasker reviews are private.' },
+      { status: 403 }
+    );
   } catch (error) {
     console.error('Error fetching reviews:', error);
     return NextResponse.json(
@@ -101,6 +75,7 @@ export async function POST(req: NextRequest) {
     });
 
     await review.save();
+    await syncTaskerStats(taskerId);
 
     return NextResponse.json(review, { status: 201 });
   } catch (error) {

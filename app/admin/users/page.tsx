@@ -177,6 +177,13 @@ export default function AdminUsersPage() {
 
   // Handle user actions
   const handleUserAction = async (userId: string, action: 'verify' | 'suspend' | 'activate') => {
+    const targetUser = users.find((user) => user._id === userId)
+
+    if (targetUser?.role?.toLowerCase() === 'admin') {
+      toast.error('Admin accounts cannot be modified')
+      return
+    }
+
     try {
       const res = await fetch(`/api/admin/users/${userId}`, {
         method: 'PATCH',
@@ -204,6 +211,13 @@ export default function AdminUsersPage() {
   }
 
   const handleSuspendClick = (userId: string, isSuspended: boolean) => {
+    const targetUser = users.find((user) => user._id === userId)
+
+    if (targetUser?.role?.toLowerCase() === 'admin') {
+      toast.error('Admin accounts cannot be suspended')
+      return
+    }
+
     setSuspendConfirm({
       show: true,
       userId,
@@ -436,125 +450,129 @@ export default function AdminUsersPage() {
                 </Card>
               </motion.div>
             ) : (
-              users.map((user) => (
-                <motion.div
-                  key={user._id}
-                  variants={itemVariants}
-                  layout
-                  whileHover={{ scale: 1.005 }}
-                  transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                >
-                  <Card className={`overflow-hidden border-border/50 transition-all duration-300 hover:shadow-lg ${user.isSuspended ? 'bg-red-50/50 dark:bg-red-950/10' : ''}`}>
-                    <CardContent className="p-4 md:p-6">
-                      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                        <div className="flex items-start md:items-center space-x-3 md:space-x-4">
-                          <motion.div 
-                            className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center shrink-0 ${user.isSuspended ? 'bg-red-100 dark:bg-red-900/30' : 'bg-linear-to-br from-primary/20 to-primary/10'}`}
-                            whileHover={{ scale: 1.1, rotate: 5 }}
-                            transition={{ type: "spring", stiffness: 400 }}
-                          >
-                            <Users className={`w-6 h-6 md:w-7 md:h-7 ${user.isSuspended ? 'text-red-600 dark:text-red-400' : 'text-primary'}`} />
-                          </motion.div>
+              users.map((user) => {
+                const isAdminUser = user.role?.toLowerCase() === 'admin'
 
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h3 className="font-semibold text-base md:text-lg truncate">{user.name}</h3>
-                              {user.isSuspended && (
-                                <Badge variant="destructive" className="text-xs">
-                                  Suspended
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 text-xs md:text-sm text-muted-foreground gap-1 sm:gap-0 mt-1">
-                              <div className="flex items-center hover:text-foreground transition-colors">
-                                <Mail className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                                <span className="truncate">{user.email}</span>
-                              </div>
-                              {user.phone && (
-                                <div className="flex items-center hover:text-foreground transition-colors">
-                                  <Phone className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                                  {user.phone}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 gap-3 sm:gap-0">
-                          <div className="text-left sm:text-right">
-                            <div className="flex items-center sm:justify-end gap-2 mb-1">
-                              <Badge 
-                                variant={user.emailVerified ? 'default' : 'secondary'}
-                                className={`transition-all duration-300 ${user.emailVerified ? 'bg-emerald-500 hover:bg-emerald-600' : ''}`}
-                              >
-                                {user.emailVerified ? 'Verified' : 'Unverified'}
-                              </Badge>
-                              <Badge variant="outline" className="font-normal">
-                                {user.role}
-                              </Badge>
-                            </div>
-                            <p className="text-xs sm:text-sm text-muted-foreground">
-                              {user.orderCount || 0} orders
-                            </p>
-                          </div>
-
-                          <div className="flex space-x-2">
-                            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setExpandedId(expandedId === user._id ? null : user._id)}
-                                className="transition-all duration-300 hover:bg-muted"
-                              >
-                                <motion.div
-                                  animate={{ rotate: expandedId === user._id ? 180 : 0 }}
-                                  transition={{ duration: 0.2 }}
-                                >
-                                  {expandedId === user._id ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                                </motion.div>
-                              </Button>
+                return (
+                  <motion.div
+                    key={user._id}
+                    variants={itemVariants}
+                    layout
+                    whileHover={{ scale: 1.005 }}
+                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                  >
+                    <Card className={`overflow-hidden border-border/50 transition-all duration-300 hover:shadow-lg ${user.isSuspended ? 'bg-red-50/50 dark:bg-red-950/10' : ''}`}>
+                      <CardContent className="p-4 md:p-6">
+                        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                          <div className="flex items-start md:items-center space-x-3 md:space-x-4">
+                            <motion.div 
+                              className={`w-12 h-12 md:w-14 md:h-14 rounded-full flex items-center justify-center shrink-0 ${user.isSuspended ? 'bg-red-100 dark:bg-red-900/30' : 'bg-linear-to-br from-primary/20 to-primary/10'}`}
+                              whileHover={{ scale: 1.1, rotate: 5 }}
+                              transition={{ type: "spring", stiffness: 400 }}
+                            >
+                              <Users className={`w-6 h-6 md:w-7 md:h-7 ${user.isSuspended ? 'text-red-600 dark:text-red-400' : 'text-primary'}`} />
                             </motion.div>
 
-                            {!user.emailVerified && (
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h3 className="font-semibold text-base md:text-lg truncate">{user.name}</h3>
+                                {user.isSuspended && (
+                                  <Badge variant="destructive" className="text-xs">
+                                    Suspended
+                                  </Badge>
+                                )}
+                              </div>
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 text-xs md:text-sm text-muted-foreground gap-1 sm:gap-0 mt-1">
+                                <div className="flex items-center hover:text-foreground transition-colors">
+                                  <Mail className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                                  <span className="truncate">{user.email}</span>
+                                </div>
+                                {user.phone && (
+                                  <div className="flex items-center hover:text-foreground transition-colors">
+                                    <Phone className="w-3.5 h-3.5 mr-1.5 shrink-0" />
+                                    {user.phone}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 gap-3 sm:gap-0">
+                            <div className="text-left sm:text-right">
+                              <div className="flex items-center sm:justify-end gap-2 mb-1">
+                                <Badge 
+                                  variant={user.emailVerified ? 'default' : 'secondary'}
+                                  className={`transition-all duration-300 ${user.emailVerified ? 'bg-emerald-500 hover:bg-emerald-600' : ''}`}
+                                >
+                                  {user.emailVerified ? 'Verified' : 'Unverified'}
+                                </Badge>
+                                <Badge variant="outline" className="font-normal">
+                                  {user.role}
+                                </Badge>
+                              </div>
+                              <p className="text-xs sm:text-sm text-muted-foreground">
+                                {user.orderCount || 0} orders
+                              </p>
+                            </div>
+
+                            <div className="flex space-x-2">
                               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => handleUserAction(user._id, 'verify')}
-                                  className="transition-all duration-300 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200"
+                                  onClick={() => setExpandedId(expandedId === user._id ? null : user._id)}
+                                  className="transition-all duration-300 hover:bg-muted"
                                 >
-                                  <UserCheck className="w-4 h-4" />
+                                  <motion.div
+                                    animate={{ rotate: expandedId === user._id ? 180 : 0 }}
+                                    transition={{ duration: 0.2 }}
+                                  >
+                                    {expandedId === user._id ? <ChevronUp className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                                  </motion.div>
                                 </Button>
                               </motion.div>
-                            )}
 
-                            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                              <Button
-                                variant={user.isSuspended ? 'outline' : 'destructive'}
-                                size="sm"
-                                onClick={() => handleSuspendClick(user._id, user.isSuspended || false)}
-                                title={user.isSuspended ? 'Unsuspend user' : 'Suspend user'}
-                                className={`transition-all duration-300 ${user.isSuspended ? 'hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200' : 'hover:bg-destructive/90'}`}
-                              >
-                                <UserX className="w-4 h-4" />
-                              </Button>
-                            </motion.div>
+                              <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                <Button
+                                  variant={user.isSuspended ? 'outline' : 'destructive'}
+                                  size="sm"
+                                  onClick={() => handleSuspendClick(user._id, user.isSuspended || false)}
+                                  disabled={isAdminUser}
+                                  title={isAdminUser ? 'Admin accounts cannot be suspended' : user.isSuspended ? 'Unsuspend user' : 'Suspend user'}
+                                  className={`transition-all duration-300 ${isAdminUser ? 'cursor-not-allowed opacity-50' : user.isSuspended ? 'hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200' : 'hover:bg-destructive/90'}`}
+                                >
+                                  <UserX className="w-4 h-4" />
+                                </Button>
+                              </motion.div>
+
+                              {!user.emailVerified && !isAdminUser && (
+                                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleUserAction(user._id, 'verify')}
+                                    className="transition-all duration-300 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200"
+                                  >
+                                    <UserCheck className="w-4 h-4" />
+                                  </Button>
+                                </motion.div>
+                              )}
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      {/* Expanded Details */}
-                      <AnimatePresence>
-                        {expandedId === user._id && (
-                          <motion.div
-                            variants={expandVariants}
-                            initial="hidden"
-                            animate="visible"
-                            exit="exit"
-                            className="overflow-hidden"
-                          >
-                            <div className="mt-6 pt-6 border-t border-border/50">
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {/* Expanded Details */}
+                        <AnimatePresence>
+                          {expandedId === user._id && (
+                            <motion.div
+                              variants={expandVariants}
+                              initial="hidden"
+                              animate="visible"
+                              exit="exit"
+                              className="overflow-hidden"
+                            >
+                              <div className="mt-6 pt-6 border-t border-border/50">
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                                 <motion.div 
                                   className="space-y-1"
                                   initial={{ opacity: 0, x: -10 }}
@@ -680,15 +698,16 @@ export default function AdminUsersPage() {
                                   </p>
                                   <p className="text-sm font-medium">{user.orderCount || 0}</p>
                                 </motion.div>
+                                </div>
                               </div>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                )
+              })
             )}
           </AnimatePresence>
         </motion.div>
