@@ -2,6 +2,7 @@ import { connectDB } from '@/lib/db'
 import { Order } from '@/models/order'
 import Tasker from "@/models/tasker"
 import { NextRequest, NextResponse } from 'next/server'
+import { emitOrderUpdated } from '@/lib/socket'
 
 // GET - Fetch all pending errands for taskers
 export async function GET(request: NextRequest) {
@@ -129,6 +130,14 @@ export async function POST(request: NextRequest) {
     order.taskerName = taskerName || "Anonymous"
 
     const updatedOrder = await order.save()
+    emitOrderUpdated({
+      _id: updatedOrder._id.toString(),
+      userId: updatedOrder.userId,
+      taskerId: updatedOrder.taskerId,
+      taskerName: updatedOrder.taskerName,
+      status: updatedOrder.status,
+      hasPaid: updatedOrder.hasPaid,
+    })
 
     return NextResponse.json(updatedOrder, { status: 200 })
   } catch (error) {

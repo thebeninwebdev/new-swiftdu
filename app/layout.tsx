@@ -1,16 +1,10 @@
 import type { Metadata } from "next";
-import { Geist } from "next/font/google";
 import NextTopLoader from "nextjs-toploader";
 import "./globals.css";
 import {Toaster} from "sonner"
 import NavbarClientWrapper from "@/components/NavbarClientWrapper";
 import Wrapper from "@/components/wrapper";
 import { Footer } from "@/components/Footer";
-
-const geistSans = Geist({
-  subsets: ["latin"],
-  weight: "400",
-});
 
 function getSiteUrl() {
   const envUrl =
@@ -82,7 +76,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${geistSans.className} antialiased tracking-wide`}
+        className="antialiased tracking-wide"
       >
         <NextTopLoader color="#2563eb" height={2} showSpinner={false} />
         <Wrapper path="/dashboard">

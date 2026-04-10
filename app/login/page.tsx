@@ -64,7 +64,7 @@ export default function LoginPage() {
       if (data?.user?.role === 'admin') {
         router.push('/admin');
       } else if (data?.user?.role === 'tasker') {
-        router.push('/tasker-dashboard');
+        router.push('/dashboard');
       } else {
         router.push('/dashboard');
       }

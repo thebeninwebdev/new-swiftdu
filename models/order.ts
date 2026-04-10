@@ -17,6 +17,11 @@ export interface IOrder extends Document {
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled';
   taskerId?: string;
   taskerName?: string;
+  acceptedBy?: string;
+  acceptedAt?: Date;
+  paidAt?: Date;
+  completedAt?: Date;
+  cancelledAt?: Date;
   createdAt: Date;
   hasPaid: boolean;
   updatedAt: Date;
@@ -94,6 +99,14 @@ const orderSchema = new Schema<IOrder>(
       type: String,
       index: true,
     },
+    acceptedBy: {
+      type: String,
+      index: true,
+    },
+    acceptedAt: Date,
+    paidAt: Date,
+    completedAt: Date,
+    cancelledAt: Date,
     hasPaid: {
       type: Boolean,
       default: false

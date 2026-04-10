@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { authClient } from '@/lib/auth-client'
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { 
   ChevronRight, 
@@ -19,8 +19,10 @@ import {
   ArrowRight,
   Loader2,
 } from 'lucide-react'
+import { io, type Socket } from 'socket.io-client'
 
 const SERVICE_CHARGE_PERCENTAGE = 15
+const ACTIVE_ORDER_REFRESH_MS = 4000
 
 interface ErrandData {
   taskType: string
@@ -31,6 +33,15 @@ interface ErrandData {
   location: string
   store?: string
   packaging?: string
+}
+
+interface ActiveOrder {
+  _id: string
+  taskType: string
+  description: string
+  status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
+  hasPaid?: boolean
+  taskerId?: string | null
 }
 
 const taskTypes = [
@@ -94,11 +105,17 @@ const packagingOptions = [
 
 export default function ErrandWizardPage() {
   const router = useRouter()
+  const { data: session } = authClient.useSession()
   const [step, setStep] = useState(1)
-  const [direction, setDirection] = useState(0)
+  const [, setDirection] = useState(0)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
+  const [loadingActiveOrder, setLoadingActiveOrder] = useState(true)
+  const isTasker = session?.user.role === 'tasker'
+  const socketRef = useRef<Socket | null>(null)
+  const fetchingActiveOrderRef = useRef(false)
 
   
   const [formData, setFormData] = useState<ErrandData>({
@@ -115,6 +132,62 @@ export default function ErrandWizardPage() {
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  const fetchCurrentOrder = useCallback(async () => {
+    if (fetchingActiveOrderRef.current) return
+
+    fetchingActiveOrderRef.current = true
+    try {
+      const response = await fetch('/api/orders?current=true')
+
+      if (!response.ok) {
+        throw new Error('Failed to fetch current order')
+      }
+
+      const data = await response.json()
+      setActiveOrder(data)
+    } catch {
+      setActiveOrder(null)
+    } finally {
+      setLoadingActiveOrder(false)
+      fetchingActiveOrderRef.current = false
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+
+    void fetchCurrentOrder()
+
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        void fetchCurrentOrder()
+      }
+    }, ACTIVE_ORDER_REFRESH_MS)
+
+    return () => {
+      window.clearInterval(interval)
+    }
+  }, [fetchCurrentOrder, mounted])
+
+  useEffect(() => {
+    if (!mounted) return
+
+    const socket = io({
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+    })
+
+    socketRef.current = socket
+    socket.on('order:updated', () => {
+      void fetchCurrentOrder()
+    })
+
+    return () => {
+      socket.disconnect()
+      socketRef.current = null
+    }
+  }, [fetchCurrentOrder, mounted])
 
   // Calculations
   const baseAmount = parseFloat(formData.amount || '0')
@@ -187,11 +260,13 @@ export default function ErrandWizardPage() {
     }
   }
 
-
-
-  const generateReference = () => `errand_${Date.now()}_${Math.floor(Math.random() * 1000000)}`
-
   const createOrder = async () => {
+    if (activeOrder) {
+      toast.info('You already have an active order. Track it before booking another one.')
+      router.push('/dashboard/tasks')
+      return
+    }
+
     setIsSubmitting(true)
     try {
       const response = await fetch('/api/orders', {
@@ -202,18 +277,27 @@ export default function ErrandWizardPage() {
 
       if (!response.ok) {
         const error = await response.json()
+
+        if (response.status === 409) {
+          toast.error(error.error || 'You already have an active order')
+          router.push('/dashboard/tasks')
+          return
+        }
+
         toast.error(error.error || 'Failed to submit task')
         return
       }
 
+      const createdOrder = await response.json()
       toast.success('Task posted successfully! Taskers will see your task soon.')
+      setActiveOrder(createdOrder)
       setFormData({
         taskType: '', description: '', amount: '', deadlineValue: '',
         deadlineUnit: 'mins', location: '', store: '', packaging: '',
       })
       setStep(1)
       router.push('/dashboard/tasks')
-    } catch (error) {
+    } catch {
       toast.error('An error occurred while posting the task')
     } finally {
       setIsSubmitting(false)
@@ -229,6 +313,82 @@ export default function ErrandWizardPage() {
   const stepIcons = [ShoppingBag, FileText, MapPin, CreditCard]
 
   if (!mounted) return null
+
+  if (loadingActiveOrder) {
+    return (
+      <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 flex items-center justify-center px-4">
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
+          <p className="text-sm text-slate-600 dark:text-slate-300">
+            Checking your current order...
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  if (activeOrder) {
+    const currentStatusLabel =
+      activeOrder.status === 'pending'
+        ? 'Searching for a tasker'
+        : activeOrder.hasPaid
+          ? 'Order in progress'
+          : 'Tasker assigned'
+
+    return (
+      <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+        <div className="mx-auto flex min-h-screen w-full max-w-2xl items-center px-4 py-10">
+          <div className="w-full overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white/90 shadow-2xl shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/60">
+            <div className="bg-linear-to-r from-indigo-600 via-sky-600 to-cyan-500 px-6 py-8 text-white">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-100">
+                Current order locked
+              </p>
+              <h1 className="mt-3 text-3xl font-bold">
+                Finish your active task first
+              </h1>
+              <p className="mt-3 max-w-xl text-sm leading-6 text-indigo-50">
+                You can only have one live order at a time. We&apos;ll keep this simple on mobile by taking you straight to the order tracker until it&apos;s completed or cancelled.
+              </p>
+            </div>
+
+            <div className="space-y-5 px-6 py-6">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
+                      Active status
+                    </p>
+                    <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
+                      {currentStatusLabel}
+                    </p>
+                  </div>
+                  <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
+                    {activeOrder.status.replace('_', ' ')}
+                  </span>
+                </div>
+
+                <div className="mt-4 rounded-2xl bg-white p-4 ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                    {activeOrder.description}
+                  </p>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    Task type: {activeOrder.taskType}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => router.push('/dashboard/tasks')}
+                className="flex h-14 w-full items-center justify-center rounded-2xl bg-linear-to-r from-indigo-600 to-cyan-500 px-4 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition-transform hover:scale-[1.01]"
+              >
+                Open current order tracker
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
@@ -246,6 +406,32 @@ export default function ErrandWizardPage() {
                 </p>
               </div>
             </div>
+
+            {isTasker && (
+              <div className="mb-8 rounded-3xl border border-emerald-200/80 bg-linear-to-r from-emerald-50 via-white to-teal-50 p-5 shadow-sm dark:border-emerald-900/60 dark:from-emerald-950/40 dark:via-slate-900 dark:to-teal-950/40">
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
+                      Tasker access enabled
+                    </p>
+                    <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
+                      You can use both dashboards.
+                    </h2>
+                    <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
+                      Stay here to book errands as a user, or switch to your tasker dashboard to view accepted and available jobs.
+                    </p>
+                  </div>
+
+                  <Button
+                    onClick={() => router.push('/tasker-dashboard')}
+                    className="h-11 rounded-xl bg-linear-to-r from-emerald-600 to-teal-600 px-4 text-white hover:from-emerald-700 hover:to-teal-700"
+                  >
+                    Open Tasker Dashboard
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+            )}
 
             {/* Progress Steps */}
             <div className="mb-8">

@@ -1,6 +1,7 @@
 import { connectDB } from '@/lib/db';
 import {Review} from '@/models/review';
 import { NextRequest, NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
 
 export async function GET(req: NextRequest) {
   try {
@@ -50,12 +51,18 @@ export async function POST(req: NextRequest) {
   try {
     await connectDB();
 
-    const { taskerId, orderId, userId, rating, comment } = await req.json();
+    const session = await auth.api.getSession({
+      headers: req.headers,
+    });
 
-    console.log( taskerId, orderId, userId, rating, comment)
+    if (!session?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const { taskerId, orderId, rating, comment } = await req.json();
 
     // Validate input
-    if (!taskerId || !orderId || !userId || !rating || !comment) {
+    if (!taskerId || !orderId || !rating || !comment) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -88,7 +95,7 @@ export async function POST(req: NextRequest) {
     const review = new Review({
       taskerId,
       orderId,
-      userId,
+      userId: session.user.id,
       rating,
       comment,
     });

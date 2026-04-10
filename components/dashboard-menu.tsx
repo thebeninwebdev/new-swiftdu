@@ -3,7 +3,7 @@
 import {useState, useEffect} from 'react'
 import {useRouter, usePathname} from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import {LogOut, Menu, X, PlusCircle, ListTodo, User, Bell, UserPlus} from 'lucide-react'
+import {LogOut, Menu, X, PlusCircle, ListTodo, User, Bell, UserPlus, Star} from 'lucide-react'
 
 
 // Navigation items configuration
@@ -24,8 +24,14 @@ const navigationItems = [
     label: 'Notifications',
     href: '/dashboard/notifications',
     icon: Bell,
-    description: 'User notifications',
+    description: 'Payments and reviews',
     notification: true,
+  },
+  {
+    label: 'Reviews',
+    href: '/dashboard/reviews',
+    icon: Star,
+    description: 'Rate completed tasks'
   },
   {
     label: 'Account',
@@ -36,33 +42,61 @@ const navigationItems = [
 ]
 
 interface DashboardOrder {
+  status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   hasPaid?: boolean
   taskerId?: string | null
 }
 
 export default function DashboardMenu() {
+  const { data: session } = authClient.useSession()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [hasNotification, setHasNotification] = useState(false)
 
   const router = useRouter()
   const pathname = usePathname()
+  const isTasker = session?.user.role === 'tasker'
+  const taskerAction = isTasker
+    ? {
+        href: '/tasker-dashboard',
+        title: 'Open Tasker Dashboard',
+        description: 'Switch to your tasker workspace and manage errands.',
+        mobileDescription: 'Go to your tasker workspace',
+      }
+    : {
+        href: '/tasker-signup',
+        title: 'Become a Tasker',
+        description: 'Apply to earn from errands while keeping your user account.',
+        mobileDescription: 'Open the tasker signup page',
+      }
 
   // Notification check: unpaid, accepted orders
   useEffect(() => {
-    async function fetchOrders() {
+    async function fetchNotifications() {
       try {
-        const res = await fetch('/api/orders')
-        if (!res.ok) throw new Error('Failed to fetch orders')
-        const orders: DashboardOrder[] = await res.json()
-        const hasUnpaidAccepted = orders.some(
-          (order) => order.hasPaid === false && !!order.taskerId
-        )
-        setHasNotification(hasUnpaidAccepted)
+        const [currentRes, reviewsRes] = await Promise.all([
+          fetch('/api/orders?current=true'),
+          fetch('/api/orders?status=completed&needsReview=true'),
+        ])
+
+        const currentOrder: DashboardOrder | null = currentRes.ok
+          ? await currentRes.json()
+          : null
+        const pendingReviews: Array<{ _id: string }> = reviewsRes.ok
+          ? await reviewsRes.json()
+          : []
+
+        const hasUnpaidAccepted =
+          !!currentOrder &&
+          currentOrder.status !== 'pending' &&
+          !!currentOrder.taskerId &&
+          !currentOrder.hasPaid
+
+        setHasNotification(hasUnpaidAccepted || pendingReviews.length > 0)
       } catch {
         setHasNotification(false)
       }
     }
-    fetchOrders()
+    fetchNotifications()
   }, [])
 
   const signOut = async () => {
@@ -134,7 +168,7 @@ export default function DashboardMenu() {
 
         <div className="px-4 pb-4">
           <button
-            onClick={() => handleNavigation('/tasker-signup')}
+            onClick={() => handleNavigation(taskerAction.href)}
             className="w-full rounded-2xl bg-linear-to-r from-emerald-500 to-teal-500 p-4 text-left text-white shadow-lg shadow-emerald-500/20 transition-transform duration-300 hover:scale-[1.01]"
           >
             <div className="flex items-start gap-3">
@@ -142,9 +176,9 @@ export default function DashboardMenu() {
                 <UserPlus className="h-5 w-5" />
               </div>
               <div>
-                <p className="text-sm font-semibold">Become a Tasker</p>
+                <p className="text-sm font-semibold">{taskerAction.title}</p>
                 <p className="mt-1 text-xs text-emerald-50">
-                  Apply to earn from errands while keeping your user account.
+                  {taskerAction.description}
                 </p>
               </div>
             </div>
@@ -210,7 +244,7 @@ export default function DashboardMenu() {
 
                   <div className="pt-2">
                     <button
-                      onClick={() => handleNavigation('/tasker-signup')}
+                      onClick={() => handleNavigation(taskerAction.href)}
                       className="w-full rounded-xl bg-linear-to-r from-emerald-500 to-teal-500 px-4 py-3 text-left text-white shadow-lg shadow-emerald-500/20 transition-colors"
                     >
                       <div className="flex items-center gap-3">
@@ -218,8 +252,8 @@ export default function DashboardMenu() {
                           <UserPlus className="w-5 h-5" />
                         </div>
                         <div>
-                          <p className="font-medium">Become a Tasker</p>
-                          <p className="text-xs text-emerald-50">Open the tasker signup page</p>
+                          <p className="font-medium">{taskerAction.title}</p>
+                          <p className="text-xs text-emerald-50">{taskerAction.mobileDescription}</p>
                         </div>
                       </div>
                     </button>

@@ -19,7 +19,7 @@ function getDefaultRouteForRole(role?: string | null) {
     case 'admin':
       return '/admin';
     case 'tasker':
-      return '/tasker-dashboard';
+      return '/dashboard';
     case 'user':
     default:
       return '/dashboard';
@@ -34,7 +34,8 @@ export async function proxy(request: NextRequest) {
   });
 
   const user = session?.user;
-  const defaultRoute = getDefaultRouteForRole(user?.role);
+  const role = user?.role ?? 'user';
+  const defaultRoute = getDefaultRouteForRole(role);
 
   const isPublicRoute = PUBLIC_ROUTES.some((route) =>
     route === '/' ? pathname === '/' : pathname.startsWith(route)
@@ -52,15 +53,19 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
-  if (pathname.startsWith('/admin') && user.role !== 'admin') {
+  if (pathname.startsWith('/admin') && role !== 'admin') {
     return NextResponse.redirect(new URL(defaultRoute, request.url));
   }
 
-  if (pathname.startsWith('/tasker-dashboard') && user.role !== 'tasker') {
+  if (pathname.startsWith('/tasker-dashboard') && role !== 'tasker') {
     return NextResponse.redirect(new URL(defaultRoute, request.url));
   }
 
-  if (pathname.startsWith('/dashboard') && user.role !== 'user') {
+  if (
+    pathname.startsWith('/dashboard') &&
+    role !== 'user' &&
+    role !== 'tasker'
+  ) {
     return NextResponse.redirect(new URL(defaultRoute, request.url));
   }
 
