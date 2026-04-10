@@ -28,6 +28,7 @@ export function emitOrderUpdated(order: OrderSocketPayload) {
     return
   }
 
+  io.to('taskers').emit('tasks:updated', order)
   io.to(`user:${order.userId}`).emit('order:updated', order)
   io.to(`order:${order._id}`).emit('order:updated', order)
 

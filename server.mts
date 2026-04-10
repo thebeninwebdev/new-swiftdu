@@ -76,6 +76,10 @@ async function bootstrap() {
         socket.join(`tasker:${session.user.taskerId}`)
       }
 
+      if (session.user.taskerId || session.user.role === 'tasker') {
+        socket.join('taskers')
+      }
+
       nextSocket()
     } catch (error) {
       nextSocket(error instanceof Error ? error : new Error('Unauthorized'))

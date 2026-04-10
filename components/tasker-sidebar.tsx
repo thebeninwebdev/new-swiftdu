@@ -1,145 +1,316 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
-import { authClient } from '@/lib/auth-client'
-import { useRouter } from 'next/navigation'
-import { 
-  LayoutDashboard, 
-  ListTodo, 
-  MessageSquare, 
-  Star, 
-  Settings, 
-  LogOut, 
-  Menu,
-  X,
-  ChevronRight,
+import { usePathname, useRouter } from 'next/navigation'
+import {
+  AlertTriangle,
   Bell,
-  User
+  ChevronRight,
+  LayoutDashboard,
+  ListTodo,
+  LogOut,
+  Menu,
+  MessageSquare,
+  Settings,
+  Star,
+  User,
+  X,
 } from 'lucide-react'
-import { Button } from '@/components/ui/button'
-import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip'
+import { io } from 'socket.io-client'
 import { toast } from 'sonner'
 
+import { authClient } from '@/lib/auth-client'
+import { Button } from '@/components/ui/button'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
+
 interface UnpaidOrder {
-  _id: string;
-  platformFee: number;
-  description: string;
+  _id: string
+  platformFee: number
+  description: string
+  paidAt?: string
+  status: string
 }
 
 interface UserType {
-  name?: string | null;
-  email?: string | null;
-  image?: string | null;
-  rating?: number;
-  completedTasks?: number;
-  taskerId?: string;
+  name?: string | null
+  email?: string | null
+  image?: string | null
+  rating?: number
+  completedTasks?: number
+  taskerId?: string
 }
 
 interface TaskerProfileType {
-  profileImage?: string;
+  profileImage?: string
 }
+
+const TASKER_NOTIFICATION_TOAST_ID = 'tasker-dashboard-notification'
 
 const navigation = [
   {
     name: 'Dashboard',
     href: '/tasker-dashboard',
     icon: LayoutDashboard,
-    badge: null
+    badge: null,
   },
   {
     name: 'Available Errands',
     href: '/tasker-dashboard?accepted=true',
     icon: ListTodo,
-    badge: null
+    badge: null,
   },
   {
     name: 'History',
     href: '/tasker-dashboard/history',
     icon: ListTodo,
-    badge: null
+    badge: null,
   },
   {
     name: 'Support',
     href: '/tasker-dashboard/support',
     icon: MessageSquare,
-    badge: null
+    badge: null,
   },
   {
     name: 'Reviews',
     href: '/tasker-dashboard/reviews',
     icon: Star,
-    badge: null
-  }
+    badge: null,
+  },
 ]
 
 const secondaryNavigation = [
   {
     name: 'Profile Settings',
     href: '/tasker-dashboard/profile',
-    icon: Settings
+    icon: Settings,
   },
   {
     name: 'Notifications',
     href: '/tasker-dashboard/notifications',
-    icon: Bell
-  }
+    icon: Bell,
+  },
 ]
 
 export default function TaskerSidebar() {
   const pathname = usePathname()
   const router = useRouter()
+
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [isCollapsed, setIsCollapsed] = useState(false)
   const [user, setUser] = useState<UserType | undefined>()
   const [taskerProfile, setTaskerProfile] = useState<TaskerProfileType | undefined>()
-  const [taskerStats, setTaskerStats] = useState<{ completedTasks: number; rating: number }>({ completedTasks: 0, rating: 0 })
+  const [taskerStats, setTaskerStats] = useState({ completedTasks: 0, rating: 0 })
+  const [unpaidOrders, setUnpaidOrders] = useState<UnpaidOrder[]>([])
+  const [dismissedNotificationId, setDismissedNotificationId] = useState<string | null>(null)
 
-  const [unpaidOrders, setUnpaidOrders] = useState<UnpaidOrder[]>([]);
+  const fetchTaskerStats = useCallback(async (taskerId: string) => {
+    try {
+      const statsRes = await fetch(`/api/taskers/stats?taskerId=${taskerId}`)
+      if (!statsRes.ok) {
+        return
+      }
+
+      const stats = await statsRes.json()
+      setTaskerStats({
+        completedTasks: stats.completedTasks || 0,
+        rating: stats.rating || 0,
+      })
+    } catch {
+      // Ignore transient sidebar stat refresh failures.
+    }
+  }, [])
+
+  const fetchUnpaidOrders = useCallback(async () => {
+    try {
+      const unpaidRes = await fetch('/api/taskers/unpaid-platform-fees')
+      if (!unpaidRes.ok) {
+        return
+      }
+
+      const { orders } = await unpaidRes.json()
+      setUnpaidOrders(orders || [])
+    } catch {
+      // Ignore transient notification refresh failures.
+    }
+  }, [])
 
   useEffect(() => {
     const fetchTaskerProfileAndStats = async () => {
-      const { data } = await authClient.getSession()
-      if (data?.user) {
+      try {
+        const { data } = await authClient.getSession()
+
+        if (!data?.user) {
+          toast.error('No user session found')
+          return
+        }
+
+        const taskerId =
+          data.user.taskerId === null || data.user.taskerId === undefined
+            ? undefined
+            : String(data.user.taskerId)
+
         setUser({
           ...data.user,
-          taskerId: data.user.taskerId === null ? undefined : data.user.taskerId,
+          taskerId,
         })
-        const taskerRes = await fetch(`/api/taskers?taskerId=${data.user.taskerId}`)
+
+        if (!taskerId) {
+          return
+        }
+
+        const taskerRes = await fetch(`/api/taskers?taskerId=${taskerId}`)
         if (!taskerRes.ok) {
           toast.error('Failed to load tasker profile')
           return
         }
+
         const { tasker } = await taskerRes.json()
         setTaskerProfile(tasker)
-        // Fetch stats
-        const statsRes = await fetch(`/api/taskers/stats?taskerId=${data.user.taskerId}`)
-        if (statsRes.ok) {
-          const stats = await statsRes.json()
-          setTaskerStats(stats)
-        }
-        // Fetch unpaid platform fees
-        const unpaidRes = await fetch('/api/taskers/unpaid-platform-fees');
-        if (unpaidRes.ok) {
-          const { orders } = await unpaidRes.json();
-          setUnpaidOrders(orders || []);
-        }
-      } else {
-        toast.error('No user session found')
+
+        await Promise.all([fetchTaskerStats(taskerId), fetchUnpaidOrders()])
+      } catch {
+        toast.error('Failed to load tasker dashboard details')
       }
     }
-    fetchTaskerProfileAndStats()
-  }, [])
+
+    void fetchTaskerProfileAndStats()
+  }, [fetchTaskerStats, fetchUnpaidOrders])
+
+  useEffect(() => {
+    if (!user?.taskerId) {
+      return
+    }
+
+    const socket = io({
+      withCredentials: true,
+      transports: ['websocket', 'polling'],
+    })
+
+    socket.on('tasks:updated', () => {
+      void fetchUnpaidOrders()
+      void fetchTaskerStats(user.taskerId as string)
+    })
+
+    return () => {
+      socket.disconnect()
+    }
+  }, [fetchTaskerStats, fetchUnpaidOrders, user?.taskerId])
+
+  const hasDismissedNotification =
+    !!dismissedNotificationId &&
+    unpaidOrders.some((order) => order._id === dismissedNotificationId)
+
+  const activeNotification =
+    unpaidOrders.find(
+      (order) => !hasDismissedNotification || order._id !== dismissedNotificationId
+    ) || null
+
+  useEffect(() => {
+    toast.dismiss(TASKER_NOTIFICATION_TOAST_ID)
+
+    if (!activeNotification) {
+      return
+    }
+
+    toast.custom(
+      () => (
+        <div className="w-[min(92vw,24rem)] rounded-[1.75rem] border border-amber-200 bg-white p-4 shadow-2xl shadow-amber-100 dark:border-amber-900 dark:bg-slate-950 dark:shadow-none">
+          <div className="flex items-start gap-3">
+            <div className="mt-0.5 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-950/70 dark:text-amber-300">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600 dark:text-amber-300">
+                    Notification
+                  </p>
+                  <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
+                    Platform fee due
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDismissedNotificationId(activeNotification._id)
+                    toast.dismiss(TASKER_NOTIFICATION_TOAST_ID)
+                  }}
+                  className="rounded-full p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-900 dark:hover:text-slate-200"
+                  aria-label="Close notification"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                Pay{' '}
+                <span className="font-semibold text-slate-900 dark:text-white">
+                  NGN {activeNotification.platformFee.toLocaleString('en-NG')}
+                </span>{' '}
+                for{' '}
+                <span className="font-medium text-slate-900 dark:text-white">
+                  {activeNotification.description}
+                </span>
+                .
+              </p>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link
+                  href={`/tasker-dashboard/payment/${activeNotification._id}`}
+                  onClick={() => toast.dismiss(TASKER_NOTIFICATION_TOAST_ID)}
+                  className="inline-flex h-10 items-center justify-center rounded-2xl bg-amber-500 px-4 text-sm font-semibold text-white transition hover:bg-amber-600"
+                >
+                  Pay now
+                </Link>
+                <Link
+                  href="/tasker-dashboard/notifications"
+                  onClick={() => toast.dismiss(TASKER_NOTIFICATION_TOAST_ID)}
+                  className="inline-flex h-10 items-center justify-center rounded-2xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
+                >
+                  View all
+                </Link>
+              </div>
+            </div>
+          </div>
+        </div>
+      ),
+      {
+        id: TASKER_NOTIFICATION_TOAST_ID,
+        duration: Infinity,
+      }
+    )
+
+    return () => {
+      toast.dismiss(TASKER_NOTIFICATION_TOAST_ID)
+    }
+  }, [activeNotification])
 
   const handleLogout = async () => {
     await authClient.signOut()
+    toast.dismiss(TASKER_NOTIFICATION_TOAST_ID)
     router.push('/login')
   }
 
-  const NavItem = ({ item, isActive }: { item: typeof navigation[0], isActive: boolean }) => {
+  const notificationCount = unpaidOrders.length
+
+  const NavItem = ({
+    item,
+    isActive,
+  }: {
+    item: (typeof navigation)[number]
+    isActive: boolean
+  }) => {
     const Icon = item.icon
-    // Tooltip only when not collapsed
+
     if (isCollapsed) {
       return (
         <TooltipProvider>
@@ -148,16 +319,19 @@ export default function TaskerSidebar() {
               <Link
                 href={item.href}
                 onClick={() => setIsMobileMenuOpen(false)}
-                className={`
-                  group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
-                  ${isActive 
-                    ? 'bg-primary text-primary-foreground shadow-sm' 
+                className={`group flex items-center justify-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+                  isActive
+                    ? 'bg-primary text-primary-foreground shadow-sm'
                     : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                  }
-                  justify-center
-                `}
+                }`}
               >
-                <Icon className={`h-5 w-5 shrink-0 ${isActive ? 'text-primary-foreground' : 'text-muted-foreground group-hover:text-foreground'}`} />
+                <Icon
+                  className={`h-5 w-5 shrink-0 ${
+                    isActive
+                      ? 'text-primary-foreground'
+                      : 'text-muted-foreground group-hover:text-foreground'
+                  }`}
+                />
               </Link>
             </TooltipTrigger>
             <TooltipContent side="right">{item.name}</TooltipContent>
@@ -165,203 +339,215 @@ export default function TaskerSidebar() {
         </TooltipProvider>
       )
     }
-    // Not collapsed: no tooltip, show label
+
     return (
       <Link
         href={item.href}
         onClick={() => setIsMobileMenuOpen(false)}
-        className={`
-          group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
-          ${isActive 
-            ? 'bg-primary text-primary-foreground shadow-sm' 
+        className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+          isActive
+            ? 'bg-primary text-primary-foreground shadow-sm'
             : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-          }
-        `}
+        }`}
       >
-        <Icon className={`h-5 w-5 shrink-0 ${isActive ? 'text-primary-foreground' : 'text-muted-foreground group-hover:text-foreground'}`} />
+        <Icon
+          className={`h-5 w-5 shrink-0 ${
+            isActive
+              ? 'text-primary-foreground'
+              : 'text-muted-foreground group-hover:text-foreground'
+          }`}
+        />
         <span className="flex-1">{item.name}</span>
-        {item.badge && (
-          <span className={`
-            inline-flex items-center justify-center px-2 py-0.5 text-xs font-medium rounded-full
-            ${isActive 
-              ? 'bg-primary-foreground/20 text-primary-foreground' 
-              : 'bg-primary/10 text-primary'
-            }
-          `}>
+        {item.badge ? (
+          <span
+            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium ${
+              isActive
+                ? 'bg-primary-foreground/20 text-primary-foreground'
+                : 'bg-primary/10 text-primary'
+            }`}
+          >
             {item.badge}
           </span>
-        )}
-        {isActive && <ChevronRight className="h-4 w-4 opacity-50" />}
+        ) : null}
+        {isActive ? <ChevronRight className="h-4 w-4 opacity-50" /> : null}
       </Link>
     )
   }
 
   return (
     <>
-      {/* Platform Fee Notification Panel */}
-      {unpaidOrders.length > 0 && (
-        <div className="fixed top-20 right-4 z-50 max-w-sm w-full bg-yellow-50 dark:bg-yellow-900/80 border border-yellow-300 dark:border-yellow-700 rounded-xl shadow-lg p-4 animate-in fade-in slide-in-from-top-8">
-          <div className="flex items-center gap-3 mb-2">
-            <Bell className="h-5 w-5 text-yellow-500 animate-bounce" />
-            <span className="font-semibold text-yellow-800 dark:text-yellow-200">Action Required</span>
-          </div>
-          <ul className="space-y-2">
-            {unpaidOrders.map(order => (
-              <li key={order._id} className="text-sm text-yellow-900 dark:text-yellow-100 flex flex-col gap-1">
-                <span>
-                  Platform fee of <span className="font-bold">₦{order.platformFee}</span> for <span className="font-medium">{order.description}</span> must be paid within 24hrs or your account will be suspended.
-                </span>
-                <Link href={`/tasker-dashboard/payment/${order._id}`} className="text-indigo-600 hover:underline font-semibold">Pay Now</Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {/* Mobile Header */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-md border-b border-border px-4 py-3 flex items-center justify-between">
+      <div className="fixed left-0 right-0 top-0 z-50 flex items-center justify-between border-b border-border bg-background/85 px-4 py-3 backdrop-blur-md lg:hidden">
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            className="p-2 rounded-lg hover:bg-accent transition-colors"
+            type="button"
+            onClick={() => setIsMobileMenuOpen((previous) => !previous)}
+            className="rounded-xl p-2 transition-colors hover:bg-accent"
+            aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
           >
             {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </button>
-          <span className="font-bold text-lg">ErrandHub</span>
+          <span className="text-base font-bold tracking-tight">ErrandHub</span>
         </div>
+
         <div className="flex items-center gap-2">
-          <button className="p-2 rounded-lg hover:bg-accent relative">
+          <Link
+            href="/tasker-dashboard/notifications"
+            className="relative rounded-xl p-2 transition-colors hover:bg-accent"
+            aria-label="Open notifications"
+          >
             <Bell className="h-5 w-5" />
-            <span className="absolute top-1.5 right-1.5 h-2 w-2 bg-red-500 rounded-full" />
-          </button>
-          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+            {notificationCount > 0 ? (
+              <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
+                {notificationCount > 9 ? '9+' : notificationCount}
+              </span>
+            ) : null}
+          </Link>
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
             <User className="h-4 w-4 text-primary" />
           </div>
         </div>
       </div>
 
-      {/* Mobile Menu Overlay */}
-      {isMobileMenuOpen && (
-        <div 
-          className="lg:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+      {isMobileMenuOpen ? (
+        <div
+          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
         />
-      )}
+      ) : null}
 
-      {/* Sidebar */}
-      <aside className={`
-        fixed left-0 top-0 z-50 h-screen bg-card border-r border-border transition-all duration-300 ease-in-out
-        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
-        ${isCollapsed ? 'lg:w-20' : 'lg:w-72 w-72'}
-      `}>
-        {/* Logo Section */}
-        <div className={`
-          h-16 flex items-center border-b border-border px-4
-          ${isCollapsed ? 'lg:justify-center' : 'justify-between'}
-        `}>
+      <aside
+        className={`fixed left-0 top-0 z-50 h-screen border-r border-border bg-card transition-all duration-300 ease-in-out ${
+          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        } ${isCollapsed ? 'lg:w-20' : 'w-72 lg:w-72'}`}
+      >
+        <div
+          className={`flex h-16 items-center border-b border-border px-4 ${
+            isCollapsed ? 'lg:justify-center' : 'justify-between'
+          }`}
+        >
           <Link href="/tasker-dashboard" className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-lg bg-linear-to-br from-primary to-primary/70 flex items-center justify-center shadow-lg shadow-primary/20">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-linear-to-br from-primary to-primary/70 shadow-lg shadow-primary/20">
               <ListTodo className="h-5 w-5 text-primary-foreground" />
             </div>
-            {!isCollapsed && <span className="font-bold text-xl tracking-tight">ErrandHub</span>}
+            {!isCollapsed ? (
+              <span className="text-xl font-bold tracking-tight">ErrandHub</span>
+            ) : null}
           </Link>
-          
-          {/* Desktop Collapse Toggle */}
-          <button 
-            onClick={() => setIsCollapsed(!isCollapsed)}
-            className="hidden lg:flex p-1.5 rounded-md hover:bg-accent transition-colors"
+
+          <button
+            type="button"
+            onClick={() => setIsCollapsed((previous) => !previous)}
+            className="hidden rounded-md p-1.5 transition-colors hover:bg-accent lg:flex"
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            <Menu className={`h-4 w-4 text-muted-foreground transition-transform duration-300 ${isCollapsed ? 'rotate-180' : ''}`} />
+            <Menu
+              className={`h-4 w-4 text-muted-foreground transition-transform duration-300 ${
+                isCollapsed ? 'rotate-180' : ''
+              }`}
+            />
           </button>
         </div>
 
-        {/* Scrollable Content */}
-        <div className="h-[calc(100vh-4rem)] overflow-y-auto scrollbar-thin scrollbar-thumb-border scrollbar-track-transparent">
-          <div className="p-4 space-y-6">
-            
-            {/* User Profile Card */}
-            {!isCollapsed && (
-              <div className="relative overflow-hidden rounded-xl bg-linear-to-br from-primary/5 to-primary/10 border border-primary/10 p-4">
-                <div className="absolute top-0 right-0 -mt-2 -mr-2 h-16 w-16 rounded-full bg-primary/10 blur-2xl" />
+        <div className="h-[calc(100vh-4rem)] overflow-y-auto">
+          <div className="space-y-6 p-4 pb-24">
+            {!isCollapsed ? (
+              <div className="relative overflow-hidden rounded-xl border border-primary/10 bg-linear-to-br from-primary/5 to-primary/10 p-4">
+                <div className="absolute right-0 top-0 -mr-2 -mt-2 h-16 w-16 rounded-full bg-primary/10 blur-2xl" />
                 <div className="relative flex items-center gap-3">
-                  <div className="h-12 w-12 rounded-full bg-background border-2 border-primary/20 flex items-center justify-center overflow-hidden">
+                  <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-primary/20 bg-background">
                     {taskerProfile?.profileImage ? (
-                      <img src={taskerProfile.profileImage} alt={user?.name || ''} className="h-full w-full object-cover" />
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={taskerProfile.profileImage}
+                        alt={user?.name || 'Tasker'}
+                        className="h-full w-full object-cover"
+                      />
                     ) : (
                       <User className="h-6 w-6 text-muted-foreground" />
                     )}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="font-semibold text-sm truncate">{user?.name || 'Tasker'}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
+
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold">
+                      {user?.name || 'Tasker'}
+                    </p>
+                    <div className="mt-0.5 flex items-center gap-2">
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
                         <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
                         {taskerStats.rating.toFixed(1)}
                       </span>
                       <span className="text-xs text-muted-foreground">•</span>
-                      <span className="text-xs text-muted-foreground">{taskerStats.completedTasks} tasks</span>
+                      <span className="text-xs text-muted-foreground">
+                        {taskerStats.completedTasks} tasks
+                      </span>
                     </div>
                   </div>
                 </div>
-                <div className="mt-3 pt-3 border-t border-border/50 flex items-center justify-between text-xs">
+
+                <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-3 text-xs">
                   <span className="text-muted-foreground">Status</span>
-                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-green-500/10 text-green-600 font-medium">
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2 py-0.5 font-medium text-green-600">
+                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
                     Online
                   </span>
                 </div>
               </div>
-            )}
-
-            {/* Collapsed Profile Icon */}
-            {isCollapsed && (
+            ) : (
               <div className="flex justify-center">
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center border-2 border-primary/20">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-primary/20 bg-primary/10">
                   <User className="h-5 w-5 text-primary" />
                 </div>
               </div>
             )}
 
-            {/* Main Navigation */}
             <div className="space-y-1">
-              {!isCollapsed && (
-                <h3 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+              {!isCollapsed ? (
+                <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Menu
                 </h3>
-              )}
+              ) : null}
+
               {navigation.map((item) => (
-                <NavItem 
-                  key={item.name} 
-                  item={item} 
-                  isActive={pathname === item.href || pathname.startsWith(`${item.href}/`)} 
+                <NavItem
+                  key={item.name}
+                  item={item}
+                  isActive={pathname === item.href || pathname.startsWith(`${item.href}/`)}
                 />
               ))}
             </div>
 
-            {/* Secondary Navigation */}
-            <div className="space-y-1 pt-4 border-t border-border">
-              {!isCollapsed && (
-                <h3 className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            <div className="space-y-1 border-t border-border pt-4">
+              {!isCollapsed ? (
+                <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   Settings
                 </h3>
-              )}
+              ) : null}
+
               {secondaryNavigation.map((item) => {
                 const Icon = item.icon
                 const isActive = pathname === item.href
+                const isNotifications = item.name === 'Notifications'
+
                 return (
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={`
-                      group flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200
-                      ${isActive 
-                        ? 'bg-accent text-foreground' 
+                    className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+                      isActive
+                        ? 'bg-accent text-foreground'
                         : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                      }
-                      ${isCollapsed ? 'justify-center' : ''}
-                    `}
+                    } ${isCollapsed ? 'justify-center' : ''}`}
                   >
-                    <Icon className="h-5 w-5 shrink-0" />
-                    {!isCollapsed && <span>{item.name}</span>}
+                    <div className="relative">
+                      <Icon className="h-5 w-5 shrink-0" />
+                      {isNotifications && notificationCount > 0 ? (
+                        <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
+                          {notificationCount > 9 ? '9+' : notificationCount}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    {!isCollapsed ? <span>{item.name}</span> : null}
                   </Link>
                 )
               })}
@@ -369,27 +555,26 @@ export default function TaskerSidebar() {
           </div>
         </div>
 
-        {/* Bottom Actions */}
-        <div className="absolute bottom-0 left-0 right-0 p-4 bg-card border-t border-border">
+        <div className="absolute bottom-0 left-0 right-0 border-t border-border bg-card p-4">
           <Button
             variant="ghost"
             onClick={handleLogout}
-            className={`
-              w-full justify-center text-muted-foreground hover:text-destructive hover:bg-destructive/10
-              ${isCollapsed ? 'px-2' : 'gap-3'}
-            `}
+            className={`w-full justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive ${
+              isCollapsed ? 'px-2' : 'gap-3'
+            }`}
           >
             <LogOut className="h-5 w-5" />
-            {!isCollapsed && <span>Sign Out</span>}
+            {!isCollapsed ? <span>Sign Out</span> : null}
           </Button>
         </div>
       </aside>
 
-      {/* Main Content Spacer for Desktop */}
-      <div className={`hidden lg:block transition-all duration-300 ${isCollapsed ? 'w-20' : 'w-72'}`} />
-      
-      {/* Mobile Content Spacer */}
-      <div className="lg:hidden h-14" />
+      <div
+        className={`hidden transition-all duration-300 lg:block ${
+          isCollapsed ? 'w-20' : 'w-72'
+        }`}
+      />
+      <div className="h-16 lg:hidden" />
     </>
   )
 }

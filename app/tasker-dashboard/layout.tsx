@@ -6,11 +6,10 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
-  
   return (
     <div className="flex min-h-screen bg-background">
       <TaskerSidebar />
-      <main className="flex-1 overflow-auto pt-20 px-2 md:px-8">
+      <main className="min-w-0 flex-1 overflow-x-hidden px-3 pb-8 pt-4 sm:px-4 md:px-6 lg:px-8 lg:pt-6">
         {children}
       </main>
     </div>

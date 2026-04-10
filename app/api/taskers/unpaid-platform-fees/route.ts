@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server';
 
 export async function GET(req: Request) {
   await connectDB();
-    const session = await auth.api.getSession({
+  const session = await auth.api.getSession({
     headers: req.headers,
   });
   
@@ -13,6 +13,14 @@ export async function GET(req: Request) {
     return NextResponse.json({ orders: [] });
   }
   const taskerId = session.user.taskerId;
-  const unpaidOrders = await Order.find({ taskerId, taskerHasPaid: false });
+  const unpaidOrders = await Order.find({
+    taskerId,
+    taskerHasPaid: false,
+    hasPaid: true,
+  })
+    .sort({ paidAt: -1, updatedAt: -1 })
+    .select('_id platformFee description paidAt status')
+    .lean();
+
   return NextResponse.json({ orders: unpaidOrders });
 }
