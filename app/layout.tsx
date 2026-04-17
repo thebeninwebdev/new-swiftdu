@@ -76,6 +76,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <Script
+          id="adsense-script"
+          strategy="beforeInteractive"
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4657526411072658"
+          crossOrigin="anonymous"
+        />
+      </head>
       <body
         className="antialiased tracking-wide"
       >
@@ -93,11 +101,7 @@ export default function RootLayout({
         </Wrapper>
         </Wrapper>
         {children}
-        <Script
-          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4657526411072658"
-          strategy="afterInteractive"
-          crossOrigin="anonymous"
-        />
+
         <Wrapper path="/dashboard">
         <Wrapper path="/tasker-signup">
         <Wrapper path="/signup">
