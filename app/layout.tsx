@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import NextTopLoader from "nextjs-toploader";
 import "./globals.css";
+import Script from "next/script";
 import {Toaster} from "sonner"
 import NavbarClientWrapper from "@/components/NavbarClientWrapper";
 import Wrapper from "@/components/wrapper";
@@ -92,6 +93,11 @@ export default function RootLayout({
         </Wrapper>
         </Wrapper>
         {children}
+        <Script
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4657526411072658"
+          strategy="afterInteractive"
+          crossOrigin="anonymous"
+        />
         <Wrapper path="/dashboard">
         <Wrapper path="/tasker-signup">
         <Wrapper path="/signup">
