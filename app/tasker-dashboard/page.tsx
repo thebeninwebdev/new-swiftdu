@@ -27,6 +27,7 @@ import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
 import { convertToNaira } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
+import AdBanner from '@/components/AdBanner'
 
 const DASHBOARD_REFRESH_MS = 5000
 
@@ -582,7 +583,7 @@ export default function TaskerDashboardPage() {
             </motion.div>
           )}
         </AnimatePresence>
-
+<AdBanner />
         {/* Empty State */}
         {errands.length === 0 ? (
           <motion.div
