@@ -44,9 +44,14 @@ interface Order {
   updatedAt: string
 }
 
+interface AdminUser {
+  id: string
+  role?: string | null
+}
+
 export default function AdminOrdersPage() {
   const router = useRouter()
-  const [admin, setAdmin] = useState<any>(null)
+  const [admin, setAdmin] = useState<AdminUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [orders, setOrders] = useState<Order[]>([])
   const [isFetching, setIsFetching] = useState(false)
@@ -233,6 +238,7 @@ export default function AdminOrdersPage() {
                   <SelectItem value="restaurant">Restaurant</SelectItem>
                   <SelectItem value="printing">Printing</SelectItem>
                   <SelectItem value="shopping">Shopping</SelectItem>
+                  <SelectItem value="water">Buy Water</SelectItem>
                   <SelectItem value="others">Others</SelectItem>
                 </SelectContent>
               </Select>
@@ -365,7 +371,7 @@ export default function AdminOrdersPage() {
                           <p className="text-sm font-semibold">₦{order.amount.toLocaleString()}</p>
                           {order.totalAmount && (
                             <p className="text-xs text-muted-foreground mt-1">
-                              (+₦{order.commission} commission = ₦{order.totalAmount.toLocaleString()} total)
+                              (+₦{order.platformFee || order.commission || 0} service fee = ₦{order.totalAmount.toLocaleString()} total)
                             </p>
                           )}
                         </div>

@@ -47,23 +47,40 @@ function DashboardReviewsPageContent() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const fetchOrders = async () => {
-      try {
-        setLoading(true)
-        const response = await fetch('/api/orders?status=completed&needsReview=true')
-        if (!response.ok) throw new Error('Failed to load review reminders')
-        const data = await response.json()
-        setOrders(data)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load reviews')
-      } finally {
-        setLoading(false)
-      }
-    }
+useEffect(() => {
+  const fetchOrders = async () => {
+    try {
+      setLoading(true)
 
-    void fetchOrders()
-  }, [])
+      const response = await fetch('/api/orders?status=completed&needsReview=true')
+      if (!response.ok) throw new Error('Failed to load review reminders')
+
+      let data = await response.json()
+
+      // ✅ NEW: ensure highlighted order is included
+      if (highlightedOrderId && !data.some((o: any) => o._id === highlightedOrderId)) {
+        const singleRes = await fetch(`/api/orders/${highlightedOrderId}`)
+
+        if (singleRes.ok) {
+          const singleOrder = await singleRes.json()
+
+          // only add if it still needs review
+          if (singleOrder && singleOrder.status === 'completed') {
+            data = [singleOrder, ...data]
+          }
+        }
+      }
+
+      setOrders(data)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load reviews')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  void fetchOrders()
+}, [highlightedOrderId])
 
   useEffect(() => {
     if (!highlightedOrderId) return

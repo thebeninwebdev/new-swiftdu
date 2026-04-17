@@ -57,7 +57,6 @@ export async function GET(
       name: taskerUser?.name || order.taskerName || "Tasker",
       phone: tasker.phone,
       profileImage: tasker.profileImage || null,
-      bankDetails: tasker.bankDetails,
     });
   } catch (error) {
     console.error("[GET /api/orders/[id]/tasker]", error);

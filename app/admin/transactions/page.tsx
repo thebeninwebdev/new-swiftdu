@@ -40,9 +40,14 @@ interface Transaction {
   status: 'completed' | 'pending' | 'failed'
 }
 
+interface AdminUser {
+  id: string
+  role?: string | null
+}
+
 export default function AdminTransactionsPage() {
   const router = useRouter()
-  const [admin, setAdmin] = useState<any>(null)
+  const [admin, setAdmin] = useState<AdminUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [isFetching, setIsFetching] = useState(false)
@@ -208,7 +213,7 @@ export default function AdminTransactionsPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Platform Fees</CardTitle>
+              <CardTitle className="text-sm font-medium">Service Fees</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -219,7 +224,7 @@ export default function AdminTransactionsPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Tasker Fees</CardTitle>
+              <CardTitle className="text-sm font-medium">Recorded Payouts</CardTitle>
               <TrendingDown className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -260,13 +265,13 @@ export default function AdminTransactionsPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Types</SelectItem>
-                  <SelectItem value="order_payment">Order Payments</SelectItem>
-                  <SelectItem value="credit">Credits</SelectItem>
-                  <SelectItem value="debit">Debits</SelectItem>
+                <SelectItem value="order_payment">Order Payments</SelectItem>
+                <SelectItem value="credit">Credits</SelectItem>
+                <SelectItem value="debit">Debits</SelectItem>
                 </SelectContent>
               </Select>
 
-              <Select value={statusFilter} onValueChange={(value) => setTypeFilter(value ?? "all")}>
+              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value ?? "all")}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>

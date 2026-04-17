@@ -57,6 +57,7 @@ const taskTypeLabels: Record<string, string> = {
   restaurant: 'Food delivery',
   printing: 'Printing task',
   shopping: 'Shopping errand',
+  water: 'Water delivery',
   others: 'General errand',
 }
 
@@ -126,10 +127,10 @@ export default function ErrandDetailPage() {
           setUserInfo(null)
         }
 
-        if (!initial && previousSnapshotRef.current) {
-          if (!previousSnapshotRef.current.hasPaid && Boolean(errandData.hasPaid)) {
-            toast.success('Customer payment confirmed. You can complete the delivery once finished.')
-          }
+          if (!initial && previousSnapshotRef.current) {
+            if (!previousSnapshotRef.current.hasPaid && Boolean(errandData.hasPaid)) {
+              toast.success('SwiftDU has confirmed the customer payment. You can complete the delivery once finished.')
+            }
 
           if (
             previousSnapshotRef.current.status !== errandData.status &&
@@ -378,12 +379,6 @@ export default function ErrandDetailPage() {
                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
                   <span>{errand.location}</span>
                 </div>
-                <div className="flex items-start gap-2">
-                  <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
-                  <span>
-                    {errand.deadlineValue} {errand.deadlineUnit}
-                  </span>
-                </div>
                 {errand.store ? (
                   <div className="flex items-start gap-2">
                     <Store className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
@@ -392,7 +387,7 @@ export default function ErrandDetailPage() {
                 ) : null}
                 <div className="flex items-start gap-2">
                   <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
-                  <span>{convertToNaira(errand.totalAmount || errand.amount)}</span>
+                  <span>{convertToNaira(errand.amount)}</span>
                 </div>
               </div>
             </div>
@@ -402,12 +397,12 @@ export default function ErrandDetailPage() {
                 Payment status
               </p>
               <p className="mt-3 text-xl font-bold text-slate-900 dark:text-white">
-                {paymentConfirmed ? 'Customer payment confirmed' : 'Waiting for customer payment'}
+                {paymentConfirmed ? 'SwiftDU payment confirmed' : 'Waiting for SwiftDU payment confirmation'}
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
                 {paymentConfirmed
-                  ? 'The customer has marked payment as done. Finish the task and then complete it here.'
-                  : 'You can still prepare the errand, but task completion is locked until payment is confirmed.'}
+                  ? 'The customer checkout has been verified through Flutterwave. Finish the task and then complete it here.'
+                  : 'You can prepare the errand, but completion stays locked until SwiftDU confirms the customer payment.'}
               </p>
 
               <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -538,7 +533,7 @@ export default function ErrandDetailPage() {
           <div className="space-y-5">
             <div className="rounded-[2rem] border border-slate-200 bg-white/90 p-5 shadow-md shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/50">
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Payment and platform fee
+                Payment summary
               </h2>
 
               <div className="mt-5 space-y-3">
@@ -547,36 +542,31 @@ export default function ErrandDetailPage() {
                     Total amount
                   </p>
                   <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
-                    {convertToNaira(errand.totalAmount || errand.amount)}
+                    {convertToNaira((errand.amount+errand.taskerFee))}
                   </p>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      Platform fee
-                    </p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                      {convertToNaira(errand.platformFee || 0)}
-                    </p>
-                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Customer budget
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                        {convertToNaira(errand.amount || 0)}
+                      </p>
+                    </div>
 
-                  <div className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                      Your commission
-                    </p>
-                    <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                      {convertToNaira(errand.taskerFee || 0)}
-                    </p>
+                    <div className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                        Tasker Fee
+                      </p>
+                      <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                        {convertToNaira(errand.taskerFee || 0)}
+                      </p>
+                    </div>
                   </div>
-                </div>
-
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm leading-6 text-amber-800 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
-                  Once the customer has paid you, the platform fee should be settled within 24
-                  hours. Any unpaid reminders will also appear in your notifications page.
                 </div>
               </div>
-            </div>
 
             {isActive ? (
               <div className="rounded-[2rem] border border-slate-200 bg-white/90 p-5 shadow-md shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/50">

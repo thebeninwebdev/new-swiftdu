@@ -130,13 +130,32 @@ export default function SignUpPage() {
     
     setLoading(true);
     try {
-      await authClient.signUp.email({
+      const normalizedEmail = form.email.trim().toLowerCase();
+      const { error: signUpError } = await authClient.signUp.email({
         name: `${form.firstName} ${form.lastName}`,
-        email: form.email,
+        email: normalizedEmail,
         password: form.password,
         phone: `${countryDial.dial}${form.phone}`,
         location: form.location,
       });
+
+      if (signUpError) {
+        throw signUpError;
+      }
+
+      const { error: verificationError } = await authClient.sendVerificationEmail({
+        email: normalizedEmail,
+      });
+
+      if (verificationError) {
+        const message =
+          "Your account was created, but we couldn't send the verification email right now. Please try signing up again with the same email in a moment to resend it.";
+        setServerError(message);
+        toast.error("Account created, but email delivery failed", {
+          description: "We couldn't send your verification link right now.",
+        });
+        return;
+      }
       
       toast.success("Verify your email", {
         description: "We sent a verification link to your email.",
@@ -156,8 +175,12 @@ export default function SignUpPage() {
         confirmPassword: "",
       });
       setTouched({});
-    } catch (err: any) {
-      setServerError(err?.message || "Something went wrong. Please try again.");
+    } catch (err: unknown) {
+      setServerError(
+        err instanceof Error
+          ? err.message
+          : "Something went wrong. Please try again."
+      );
     } finally {
       setLoading(false);
     }

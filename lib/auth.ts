@@ -2,13 +2,8 @@ import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import clientPromise, { connectDB } from "./db";
-import verifyEmail from "@/emails/verifyEmail";
-import resetEmail from "@/emails/resetEmail";
 import { User } from "@/models/user";
-import { Resend } from "resend";
 import { twoFactor } from "better-auth/plugins";
-
-const resend = new Resend(process.env.RESEND_API_KEY as string);
 
 const client = await clientPromise;
 const db = client.db();
@@ -51,33 +46,51 @@ const suspendedUserGuard = (): BetterAuthPlugin => ({
 export const auth = betterAuth({
   appName: "SwiftDU",
   emailVerification: {
-    sendVerificationEmail: async ({user, url}) => {
-      resend.emails.send({
-        from: `${process.env.EMAIL_FROM_NAME} <${process.env.EMAIL_FROM_ADDRESS}>`,
+    sendVerificationEmail: async ({ user, url }) => {
+      const [{ default: verifyEmail }, { sendTransactionalEmail }] =
+        await Promise.all([
+          import("@/emails/verifyEmail"),
+          import("./email"),
+        ]);
+
+      await sendTransactionalEmail({
         to: user.email,
-        subject: 'Verify your email address',
-        react: verifyEmail({ url, name:user.name })
-      })
+        subject: "Verify your email address",
+        react: verifyEmail({ url, name: user.name }),
+        tags: [
+          { name: "email_type", value: "verification" },
+          { name: "auth_flow", value: "signup" },
+        ],
+      });
     },
-    sendOnSignUp: true
+    sendOnSignUp: false,
   },
   database: mongodbAdapter(db),
-  emailAndPassword: { 
-    enabled: true, 
-    sendResetPassword: async ({user, url} ) => {
-      resend.emails.send({
-        from: `${process.env.EMAIL_FROM_NAME} <${process.env.EMAIL_FROM_ADDRESS}>`,
+  emailAndPassword: {
+    enabled: true,
+    sendResetPassword: async ({ user, url }) => {
+      const [{ default: resetEmail }, { sendTransactionalEmail }] =
+        await Promise.all([
+          import("@/emails/resetEmail"),
+          import("./email"),
+        ]);
+
+      await sendTransactionalEmail({
         to: user.email,
-        subject: 'Reset your password',
-        react: resetEmail({ url, email:user.email })
-      })
+        subject: "Reset your password",
+        react: resetEmail({ url, email: user.email }),
+        tags: [
+          { name: "email_type", value: "password_reset" },
+          { name: "auth_flow", value: "password_reset" },
+        ],
+      });
     },
     requireEmailVerification: true,
   },
   user: {
     additionalFields: {
       role: {
-        type: ["user","tasker", "admin",],
+        type: ["user", "tasker", "admin"],
         required: false,
         defaultValue: "user",
         input: false,
@@ -93,13 +106,13 @@ export const auth = betterAuth({
       taskerId: {
         type: "string",
         required: false,
-      }
-    }
+      },
+    },
   },
-  plugins:[
+  plugins: [
     twoFactor(),
     suspendedUserGuard(),
-  ]
+  ],
 });
 
 export type Auth = typeof auth;

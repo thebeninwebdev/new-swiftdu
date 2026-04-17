@@ -120,7 +120,7 @@ export default function TaskerNotificationsPage() {
                 You&apos;re all caught up
               </h2>
               <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-slate-400">
-                No unpaid platform fee reminders waiting. Check back later for new notifications.
+                No manual payment actions are waiting. SwiftDU now collects customer payments directly.
               </p>
             </div>
           ) : null}
@@ -134,10 +134,10 @@ export default function TaskerNotificationsPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    Platform fees due
+                    Manual actions
                   </p>
                   <p className="text-xs text-slate-600 dark:text-slate-400">
-                    {orders.length} payment reminder{orders.length === 1 ? '' : 's'} waiting
+                    {orders.length} notification{orders.length === 1 ? '' : 's'} waiting
                   </p>
                 </div>
               </div>
@@ -156,7 +156,7 @@ export default function TaskerNotificationsPage() {
                   <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                        Platform fee due
+                        Payment handled by SwiftDU
                       </span>
                       <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold capitalize text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
                         {order.status.replace('_', ' ')}
@@ -171,13 +171,13 @@ export default function TaskerNotificationsPage() {
                         {order.description}
                       </h3>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Customer paid {formatDate(order.paidAt)}
+                        Customer payment was recorded {formatDate(order.paidAt)}
                       </p>
                     </div>
 
                     <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-950/50">
                       <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                        Amount due
+                        Service fee collected
                       </p>
                       <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">
                         {convertToNaira(order.platformFee)}
@@ -186,18 +186,18 @@ export default function TaskerNotificationsPage() {
 
                     <div className="grid grid-cols-2 gap-2">
                       <Link
-                        href={`/tasker-dashboard/payment/${order._id}`}
+                        href={`/tasker-dashboard/${order._id}`}
                         className="inline-flex h-11 items-center justify-center rounded-xl bg-linear-to-r from-amber-500 to-orange-500 px-4 text-sm font-semibold text-white transition active:scale-95 hover:from-amber-600 hover:to-orange-600"
                       >
-                        Pay now
+                        View task
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Link>
 
                       <Link
-                        href={`/tasker-dashboard/${order._id}`}
+                        href="/tasker-dashboard"
                         className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition active:scale-95 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                       >
-                        View task
+                        Dashboard
                       </Link>
                     </div>
                   </div>

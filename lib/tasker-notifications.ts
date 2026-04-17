@@ -8,8 +8,6 @@ interface NotifyTaskersOfNewTaskInput {
   description: string
   amount: number
   location: string
-  deadlineValue: number
-  deadlineUnit: string
   userName: string
 }
 
@@ -98,7 +96,6 @@ export async function notifyTaskersOfNewTask(
     }
   }
 
-  const deadline = `${input.deadlineValue} ${input.deadlineUnit}`
   const taskUrl = `${getAppBaseUrl()}/tasker-dashboard`
   const subject = `New ${formatTaskType(input.taskType)} task posted on SwiftDU`
 
@@ -114,7 +111,6 @@ export async function notifyTaskersOfNewTask(
           description: input.description,
           amount: input.amount,
           location: input.location,
-          deadline,
           userName: input.userName,
           taskUrl,
         }),

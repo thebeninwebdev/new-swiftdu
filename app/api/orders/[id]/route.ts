@@ -5,6 +5,11 @@ import {Order} from "@/models/order"
 import { auth } from '@/lib/auth'; 
 import { canCustomerCancelOrder } from '@/lib/order-status';
 import { emitOrderUpdated } from '@/lib/socket';
+import {
+  calculateOrderPricing,
+  descriptionMentionsWater,
+  WATER_TASK_TYPE,
+} from '@/lib/pricing';
 
 export async function PATCH(
   request: NextRequest,
@@ -53,6 +58,7 @@ export async function PATCH(
       location,
       store,
       packaging,
+      waterBags,
       status,
       hasPaid,
     } = body;
@@ -81,40 +87,95 @@ export async function PATCH(
         );
       }
 
-      if (taskType !== undefined) order.taskType = taskType;
-      if (description !== undefined) order.description = description;
-      if (amount !== undefined) order.amount = parseFloat(amount);
+      const nextTaskType = taskType !== undefined ? String(taskType) : order.taskType;
+      const nextDescription =
+        description !== undefined ? String(description).trim() : order.description;
+      const nextAmount = amount !== undefined ? Number(amount) : order.amount;
+      const nextStore = store !== undefined ? store || undefined : order.store;
+      const nextPackaging =
+        packaging !== undefined ? packaging || undefined : order.packaging;
+      const nextWaterBags =
+        waterBags !== undefined
+          ? Number(waterBags)
+          : order.taskType === WATER_TASK_TYPE
+            ? Number(order.waterBags || 0)
+            : undefined;
+
+      if (!Number.isFinite(nextAmount) || nextAmount < 0) {
+        return NextResponse.json(
+          { error: 'Enter a valid task amount' },
+          { status: 400 }
+        );
+      }
+
+      if (descriptionMentionsWater(nextDescription) && nextTaskType !== WATER_TASK_TYPE) {
+        return NextResponse.json(
+          {
+            error:
+              'Water deliveries must use the Buy Water option so the per-bag fee can be calculated correctly.',
+          },
+          { status: 400 }
+        );
+      }
+
+      if (nextTaskType === WATER_TASK_TYPE) {
+        if (!nextStore) {
+          return NextResponse.json(
+            { error: 'Select the store for the water order.' },
+            { status: 400 }
+          );
+        }
+
+        if (!Number.isInteger(nextWaterBags) || Number(nextWaterBags) <= 0) {
+          return NextResponse.json(
+            { error: 'Enter the number of water bags for this delivery.' },
+            { status: 400 }
+          );
+        }
+      }
+
+      const pricing = calculateOrderPricing({
+        amount: nextAmount,
+        taskType: nextTaskType,
+        waterBags: nextWaterBags,
+      });
+
+      order.taskType = nextTaskType;
+      order.description = nextDescription;
+      order.amount = pricing.amount;
+      order.commission = pricing.serviceFee;
+      order.platformFee = pricing.serviceFee;
+      order.taskerFee = 0;
+      order.serviceFee = pricing.serviceFee;
+      order.pricingModel = pricing.pricingModel;
+      order.totalAmount = pricing.totalAmount;
+      order.waterBags = pricing.waterBags || undefined;
+      order.waterFee = pricing.waterFee;
+      order.paymentStatus = 'unpaid';
+      order.paymentReference = undefined;
+      order.paymentLink = undefined;
+      order.paymentTransactionId = undefined;
+      order.paymentInitializedAt = undefined;
+      order.paymentVerifiedAt = undefined;
+      order.paymentFailureReason = undefined;
+
       if (deadlineValue !== undefined) order.deadlineValue = parseInt(deadlineValue);
       if (deadlineUnit !== undefined) order.deadlineUnit = deadlineUnit;
       if (location !== undefined) order.location = location;
-      if (store !== undefined) order.store = store || undefined;
-      if (packaging !== undefined) order.packaging = packaging || undefined;
+      if (store !== undefined || nextTaskType !== WATER_TASK_TYPE) {
+        order.store = nextStore;
+      }
+      order.packaging = nextTaskType === 'restaurant' ? nextPackaging : undefined;
     }
 
     if (hasPaid !== undefined) {
-      if (!isUserOwner) {
-        return NextResponse.json(
-          { error: 'Only the customer can confirm payment' },
-          { status: 403 }
-        );
-      }
-
-      if (!order.taskerId) {
-        return NextResponse.json(
-          { error: 'A tasker must be assigned before payment can be confirmed' },
-          { status: 400 }
-        );
-      }
-
-      if (order.status === 'completed' || order.status === 'cancelled') {
-        return NextResponse.json(
-          { error: 'This order is no longer active' },
-          { status: 400 }
-        );
-      }
-
-      order.hasPaid = Boolean(hasPaid);
-      order.paidAt = hasPaid ? new Date() : undefined;
+      return NextResponse.json(
+        {
+          error:
+            'Customer payment is now confirmed automatically after Flutterwave verifies the transaction.',
+        },
+        { status: 400 }
+      );
     }
 
     let shouldSyncTaskerStats = false;
@@ -133,9 +194,15 @@ export async function PATCH(
 
         order.status = 'cancelled';
         order.cancelledAt = new Date();
+        if (!order.hasPaid) {
+          order.paymentStatus = 'cancelled';
+        }
       } else if (status === 'cancelled' && isTaskerOwner) {
         order.status = 'cancelled';
         order.cancelledAt = new Date();
+        if (!order.hasPaid) {
+          order.paymentStatus = 'cancelled';
+        }
       } else if (status === 'completed') {
         if (!isTaskerOwner) {
           return NextResponse.json(
@@ -153,17 +220,6 @@ export async function PATCH(
 
         order.status = 'completed';
         order.completedAt = new Date();
-      } else if (status === 'paid') {
-        if (!isUserOwner) {
-          return NextResponse.json(
-            { error: 'Only the customer can mark this order as paid' },
-            { status: 403 }
-          );
-        }
-
-        order.status = 'paid';
-        order.hasPaid = true;
-        order.paidAt = new Date();
       } else if (status === 'in_progress' || status === 'pending') {
         if (!isTaskerOwner) {
           return NextResponse.json(

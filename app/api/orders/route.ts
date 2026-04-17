@@ -6,6 +6,11 @@ import { auth } from '@/lib/auth';
 import { Review } from '@/models/review';
 import { ACTIVE_ORDER_STATUSES } from '@/lib/order-status';
 import { emitOrderUpdated } from '@/lib/socket';
+import {
+  calculateOrderPricing,
+  descriptionMentionsWater,
+  WATER_TASK_TYPE,
+} from '@/lib/pricing';
 
 export async function POST(request: NextRequest) {
   try {
@@ -25,23 +30,61 @@ export async function POST(request: NextRequest) {
       taskType,
       description,
       amount,
-      deadlineValue,
-      deadlineUnit,
       location,
       store,
       packaging,
+      waterBags,
     } = body;
 
     // Validation
-    if (!taskType || !description || !amount || !deadlineValue || !deadlineUnit || !location) {
+    if (
+      !taskType ||
+      amount === undefined ||
+      amount === null ||
+      amount === '' ||
+      !location
+    ) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
       );
     }
 
-    const parsedAmount = parseFloat(amount);
-    const parsedDeadlineValue = parseInt(deadlineValue, 10);
+    const parsedAmount = Number(amount);
+    const normalizedDescription = String(description || '').trim();
+    const normalizedTaskType = String(taskType || '').trim();
+    const parsedWaterBags =
+      normalizedTaskType === WATER_TASK_TYPE ? Number(waterBags) : undefined;
+
+    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
+      return NextResponse.json({ error: 'Enter a valid task amount' }, { status: 400 });
+    }
+
+    if (descriptionMentionsWater(normalizedDescription) && normalizedTaskType !== WATER_TASK_TYPE) {
+      return NextResponse.json(
+        {
+          error:
+            'Water deliveries must use the Buy Water option so the per-bag fee can be calculated correctly.',
+        },
+        { status: 400 }
+      );
+    }
+
+    if (normalizedTaskType === WATER_TASK_TYPE) {
+      if (!store) {
+        return NextResponse.json(
+          { error: 'Select the store for the water order.' },
+          { status: 400 }
+        );
+      }
+
+      if (!Number.isInteger(parsedWaterBags) || (parsedWaterBags ?? 0) <= 0) {
+        return NextResponse.json(
+          { error: 'Enter the number of water bags for this delivery.' },
+          { status: 400 }
+        );
+      }
+    }
 
     const existingActiveOrder = await Order.findOne({
       userId: session.user.id,
@@ -59,26 +102,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const orderCommission = Math.round(parsedAmount * 0.15 * 100) / 100; // 15%
-    const orderPlatformFee = Math.round(parsedAmount * 0.10 * 100) / 100; // 10%
-    const orderTaskerFee = Math.round(parsedAmount * 0.05 * 100) / 100; // 5%
-    const orderTotalAmount = Math.round((parsedAmount + orderCommission) * 100) / 100;
+    const pricing = calculateOrderPricing({
+      amount: parsedAmount,
+      taskType: normalizedTaskType,
+      waterBags: parsedWaterBags,
+    });
+
+    const taskedFee = pricing.serviceFee - (pricing.serviceFee * .02);
 
     const order = new Order({
       userId: session.user.id,
-      taskType,
-      description,
-      amount: parsedAmount,
-      commission: orderCommission,
-      platformFee: orderPlatformFee,
-      taskerFee: orderTaskerFee,
-      totalAmount: orderTotalAmount,
-      deadlineValue: parsedDeadlineValue,
-      deadlineUnit,
+      taskType: normalizedTaskType,
+      description: normalizedDescription,
+      amount: pricing.amount,
+      commission: pricing.serviceFee,
+      platformFee: (taskedFee * .25),
+      taskerFee: (taskedFee * .75),
+      serviceFee: taskedFee,
+      pricingModel: pricing.pricingModel,
+      totalAmount: pricing.totalAmount,
       location,
       store: store || undefined,
       packaging: packaging || undefined,
+      waterBags: pricing.waterBags || undefined,
+      waterFee: pricing.waterFee,
       status: 'pending',
+      paymentStatus: 'unpaid',
     });
 
     await order.save();
@@ -89,8 +138,6 @@ export async function POST(request: NextRequest) {
         description,
         amount: parsedAmount,
         location,
-        deadlineValue: parsedDeadlineValue,
-        deadlineUnit,
         userName: session.user.name || 'A customer',
       });
     } catch (notificationError) {

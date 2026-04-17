@@ -2,8 +2,8 @@ import DashboardMenu from '@/components/dashboard-menu';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Esefabrics- Admin page',
-  description: 'Manage and monitor your site with every click',
+  title: 'SwiftDU - Dashboard page',
+  description: 'Manage and monitor your errands with every click',
 };
 
 export default function RootLayout({

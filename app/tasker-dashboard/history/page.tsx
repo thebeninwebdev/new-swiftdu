@@ -6,10 +6,8 @@ import { Input } from '@/components/ui/input'
 import { convertToNaira, getTaskerId } from '@/lib/utils'
 import { 
   History, 
-  TrendingUp, 
   CheckCircle2, 
   Search, 
-  Filter, 
   MapPin, 
   Clock, 
   User, 
@@ -57,6 +55,7 @@ const taskTypeLabels: Record<string, string> = {
   restaurant: 'Food Delivery',
   printing: 'Printing',
   shopping: 'Shopping',
+  water: 'Buy Water',
   others: 'Other Errands',
 }
 
@@ -64,6 +63,7 @@ const taskTypeIcons: Record<string, React.ReactNode> = {
   restaurant: <Package className="h-4 w-4" />,
   printing: <Package className="h-4 w-4" />,
   shopping: <Package className="h-4 w-4" />,
+  water: <Package className="h-4 w-4" />,
   others: <Package className="h-4 w-4" />,
 }
 
@@ -74,7 +74,7 @@ const statusStyles: Record<string, { bg: string; text: string; darkBg: string; d
     darkBg: 'dark:bg-amber-950/50',
     darkText: 'dark:text-amber-300'
   },
-  accepted: { 
+  in_progress: { 
     bg: 'bg-sky-100', 
     text: 'text-sky-700',
     darkBg: 'dark:bg-sky-950/50',
@@ -102,7 +102,6 @@ export default function HistoryPage() {
   const [data, setData] = useState<TaskHistory | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showFilters, setShowFilters] = useState(false)
 
   // Get taskerId from session
   useEffect(() => {
@@ -151,8 +150,7 @@ export default function HistoryPage() {
     setPage(1)
   }
 
-  // Calculate total earnings as sum of taskerFee from all orders
-  const totalTaskerEarnings = data?.orders.reduce((sum, order) => sum + (order.taskerFee || 0), 0) || 0;
+  const totalTaskValue = data?.stats.totalEarnings || 0
 
   // Filter orders by search query
   const filteredOrders = data?.orders.filter(order => 
@@ -187,51 +185,48 @@ export default function HistoryPage() {
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-950/50">
                   <Wallet className="h-4 w-4 text-sky-600 dark:text-sky-400" />
                 </div>
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Earnings</p>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Task Value</p>
               </div>
               <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
-                {convertToNaira(totalTaskerEarnings)}
+                {convertToNaira(totalTaskValue)}
               </p>
             </div>
           </div>
         )}
 
-        {/* Collapsible Filters */}
-        {showFilters && (
-          <div className="mb-4 space-y-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-400">
-                Search tasks
-              </label>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  placeholder="Search by type, location..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-11 rounded-xl border-slate-200 bg-white pl-10 dark:border-slate-700 dark:bg-slate-950"
-                />
-              </div>
-            </div>
-            
-            <div>
-              <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-400">
-                Status filter
-              </label>
-              <select
-                value={statusFilter}
-                onChange={(e) => handleStatusChange(e.target.value)}
-                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              >
-                <option value="">All Status</option>
-                <option value="pending">Pending</option>
-                <option value="accepted">Accepted</option>
-                <option value="completed">Completed</option>
-                <option value="cancelled">Cancelled</option>
-              </select>
+        <div className="mb-4 space-y-3 rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-400">
+              Search tasks
+            </label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                placeholder="Search by type, location..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-11 rounded-xl border-slate-200 bg-white pl-10 dark:border-slate-700 dark:bg-slate-950"
+              />
             </div>
           </div>
-        )}
+          
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-400">
+              Status filter
+            </label>
+            <select
+              value={statusFilter}
+              onChange={(e) => handleStatusChange(e.target.value)}
+              className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none focus:border-sky-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            >
+              <option value="">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="in_progress">In Progress</option>
+              <option value="completed">Completed</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+        </div>
 
         {/* Loading State */}
         {isLoading && (
@@ -340,14 +335,14 @@ export default function HistoryPage() {
                     {/* Financial Details */}
                     <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/50">
                       <div className="flex items-center justify-between">
-                        <span className="text-xs text-slate-500 dark:text-slate-400">Your earnings</span>
+                        <span className="text-xs text-slate-500 dark:text-slate-400">Order value</span>
                         <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                          {convertToNaira(order.taskerFee || 0)}
+                          {convertToNaira(order.amount)}
                         </span>
                       </div>
                       <div className="mt-2 flex items-center justify-between text-xs">
-                        <span className="text-slate-400 dark:text-slate-500">Total: {convertToNaira(order.totalAmount || order.amount)}</span>
-                        <span className="text-slate-400 dark:text-slate-500">Fee: {convertToNaira(order.platformFee || 0)}</span>
+                        <span className="text-slate-400 dark:text-slate-500">Collected: {convertToNaira(order.totalAmount || order.amount)}</span>
+                        <span className="text-slate-400 dark:text-slate-500">Service fee: {convertToNaira(order.platformFee || 0)}</span>
                       </div>
                     </div>
                   </div>

@@ -1,38 +1,48 @@
 'use client'
 
-import React, { useState, useEffect, useCallback, useRef } from 'react'
-import { Button } from '@/components/ui/button'
-import { authClient } from '@/lib/auth-client'
+import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { toast } from 'sonner'
-import { 
-  ChevronRight, 
-  ChevronLeft, 
-  Check, 
-  MapPin, 
-  Clock, 
-  ShoppingBag, 
-  FileText, 
-  Store, 
-  Package, 
-  CreditCard,
+import {
   ArrowRight,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  CreditCard,
+  Droplets,
+  FileText,
+  Info,
   Loader2,
+  MapPin,
+  Package,
+  ShieldCheck,
+  ShoppingBag,
+  Store,
+  Wallet,
+  type LucideIcon,
 } from 'lucide-react'
 import { io, type Socket } from 'socket.io-client'
+import { toast } from 'sonner'
 
-const SERVICE_CHARGE_PERCENTAGE = 15
+import { Button } from '@/components/ui/button'
+import { authClient } from '@/lib/auth-client'
+import {
+  calculateOrderPricing,
+  descriptionMentionsWater,
+  WATER_BAG_FEE,
+  WATER_TASK_TYPE,
+} from '@/lib/pricing'
+
 const ACTIVE_ORDER_REFRESH_MS = 4000
+const REALTIME_PAUSE_MS = 1200
 
 interface ErrandData {
   taskType: string
   description: string
   amount: string
-  deadlineValue: string
-  deadlineUnit: 'mins' | 'hours' | 'days'
   location: string
   store?: string
   packaging?: string
+  waterBags?: string
 }
 
 interface ActiveOrder {
@@ -44,223 +54,363 @@ interface ActiveOrder {
   taskerId?: string | null
 }
 
-const taskTypes = [
-  { 
-    value: 'restaurant', 
-    label: 'Restaurant Food', 
-    description: 'Get food delivered from campus restaurants',
-    icon: '🍔',
-    color: 'from-orange-400 to-red-500'
+interface TaskTypeConfig {
+  value: string
+  label: string
+  description: string
+  icon: LucideIcon
+  accent: string
+}
+
+const taskTypes: TaskTypeConfig[] = [
+  {
+    value: 'restaurant',
+    label: 'Restaurant Food',
+    description: 'Meals and food pickups from campus restaurants.',
+    icon: ShoppingBag,
+    accent: 'from-orange-500 to-rose-500',
   },
-  { 
-    value: 'printing', 
-    label: 'Printing Services', 
-    description: 'Print documents from cyber cafes',
-    icon: '🖨️',
-    color: 'from-blue-400 to-indigo-500'
+  {
+    value: 'printing',
+    label: 'Printing Services',
+    description: 'Notes, assignments, and document printing.',
+    icon: FileText,
+    accent: 'from-sky-500 to-indigo-500',
   },
-  { 
-    value: 'shopping', 
-    label: 'Store Shopping', 
-    description: 'Buy items from campus stores',
-    icon: '🛍️',
-    color: 'from-green-400 to-emerald-500'
+  {
+    value: 'shopping',
+    label: 'Store Shopping',
+    description: 'Groceries, toiletries, and small campus-store items.',
+    icon: Store,
+    accent: 'from-emerald-500 to-teal-500',
   },
-  { 
-    value: 'others', 
-    label: 'General Errands', 
-    description: 'Any other tasks around campus',
-    icon: '📋',
-    color: 'from-purple-400 to-pink-500'
+  {
+    value: WATER_TASK_TYPE,
+    label: 'Buy Water',
+    description: 'Water orders are charged separately at N200 per bag.',
+    icon: Droplets,
+    accent: 'from-cyan-500 to-blue-500',
+  },
+  {
+    value: 'others',
+    label: 'General Errands',
+    description: 'Any other campus errand that needs a runner.',
+    icon: Package,
+    accent: 'from-violet-500 to-fuchsia-500',
   },
 ]
 
-const printingStores = [
-  { value: '', label: 'Select a store...' },
-  { value: 'teddy', label: 'Teddy Store' },
-  { value: 'wdu', label: 'WDU Store' },
-];
-
-const shoppingStores = [
-  { value: '', label: 'Select a store...' },
-  { value: 'rita', label: 'Rita Store' },
-  { value: 'sarah', label: 'Sarah Store' },
-  { value: 'bright', label: 'Bright Store' },
-];
-
-const restaurantStores = [
-  { value: '', label: 'Select a store...' },
-  { value: 'akpan', label: 'Akpan Store' },
-  { value: 'mama', label: 'Mama\'s Kitchen' },
-  { value: 'golley', label: 'Golley Shop' },
-  { value: 'indomie', label: 'Indomie Spot' },
-];
+const storeOptions: Record<string, Array<{ value: string; label: string }>> = {
+  printing: [
+    { value: '', label: 'Select a store...' },
+    { value: 'teddy', label: 'Teddy Store' },
+    { value: 'wdu', label: 'WDU Store' },
+  ],
+  shopping: [
+    { value: '', label: 'Select a store...' },
+    { value: 'rita', label: 'Rita Store' },
+    { value: 'sarah', label: 'Sarah Store' },
+    { value: 'muuy V', label: 'Mummy V' },
+  ],
+  restaurant: [
+    { value: '', label: 'Select a store...' },
+    { value: 'akpan', label: 'Akpan Store' },
+    { value: 'mama', label: "Mama's Kitchen" },
+    { value: 'golley', label: 'Golley Shop' },
+    { value: 'indomie', label: 'Indomie Spot' },
+  ],
+  [WATER_TASK_TYPE]: [
+    { value: '', label: 'Select a store...' },
+    { value: 'rita', label: 'Rita Store' },
+    { value: 'sarah', label: 'Sarah Store' },
+    { value: 'muuy V', label: 'Mummy V' },
+    { value: 'campus-mart', label: 'Campus Mart' },
+  ],
+}
 
 const packagingOptions = [
   { value: 'cellophane', label: 'Cellophane Bag', price: 'Free' },
-  { value: 'takeaway', label: 'Takeaway Pack', price: '₦200' },
+  { value: 'takeaway', label: 'Takeaway Pack', price: 'N200' },
 ]
 
-
+function formatNaira(value: number) {
+  return new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency: 'NGN',
+    maximumFractionDigits: 0,
+  }).format(value)
+}
 
 export default function ErrandWizardPage() {
   const router = useRouter()
   const { data: session } = authClient.useSession()
   const [step, setStep] = useState(1)
-  const [, setDirection] = useState(0)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isRealtimePaused, setIsRealtimePaused] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [loadingActiveOrder, setLoadingActiveOrder] = useState(true)
-  const isTasker = session?.user.role === 'tasker'
   const socketRef = useRef<Socket | null>(null)
   const fetchingActiveOrderRef = useRef(false)
+  const isRealtimePausedRef = useRef(false)
+  const realtimeResumeTimeoutRef = useRef<number | null>(null)
+  const isTasker = session?.user.role === 'tasker'
 
-  
   const [formData, setFormData] = useState<ErrandData>({
     taskType: '',
     description: '',
     amount: '',
-    deadlineValue: '',
-    deadlineUnit: 'mins',
     location: '',
     store: '',
     packaging: '',
+    waterBags: '',
   })
-
-  useEffect(() => {
-    setMounted(true)
-  }, [])
 
   const fetchCurrentOrder = useCallback(async () => {
     if (fetchingActiveOrderRef.current) return
-
     fetchingActiveOrderRef.current = true
+
     try {
       const response = await fetch('/api/orders?current=true')
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch current order')
-      }
-
+      if (!response.ok) throw new Error('Failed to fetch current order')
       const data = await response.json()
       setActiveOrder(data)
     } catch {
       setActiveOrder(null)
     } finally {
-      setLoadingActiveOrder(false)
       fetchingActiveOrderRef.current = false
+      setLoadingActiveOrder(false)
     }
+  }, [])
+
+  const disconnectSocket = useCallback(() => {
+    socketRef.current?.disconnect()
+    socketRef.current = null
+  }, [])
+
+  const setRealtimePauseState = useCallback((paused: boolean) => {
+    isRealtimePausedRef.current = paused
+    setIsRealtimePaused(paused)
+  }, [])
+
+  const pauseRealtime = useCallback(
+    (duration = REALTIME_PAUSE_MS) => {
+      disconnectSocket()
+      setRealtimePauseState(true)
+
+      if (realtimeResumeTimeoutRef.current) {
+        window.clearTimeout(realtimeResumeTimeoutRef.current)
+      }
+
+      realtimeResumeTimeoutRef.current = window.setTimeout(() => {
+        setRealtimePauseState(false)
+        realtimeResumeTimeoutRef.current = null
+      }, duration)
+    },
+    [disconnectSocket, setRealtimePauseState]
+  )
+
+  useEffect(() => {
+    setMounted(true)
   }, [])
 
   useEffect(() => {
     if (!mounted) return
-
     void fetchCurrentOrder()
-
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void fetchCurrentOrder()
-      }
-    }, ACTIVE_ORDER_REFRESH_MS)
-
-    return () => {
-      window.clearInterval(interval)
-    }
   }, [fetchCurrentOrder, mounted])
 
   useEffect(() => {
     if (!mounted) return
 
-    const socket = io({
-      withCredentials: true,
-      transports: ['websocket', 'polling'],
-    })
+    const interval = window.setInterval(() => {
+      if (!isRealtimePausedRef.current && document.visibilityState === 'visible') {
+        void fetchCurrentOrder()
+      }
+    }, ACTIVE_ORDER_REFRESH_MS)
 
-    socketRef.current = socket
-    socket.on('order:updated', () => {
-      void fetchCurrentOrder()
-    })
+    const onFocus = () => {
+      if (!isRealtimePausedRef.current && document.visibilityState === 'visible') {
+        void fetchCurrentOrder()
+      }
+    }
+
+    window.addEventListener('focus', onFocus)
 
     return () => {
-      socket.disconnect()
-      socketRef.current = null
+      window.clearInterval(interval)
+      window.removeEventListener('focus', onFocus)
     }
   }, [fetchCurrentOrder, mounted])
 
-  // Calculations
-  const baseAmount = parseFloat(formData.amount || '0')
-  const serviceCharge = baseAmount * (SERVICE_CHARGE_PERCENTAGE / 100)
-  const totalAmount = baseAmount + serviceCharge
-
-  const formatNaira = (value: number) => 
-    new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN' }).format(value)
-
-  const validateStep = (stepNum: number): boolean => {
-    const newErrors: Record<string, string> = {}
-    
-    if (stepNum === 1) {
-      if (!formData.taskType) newErrors.taskType = 'Select a task type to continue'
-    }
-    
-    if (stepNum === 2) {
-      if (formData.taskType !== 'others' && !formData.store) {
-        newErrors.store = 'Please select a store'
-      }
-      if (formData.taskType === 'restaurant' && !formData.packaging) {
-        newErrors.packaging = 'Select packaging preference'
-      }
-      if (!formData.description.trim()) {
-        newErrors.description = 'Description is required'
-      } else if (formData.description.trim().length < 10) {
-        newErrors.description = 'Minimum 10 characters required'
-      }
-      if (!formData.amount || parseFloat(formData.amount) <= 0) {
-        newErrors.amount = 'Enter a valid amount'
-      }
-    }
-    
-    if (stepNum === 3) {
-      if (!formData.deadlineValue || parseInt(formData.deadlineValue) <= 0) {
-        newErrors.deadlineValue = 'Set a valid deadline'
-      }
-      if (!formData.location.trim()) {
-        newErrors.location = 'Delivery location required'
-      }
+  useEffect(() => {
+    if (!mounted || isRealtimePaused || !activeOrder?._id) {
+      disconnectSocket()
+      return
     }
 
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
+    const activeOrderId = activeOrder._id
+    const socket = io({ withCredentials: true, transports: ['websocket'] })
+    socketRef.current = socket
+
+    socket.on('connect', () => {
+      socket.emit('order:watch', activeOrderId)
+    })
+
+    socket.on('order:updated', (payload?: { _id?: string }) => {
+      if (!payload?._id || payload._id === activeOrderId) {
+        void fetchCurrentOrder()
+      }
+    })
+
+    return () => {
+      if (socket.connected) {
+        socket.emit('order:unwatch', activeOrderId)
+      }
+      if (socketRef.current === socket) {
+        socket.disconnect()
+        socketRef.current = null
+        return
+      }
+      socket.disconnect()
+    }
+  }, [activeOrder?._id, disconnectSocket, fetchCurrentOrder, isRealtimePaused, mounted])
+
+  useEffect(() => {
+    return () => {
+      if (realtimeResumeTimeoutRef.current) {
+        window.clearTimeout(realtimeResumeTimeoutRef.current)
+      }
+      disconnectSocket()
+    }
+  }, [disconnectSocket])
+
+  const amount = Number(formData.amount || 0)
+  const waterBags = Number(formData.waterBags || 0)
+  const description = formData.description.trim()
+  const taskType = formData.taskType || 'others'
+  const pricing = calculateOrderPricing({
+    amount: Number.isFinite(amount) ? amount : 0,
+    taskType,
+    waterBags: Number.isFinite(waterBags) ? waterBags : 0,
+  })
+  const selectedStores = storeOptions[formData.taskType] || []
+  const selectedStoreLabel = selectedStores.find((item) => item.value === formData.store)?.label || ''
+  const waterWarning =
+    description.length > 0 &&
+    descriptionMentionsWater(description) &&
+    formData.taskType !== WATER_TASK_TYPE
+
+  const clearError = (field: string) =>
+    setErrors((previous) => {
+      if (!previous[field]) return previous
+      const next = { ...previous }
+      delete next[field]
+      return next
+    })
+
+  const handleInputChange = (
+    event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
+    pauseRealtime()
+    const { name, value } = event.target
+    setFormData((previous) => ({ ...previous, [name]: value }))
+    clearError(name)
+  }
+
+  const selectTaskType = (value: string) => {
+    pauseRealtime()
+    setFormData((previous) => ({
+      ...previous,
+      taskType: value,
+      store: '',
+      packaging: value === 'restaurant' ? previous.packaging : '',
+      waterBags: value === WATER_TASK_TYPE ? previous.waterBags : '',
+    }))
+    ;['taskType', 'store', 'packaging', 'waterBags', 'description'].forEach(clearError)
+  }
+
+  const handlePackagingSelect = (value: string) => {
+    pauseRealtime()
+    setFormData((previous) => ({ ...previous, packaging: value }))
+    clearError('packaging')
+  }
+
+  const handleLocationSelect = (value: string) => {
+    pauseRealtime()
+    setFormData((previous) => ({ ...previous, location: value }))
+    clearError('location')
+  }
+
+  const handleEditStep = (nextStep: number) => {
+    pauseRealtime()
+    setStep(nextStep)
+  }
+
+  const validateStep = (stepNumber: number) => {
+    const nextErrors: Record<string, string> = {}
+
+    if (stepNumber === 1 && !formData.taskType) nextErrors.taskType = 'Select a task type to continue.'
+
+if (stepNumber === 2) {
+  if (formData.taskType && formData.taskType !== 'others' && !formData.store) {
+    nextErrors.store = 'Select the store for this task.'
+  }
+
+  if (formData.taskType === 'restaurant' && !formData.packaging) {
+    nextErrors.packaging = 'Choose a packaging option.'
+  }
+
+  if (
+    formData.taskType === WATER_TASK_TYPE &&
+    (!Number.isInteger(waterBags) || waterBags <= 0)
+  ) {
+    nextErrors.waterBags = 'Enter the number of water bags.'
+  }
+
+  // ✅ ONLY validate description if NOT water
+  if (formData.taskType !== WATER_TASK_TYPE) {
+    if (!description) {
+      nextErrors.description = 'Description is required.'
+    } else if (description.length < 10) {
+      nextErrors.description = 'Use at least 10 characters.'
+    } else if (waterWarning) {
+      nextErrors.description =
+        'Use the Buy Water option so water fees are calculated correctly.'
+    }
+  }
+
+  if (formData.amount === '' || !Number.isFinite(amount) || amount < 0) {
+    nextErrors.amount = 'Enter a valid item amount.'
+  }
+}
+
+ if (stepNumber === 3) {
+  if (!formData.location.trim()) {
+    nextErrors.location = 'Enter the delivery location.'
+  }
+}
+
+    setErrors(nextErrors)
+    return Object.keys(nextErrors).length === 0
   }
 
   const handleNext = () => {
-    if (validateStep(step)) {
-      setDirection(1)
-      setStep(s => s + 1)
-      setErrors({})
-    }
-  }
-
-  const handleBack = () => {
-    setDirection(-1)
-    setStep(s => s - 1)
+    pauseRealtime()
+    if (!validateStep(step)) return
+    setStep((previous) => previous + 1)
     setErrors({})
   }
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
-    setFormData(prev => ({ ...prev, [name]: value }))
-    if (errors[name]) {
-      setErrors(prev => {
-        const newErrors = { ...prev }
-        delete newErrors[name]
-        return newErrors
-      })
-    }
+  const handleBack = () => {
+    pauseRealtime()
+    setStep((previous) => previous - 1)
+    setErrors({})
   }
 
   const createOrder = async () => {
+    pauseRealtime(REALTIME_PAUSE_MS * 2)
+
     if (activeOrder) {
       toast.info('You already have an active order. Track it before booking another one.')
       router.push('/dashboard/tasks')
@@ -272,40 +422,55 @@ export default function ErrandWizardPage() {
       const response = await fetch('/api/orders', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...formData }),
+        body: JSON.stringify({
+  ...formData,
+  description: formData.taskType === WATER_TASK_TYPE ? '' : description,
+}),
       })
 
       if (!response.ok) {
         const error = await response.json()
-
         if (response.status === 409) {
-          toast.error(error.error || 'You already have an active order')
+          toast.error(error.error || 'You already have an active order.')
           router.push('/dashboard/tasks')
           return
         }
-
-        toast.error(error.error || 'Failed to submit task')
+        toast.error(error.error || 'Failed to submit task.')
         return
       }
 
       const createdOrder = await response.json()
-      toast.success('Task posted successfully! Taskers will see your task soon.')
+      toast.success('Task posted successfully. Taskers can see it now.')
       setActiveOrder(createdOrder)
       setFormData({
-        taskType: '', description: '', amount: '', deadlineValue: '',
-        deadlineUnit: 'mins', location: '', store: '', packaging: '',
+        taskType: '',
+        description: '',
+        amount: '',
+        location: '',
+        store: '',
+        packaging: '',
+        waterBags: '',
       })
       setStep(1)
       router.push('/dashboard/tasks')
     } catch {
-      toast.error('An error occurred while posting the task')
+      toast.error('An error occurred while posting the task.')
     } finally {
       setIsSubmitting(false)
     }
   }
 
   const handleSubmit = async () => {
-    if (!validateStep(4)) return
+    pauseRealtime(REALTIME_PAUSE_MS * 2)
+
+    if (!validateStep(2)) {
+      setStep(2)
+      return
+    }
+    if (!validateStep(3)) {
+      setStep(3)
+      return
+    }
     await createOrder()
   }
 
@@ -316,12 +481,10 @@ export default function ErrandWizardPage() {
 
   if (loadingActiveOrder) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 flex items-center justify-center px-4">
+      <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-slate-50 via-white to-slate-100 px-4 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
         <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
           <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
-          <p className="text-sm text-slate-600 dark:text-slate-300">
-            Checking your current order...
-          </p>
+          <p className="text-sm text-slate-600 dark:text-slate-300">Checking your current order...</p>
         </div>
       </div>
     )
@@ -332,52 +495,33 @@ export default function ErrandWizardPage() {
       activeOrder.status === 'pending'
         ? 'Searching for a tasker'
         : activeOrder.hasPaid
-          ? 'Order in progress'
-          : 'Tasker assigned'
+          ? 'Payment confirmed and task in progress'
+          : 'Tasker assigned, checkout pending'
 
     return (
       <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
         <div className="mx-auto flex min-h-screen w-full max-w-2xl items-center px-4 py-10">
           <div className="w-full overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white/90 shadow-2xl shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/60">
             <div className="bg-linear-to-r from-indigo-600 via-sky-600 to-cyan-500 px-6 py-8 text-white">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-100">
-                Current order locked
-              </p>
-              <h1 className="mt-3 text-3xl font-bold">
-                Finish your active task first
-              </h1>
-              <p className="mt-3 max-w-xl text-sm leading-6 text-indigo-50">
-                You can only have one live order at a time. We&apos;ll keep this simple on mobile by taking you straight to the order tracker until it&apos;s completed or cancelled.
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-100">Current order locked</p>
+              <h1 className="mt-3 text-3xl font-bold">Finish your active task first</h1>
+              <p className="mt-3 text-sm leading-6 text-indigo-50">
+                Follow assignment, Flutterwave payment, and delivery updates from the tracker before posting another task.
               </p>
             </div>
 
             <div className="space-y-5 px-6 py-6">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
-                      Active status
-                    </p>
-                    <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">
-                      {currentStatusLabel}
-                    </p>
-                  </div>
-                  <span className="rounded-full bg-indigo-100 px-3 py-1 text-xs font-semibold text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300">
-                    {activeOrder.status.replace('_', ' ')}
-                  </span>
-                </div>
-
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Active status</p>
+                <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{currentStatusLabel}</p>
                 <div className="mt-4 rounded-2xl bg-white p-4 ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    {activeOrder.description}
-                  </p>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                    Task type: {activeOrder.taskType}
-                  </p>
+                  <p className="text-sm font-semibold text-slate-900 dark:text-white">{activeOrder.description}</p>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Task type: {activeOrder.taskType}</p>
                 </div>
               </div>
 
               <button
+                type="button"
                 onClick={() => router.push('/dashboard/tasks')}
                 className="flex h-14 w-full items-center justify-center rounded-2xl bg-linear-to-r from-indigo-600 to-cyan-500 px-4 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition-transform hover:scale-[1.01]"
               >
@@ -392,79 +536,62 @@ export default function ErrandWizardPage() {
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      <div className="px-4 py-3 md:px-8 lg:py-8">
+        <div className="mx-auto w-full max-w-4xl">
+          <div className="mb-5 flex flex-col gap-3 md:mb-8 md:flex-row md:items-end md:justify-between">
+            <div className="rounded-2xl border border-sky-200 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm dark:border-sky-900/60 dark:bg-slate-900/80 dark:text-slate-300">
+              Fixed fees for regular errands. Water is charged per bag.
+            </div>
+          </div>
 
-      <div className="px-4 py-4 md:px-8 lg:py-8">
-        <div className="mx-auto w-full max-w-3xl">
-            {/* Page Header */}
-            <div className="mb-8 flex justify-between items-start">
-              <div>
-                <h1 className="text-3xl font-bold bg-linear-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-                  Book a Task
-                </h1>
-                <p className="text-slate-500 dark:text-slate-400 mt-2">
-                  Post a new errand and get help from verified runners
-                </p>
+          {isTasker ? (
+            <div className="mb-5 rounded-3xl border border-emerald-200/80 bg-linear-to-r from-emerald-50 via-white to-teal-50 p-4 shadow-sm dark:border-emerald-900/60 dark:from-emerald-950/40 dark:via-slate-900 dark:to-teal-950/40 md:mb-8 md:p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">Tasker access enabled</p>
+                  <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">You can use both dashboards.</h2>
+                  <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
+                    Stay here to book errands, or switch to the tasker dashboard for active jobs.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => router.push('/tasker-dashboard')}
+                  className="h-11 rounded-xl bg-linear-to-r from-emerald-600 to-teal-600 px-4 text-white hover:from-emerald-700 hover:to-teal-700"
+                >
+                  Open Tasker Dashboard
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
               </div>
             </div>
+          ) : null}
 
-            {isTasker && (
-              <div className="mb-8 rounded-3xl border border-emerald-200/80 bg-linear-to-r from-emerald-50 via-white to-teal-50 p-5 shadow-sm dark:border-emerald-900/60 dark:from-emerald-950/40 dark:via-slate-900 dark:to-teal-950/40">
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div>
-                    <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">
-                      Tasker access enabled
-                    </p>
-                    <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
-                      You can use both dashboards.
-                    </h2>
-                    <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-                      Stay here to book errands as a user, or switch to your tasker dashboard to view accepted and available jobs.
-                    </p>
-                  </div>
-
-                  <Button
-                    onClick={() => router.push('/tasker-dashboard')}
-                    className="h-11 rounded-xl bg-linear-to-r from-emerald-600 to-teal-600 px-4 text-white hover:from-emerald-700 hover:to-teal-700"
-                  >
-                    Open Tasker Dashboard
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Progress Steps */}
-            <div className="mb-8">
-              <div className="flex justify-between relative">
-                <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-slate-200 dark:bg-slate-800 -translate-y-1/2 z-0" />
-                <div 
-                  className="absolute top-1/2 left-0 h-0.5 bg-linear-to-r from-indigo-500 to-purple-500 -translate-y-1/2 z-0 transition-all duration-500"
+          <div className="mb-5 grid gap-4 lg:mb-8 ">
+            <div className="rounded-3xl border border-white/60 bg-white/80 p-4 shadow-xl shadow-slate-200/40 backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/80 dark:shadow-slate-950/40 md:p-5">
+              <div className="relative flex justify-between">
+                <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 border-t border-slate-200 dark:border-slate-800" />
+                <div
+                  className="absolute left-0 top-1/2 h-px -translate-y-1/2 bg-linear-to-r from-indigo-500 to-cyan-500 transition-all duration-500"
                   style={{ width: `${((step - 1) / 3) * 100}%` }}
                 />
-              
-                {[1, 2, 3, 4].map((s, idx) => {
-                  const Icon = stepIcons[idx]
-                  const isActive = s === step
-                  const isCompleted = s < step
-                  
+                {[1, 2, 3, 4].map((currentStep, index) => {
+                  const Icon = stepIcons[index]
+                  const isActive = currentStep === step
+                  const isCompleted = currentStep < step
                   return (
-                    <div key={s} className="relative z-10 flex flex-col items-center gap-2">
-                      <div 
-                        className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 border-2 ${
-                          isCompleted 
-                            ? 'bg-linear-to-r from-indigo-500 to-purple-500 border-transparent text-white' 
-                            : isActive 
-                              ? 'bg-white dark:bg-slate-900 border-indigo-500 text-indigo-600 dark:text-indigo-400 shadow-lg shadow-indigo-500/25' 
-                              : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-400'
-                        }`}
-                      >
-                        {isCompleted ? <Check className="w-5 h-5" /> : <Icon className="w-5 h-5" />}
-                      </div>
-                      <span className={`text-xs font-medium transition-colors ${
-                        isActive ? 'text-indigo-600 dark:text-indigo-400' : 
-                        isCompleted ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'
+                    <div key={currentStep} className="relative z-10 flex flex-col items-center gap-2">
+                      <div className={`flex h-10 w-10 items-center justify-center rounded-full border-2 ${
+                        isCompleted
+                          ? 'border-transparent bg-linear-to-r from-indigo-500 to-cyan-500 text-white'
+                          : isActive
+                            ? 'border-indigo-500 bg-white text-indigo-600 shadow-lg shadow-indigo-500/25 dark:bg-slate-900 dark:text-indigo-300'
+                            : 'border-slate-200 bg-white text-slate-400 dark:border-slate-700 dark:bg-slate-900'
                       }`}>
-                        {stepTitles[idx]}
+                        {isCompleted ? <Check className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+                      </div>
+                      <span className={`hidden text-xs font-medium sm:block ${
+                        isActive ? 'text-indigo-600 dark:text-indigo-400' : isCompleted ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'
+                      }`}>
+                        {stepTitles[index]}
                       </span>
                     </div>
                   )
@@ -472,402 +599,241 @@ export default function ErrandWizardPage() {
               </div>
             </div>
 
-            {/* Main Card */}
-            <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-3xl shadow-2xl shadow-slate-200/50 dark:shadow-slate-950/50 border border-white/50 dark:border-slate-800/50 overflow-hidden">
-            
-            {/* Step Content with Animation */}
-            <div className="p-6 md:p-8 min-h-125 relative">
-              <div 
-                key={step}
-                className="animate-in slide-in-from-right-8 fade-in duration-500"
+            {/* <div className="rounded-3xl border border-slate-200/70 bg-white/80 p-4 shadow-lg shadow-slate-200/40 backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/80 dark:shadow-slate-950/40 lg:hidden">
+              <button
+                type="button"
+                onClick={() => setShowMobilePricing((previous) => !previous)}
+                className="flex w-full items-center justify-between gap-3 text-left"
               >
-                {/* Step 1: Task Type */}
-                {step === 1 && (
-                  <div className="space-y-6">
-                    <div className="text-center mb-8">
-                      <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-                        What do you need?
-                      </h2>
-                      <p className="text-slate-500 dark:text-slate-400">
-                        Select the category that best fits your errand
-                      </p>
-                    </div>
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Pricing</p>
+                  <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{mobilePricingSummary}</p>
+                </div>
+                <ChevronDown className={`h-5 w-5 shrink-0 text-slate-500 transition-transform dark:text-slate-400 ${showMobilePricing ? 'rotate-180' : ''}`} />
+              </button>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {taskTypes.map((type) => (
+              {showMobilePricing ? (
+                <div className="mt-4 space-y-3 border-t border-slate-200 pt-4 text-sm dark:border-slate-800">
+                  {TIERED_SERVICE_FEE_RULES.map((rule) => (
+                    <div key={rule.label} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-950/70">
+                      <span className="text-slate-600 dark:text-slate-300">{rule.label}</span>
+                      <span className="font-semibold text-slate-900 dark:text-white">+{formatNaira(rule.fee)}</span>
+                    </div>
+                  ))}
+                  <div className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-cyan-900 dark:border-cyan-900/70 dark:bg-cyan-950/30 dark:text-cyan-100">
+                    Bag(s) of water cost {formatNaira(WATER_BAG_FEE)} per bag.
+                  </div>
+                </div>
+              ) : null}
+            </div> */}
+{/* 
+            <div className="hidden rounded-3xl border border-slate-200/70 bg-white/80 p-5 shadow-lg shadow-slate-200/40 backdrop-blur dark:border-slate-800/70 dark:bg-slate-900/80 dark:shadow-slate-950/40 lg:block">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Pricing rules</p>
+              <div className="mt-4 space-y-3 text-sm">
+                {TIERED_SERVICE_FEE_RULES.map((rule) => (
+                  <div key={rule.label} className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-950/70">
+                    <span className="text-slate-600 dark:text-slate-300">{rule.label}</span>
+                    <span className="font-semibold text-slate-900 dark:text-white">+{formatNaira(rule.fee)}</span>
+                  </div>
+                ))}
+                <div className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-cyan-900 dark:border-cyan-900/70 dark:bg-cyan-950/30 dark:text-cyan-100">
+                  Bag(s) of water cost {formatNaira(WATER_BAG_FEE)} per bag.
+                </div>
+              </div>
+            </div> */}
+          </div>
+
+          <div className="overflow-hidden rounded-3xl border border-white/50 bg-white/80 shadow-2xl shadow-slate-200/50 backdrop-blur-xl dark:border-slate-800/50 dark:bg-slate-900/80 dark:shadow-slate-950/50">
+            <div className="min-h-112 p-4 sm:p-5 md:min-h-120 md:p-8">
+              {step === 1 ? (
+                <div className="space-y-5 md:space-y-6">
+                  <div className="text-center">
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">What do you need?</h2>
+                    <p className="mt-2 text-slate-500 dark:text-slate-400">Choose the category that fits this errand.</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-4">
+                    {taskTypes.map((item) => {
+                      const Icon = item.icon
+                      const selected = formData.taskType === item.value
+                      return (
                         <button
-                          key={type.value}
-                          onClick={() => {
-                            setFormData(prev => ({ ...prev, taskType: type.value }))
-                            if (errors.taskType) setErrors(prev => ({ ...prev, taskType: '' }))
-                          }}
-                          className={`group relative p-6 rounded-2xl border-2 text-left transition-all duration-300 hover:scale-[1.02] ${
-                            formData.taskType === type.value
-                              ? 'border-indigo-500 bg-linear-to-br from-indigo-50 to-purple-50 dark:from-indigo-950/30 dark:to-purple-950/30 shadow-lg shadow-indigo-500/10'
-                              : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-lg bg-white dark:bg-slate-800/50'
+                          key={item.value}
+                          type="button"
+                          onClick={() => selectTaskType(item.value)}
+                          className={`group relative rounded-2xl border-2 p-4 text-left transition-all duration-300 hover:scale-[1.02] sm:p-5 md:p-6 ${
+                            selected
+                              ? 'border-indigo-500 bg-linear-to-br from-indigo-50 to-cyan-50 shadow-lg shadow-indigo-500/10 dark:from-indigo-950/30 dark:to-cyan-950/20'
+                              : 'border-slate-200 bg-white hover:border-indigo-300 hover:shadow-lg dark:border-slate-700 dark:bg-slate-800/50 dark:hover:border-indigo-700'
                           }`}
                         >
-                          <div className={`w-12 h-12 rounded-xl bg-linear-to-br ${type.color} flex items-center justify-center text-2xl mb-4 shadow-lg group-hover:scale-110 transition-transform`}>
-                            {type.icon}
+                          <div className={`mb-3 flex h-10 w-10 items-center justify-center rounded-xl bg-linear-to-br ${item.accent} text-white shadow-lg transition-transform group-hover:scale-110 sm:mb-4 sm:h-12 sm:w-12`}>
+                            <Icon className="h-5 w-5 sm:h-6 sm:w-6" />
                           </div>
-                          <h3 className={`font-semibold mb-1 ${
-                            formData.taskType === type.value ? 'text-indigo-900 dark:text-indigo-100' : 'text-slate-900 dark:text-slate-100'
-                          }`}>
-                            {type.label}
-                          </h3>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
-                            {type.description}
-                          </p>
-                          
-                          {formData.taskType === type.value && (
-                            <div className="absolute top-4 right-4 w-6 h-6 rounded-full bg-indigo-500 flex items-center justify-center">
-                              <Check className="w-4 h-4 text-white" />
-                            </div>
-                          )}
+                          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 sm:text-base">{item.label}</h3>
+                          <p className="mt-1 hidden text-sm text-slate-500 dark:text-slate-400 sm:block">{item.description}</p>
+                          {selected ? <div className="absolute right-4 top-4 rounded-full bg-indigo-500 p-1 text-white"><Check className="h-4 w-4" /></div> : null}
                         </button>
-                      ))}
-                    </div>
-
-                    {errors.taskType && (
-                      <p className="text-center text-red-500 text-sm animate-pulse">{errors.taskType}</p>
-                    )}
+                      )
+                    })}
                   </div>
-                )}
+                  {errors.taskType ? <p className="text-center text-sm text-red-500">{errors.taskType}</p> : null}
+                </div>
+              ) : null}
 
-                {/* Step 2: Details */}
-                {step === 2 && (
-                  <div className="space-y-6">
-                    <div className="mb-6">
-                      <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-                        Errand Details
-                      </h2>
-                      <p className="text-slate-500 dark:text-slate-400">
-                        Provide specific information for your task
-                      </p>
-                    </div>
-
-                    <div className="space-y-5">
-                      {formData.taskType !== 'others' && (
-                        <div className="space-y-2">
-                          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                            <Store className="w-4 h-4 text-indigo-500" />
-                            Select Store *
-                          </label>
-                          <select
-                            name="store"
-                            value={formData.store}
-                            onChange={handleInputChange}
-                            className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none appearance-none cursor-pointer"
-                          >
-                            {(formData.taskType === 'printing' && printingStores.map(s => (
-                              <option key={s.value} value={s.value}>{s.label}</option>
-                            ))) ||
-                            (formData.taskType === 'shopping' && shoppingStores.map(s => (
-                              <option key={s.value} value={s.value}>{s.label}</option>
-                            ))) ||
-                            (formData.taskType === 'restaurant' && restaurantStores.map(s => (
-                              <option key={s.value} value={s.value}>{s.label}</option>
-                            )))}
-                          </select>
-                          {errors.store && <p className="text-red-500 text-sm">{errors.store}</p>}
-                        </div>
-                      )}
-
-                      {formData.taskType === 'restaurant' && (
-                        <div className="space-y-2">
-                          <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                            <Package className="w-4 h-4 text-indigo-500" />
-                            Packaging *
-                          </label>
-                          <div className="grid grid-cols-2 gap-3">
-                            {packagingOptions.map((option) => (
-                              <button
-                                key={option.value}
-                                onClick={() => setFormData(prev => ({ ...prev, packaging: option.value }))}
-                                className={`p-4 rounded-xl border-2 text-center transition-all ${
-                                  formData.packaging === option.value
-                                    ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300'
-                                    : 'border-slate-200 dark:border-slate-700 hover:border-indigo-300'
-                                }`}
-                              >
-                                <div className="font-medium">{option.label}</div>
-                                <div className="text-sm text-slate-500">{option.price}</div>
-                              </button>
-                            ))}
-                          </div>
-                          {errors.packaging && <p className="text-red-500 text-sm">{errors.packaging}</p>}
-                        </div>
-                      )}
-
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          <FileText className="w-4 h-4 text-indigo-500" />
-                          Description *
-                        </label>
-                        <textarea
-                          name="description"
-                          value={formData.description}
-                          onChange={handleInputChange}
-                          placeholder="Describe exactly what you need..."
-                          rows={4}
-                          className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none resize-none"
-                        />
-                        {errors.description && <p className="text-red-500 text-sm">{errors.description}</p>}
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          <CreditCard className="w-4 h-4 text-indigo-500" />
-                          Budget (₦) *
-                        </label>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₦</span>
-                          <input
-                            type="number"
-                            name="amount"
-                            value={formData.amount}
-                            onChange={handleInputChange}
-                            placeholder="0.00"
-                            className="w-full pl-10 pr-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none font-mono text-lg"
-                          />
-                        </div>
-                        {errors.amount && <p className="text-red-500 text-sm">{errors.amount}</p>}
-                      </div>
-                    </div>
+              {step === 2 ? (
+                <div className="space-y-4 md:space-y-5">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Errand Details</h2>
+                    <p className="mt-2 text-slate-500 dark:text-slate-400">Add the store, item notes, and budget.</p>
                   </div>
-                )}
-
-                {/* Step 3: Delivery */}
-                {step === 3 && (
-                  <div className="space-y-6">
-                    <div className="mb-6">
-                      <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-                        Delivery Info
-                      </h2>
-                      <p className="text-slate-500 dark:text-slate-400">
-                        When and where should we deliver?
-                      </p>
+                  {formData.taskType && formData.taskType !== 'others' ? (
+                    <div>
+                      <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Store className="h-4 w-4 text-indigo-500" />Select Store</label>
+                      <select name="store" value={formData.store} onChange={handleInputChange} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
+                        {selectedStores.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                      </select>
+                      {errors.store ? <p className="mt-2 text-sm text-red-500">{errors.store}</p> : null}
                     </div>
-
-                    <div className="space-y-5">
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          <Clock className="w-4 h-4 text-indigo-500" />
-                          Deadline *
-                        </label>
-                        <div className="flex gap-3">
-                          <input
-                            type="number"
-                            name="deadlineValue"
-                            value={formData.deadlineValue}
-                            onChange={handleInputChange}
-                            placeholder="Enter time"
-                            className="flex-1 px-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none"
-                          />
-                          <select
-                            name="deadlineUnit"
-                            value={formData.deadlineUnit}
-                            onChange={handleInputChange}
-                            className="px-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none cursor-pointer min-w-30"
-                          >
-                            <option value="mins">Minutes</option>
-                            <option value="hours">Hours</option>
-                            <option value="days">Days</option>
-                          </select>
-                        </div>
-                        {errors.deadlineValue && <p className="text-red-500 text-sm">{errors.deadlineValue}</p>}
-                      </div>
-
-                      <div className="space-y-2">
-                        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          <MapPin className="w-4 h-4 text-indigo-500" />
-                          Delivery Location *
-                        </label>
-                        <input
-                          type="text"
-                          name="location"
-                          value={formData.location}
-                          onChange={handleInputChange}
-                          placeholder="e.g., Library 2nd Floor, Hall B Room 204..."
-                          className="w-full px-4 py-3 rounded-xl border-2 border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all outline-none"
-                        />
-                        {errors.location && <p className="text-red-500 text-sm">{errors.location}</p>}
-                      </div>
-
-                      {/* Quick Location Suggestions */}
-                      <div className="flex flex-wrap gap-2">
-                        {['Library', 'Student Center', 'Main Gate', 'Hall A', 'Cafeteria'].map(loc => (
-                          <button
-                            key={loc}
-                            onClick={() => setFormData(prev => ({ ...prev, location: loc }))}
-                            className="px-3 py-1.5 rounded-full text-sm bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                          >
-                            {loc}
+                  ) : null}
+                  {formData.taskType === 'restaurant' ? (
+                    <div>
+                      <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Package className="h-4 w-4 text-indigo-500" />Packaging</label>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        {packagingOptions.map((option) => (
+                          <button key={option.value} type="button" onClick={() => handlePackagingSelect(option.value)} className={`rounded-xl border-2 p-4 text-center ${
+                            formData.packaging === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300' : 'border-slate-200 hover:border-indigo-300 dark:border-slate-700 dark:hover:border-indigo-700'
+                          }`}>
+                            <div className="font-medium">{option.label}</div>
+                            <div className="text-sm text-slate-500 dark:text-slate-400">{option.price}</div>
                           </button>
                         ))}
                       </div>
+                      {errors.packaging ? <p className="mt-2 text-sm text-red-500">{errors.packaging}</p> : null}
+                    </div>
+                  ) : null}
+                  {formData.taskType === WATER_TASK_TYPE ? (
+                    <div>
+                      <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Droplets className="h-4 w-4 text-cyan-500" />Number of Bags</label>
+                      <input type="number" min="1" name="waterBags" value={formData.waterBags} onChange={handleInputChange} placeholder="How many bags?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-800" />
+                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Water delivery is charged at {formatNaira(WATER_BAG_FEE)} per bag.</p>
+                      {errors.waterBags ? <p className="mt-2 text-sm text-red-500">{errors.waterBags}</p> : null}
+                    </div>
+                  ) : null}
+                  {formData.taskType !== WATER_TASK_TYPE && (
+  <div>
+    <label className="mb-2 flex items-center gap-2 text-sm font-semibold">
+      <FileText className="h-4 w-4 text-indigo-500" />
+      Description
+    </label>
+
+    <textarea
+      name="description"
+      value={formData.description}
+      onChange={handleInputChange}
+      rows={4}
+      placeholder="Describe exactly what should be bought or delivered..."
+      className="w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800"
+    />
+
+    {waterWarning && (
+      <div className="mt-2 rounded-2xl border border-amber-200 ...">
+        You mentioned bag(s) of water. Switch to Buy Water...
+      </div>
+    )}
+
+    {errors.description && (
+      <p className="mt-2 text-sm text-red-500">{errors.description}</p>
+    )}
+  </div>
+)}
+                  <div>
+                    <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Wallet className="h-4 w-4 text-indigo-500" />Item Budget (NGN)</label>
+                    <input type="number" name="amount" value={formData.amount} onChange={handleInputChange} placeholder="How much will it cost?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 font-mono text-lg outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">SwiftDU adds the delivery fee separately at checkout.</p>
+                    {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
+                  </div>
+                </div>
+              ) : null}
+
+              {step === 3 ? (
+                <div className="space-y-4 md:space-y-5">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Delivery Info</h2>
+                    <p className="mt-2 text-slate-500 dark:text-slate-400">Set the deadline and location.</p>
+                  </div>
+                  <div>
+                    <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><MapPin className="h-4 w-4 text-indigo-500" />Delivery Location</label>
+                    <input type="text" name="location" value={formData.location} onChange={handleInputChange} placeholder="Library 2nd Floor, Hall B Room 204..." className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />
+                    {errors.location ? <p className="mt-2 text-sm text-red-500">{errors.location}</p> : null}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {['Amnesty Hostel', 'Girls Hostel', 'Staff Quarters', 'PLT', 'Lecturers Block', 'Bursary', 'NDDC Auditorium', 'Library'].map((location) => (
+                      <button key={location} type="button" onClick={() => handleLocationSelect(location)} className="rounded-full bg-slate-100 px-3 py-1.5 text-sm text-slate-600 transition-colors hover:bg-indigo-100 hover:text-indigo-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-400">
+                        {location}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              {step === 4 ? (
+                <div className="space-y-5 md:space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Review Your Task</h2>
+                    <p className="mt-2 text-slate-500 dark:text-slate-400">Confirm the details and exact amount to be collected.</p>
+                  </div>
+                  <div className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50 p-6 dark:border-slate-700 dark:bg-slate-800/50">
+                    <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
+                      <div>
+                        <p className="font-semibold text-slate-900 dark:text-white">{taskTypes.find((item) => item.value === formData.taskType)?.label}</p>
+                        {selectedStoreLabel ? <p className="text-sm text-slate-500 dark:text-slate-400">{selectedStoreLabel}</p> : null}
+                      </div>
+                      <button type="button" onClick={() => handleEditStep(1)} className="text-sm font-medium text-indigo-500 hover:text-indigo-600">Edit</button>
+                    </div>
+                    <div className="space-y-3 text-sm">
+                      <div className="flex justify-between gap-6"><span className="text-slate-500">Description</span><span className="max-w-[18rem] text-right text-slate-900 dark:text-slate-100">{formData.description}</span></div>
+                      <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Location</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.location}</span></div>
+                      {formData.packaging ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Packaging</span><span className="text-right text-slate-900 dark:text-slate-100">{packagingOptions.find((item) => item.value === formData.packaging)?.label}</span></div> : null}
+                      {formData.taskType === WATER_TASK_TYPE ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Water bags</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.waterBags}</span></div> : null}
+                    </div>
+                    <div className="space-y-3 border-t-2 border-slate-200 pt-6 dark:border-slate-700">
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">Item budget</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? `Water delivery fee (${pricing.waterBags || 0} x ${formatNaira(WATER_BAG_FEE)})` : 'Service fee'}</span><span className="font-medium">{formatNaira(pricing.serviceFee)}</span></div>
+                      <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(pricing.totalAmount)}</span></div>
                     </div>
                   </div>
-                )}
-
-                {/* Step 4: Review */}
-                {step === 4 && (
-                  <div className="space-y-6">
-                    <div className="mb-6">
-                      <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
-                        Review Your Task
-                      </h2>
-                      <p className="text-slate-500 dark:text-slate-400">
-                        Double-check all details before posting
-                      </p>
-                    </div>
-
-                    <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-6 space-y-4 border border-slate-200 dark:border-slate-700">
-                      <div className="flex items-center justify-between pb-4 border-b border-slate-200 dark:border-slate-700">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-lg bg-linear-to-br ${taskTypes.find(t => t.value === formData.taskType)?.color} flex items-center justify-center text-lg`}>
-                            {taskTypes.find(t => t.value === formData.taskType)?.icon}
-                          </div>
-                          <div>
-                            <p className="font-semibold text-slate-900 dark:text-white">
-                              {taskTypes.find(t => t.value === formData.taskType)?.label}
-                            </p>
-                            <p className="text-sm text-slate-500">
-                              {formData.store && (
-                                (formData.taskType === 'printing' && printingStores.find(s => s.value === formData.store)?.label) ||
-                                (formData.taskType === 'shopping' && shoppingStores.find(s => s.value === formData.store)?.label) ||
-                                (formData.taskType === 'restaurant' && restaurantStores.find(s => s.value === formData.store)?.label)
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                        <button onClick={() => setStep(1)} className="text-indigo-500 hover:text-indigo-600 text-sm font-medium">
-                          Edit
-                        </button>
-                      </div>
-
-                      <div className="space-y-3 text-sm">
-                        <div className="flex justify-between py-2">
-                          <span className="text-slate-500">Description</span>
-                          <span className="text-slate-900 dark:text-slate-100 max-w-50 text-right">
-                            {formData.description}
-                          </span>
-                        </div>
-                        
-                        <div className="flex justify-between py-2 border-t border-slate-200 dark:border-slate-700">
-                          <span className="text-slate-500">Location</span>
-                          <span className="text-slate-900 dark:text-slate-100">{formData.location}</span>
-                        </div>
-                        
-                        <div className="flex justify-between py-2 border-t border-slate-200 dark:border-slate-700">
-                          <span className="text-slate-500">Deadline</span>
-                          <span className="text-slate-900 dark:text-slate-100">
-                            {formData.deadlineValue} {formData.deadlineUnit}
-                          </span>
-                        </div>
-
-                        {formData.packaging && (
-                          <div className="flex justify-between py-2 border-t border-slate-200 dark:border-slate-700">
-                            <span className="text-slate-500">Packaging</span>
-                            <span className="text-slate-900 dark:text-slate-100">
-                              {packagingOptions.find(p => p.value === formData.packaging)?.label}
-                            </span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-6 pt-6 border-t-2 border-slate-200 dark:border-slate-700 space-y-3">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-slate-500">Budget</span>
-                          <span className="font-medium">{formatNaira(baseAmount)}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-slate-500">Commission ({SERVICE_CHARGE_PERCENTAGE}%)</span>
-                          <span className="font-medium">{formatNaira(serviceCharge)}</span>
-                        </div>
-                        <div className="flex justify-between pt-3 border-t border-slate-200 dark:border-slate-700">
-                          <span className="font-bold text-slate-900 dark:text-white">Total Amount</span>
-                          <span className="font-bold text-xl text-indigo-600 dark:text-indigo-400">
-                            {formatNaira(totalAmount)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-blue-50 dark:bg-blue-950/30 rounded-xl p-4 flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center shrink-0">
-                        <span className="text-blue-600 dark:text-blue-400 text-lg">ℹ️</span>
-                      </div>
-                      <div className="text-sm text-blue-900 dark:text-blue-200">
-                        <p className="font-medium mb-1">Payment After Acceptance</p>
-                        <p>Once a tasker accepts your task, you&apos;ll receive their bank details to transfer the amount {formatNaira(totalAmount)}. No upfront payment required.</p>
-                      </div>
+                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-full bg-blue-100 p-2 text-blue-600 dark:bg-blue-900/70 dark:text-blue-300"><Info className="h-4 w-4" /></div>
+                      <p>After a tasker accepts, payment is made to SwiftDU through Flutterwave. Runner payouts are handled internally by the team.</p>
                     </div>
                   </div>
-                )}
-              </div>
+                </div>
+              ) : null}
             </div>
 
-            {/* Footer Navigation */}
-            <div className="px-6 md:px-8 pb-6 md:pb-8 pt-2 bg-slate-50/50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800">
+            <div className="border-t border-slate-100 bg-slate-50/50 px-4 pb-4 pt-2 dark:border-slate-800 dark:bg-slate-900/50 sm:px-5 sm:pb-5 md:px-8 md:pb-8">
               <div className="flex gap-3">
-                {step > 1 && (
-                  <Button
-                    variant="outline"
-                    onClick={handleBack}
-                    disabled={isSubmitting}
-                    className="flex-1 h-12 rounded-xl border-2 hover:bg-slate-100 dark:hover:bg-slate-800 transition-all"
-                  >
-                    <ChevronLeft className="w-4 h-4 mr-2" />
-                    Back
-                  </Button>
-                )}
-                
+                {step > 1 ? <Button variant="outline" onClick={handleBack} disabled={isSubmitting} className="h-12 flex-1 rounded-xl border-2 hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button> : null}
                 {step < 4 ? (
-                  <Button
-                    onClick={handleNext}
-                    className="flex-1 h-12 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:shadow-indigo-500/30 transition-all"
-                  >
+                  <Button onClick={handleNext} className="h-12 flex-1 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-cyan-600">
                     Continue
-                    <ChevronRight className="w-4 h-4 ml-2" />
+                    <ChevronRight className="ml-2 h-4 w-4" />
                   </Button>
                 ) : (
-                  <Button
-                    onClick={handleSubmit}
-                    disabled={isSubmitting}
-                    className="flex-1 h-12 rounded-xl bg-linear-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white shadow-lg shadow-indigo-500/25 hover:shadow-xl transition-all"
-                  >
-                    {isSubmitting ? (
-                      <>
-                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                        Posting...
-                      </>
-                    ) : (
-                      <>
-                        Post Task
-                        <ArrowRight className="w-4 h-4 ml-2" />
-                      </>
-                    )}
+                  <Button onClick={handleSubmit} disabled={isSubmitting} className="h-12 flex-1 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-cyan-600">
+                    {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Posting...</> : <>Post Task<ArrowRight className="ml-2 h-4 w-4" /></>}
                   </Button>
                 )}
               </div>
             </div>
           </div>
 
-          {/* Trust Badges */}
-          <div className="mt-8 flex justify-center items-center gap-6 text-slate-400 text-sm">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-blue-500" />
-              <span>Direct Transfers</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-green-500" />
-              <span>Verified Taskers</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-purple-500" />
-              <span>24/7 Support</span>
-            </div>
+          <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-500 dark:text-slate-400 sm:mt-8 sm:gap-6 sm:text-sm">
+            <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-sky-500" /><span>Flutterwave Checkout</span></div>
+            <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-emerald-500" /><span>Verified Taskers</span></div>
+            <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-amber-500" /><span>SwiftDU Handles Payouts</span></div>
+            <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-indigo-500" /><span>Secure Order Tracking</span></div>
           </div>
         </div>
       </div>

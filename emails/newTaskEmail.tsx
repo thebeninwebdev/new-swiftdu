@@ -18,7 +18,6 @@ interface NewTaskEmailProps {
   description: string;
   amount: number;
   location: string;
-  deadline: string;
   userName: string;
   taskUrl: string;
 }
@@ -30,7 +29,6 @@ const NewTaskEmail = (props: NewTaskEmailProps) => {
     description,
     amount,
     location,
-    deadline,
     userName,
     taskUrl,
   } = props;
@@ -75,9 +73,6 @@ const NewTaskEmail = (props: NewTaskEmailProps) => {
               </Text>
               <Text className="text-[16px] text-gray-700 leading-5 mb-2 mt-0">
                 <b>Location:</b> {location}
-              </Text>
-              <Text className="text-[16px] text-gray-700 leading-5 mb-2 mt-0">
-                <b>Deadline:</b> {deadline}
               </Text>
 
               <Section className="text-center mt-6">

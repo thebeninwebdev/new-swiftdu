@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+  import { motion, AnimatePresence } from 'framer-motion'
+  import type { Variants } from 'framer-motion'
 import {
   ArrowRight,
   Clock3,
@@ -12,13 +14,18 @@ import {
   ShieldCheck,
   Filter,
   X,
+  Wallet,
+  Package,
+  Store,
+  Sparkles,
+  TrendingUp,
+  AlertCircle,
 } from 'lucide-react'
 import { io } from 'socket.io-client'
 import { toast } from 'sonner'
 
 import { authClient } from '@/lib/auth-client'
 import { convertToNaira } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
 const DASHBOARD_REFRESH_MS = 5000
@@ -33,8 +40,6 @@ interface Errand {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
-  deadlineValue: number
-  deadlineUnit: string
   location: string
   store?: string
   packaging?: string
@@ -50,24 +55,103 @@ interface TaskerData {
 }
 
 const taskTypes = [
-  { value: 'all', label: 'All Tasks' },
-  { value: 'restaurant', label: 'Food Delivery' },
-  { value: 'printing', label: 'Printing' },
-  { value: 'shopping', label: 'Shopping' },
-  { value: 'others', label: 'Other Errands' },
+  { value: 'all', label: 'All Tasks', icon: Sparkles, color: 'bg-slate-500' },
+  { value: 'restaurant', label: 'Food', icon: Package, color: 'bg-orange-500' },
+  { value: 'printing', label: 'Print', icon: Package, color: 'bg-sky-500' },
+  { value: 'shopping', label: 'Shop', icon: Package, color: 'bg-emerald-500' },
+  { value: 'water', label: 'Water', icon: Package, color: 'bg-cyan-500' },
+  { value: 'others', label: 'Other', icon: Package, color: 'bg-slate-500' },
 ]
 
 const taskTypeStyles: Record<string, string> = {
-  restaurant: 'bg-orange-100 text-orange-700 dark:bg-orange-950/50 dark:text-orange-300',
-  printing: 'bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300',
-  shopping: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300',
-  others: 'bg-slate-100 text-slate-700 dark:bg-slate-900 dark:text-slate-300',
+  restaurant: 'from-orange-500 to-amber-500',
+  printing: 'from-sky-500 to-blue-500',
+  shopping: 'from-emerald-500 to-teal-500',
+  water: 'from-cyan-500 to-blue-500',
+  others: 'from-slate-500 to-gray-500',
 }
 
-const formatTaskType = (type: string) =>
-  taskTypes.find((taskType) => taskType.value === type)?.label || type
+const taskTypeBg: Record<string, string> = {
+  restaurant: 'bg-orange-50 text-orange-700 border-orange-200',
+  printing: 'bg-sky-50 text-sky-700 border-sky-200',
+  shopping: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  water: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+  others: 'bg-slate-50 text-slate-700 border-slate-200',
+}
 
-const formatDeadline = (value: number, unit: string) => `${value} ${unit}`
+// Animation variants
+const containerVariants: Variants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: {
+      staggerChildren: 0.08,
+      delayChildren: 0.1,
+    },
+  },
+}
+
+const cardVariants: Variants = {
+  hidden: { opacity: 0, y: 30, scale: 0.95 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: {
+      type: 'spring',
+      stiffness: 100,
+      damping: 15,
+    },
+  },
+  exit: {
+    opacity: 0,
+    x: -100,
+    transition: { duration: 0.3 },
+  },
+}
+
+const headerVariants: Variants = {
+  hidden: { opacity: 0, y: -20 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      type: 'spring',
+      stiffness: 100,
+      damping: 20,
+    },
+  },
+}
+
+const filterVariants: Variants = {
+  hidden: { opacity: 0, height: 0, overflow: 'hidden' },
+  visible: {
+    opacity: 1,
+    height: 'auto',
+    transition: {
+      type: 'spring',
+      stiffness: 300,
+      damping: 30,
+    },
+  },
+  exit: {
+    opacity: 0,
+    height: 0,
+    transition: { duration: 0.2 },
+  },
+}
+
+const pulseVariants: Variants = {
+  pulse: {
+    scale: [1, 1.05, 1],
+    opacity: [0.5, 0.8, 0.5],
+    transition: {
+      duration: 2,
+      repeat: Infinity,
+      ease: 'easeInOut',
+    },
+  },
+}
 
 export default function TaskerDashboardPage() {
   const router = useRouter()
@@ -81,22 +165,18 @@ export default function TaskerDashboardPage() {
   const [taskTypeFilter, setTaskTypeFilter] = useState('all')
   const [locationFilter, setLocationFilter] = useState('')
   const [showFilters, setShowFilters] = useState(false)
+  const [newTaskAlert, setNewTaskAlert] = useState(false)
 
   const fetchingRef = useRef(false)
+  const prevErrandsCount = useRef(0)
 
   const loadDashboard = useCallback(
     async (initial = false) => {
-      if (fetchingRef.current) {
-        return
-      }
-
+      if (fetchingRef.current) return
       fetchingRef.current = true
 
-      if (initial) {
-        setLoading(true)
-      } else {
-        setRefreshing(true)
-      }
+      if (initial) setLoading(true)
+      else setRefreshing(true)
 
       try {
         const { data } = await authClient.getSession()
@@ -106,10 +186,7 @@ export default function TaskerDashboardPage() {
           return
         }
 
-        const taskerId =
-          data.user.taskerId === null || data.user.taskerId === undefined
-            ? undefined
-            : String(data.user.taskerId)
+        const taskerId = data.user.taskerId ? String(data.user.taskerId) : undefined
 
         if (!taskerId) {
           setError('Tasker profile not found for this account.')
@@ -117,7 +194,9 @@ export default function TaskerDashboardPage() {
           return
         }
 
-        const taskerRes = await fetch(`/api/taskers?taskerId=${taskerId}`)
+        const taskerRes = await fetch(`/api/taskers?taskerId=${taskerId}`, {
+          cache: 'no-store',
+        })
         if (!taskerRes.ok) {
           setError('Failed to load your tasker profile.')
           setErrands([])
@@ -127,25 +206,23 @@ export default function TaskerDashboardPage() {
         const { tasker }: { tasker: TaskerData } = await taskerRes.json()
 
         if (!tasker?.isVerified) {
-          setError(
-            'Your tasker account is still awaiting verification. You can browse this dashboard once verification is complete.'
-          )
+          setError('Your account is awaiting verification.')
           setErrands([])
           return
         }
 
         const params = new URLSearchParams()
-        if (taskTypeFilter !== 'all') {
-          params.append('taskType', taskTypeFilter)
-        }
-        if (locationFilter.trim()) {
-          params.append('location', locationFilter.trim())
-        }
+        if (taskTypeFilter !== 'all') params.append('taskType', taskTypeFilter)
+        if (locationFilter.trim()) params.append('location', locationFilter.trim())
         params.append('status', 'pending')
 
         const [availableRes, acceptedRes] = await Promise.all([
-          fetch(`/api/errands?${params.toString()}`),
-          fetch(`/api/errands?accepted=true&taskerId=${tasker._id}`),
+          fetch(`/api/errands?${params.toString()}`, {
+            cache: 'no-store',
+          }),
+          fetch(`/api/errands?accepted=true&taskerId=${tasker._id}`, {
+            cache: 'no-store',
+          }),
         ])
 
         if (!availableRes.ok || !acceptedRes.ok) {
@@ -156,6 +233,13 @@ export default function TaskerDashboardPage() {
           availableRes.json(),
           acceptedRes.json(),
         ])
+
+        // Check for new tasks
+        if (!initial && availableErrands.length > prevErrandsCount.current) {
+          setNewTaskAlert(true)
+          setTimeout(() => setNewTaskAlert(false), 3000)
+        }
+        prevErrandsCount.current = availableErrands.length
 
         if (acceptedErrands.length > 0) {
           const activeErrand = acceptedErrands[0]
@@ -188,10 +272,7 @@ export default function TaskerDashboardPage() {
       }
     }, DASHBOARD_REFRESH_MS)
 
-    const handleFocus = () => {
-      void loadDashboard(false)
-    }
-
+    const handleFocus = () => void loadDashboard(false)
     window.addEventListener('focus', handleFocus)
 
     return () => {
@@ -206,9 +287,7 @@ export default function TaskerDashboardPage() {
       transports: ['websocket', 'polling'],
     })
 
-    socket.on('tasks:updated', () => {
-      void loadDashboard(false)
-    })
+    socket.on('tasks:updated', () => void loadDashboard(false))
 
     return () => {
       socket.disconnect()
@@ -227,9 +306,7 @@ export default function TaskerDashboardPage() {
 
       const response = await fetch('/api/errands', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId: errandId,
           taskerId: session.data.user.id,
@@ -244,286 +321,439 @@ export default function TaskerDashboardPage() {
         return
       }
 
-      toast.success('Errand accepted. Opening the live task page now.')
+      toast.success('Task accepted! Redirecting...')
       router.replace(`/tasker-dashboard/${payload._id}`)
     } catch (acceptError) {
       console.error('Error accepting errand:', acceptError)
       setError('Failed to accept errand')
-    } finally {
       setSubmitting(null)
     }
   }
 
+  const formatTimeAgo = (date: string) => {
+    const hours = Math.floor((Date.now() - new Date(date).getTime()) / 3600000)
+    if (hours < 1) return 'Just now'
+    if (hours === 1) return '1h ago'
+    if (hours < 24) return `${hours}h ago`
+    return `${Math.floor(hours / 24)}d ago`
+  }
+
   if (loading || redirectingOrderId) {
     return (
-      <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] px-4 py-6 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-        <div className="mx-auto flex min-h-[70vh] max-w-xl items-center justify-center">
-          <div className="w-full rounded-[2rem] border border-slate-200 bg-white/90 p-6 shadow-xl shadow-slate-200/60 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/60">
-            <div className="flex items-center gap-3">
-              <Loader2 className="h-5 w-5 animate-spin text-sky-600" />
-              <div>
-                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  {redirectingOrderId ? 'Opening your active task' : 'Loading errands'}
-                </p>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  {redirectingOrderId
-                    ? 'You already have an accepted task, so we are taking you straight there.'
-                    : 'Checking your verification and pulling the latest task list.'}
-                </p>
+      <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-sky-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 flex items-center justify-center p-4">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="w-full max-w-sm"
+        >
+          <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl shadow-sky-200/50 dark:shadow-slate-950/50 p-8 border border-slate-100 dark:border-slate-800">
+            <div className="flex flex-col items-center text-center">
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1.5, repeat: Infinity, ease: 'linear' }}
+                className="relative mb-6"
+              >
+                <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-sky-500 to-indigo-600 flex items-center justify-center">
+                  {redirectingOrderId ? (
+                    <ArrowRight className="h-8 w-8 text-white" />
+                  ) : (
+                    <Loader2 className="h-8 w-8 text-white" />
+                  )}
+                </div>
+                <motion.div
+                  variants={pulseVariants}
+                  animate="pulse"
+                  className="absolute inset-0 rounded-2xl bg-sky-500/30 blur-xl"
+                />
+              </motion.div>
+              
+              <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
+                {redirectingOrderId ? 'Active Task Found' : 'Loading Tasks'}
+              </h3>
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                {redirectingOrderId
+                  ? 'Taking you to your current task...'
+                  : 'Finding available errands near you'}
+              </p>
+
+              {/* Progress dots */}
+              <div className="flex gap-2 mt-6">
+                {[0, 1, 2].map((i) => (
+                  <motion.div
+                    key={i}
+                    className="w-2 h-2 rounded-full bg-sky-500"
+                    animate={{
+                      scale: [1, 1.5, 1],
+                      opacity: [0.3, 1, 0.3],
+                    }}
+                    transition={{
+                      duration: 1,
+                      repeat: Infinity,
+                      delay: i * 0.2,
+                    }}
+                  />
+                ))}
               </div>
             </div>
           </div>
-        </div>
+        </motion.div>
       </div>
     )
   }
 
   return (
-    <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 sm:pt-0 pt-10">
-      {/* Compact Mobile Header */}
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 sm:px-6 lg:px-8">
-        <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-lg font-bold text-slate-900 dark:text-white sm:text-xl">
-              Available Tasks
-            </h1>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
-              {errands.length} open {errands.length === 1 ? 'errand' : 'errands'}
-            </p>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex h-10 w-10 items-center justify-center rounded-full transition ${
-                showFilters 
-                  ? 'bg-sky-100 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300' 
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700'
-              }`}
-              aria-label="Toggle filters"
-            >
-              {showFilters ? <X className="h-5 w-5" /> : <Filter className="h-5 w-5" />}
-            </button>
-            
-            <button
-              type="button"
-              onClick={() => void loadDashboard(false)}
-              disabled={refreshing}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
-              aria-label="Refresh"
-            >
-              <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* Collapsible Filters */}
-      {showFilters && (
-        <div className="border-b border-slate-200 bg-white px-4 py-3 dark:border-slate-800 dark:bg-slate-900 sm:px-6">
-          <div className="mx-auto max-w-6xl space-y-3">
-            <div>
-              <label
-                htmlFor="task-type-filter"
-                className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-400"
+    <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-sky-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 pb-24">
+      {/* New Task Notification */}
+      <AnimatePresence>
+        {newTaskAlert && (
+          <motion.div
+            initial={{ opacity: 0, y: -50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -50 }}
+            className="fixed top-4 left-4 right-4 z-50"
+          >
+            <div className="bg-emerald-500 text-white px-4 py-3 rounded-2xl shadow-lg shadow-emerald-500/30 flex items-center gap-3">
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                transition={{ type: 'spring', stiffness: 500 }}
               >
-                Task type
-              </label>
-              <select
-                id="task-type-filter"
-                value={taskTypeFilter}
-                onChange={(event) => setTaskTypeFilter(event.target.value)}
-                className="h-11 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-sky-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                <Sparkles className="h-5 w-5" />
+              </motion.div>
+              <span className="font-medium text-sm">New task available!</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Header */}
+      <motion.div
+        variants={headerVariants}
+        initial="hidden"
+        animate="visible"
+        className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50"
+      >
+        <div className="px-4 py-4">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex-1 min-w-0">
+              <motion.h1 
+                className="text-xl font-bold text-slate-900 dark:text-white"
+                layoutId="header-title"
               >
-                {taskTypes.map((type) => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label
-                htmlFor="location-filter"
-                className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-400"
-              >
-                Location
-              </label>
-              <div className="relative">
-                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-                <Input
-                  id="location-filter"
-                  type="text"
-                  placeholder="Search location..."
-                  value={locationFilter}
-                  onChange={(event) => setLocationFilter(event.target.value)}
-                  className="h-11 rounded-xl border-slate-200 bg-white pl-10 dark:border-slate-700 dark:bg-slate-950"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Main Content */}
-      <div className="px-3 py-3 sm:px-4 sm:py-4 lg:px-6">
-        <div className="mx-auto max-w-6xl space-y-3">
-          
-          {/* Error Message */}
-          {error ? (
-            <div className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
-              {error}
-            </div>
-          ) : null}
-
-          {/* Desktop Info Cards - Hidden on mobile */}
-          <div className="hidden lg:grid lg:grid-cols-2 lg:gap-4">
-            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
-                  <ShieldCheck className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    Live updates
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    New tasks appear automatically via socket updates
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-white/90 p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900/90">
-              <div className="flex items-start gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-700 dark:bg-sky-950/60 dark:text-sky-300">
-                  <ArrowRight className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    Auto-redirect
-                  </p>
-                  <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                    Active tasks open automatically
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Tasks List */}
-          {errands.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/85 px-4 py-12 text-center dark:border-slate-700 dark:bg-slate-900/80">
-              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-                <Search className="h-5 w-5" />
-              </div>
-              <h3 className="mt-3 text-base font-semibold text-slate-900 dark:text-white">
-                No errands available
-              </h3>
-              <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500 dark:text-slate-400">
-                Try adjusting filters or check again shortly. New tasks appear automatically.
+                Available Tasks
+              </motion.h1>
+              <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+                <span>{errands.length} open {errands.length === 1 ? 'task' : 'tasks'}</span>
               </p>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
-              {errands.map((errand) => (
-                <article
-                  key={errand._id}
-                  className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900"
+
+            <div className="flex items-center gap-2">
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => setShowFilters(!showFilters)}
+                className={`relative h-11 w-11 rounded-2xl flex items-center justify-center transition-colors ${
+                  showFilters
+                    ? 'bg-sky-100 text-sky-600 dark:bg-sky-950/50 dark:text-sky-400'
+                    : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
+                }`}
+              >
+                <Filter className="h-5 w-5" />
+                {(taskTypeFilter !== 'all' || locationFilter) && (
+                  <motion.span
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white dark:border-slate-900"
+                  />
+                )}
+              </motion.button>
+
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                onClick={() => void loadDashboard(false)}
+                disabled={refreshing}
+                className="h-11 w-11 rounded-2xl bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 flex items-center justify-center disabled:opacity-50"
+              >
+                <motion.div
+                  animate={refreshing ? { rotate: 360 } : { rotate: 0 }}
+                  transition={{ duration: 1, repeat: refreshing ? Infinity : 0, ease: 'linear' }}
                 >
-                  {/* Card Header - Compact on mobile */}
-                  <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${
-                          taskTypeStyles[errand.taskType] || taskTypeStyles.others
-                        }`}
-                      >
-                        {formatTaskType(errand.taskType)}
-                      </span>
-                      <span className="text-lg font-bold text-sky-700 dark:text-sky-300">
-                        {convertToNaira(errand.totalAmount || errand.amount)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Card Body */}
-                  <div className="space-y-3 p-4">
-                    <h3 className="text-base font-semibold leading-snug text-slate-900 dark:text-white">
-                      {errand.description}
-                    </h3>
-
-                    {/* Info Grid - 2 columns on mobile, more compact */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950/70">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                          Location
-                        </p>
-                        <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-700 dark:text-slate-200">
-                          <MapPin className="h-3 w-3 shrink-0 text-sky-600" />
-                          <span className="truncate">{errand.location}</span>
-                        </p>
-                      </div>
-
-                      <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950/70">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                          Deadline
-                        </p>
-                        <p className="mt-0.5 flex items-center gap-1 text-xs text-slate-700 dark:text-slate-200">
-                          <Clock3 className="h-3 w-3 shrink-0 text-sky-600" />
-                          <span>{formatDeadline(errand.deadlineValue, errand.deadlineUnit)}</span>
-                        </p>
-                      </div>
-
-                      {errand.store ? (
-                        <div className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-800">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                            Store
-                          </p>
-                          <p className="mt-0.5 truncate text-xs text-slate-700 dark:text-slate-200">
-                            {errand.store}
-                          </p>
-                        </div>
-                      ) : null}
-
-                      {errand.packaging ? (
-                        <div className="rounded-lg border border-slate-200 px-3 py-2 dark:border-slate-800">
-                          <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
-                            Packaging
-                          </p>
-                          <p className="mt-0.5 text-xs capitalize text-slate-700 dark:text-slate-200">
-                            {errand.packaging}
-                          </p>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    <Button
-                      onClick={() => handleAcceptErrand(errand._id)}
-                      disabled={submitting === errand._id}
-                      className="h-11 w-full rounded-xl bg-linear-to-r from-sky-600 to-indigo-600 text-sm font-semibold text-white hover:from-sky-700 hover:to-indigo-700"
-                    >
-                      {submitting === errand._id ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Accepting...
-                        </>
-                      ) : (
-                        <>
-                          Accept errand
-                          <ArrowRight className="ml-2 h-4 w-4" />
-                        </>
-                      )}
-                    </Button>
-                  </div>
-                </article>
-              ))}
+                  <RefreshCw className="h-5 w-5" />
+                </motion.div>
+              </motion.button>
             </div>
-          )}
+          </div>
         </div>
+
+        {/* Expandable Filters */}
+        <AnimatePresence>
+          {showFilters && (
+            <motion.div
+              variants={filterVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+              className="border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50"
+            >
+              <div className="p-4 space-y-4">
+                {/* Task Type Pills */}
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-3 block">
+                    Task Type
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {taskTypes.map((type) => {
+                      const Icon = type.icon
+                      const isActive = taskTypeFilter === type.value
+                      return (
+                        <motion.button
+                          key={type.value}
+                          whileHover={{ scale: 1.05 }}
+                          whileTap={{ scale: 0.95 }}
+                          onClick={() => setTaskTypeFilter(type.value)}
+                          className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                            isActive
+                              ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900 shadow-lg shadow-slate-900/20'
+                              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                          }`}
+                        >
+                          <Icon className="h-3.5 w-3.5" />
+                          {type.label}
+                        </motion.button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* Location Search */}
+                <div>
+                  <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2 block">
+                    Location
+                  </label>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+                    <Input
+                      type="text"
+                      placeholder="Search area..."
+                      value={locationFilter}
+                      onChange={(e) => setLocationFilter(e.target.value)}
+                      className="pl-10 h-11 rounded-xl border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800"
+                    />
+                    {locationFilter && (
+                      <motion.button
+                        initial={{ opacity: 0, scale: 0 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0 }}
+                        onClick={() => setLocationFilter('')}
+                        className="absolute right-3 top-1/2 -translate-y-1/2"
+                      >
+                        <X className="h-4 w-4 text-slate-400" />
+                      </motion.button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </motion.div>
+
+      {/* Main Content */}
+      <div className="px-4 py-4">
+        {/* Error State */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              initial={{ opacity: 0, y: -20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, x: -100 }}
+              className="mb-4"
+            >
+              <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-2xl p-4 flex items-start gap-3">
+                <AlertCircle className="h-5 w-5 text-red-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-sm font-medium text-red-900 dark:text-red-200">
+                    {error}
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Empty State */}
+        {errands.length === 0 ? (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="flex flex-col items-center justify-center py-16 text-center"
+          >
+            <motion.div
+              animate={{ y: [0, -10, 0] }}
+              transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
+              className="w-24 h-24 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mb-6"
+            >
+              <Search className="h-10 w-10 text-slate-400" />
+            </motion.div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white mb-2">
+              No tasks available
+            </h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 max-w-xs mx-auto">
+              Try adjusting your filters or check back soon. New tasks appear automatically.
+            </p>
+          </motion.div>
+        ) : (
+          <motion.div
+            variants={containerVariants}
+            initial="hidden"
+            animate="visible"
+            className="space-y-4"
+          >
+            {errands.map((errand) => (
+              <motion.article
+                key={errand._id}
+                variants={cardVariants}
+                layoutId={errand._id}
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                className="group relative bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden"
+              >
+                {/* Top accent bar */}
+                <div className={`h-1.5 bg-linear-to-r ${taskTypeStyles[errand.taskType] || taskTypeStyles.others}`} />
+
+                <div className="p-4">
+                  {/* Header: Type & Time */}
+                  <div className="flex items-center justify-between mb-3">
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${taskTypeBg[errand.taskType] || taskTypeBg.others}`}>
+                      {errand.taskType}
+                    </span>
+                    <span className="text-xs text-slate-400 flex items-center gap-1">
+                      <Clock3 className="h-3 w-3" />
+                      {formatTimeAgo(errand.createdAt)}
+                    </span>
+                  </div>
+
+                  {/* Earnings Badge - Most Important for Taskers */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <motion.div
+                      whileHover={{ scale: 1.05 }}
+                      className="flex-1 sm:max-w-md bg-linear-to-r from-emerald-500 to-teal-500 rounded-2xl p-3 text-white shadow-lg shadow-emerald-500/20"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Wallet className="h-4 w-4 opacity-80" />
+                        <span className="text-xs font-medium opacity-90">You Earn</span>
+                      </div>
+                      <p className="text-2xl font-bold">
+                        {convertToNaira(errand.taskerFee || 0)}
+                      </p>
+                    </motion.div>
+                    
+                    <div className="px-3 py-2 bg-slate-50 dark:bg-slate-800 rounded-2xl text-center min-w-20">
+                      <p className="text-[10px] text-slate-400 uppercase font-semibold">Budget</p>
+                      <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">
+                        {convertToNaira(errand.amount)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Description */}
+                  <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed mb-4 line-clamp-2">
+                    {errand.description}
+                  </p>
+
+                  {/* Location & Details */}
+                  <div className="space-y-2 mb-4">
+                    <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                      <div className="w-8 h-8 rounded-xl bg-sky-50 dark:bg-sky-950/30 flex items-center justify-center shrink-0">
+                        <MapPin className="h-4 w-4 text-sky-600 dark:text-sky-400" />
+                      </div>
+                      <span className="truncate">{errand.location}</span>
+                    </div>
+
+                    {errand.store && (
+                      <motion.div
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400"
+                      >
+                        <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center shrink-0">
+                          <Store className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <span className="truncate">{errand.store}</span>
+                      </motion.div>
+                    )}
+
+                    {errand.packaging && (
+                      <motion.div
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.1 }}
+                        className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400"
+                      >
+                        <div className="w-8 h-8 rounded-xl bg-purple-50 dark:bg-purple-950/30 flex items-center justify-center shrink-0">
+                          <Package className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                        </div>
+                        <span className="capitalize">{errand.packaging}</span>
+                      </motion.div>
+                    )}
+                  </div>
+
+                  {/* Accept Button */}
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={() => handleAcceptErrand(errand._id)}
+                    disabled={submitting === errand._id}
+                    className="w-full h-12 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-slate-900/20 dark:shadow-white/20"
+                  >
+                    {submitting === errand._id ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        Accepting...
+                      </>
+                    ) : (
+                      <>
+                        Accept Task
+                        <ArrowRight className="h-4 w-4" />
+                      </>
+                    )}
+                  </motion.button>
+                </div>
+
+                {/* Hover glow effect */}
+                <motion.div
+                  className="absolute inset-0 bg-linear-to-r from-sky-500/0 via-sky-500/5 to-sky-500/0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+                  initial={false}
+                />
+              </motion.article>
+            ))}
+          </motion.div>
+        )}
       </div>
+
+      {/* Floating Status Bar */}
+      <motion.div
+        initial={{ y: 100 }}
+        animate={{ y: 0 }}
+        className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800"
+      >
+        <div className="flex items-center justify-between max-w-lg mx-auto">
+          <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+            <motion.div
+              animate={{ scale: [1, 1.2, 1] }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="w-2 h-2 rounded-full bg-emerald-500"
+            />
+            Live updates active
+          </div>
+          <div className="flex items-center gap-1 text-xs font-medium text-sky-600 dark:text-sky-400">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Verified Tasker
+          </div>
+        </div>
+      </motion.div>
     </div>
   )
 }

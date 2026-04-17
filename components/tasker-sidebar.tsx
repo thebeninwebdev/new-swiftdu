@@ -228,7 +228,7 @@ export default function TaskerSidebar() {
                     Notification
                   </p>
                   <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
-                    Platform fee due
+                    Payment update
                   </p>
                 </div>
 
@@ -246,7 +246,7 @@ export default function TaskerSidebar() {
               </div>
 
               <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                Pay{' '}
+                SwiftDU collected{' '}
                 <span className="font-semibold text-slate-900 dark:text-white">
                   NGN {activeNotification.platformFee.toLocaleString('en-NG')}
                 </span>{' '}
@@ -254,16 +254,16 @@ export default function TaskerSidebar() {
                 <span className="font-medium text-slate-900 dark:text-white">
                   {activeNotification.description}
                 </span>
-                .
+                . Runner payouts are handled internally.
               </p>
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
-                  href={`/tasker-dashboard/payment/${activeNotification._id}`}
+                  href={`/tasker-dashboard/${activeNotification._id}`}
                   onClick={() => toast.dismiss(TASKER_NOTIFICATION_TOAST_ID)}
                   className="inline-flex h-10 items-center justify-center rounded-2xl bg-amber-500 px-4 text-sm font-semibold text-white transition hover:bg-amber-600"
                 >
-                  Pay now
+                  View task
                 </Link>
                 <Link
                   href="/tasker-dashboard/notifications"

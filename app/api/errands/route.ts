@@ -4,6 +4,8 @@ import Tasker from "@/models/tasker"
 import { NextRequest, NextResponse } from 'next/server'
 import { emitOrderUpdated } from '@/lib/socket'
 
+export const dynamic = 'force-dynamic'
+
 // GET - Fetch all pending errands for taskers
 export async function GET(request: NextRequest) {
   try {
@@ -51,7 +53,11 @@ export async function GET(request: NextRequest) {
       .sort({ [sortBy]: -1 })
       .lean()
 
-    return NextResponse.json(orders)
+    return NextResponse.json(orders, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      },
+    })
   } catch (error) {
     console.error('GET /api/errands error:', error)
     return NextResponse.json(
