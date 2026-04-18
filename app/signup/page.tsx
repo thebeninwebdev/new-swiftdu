@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import { Eye, EyeOff, Loader2, ChevronDown, Mail, MapPin } from "lucide-react";
+import { useRouter } from "next/navigation";
 
 const COUNTRY_CODES = [
   { code: "NG", dial: "+234", flag: "🇳🇬" },
@@ -43,6 +44,13 @@ export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
+    const router = useRouter();
+    const { data: session } = authClient.useSession();
+    useEffect(() => {
+      if (session?.user) {
+        router.replace('/dashboard')
+      }
+    }, [session?.user, router]);
 
   const validate = () => {
     const e: Record<string, string> = {};

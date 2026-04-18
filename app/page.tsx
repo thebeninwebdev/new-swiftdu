@@ -3,6 +3,7 @@
 import Head from 'next/head';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { useRouter } from 'next/navigation';
 import { 
   CheckCircle2, 
   MapPin, 
@@ -17,6 +18,8 @@ import {
   ShoppingBag,
   Bike
 } from 'lucide-react';
+import { useEffect } from 'react';
+import {authClient} from "@/lib/auth-client";
 
 // --- Animation Variants ---
 const containerVariants = {
@@ -403,6 +406,15 @@ const CTASection = () => {
 };
 
 export default function LandingPage() {
+  
+  const router = useRouter();
+  const { data: session } = authClient.useSession();
+  useEffect(() => {
+    if (session?.user) {
+      router.replace('/dashboard')
+    }
+  }, [session?.user, router]);
+
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-indigo-100 selection:text-indigo-900">
       <Head>

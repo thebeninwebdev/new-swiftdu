@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -18,6 +18,13 @@ export default function LoginPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState("");
+  const { data: session } = authClient.useSession();
+  
+    useEffect(() => {
+      if (session?.user) {
+        router.replace('/dashboard')
+      }
+    }, [session?.user, router]);
 
   const validate = () => {
     const e: Record<string, string> = {};

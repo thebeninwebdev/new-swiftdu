@@ -41,13 +41,9 @@ export async function proxy(request: NextRequest) {
     route === '/' ? pathname === '/' : pathname.startsWith(route)
   );
 
-  if (isPublicRoute) {
-    if (user) {
-      return NextResponse.redirect(new URL(defaultRoute, request.url));
-    }
-
-    return NextResponse.next();
-  }
+if (isPublicRoute) {
+  return NextResponse.next();
+}
 
   if (!user) {
     return NextResponse.redirect(new URL('/login', request.url));
@@ -74,14 +70,14 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/',
-    '/about-us',
-    '/contact-us',
-    '/login',
-    '/password/:path*',
-    '/reset-password',
-    '/signup',
-    '/terms',
+    // '/',
+    // '/about-us',
+    // '/contact-us',
+    // '/login',
+    // '/password/:path*',
+    // '/reset-password',
+    // '/signup',
+    // '/terms',
     '/dashboard/:path*',
     '/tasker-dashboard/:path*',
     '/admin/:path*',

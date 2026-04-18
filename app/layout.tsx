@@ -79,7 +79,7 @@ export default function RootLayout({
       <head>
         <Script
           id="adsense-script"
-          strategy="beforeInteractive"
+          strategy="afterInteractive"
           src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4657526411072658"
           crossOrigin="anonymous"
         />
@@ -101,7 +101,6 @@ export default function RootLayout({
         </Wrapper>
         </Wrapper>
         {children}
-
         <Wrapper path="/dashboard">
         <Wrapper path="/tasker-signup">
         <Wrapper path="/signup">
