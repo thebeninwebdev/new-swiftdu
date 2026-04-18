@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "tsx watch server.mts",
-    "build": "next build",
+    "build": "next build --webpack",
     "start": "tsx server.mts",
     "lint": "eslint"
   },
@@ -21,6 +21,7 @@
     "mongodb": "^7.1.0",
     "mongoose": "^9.3.0",
     "next": "16.1.6",
+    "next-pwa": "^5.6.0",
     "nextjs-toploader": "^3.9.17",
     "react": "19.2.3",
     "react-dom": "19.2.3",

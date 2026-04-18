@@ -6,7 +6,6 @@ import NavbarClientWrapper from "@/components/NavbarClientWrapper";
 import Wrapper from "@/components/wrapper";
 import { Footer } from "@/components/Footer";
 import { adsenseAccount, adsenseScriptSrc, siteUrl } from "@/lib/site";
-import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -109,8 +108,6 @@ export default function RootLayout({
         </Wrapper>
         </Wrapper>
            
-
-        <ServiceWorkerRegistration />
         <Toaster richColors position="bottom-right" />
       </body>
     </html>

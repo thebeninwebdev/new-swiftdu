@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useEffect } from 'react';
 import {authClient} from "@/lib/auth-client";
+import InstallPwaButton from "@/components/InstallPwaButton";
 
 // --- Animation Variants ---
 const containerVariants = {
@@ -107,6 +108,10 @@ const Hero = () => {
               >
                 Become a Runner
               </Link>
+            </motion.div>
+
+            <motion.div variants={itemVariants} className="mt-5 flex justify-center lg:justify-start">
+              <InstallPwaButton />
             </motion.div>
 
             <motion.div variants={itemVariants} className="mt-8 flex items-center justify-center lg:justify-start gap-4 text-sm text-gray-500">
