@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import NextTopLoader from "nextjs-toploader";
 import "./globals.css";
 import {Toaster} from "sonner"
@@ -6,6 +6,7 @@ import NavbarClientWrapper from "@/components/NavbarClientWrapper";
 import Wrapper from "@/components/wrapper";
 import { Footer } from "@/components/Footer";
 import { adsenseAccount, adsenseScriptSrc, siteUrl } from "@/lib/site";
+import ServiceWorkerRegistration from "@/components/ServiceWorkerRegistration";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -16,6 +17,8 @@ export const metadata: Metadata = {
   description:
     "Swiftdu connects students with trusted campus runners for food delivery, shopping, printing, pickups, and everyday campus errands.",
   applicationName: "Swiftdu",
+  manifest: "/manifest.webmanifest",
+  category: "productivity",
   keywords: [
     "Swiftdu",
     "campus errands",
@@ -52,6 +55,19 @@ export const metadata: Metadata = {
       "Swiftdu connects students with trusted campus runners for food delivery, shopping, printing, pickups, and everyday campus errands.",
     images: ["/opengraph-image.png"],
   },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Swiftdu",
+  },
+  formatDetection: {
+    telephone: false,
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#111827",
+  colorScheme: "light",
 };
 
 export default function RootLayout({
@@ -94,6 +110,7 @@ export default function RootLayout({
         </Wrapper>
            
 
+        <ServiceWorkerRegistration />
         <Toaster richColors position="bottom-right" />
       </body>
     </html>
