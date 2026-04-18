@@ -1,26 +1,11 @@
 import type { Metadata } from "next";
 import NextTopLoader from "nextjs-toploader";
 import "./globals.css";
-import Script from "next/script";
 import {Toaster} from "sonner"
 import NavbarClientWrapper from "@/components/NavbarClientWrapper";
 import Wrapper from "@/components/wrapper";
 import { Footer } from "@/components/Footer";
-
-function getSiteUrl() {
-  const envUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.VERCEL_PROJECT_PRODUCTION_URL ||
-    process.env.VERCEL_URL;
-
-  if (!envUrl) {
-    return "https://swiftdu.vercel.app";
-  }
-
-  return envUrl.startsWith("http") ? envUrl : `https://${envUrl}`;
-}
-
-const siteUrl = getSiteUrl();
+import { adsenseAccount, adsenseScriptSrc, siteUrl } from "@/lib/site";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -77,12 +62,8 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
-        <Script
-          id="adsense-script"
-          strategy="afterInteractive"
-          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-4657526411072658"
-          crossOrigin="anonymous"
-        />
+        <meta name="google-adsense-account" content={adsenseAccount} />
+        <script async src={adsenseScriptSrc} crossOrigin="anonymous"></script>
       </head>
       <body
         className="antialiased tracking-wide"
