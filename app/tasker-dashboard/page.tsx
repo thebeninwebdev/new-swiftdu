@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-  import { motion, AnimatePresence } from 'framer-motion'
-  import type { Variants } from 'framer-motion'
+import { motion, AnimatePresence } from 'framer-motion'
+import type { Variants } from 'framer-motion'
 import {
   ArrowRight,
   Clock3,
@@ -52,6 +52,25 @@ interface Errand {
 interface TaskerData {
   _id: string
   isVerified: boolean
+}
+
+interface RealtimeTaskPayload {
+  _id: string
+  userId: string
+  taskType?: string
+  description?: string
+  amount?: number
+  commission?: number
+  platformFee?: number
+  taskerFee?: number
+  totalAmount?: number
+  location?: string
+  store?: string
+  packaging?: string
+  status?: string
+  taskerId?: string
+  acceptedAt?: string
+  createdAt?: string
 }
 
 const taskTypes = [
@@ -153,8 +172,52 @@ const pulseVariants: Variants = {
   },
 }
 
+function matchesRealtimeFilters(
+  payload: RealtimeTaskPayload,
+  taskTypeFilter: string,
+  locationFilter: string
+) {
+  const matchesTaskType = taskTypeFilter === 'all' || payload.taskType === taskTypeFilter
+  const normalizedLocation = locationFilter.trim().toLowerCase()
+  const matchesLocation =
+    !normalizedLocation ||
+    String(payload.location || '')
+      .toLowerCase()
+      .includes(normalizedLocation)
+
+  return matchesTaskType && matchesLocation
+}
+
+function sortErrands(items: Errand[]) {
+  return [...items].sort(
+    (left, right) =>
+      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
+  )
+}
+
+function toErrand(payload: RealtimeTaskPayload): Errand {
+  return {
+    _id: payload._id,
+    userId: payload.userId,
+    taskType: payload.taskType || 'others',
+    description: payload.description || '',
+    amount: Number(payload.amount || 0),
+    commission: payload.commission,
+    platformFee: payload.platformFee,
+    taskerFee: payload.taskerFee,
+    totalAmount: payload.totalAmount,
+    location: payload.location || '',
+    store: payload.store,
+    packaging: payload.packaging,
+    status: payload.status || 'pending',
+    acceptedAt: payload.acceptedAt,
+    createdAt: payload.createdAt || new Date().toISOString(),
+  }
+}
+
 export default function TaskerDashboardPage() {
   const router = useRouter()
+  const { data: session, isPending: sessionPending } = authClient.useSession()
 
   const [errands, setErrands] = useState<Errand[]>([])
   const [loading, setLoading] = useState(true)
@@ -166,51 +229,138 @@ export default function TaskerDashboardPage() {
   const [locationFilter, setLocationFilter] = useState('')
   const [showFilters, setShowFilters] = useState(false)
   const [newTaskAlert, setNewTaskAlert] = useState(false)
+  const [taskerProfile, setTaskerProfile] = useState<TaskerData | null>(null)
+  const [loadingTaskerProfile, setLoadingTaskerProfile] = useState(true)
 
   const fetchingRef = useRef(false)
+  const queuedRefreshRef = useRef(false)
+  const queuedInitialRef = useRef(false)
   const prevErrandsCount = useRef(0)
+  const alertTimeoutRef = useRef<number | null>(null)
 
-  const loadDashboard = useCallback(
-    async (initial = false) => {
-      if (fetchingRef.current) return
-      fetchingRef.current = true
+  const taskerUserId = session?.user?.id ? String(session.user.id) : null
+  const taskerId = session?.user?.taskerId ? String(session.user.taskerId) : null
+  const taskerName = session?.user?.name || 'Anonymous'
 
-      if (initial) setLoading(true)
-      else setRefreshing(true)
+  const triggerNewTaskAlert = useCallback(() => {
+    setNewTaskAlert(true)
 
+    if (alertTimeoutRef.current) {
+      window.clearTimeout(alertTimeoutRef.current)
+    }
+
+    alertTimeoutRef.current = window.setTimeout(() => {
+      setNewTaskAlert(false)
+      alertTimeoutRef.current = null
+    }, 3000)
+  }, [])
+
+  useEffect(() => {
+    if (sessionPending) {
+      return
+    }
+
+    if (!session?.user?.id) {
+      router.push('/login')
+      return
+    }
+
+    if (!taskerId) {
+      setTaskerProfile(null)
+      setLoadingTaskerProfile(false)
+      setErrands([])
+      setError('Tasker profile not found for this account.')
+      return
+    }
+
+    let cancelled = false
+
+    const loadTaskerProfile = async () => {
       try {
-        const { data } = await authClient.getSession()
-
-        if (!data?.user?.id) {
-          router.push('/login')
-          return
-        }
-
-        const taskerId = data.user.taskerId ? String(data.user.taskerId) : undefined
-
-        if (!taskerId) {
-          setError('Tasker profile not found for this account.')
-          setErrands([])
-          return
-        }
-
+        setLoadingTaskerProfile(true)
         const taskerRes = await fetch(`/api/taskers?taskerId=${taskerId}`, {
           cache: 'no-store',
         })
+
         if (!taskerRes.ok) {
-          setError('Failed to load your tasker profile.')
-          setErrands([])
-          return
+          throw new Error('Failed to load your tasker profile.')
         }
 
         const { tasker }: { tasker: TaskerData } = await taskerRes.json()
 
-        if (!tasker?.isVerified) {
-          setError('Your account is awaiting verification.')
-          setErrands([])
-          return
+        if (!cancelled) {
+          setTaskerProfile(tasker)
+          setError(tasker?.isVerified ? null : 'Your account is awaiting verification.')
         }
+      } catch (profileError) {
+        console.error('Failed to load tasker profile', profileError)
+        if (!cancelled) {
+          setTaskerProfile(null)
+          setErrands([])
+          setError('Failed to load your tasker profile.')
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingTaskerProfile(false)
+        }
+      }
+    }
 
+    void loadTaskerProfile()
+
+    return () => {
+      cancelled = true
+    }
+  }, [router, session?.user?.id, sessionPending, taskerId])
+
+  const loadDashboard = useCallback(
+    async (initial = false) => {
+      if (sessionPending || loadingTaskerProfile) {
+        return
+      }
+
+      if (!session?.user?.id) {
+        router.push('/login')
+        return
+      }
+
+      if (!taskerId) {
+        setErrands([])
+        setError('Tasker profile not found for this account.')
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
+
+      if (!taskerProfile) {
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
+
+      if (!taskerProfile.isVerified) {
+        setErrands([])
+        setError('Your account is awaiting verification.')
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
+
+      if (fetchingRef.current) {
+        queuedRefreshRef.current = true
+        queuedInitialRef.current = queuedInitialRef.current || initial
+        return
+      }
+
+      fetchingRef.current = true
+
+      if (initial) {
+        setLoading(true)
+      } else {
+        setRefreshing(true)
+      }
+
+      try {
         const params = new URLSearchParams()
         if (taskTypeFilter !== 'all') params.append('taskType', taskTypeFilter)
         if (locationFilter.trim()) params.append('location', locationFilter.trim())
@@ -220,7 +370,7 @@ export default function TaskerDashboardPage() {
           fetch(`/api/errands?${params.toString()}`, {
             cache: 'no-store',
           }),
-          fetch(`/api/errands?accepted=true&taskerId=${tasker._id}`, {
+          fetch(`/api/errands?accepted=true&taskerId=${taskerProfile._id}`, {
             cache: 'no-store',
           }),
         ])
@@ -234,10 +384,8 @@ export default function TaskerDashboardPage() {
           acceptedRes.json(),
         ])
 
-        // Check for new tasks
         if (!initial && availableErrands.length > prevErrandsCount.current) {
-          setNewTaskAlert(true)
-          setTimeout(() => setNewTaskAlert(false), 3000)
+          triggerNewTaskAlert()
         }
         prevErrandsCount.current = availableErrands.length
 
@@ -249,7 +397,7 @@ export default function TaskerDashboardPage() {
         }
 
         setRedirectingOrderId(null)
-        setErrands(availableErrands)
+        setErrands(sortErrands(availableErrands))
         setError(null)
       } catch (dashboardError) {
         console.error('Failed to load tasker dashboard', dashboardError)
@@ -258,12 +406,33 @@ export default function TaskerDashboardPage() {
         fetchingRef.current = false
         setLoading(false)
         setRefreshing(false)
+
+        if (queuedRefreshRef.current) {
+          const nextInitial = queuedInitialRef.current
+          queuedRefreshRef.current = false
+          queuedInitialRef.current = false
+          void loadDashboard(nextInitial)
+        }
       }
     },
-    [locationFilter, router, taskTypeFilter]
+    [
+      loadingTaskerProfile,
+      locationFilter,
+      router,
+      session?.user?.id,
+      sessionPending,
+      taskerId,
+      taskerProfile,
+      taskTypeFilter,
+      triggerNewTaskAlert,
+    ]
   )
 
   useEffect(() => {
+    if (sessionPending || loadingTaskerProfile) {
+      return
+    }
+
     void loadDashboard(true)
 
     const interval = window.setInterval(() => {
@@ -279,27 +448,88 @@ export default function TaskerDashboardPage() {
       window.clearInterval(interval)
       window.removeEventListener('focus', handleFocus)
     }
-  }, [loadDashboard])
+  }, [loadDashboard, loadingTaskerProfile, sessionPending])
 
   useEffect(() => {
+    if (sessionPending || loadingTaskerProfile || !taskerProfile?._id) {
+      return
+    }
+
     const socket = io({
       withCredentials: true,
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
     })
 
-    socket.on('tasks:updated', () => void loadDashboard(false))
+    socket.on('tasks:updated', (payload?: RealtimeTaskPayload) => {
+      if (payload?.taskerId && payload.taskerId === taskerProfile._id && payload.status !== 'cancelled') {
+        setRedirectingOrderId(payload._id)
+        router.replace(`/tasker-dashboard/${payload._id}`)
+        return
+      }
+
+      if (payload) {
+        const shouldShow =
+          payload.status === 'pending' &&
+          !payload.taskerId &&
+          matchesRealtimeFilters(payload, taskTypeFilter, locationFilter)
+
+        if (shouldShow) {
+          triggerNewTaskAlert()
+        }
+
+        setErrands((previous) => {
+          const currentIndex = previous.findIndex((item) => item._id === payload._id)
+
+          if (!shouldShow) {
+            if (currentIndex === -1) {
+              return previous
+            }
+
+            return previous.filter((item) => item._id !== payload._id)
+          }
+
+          const nextErrand = toErrand(payload)
+
+          if (currentIndex === -1) {
+            return sortErrands([nextErrand, ...previous])
+          }
+
+          const next = [...previous]
+          next[currentIndex] = { ...next[currentIndex], ...nextErrand }
+          return sortErrands(next)
+        })
+      }
+
+      void loadDashboard(false)
+    })
 
     return () => {
       socket.disconnect()
     }
-  }, [loadDashboard])
+  }, [
+    loadDashboard,
+    loadingTaskerProfile,
+    locationFilter,
+    router,
+    sessionPending,
+    taskTypeFilter,
+    taskerProfile?._id,
+    triggerNewTaskAlert,
+  ])
+
+  useEffect(() => {
+    return () => {
+      if (alertTimeoutRef.current) {
+        window.clearTimeout(alertTimeoutRef.current)
+      }
+    }
+  }, [])
 
   const handleAcceptErrand = async (errandId: string) => {
     try {
       setSubmitting(errandId)
 
-      const session = await authClient.getSession()
-      if (!session?.data?.user?.id) {
+      if (!taskerUserId) {
         setError('User not authenticated')
         return
       }
@@ -309,8 +539,8 @@ export default function TaskerDashboardPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId: errandId,
-          taskerId: session.data.user.id,
-          taskerName: session.data.user.name,
+          taskerId: taskerUserId,
+          taskerName,
         }),
       })
 
@@ -326,6 +556,7 @@ export default function TaskerDashboardPage() {
     } catch (acceptError) {
       console.error('Error accepting errand:', acceptError)
       setError('Failed to accept errand')
+    } finally {
       setSubmitting(null)
     }
   }
@@ -402,7 +633,7 @@ export default function TaskerDashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-sky-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 pb-24">
+    <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-sky-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 pb-28 md:pb-12">
       {/* New Task Notification */}
       <AnimatePresence>
         {newTaskAlert && (
@@ -561,7 +792,7 @@ export default function TaskerDashboardPage() {
       </motion.div>
 
       {/* Main Content */}
-      <div className="px-4 py-4">
+      <div className="mx-auto max-w-7xl px-4 py-4 md:px-6 xl:px-8">
         {/* Error State */}
         <AnimatePresence>
           {error && (
@@ -588,7 +819,7 @@ export default function TaskerDashboardPage() {
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="flex flex-col items-center justify-center py-16 text-center"
+            className="flex flex-col items-center justify-center rounded-[2rem] border border-slate-200/70 bg-white/70 px-6 py-16 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900/40"
           >
             <motion.div
               animate={{ y: [0, -10, 0] }}
@@ -609,7 +840,7 @@ export default function TaskerDashboardPage() {
             variants={containerVariants}
             initial="hidden"
             animate="visible"
-            className="space-y-4"
+            className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3"
           >
             {errands.map((errand) => (
               <motion.article
@@ -618,7 +849,7 @@ export default function TaskerDashboardPage() {
                 layoutId={errand._id}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                className="group relative bg-white dark:bg-slate-900 rounded-3xl shadow-sm border border-slate-200 dark:border-slate-800 overflow-hidden"
+                className="group relative h-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
               >
                 {/* Top accent bar */}
                 <div className={`h-1.5 bg-linear-to-r ${taskTypeStyles[errand.taskType] || taskTypeStyles.others}`} />
@@ -737,7 +968,7 @@ export default function TaskerDashboardPage() {
       <motion.div
         initial={{ y: 100 }}
         animate={{ y: 0 }}
-        className="fixed bottom-0 left-0 right-0 p-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border-t border-slate-200 dark:border-slate-800"
+        className="fixed bottom-0 left-0 right-0 border-t border-slate-200 bg-white/90 p-4 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 md:bottom-6 md:left-auto md:right-6 md:w-[22rem] md:rounded-3xl md:border"
       >
         <div className="flex items-center justify-between max-w-lg mx-auto">
           <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">

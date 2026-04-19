@@ -1,94 +1,66 @@
-import * as React from 'react';
-import {
-  Body,
-  Button,
-  Container,
-  Head,
-  Heading,
-  Html,
-  Preview,
-  Section,
-  Tailwind,
-  Text,
-} from '@react-email/components';
+import * as React from 'react'
+import { Button, Section, Text } from '@react-email/components'
+
+import EmailLayout from '@/emails/components/EmailLayout'
 
 interface NewTaskEmailProps {
-  taskerName?: string;
-  taskType?: string;
-  description: string;
-  amount: number;
-  location: string;
-  userName: string;
-  taskUrl: string;
+  taskerName?: string
+  taskType?: string
+  description: string
+  amount: number
+  location: string
+  userName: string
+  taskUrl: string
 }
 
-const NewTaskEmail = (props: NewTaskEmailProps) => {
-  const {
-    taskerName,
-    taskType,
-    description,
-    amount,
-    location,
-    userName,
-    taskUrl,
-  } = props;
-
-  const formattedAmount = new Intl.NumberFormat('en-NG', {
+function formatCurrency(amount: number) {
+  return new Intl.NumberFormat('en-NG', {
     style: 'currency',
     currency: 'NGN',
-    maximumFractionDigits: 2,
-  }).format(amount);
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
 
+export default function NewTaskEmail({
+  taskerName,
+  taskType,
+  description,
+  amount,
+  location,
+  userName,
+  taskUrl,
+}: NewTaskEmailProps) {
   return (
-    <Html lang="en" dir="ltr">
-      <Tailwind>
-        <Head />
-        <Preview>New task posted on SwiftDU</Preview>
-        <Body className="bg-gray-100 font-sans py-10">
-          <Container className="bg-white rounded-[8px] shadow-sm max-w-145 mx-auto px-10 py-10">
-            <Section className="text-center mb-8">
-              <Heading className="text-[28px] font-bold text-gray-900 m-0 mb-2">
-                SwiftDU
-              </Heading>
-            </Section>
+    <EmailLayout
+      preview="A new task is available on SwiftDU."
+      eyebrow="Task Alert"
+      title="A new task is available"
+      greeting={`Hello ${taskerName || 'Tasker'},`}
+      intro={`A new ${taskType || 'task'} has just been posted by ${userName}. Review the details below and head to your dashboard if you want to accept it.`}
+    >
+      <Section className="rounded-[20px] border border-slate-200 bg-slate-50 px-6 py-5">
+        <Text className="m-0 text-[14px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+          Task details
+        </Text>
+        <Text className="m-0 mt-4 text-[15px] leading-7 text-slate-700">
+          <strong>Description:</strong> {description}
+        </Text>
+        <Text className="m-0 mt-2 text-[15px] leading-7 text-slate-700">
+          <strong>Budget:</strong> {formatCurrency(amount)}
+        </Text>
+        <Text className="m-0 mt-2 text-[15px] leading-7 text-slate-700">
+          <strong>Location:</strong> {location}
+        </Text>
+      </Section>
 
-            <Section className="mb-8">
-              <Heading className="text-[22px] font-bold text-gray-900 mb-4 mt-0">
-                New Task Available
-              </Heading>
-
-              <Text className="text-[16px] text-gray-700 leading-6 mb-2 mt-0">
-                Hello {taskerName || 'Tasker'},
-              </Text>
-
-              <Text className="text-[16px] text-gray-700 leading-5 mb-4 mt-0">
-                A new {taskType || 'task'} has just been posted by {userName}.
-              </Text>
-
-              <Text className="text-[16px] text-gray-700 leading-5 mb-2 mt-0">
-                <b>Description:</b> {description}
-              </Text>
-              <Text className="text-[16px] text-gray-700 leading-5 mb-2 mt-0">
-                <b>Amount:</b> {formattedAmount}
-              </Text>
-              <Text className="text-[16px] text-gray-700 leading-5 mb-2 mt-0">
-                <b>Location:</b> {location}
-              </Text>
-
-              <Section className="text-center mt-6">
-                <Button
-                  href={taskUrl}
-                  className="bg-indigo-600 text-white px-8 py-4 rounded-[8px] text-[16px] font-semibold no-underline box-border inline-block"
-                >
-                  View Task Dashboard
-                </Button>
-              </Section>
-            </Section>
-          </Container>
-        </Body>
-      </Tailwind>
-    </Html>
-  );
-};
-
-export default NewTaskEmail;
+      <Section className="mt-8 text-center">
+        <Button
+          href={taskUrl}
+          className="inline-block rounded-[14px] bg-sky-600 px-8 py-4 text-[16px] font-semibold text-white no-underline"
+        >
+          Open Task Dashboard
+        </Button>
+      </Section>
+    </EmailLayout>
+  )
+}

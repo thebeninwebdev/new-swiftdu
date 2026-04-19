@@ -1,6 +1,12 @@
 import { Suspense, createElement, type ReactElement } from "react";
 import { Resend, type Tag } from "resend";
 
+import {
+  getEmailFromAddress,
+  getEmailFromName,
+  getEmailReplyTo,
+} from "@/lib/email-config";
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const EMAIL_ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -9,14 +15,15 @@ interface SendTransactionalEmailInput {
   to: string | string[];
   subject: string;
   react: ReactElement;
+  replyTo?: string;
   tags?: Tag[];
   headers?: Record<string, string>;
 }
 
 function getEmailConfig() {
-  const fromName = process.env.EMAIL_FROM_NAME?.trim();
-  const fromAddress = process.env.EMAIL_FROM_ADDRESS?.trim().toLowerCase();
-  const replyTo = process.env.EMAIL_REPLY_TO?.trim().toLowerCase() || fromAddress;
+  const fromName = getEmailFromName();
+  const fromAddress = getEmailFromAddress();
+  const replyTo = getEmailReplyTo();
 
   if (!process.env.RESEND_API_KEY?.trim()) {
     throw new Error("RESEND_API_KEY is missing.");
@@ -27,11 +34,11 @@ function getEmailConfig() {
   }
 
   if (!EMAIL_ADDRESS_PATTERN.test(fromAddress)) {
-    throw new Error("EMAIL_FROM_ADDRESS must be a valid email address.");
+    throw new Error("The configured support email address must be valid.");
   }
 
   if (replyTo && !EMAIL_ADDRESS_PATTERN.test(replyTo)) {
-    throw new Error("EMAIL_REPLY_TO must be a valid email address.");
+    throw new Error("The configured reply-to email address must be valid.");
   }
 
   return {
@@ -43,8 +50,13 @@ function getEmailConfig() {
 export async function sendTransactionalEmail(
   input: SendTransactionalEmailInput
 ) {
-  const { from, replyTo } = getEmailConfig();
+  const { from, replyTo: defaultReplyTo } = getEmailConfig();
   const html = await renderEmailHtml(input.react);
+  const replyTo = input.replyTo?.trim().toLowerCase() || defaultReplyTo;
+
+  if (replyTo && !EMAIL_ADDRESS_PATTERN.test(replyTo)) {
+    throw new Error("replyTo must be a valid email address.");
+  }
 
   const response = await resend.emails.send({
     from,

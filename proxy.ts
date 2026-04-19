@@ -41,9 +41,13 @@ export async function proxy(request: NextRequest) {
     route === '/' ? pathname === '/' : pathname.startsWith(route)
   );
 
-if (isPublicRoute) {
-  return NextResponse.next();
-}
+  if (pathname === '/' && user) {
+    return NextResponse.redirect(new URL(defaultRoute, request.url));
+  }
+
+  if (isPublicRoute) {
+    return NextResponse.next();
+  }
 
   if (!user) {
     return NextResponse.redirect(new URL('/login', request.url));
@@ -70,7 +74,7 @@ if (isPublicRoute) {
 
 export const config = {
   matcher: [
-    // '/',
+    '/',
     // '/about-us',
     // '/contact-us',
     // '/login',

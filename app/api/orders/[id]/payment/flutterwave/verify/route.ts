@@ -117,14 +117,7 @@ export async function POST(
     order.paymentFailureReason = undefined
     await order.save()
 
-    emitOrderUpdated({
-      _id: order._id.toString(),
-      userId: order.userId,
-      taskerId: order.taskerId,
-      taskerName: order.taskerName,
-      status: order.status,
-      hasPaid: order.hasPaid,
-    })
+    emitOrderUpdated(order)
 
     return NextResponse.json({ order })
   } catch (error) {

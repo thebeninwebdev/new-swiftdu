@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from 'react';
 import Head from 'next/head';
+import Image from 'next/image';
 import { motion, useInView, AnimatePresence } from 'framer-motion';
 import { 
   Mail, 
@@ -230,6 +231,12 @@ const ContactForm = () => {
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const updateFormState = (nextState: Partial<typeof formState>) => {
+    setSubmitError(null);
+    setFormState((previous) => ({ ...previous, ...nextState }));
+  };
 
   const categories = [
     { id: 'general', label: 'General Inquiry', icon: HelpCircle },
@@ -241,12 +248,33 @@ const ContactForm = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setSubmitError(null);
 
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1500));
+    try {
+      const response = await fetch('/api/contact', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(formState),
+      });
 
-    setIsSubmitting(false);
-    setIsSubmitted(true);
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to send your message.');
+      }
+
+      setIsSubmitted(true);
+    } catch (error) {
+      setSubmitError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to send your message right now.'
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -283,10 +311,11 @@ const ContactForm = () => {
                       <CheckCircle2 className="w-10 h-10" />
                     </motion.div>
                     <h3 className="text-2xl font-bold text-gray-900 mb-2">Message Sent!</h3>
-                    <p className="text-gray-600 mb-6">Thanks for reaching out. We&apos;ll get back to you within 24 hours.</p>
+                    <p className="text-gray-600 mb-6">Thanks for reaching out. Your message has been delivered to support@swiftdu.org and we&apos;ll get back to you within 24 hours.</p>
                     <button
                       onClick={() => {
                         setIsSubmitted(false);
+                        setSubmitError(null);
                         setFormState({ name: '', email: '', subject: '', message: '', category: 'general' });
                       }}
                       className="text-indigo-600 font-semibold hover:underline"
@@ -309,7 +338,7 @@ const ContactForm = () => {
                           type="button"
                           whileHover={{ scale: 1.02 }}
                           whileTap={{ scale: 0.98 }}
-                          onClick={() => setFormState({ ...formState, category: cat.id })}
+                          onClick={() => updateFormState({ category: cat.id })}
                           className={`p-4 rounded-xl border-2 flex items-center gap-3 transition-all ${
                             formState.category === cat.id 
                               ? 'border-indigo-600 bg-indigo-50 text-indigo-700' 
@@ -329,7 +358,7 @@ const ContactForm = () => {
                           type="text"
                           required
                           value={formState.name}
-                          onChange={(e) => setFormState({ ...formState, name: e.target.value })}
+                          onChange={(e) => updateFormState({ name: e.target.value })}
                           className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
                           placeholder="John Doe"
                         />
@@ -340,7 +369,7 @@ const ContactForm = () => {
                           type="email"
                           required
                           value={formState.email}
-                          onChange={(e) => setFormState({ ...formState, email: e.target.value })}
+                          onChange={(e) => updateFormState({ email: e.target.value })}
                           className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
                           placeholder="john@student.wdu.edu.ng"
                         />
@@ -353,7 +382,7 @@ const ContactForm = () => {
                         type="text"
                         required
                         value={formState.subject}
-                        onChange={(e) => setFormState({ ...formState, subject: e.target.value })}
+                        onChange={(e) => updateFormState({ subject: e.target.value })}
                         className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
                         placeholder="How do I become a runner?"
                       />
@@ -365,11 +394,17 @@ const ContactForm = () => {
                         required
                         rows={5}
                         value={formState.message}
-                        onChange={(e) => setFormState({ ...formState, message: e.target.value })}
+                        onChange={(e) => updateFormState({ message: e.target.value })}
                         className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all resize-none"
                         placeholder="Tell us what's on your mind..."
                       />
                     </div>
+
+                    {submitError ? (
+                      <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                        {submitError}
+                      </div>
+                    ) : null}
 
                     <motion.button
                       type="submit"
@@ -488,10 +523,11 @@ const MapSection = () => {
           >
             {/* Map Placeholder - Replace with actual map embed */}
             <div className="bg-gray-200 h-96 md:h-125 relative flex items-center justify-center">
-              <img 
-                src="/Western_Delta_University.jpg" 
+              <Image
+                src="/Western_Delta_University.jpg"
                 alt="Western Delta University Location"
-                className="w-full h-full object-cover"
+                fill
+                className="object-cover"
               />
               <div className="absolute inset-0 bg-linear-to-t from-black/60 to-transparent" />
 

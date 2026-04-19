@@ -1,5 +1,5 @@
 import NewTaskEmail from '@/emails/newTaskEmail'
-import { resend } from '@/lib/resend'
+import { sendTransactionalEmail } from '@/lib/email'
 import Tasker from '@/models/tasker'
 import { User } from '@/models/user'
 
@@ -42,9 +42,7 @@ export async function notifyTaskersOfNewTask(
   input: NotifyTaskersOfNewTaskInput
 ): Promise<NotifyTaskersOfNewTaskResult> {
   if (
-    !process.env.RESEND_API_KEY ||
-    !process.env.EMAIL_FROM_NAME ||
-    !process.env.EMAIL_FROM_ADDRESS
+    !process.env.RESEND_API_KEY
   ) {
     return {
       recipientCount: 0,
@@ -101,8 +99,7 @@ export async function notifyTaskersOfNewTask(
 
   const results = await Promise.allSettled(
     recipients.map((recipient) =>
-      resend.emails.send({
-        from: `${process.env.EMAIL_FROM_NAME} <${process.env.EMAIL_FROM_ADDRESS}>`,
+      sendTransactionalEmail({
         to: recipient.email,
         subject,
         react: NewTaskEmail({
@@ -114,6 +111,10 @@ export async function notifyTaskersOfNewTask(
           userName: input.userName,
           taskUrl,
         }),
+        tags: [
+          { name: 'email_type', value: 'new_task' },
+          { name: 'audience', value: 'tasker' },
+        ],
       })
     )
   )

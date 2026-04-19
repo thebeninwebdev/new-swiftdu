@@ -4,7 +4,6 @@ import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import { Order } from "@/models/order";
 import Tasker from "@/models/tasker";
-import { User } from "@/models/user";
 
 export async function GET(
   request: NextRequest,
@@ -48,13 +47,9 @@ export async function GET(
       return NextResponse.json({ error: "Tasker not found" }, { status: 404 });
     }
 
-    const taskerUser = await User.findById(tasker.userId)
-      .select("name")
-      .lean();
-
     return NextResponse.json({
       _id: tasker._id,
-      name: taskerUser?.name || order.taskerName || "Tasker",
+      name: order.taskerName || "Tasker",
       phone: tasker.phone,
       profileImage: tasker.profileImage || null,
     });

@@ -144,14 +144,7 @@ export async function POST(request: NextRequest) {
       console.error('[Orders POST Tasker Notification Error]:', notificationError);
     }
 
-    emitOrderUpdated({
-      _id: order._id.toString(),
-      userId: order.userId,
-      taskerId: order.taskerId,
-      taskerName: order.taskerName,
-      status: order.status,
-      hasPaid: order.hasPaid,
-    });
+    emitOrderUpdated(order);
 
     return NextResponse.json(order, { status: 201 });
   } catch (error) {

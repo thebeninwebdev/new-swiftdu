@@ -5,7 +5,6 @@ import { useParams, useRouter } from 'next/navigation'
 import {
   ArrowLeft,
   CheckCircle2,
-  Clock3,
   Loader2,
   Mail,
   MapPin,
@@ -17,7 +16,6 @@ import {
 import { io } from 'socket.io-client'
 import { toast } from 'sonner'
 
-import { authClient } from '@/lib/auth-client'
 import { Button } from '@/components/ui/button'
 import { convertToNaira } from '@/lib/utils'
 
@@ -94,24 +92,29 @@ export default function ErrandDetailPage() {
     null
   )
   const fetchingRef = useRef(false)
+  const queuedRefreshRef = useRef(false)
 
   const loadErrand = useCallback(
     async (initial = false) => {
-      if (!errandId || fetchingRef.current) {
+      if (!errandId) {
+        return
+      }
+
+      if (fetchingRef.current) {
+        queuedRefreshRef.current = true
         return
       }
 
       fetchingRef.current = true
 
       try {
-        const { data } = await authClient.getSession()
-
-        if (!data?.user?.id) {
+        const errandRes = await fetch(`/api/orders/${errandId}`, {
+          cache: 'no-store',
+        })
+        if (errandRes.status === 401) {
           router.push('/login')
           return
         }
-
-        const errandRes = await fetch(`/api/orders/${errandId}`)
         if (!errandRes.ok) {
           throw new Error('Failed to fetch errand details')
         }
@@ -152,6 +155,11 @@ export default function ErrandDetailPage() {
       } finally {
         fetchingRef.current = false
         setLoading(false)
+
+        if (queuedRefreshRef.current) {
+          queuedRefreshRef.current = false
+          void loadErrand(false)
+        }
       }
     },
     [errandId, router]
@@ -184,7 +192,11 @@ export default function ErrandDetailPage() {
 
     const socket = io({
       withCredentials: true,
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
+    })
+
+    socket.on('connect', () => {
+      socket.emit('order:watch', errandId)
     })
 
     socket.on('order:updated', (payload?: { _id?: string }) => {
@@ -194,6 +206,9 @@ export default function ErrandDetailPage() {
     })
 
     return () => {
+      if (socket.connected) {
+        socket.emit('order:unwatch', errandId)
+      }
       socket.disconnect()
     }
   }, [errandId, loadErrand])

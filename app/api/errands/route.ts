@@ -136,14 +136,7 @@ export async function POST(request: NextRequest) {
     order.taskerName = taskerName || "Anonymous"
 
     const updatedOrder = await order.save()
-    emitOrderUpdated({
-      _id: updatedOrder._id.toString(),
-      userId: updatedOrder.userId,
-      taskerId: updatedOrder.taskerId,
-      taskerName: updatedOrder.taskerName,
-      status: updatedOrder.status,
-      hasPaid: updatedOrder.hasPaid,
-    })
+    emitOrderUpdated(updatedOrder)
 
     return NextResponse.json(updatedOrder, { status: 200 })
   } catch (error) {
