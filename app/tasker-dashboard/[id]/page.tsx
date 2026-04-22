@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import {
+  AlertCircle,
   ArrowLeft,
   CheckCircle2,
   Loader2,
@@ -42,6 +43,13 @@ interface ErrandDetail {
   acceptedAt?: string
   createdAt: string
   hasPaid?: boolean
+  isDeclinedTask?: boolean
+  declinedMessage?: string
+  declinedAt?: string
+  paymentStatus?: 'unpaid' | 'initialized' | 'paid' | 'failed' | 'cancelled'
+  taskerHasPaid?: boolean
+  settlementStatus?: 'not_due' | 'pending' | 'initialized' | 'paid' | 'failed' | 'overdue'
+  settlementDueAt?: string
 }
 
 interface UserInfo {
@@ -84,13 +92,15 @@ export default function ErrandDetailPage() {
   const [errand, setErrand] = useState<ErrandDetail | null>(null)
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [loading, setLoading] = useState(true)
-  const [actionLoading, setActionLoading] = useState<'complete' | 'cancel' | null>(null)
+  const [actionLoading, setActionLoading] = useState<'complete' | 'cancel' | 'report' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showConfirmModal, setShowConfirmModal] = useState<'complete' | 'cancel' | null>(null)
 
-  const previousSnapshotRef = useRef<{ status: ErrandDetail['status']; hasPaid: boolean } | null>(
-    null
-  )
+  const previousSnapshotRef = useRef<{
+    status: ErrandDetail['status']
+    hasPaid: boolean
+    isDeclinedTask: boolean
+  } | null>(null)
   const fetchingRef = useRef(false)
   const queuedRefreshRef = useRef(false)
 
@@ -131,9 +141,19 @@ export default function ErrandDetailPage() {
         }
 
           if (!initial && previousSnapshotRef.current) {
-            if (!previousSnapshotRef.current.hasPaid && Boolean(errandData.hasPaid)) {
-              toast.success('SwiftDU has confirmed the customer payment. You can complete the delivery once finished.')
-            }
+          if (!previousSnapshotRef.current.hasPaid && Boolean(errandData.hasPaid)) {
+            toast.success('The customer marked the transfer as sent. You can complete the delivery once finished.')
+          }
+
+          if (
+            !previousSnapshotRef.current.isDeclinedTask &&
+            Boolean(errandData.isDeclinedTask)
+          ) {
+            toast.error(
+              errandData.declinedMessage ||
+                'This task has been flagged for transfer review.'
+            )
+          }
 
           if (
             previousSnapshotRef.current.status !== errandData.status &&
@@ -146,6 +166,7 @@ export default function ErrandDetailPage() {
         previousSnapshotRef.current = {
           status: errandData.status,
           hasPaid: Boolean(errandData.hasPaid),
+          isDeclinedTask: Boolean(errandData.isDeclinedTask),
         }
 
         setError(null)
@@ -236,6 +257,7 @@ export default function ErrandDetailPage() {
       previousSnapshotRef.current = {
         status: payload.status,
         hasPaid: Boolean(payload.hasPaid),
+        isDeclinedTask: Boolean(payload.isDeclinedTask),
       }
 
       toast.success(
@@ -250,6 +272,37 @@ export default function ErrandDetailPage() {
     } catch (actionError) {
       console.error(`Failed to ${action} errand`, actionError)
       setError(`Failed to ${action} errand`)
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleReportTransferIssue = async () => {
+    try {
+      setActionLoading('report')
+      setError(null)
+
+      const response = await fetch(`/api/orders/${errandId}/report-transfer-issue`, {
+        method: 'POST',
+      })
+
+      const payload = await response.json()
+
+      if (!response.ok) {
+        setError(payload.error || 'Failed to report transfer issue')
+        return
+      }
+
+      setErrand(payload.order)
+      previousSnapshotRef.current = {
+        status: payload.order.status,
+        hasPaid: Boolean(payload.order.hasPaid),
+        isDeclinedTask: Boolean(payload.order.isDeclinedTask),
+      }
+      toast.success('Transfer issue submitted for admin review.')
+    } catch (reportError) {
+      console.error('Failed to report transfer issue', reportError)
+      setError('Failed to report transfer issue')
     } finally {
       setActionLoading(null)
     }
@@ -298,6 +351,8 @@ export default function ErrandDetailPage() {
 
   const isActive = errand.status === 'pending' || errand.status === 'in_progress' || errand.status === 'paid'
   const paymentConfirmed = Boolean(errand.hasPaid || errand.status === 'paid')
+  const transferUnderReview = Boolean(errand.isDeclinedTask)
+  const settlementOutstanding = errand.status === 'completed' && !errand.taskerHasPaid
 
   return (
     <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] px-1 py-2 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 sm:px-2 md:px-3">
@@ -367,7 +422,7 @@ export default function ErrandDetailPage() {
                   {taskTypeLabels[errand.taskType] || errand.taskType}
                 </h1>
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-sky-50 sm:text-base">
-                  This page updates automatically when the customer confirms payment or the order
+                  This page updates automatically when the customer confirms the transfer or the order
                   status changes.
                 </p>
               </div>
@@ -409,15 +464,22 @@ export default function ErrandDetailPage() {
 
             <div className="rounded-[1.5rem] border border-slate-200 bg-slate-50 p-5 dark:border-slate-800 dark:bg-slate-950/70">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
-                Payment status
+                Transfer status
               </p>
               <p className="mt-3 text-xl font-bold text-slate-900 dark:text-white">
-                {paymentConfirmed ? 'SwiftDU payment confirmed' : 'Waiting for SwiftDU payment confirmation'}
+                {transferUnderReview
+                  ? 'Transfer under review'
+                  : paymentConfirmed
+                  ? 'Customer transfer confirmed'
+                  : 'Waiting for customer transfer confirmation'}
               </p>
               <p className="mt-2 text-sm leading-6 text-slate-500 dark:text-slate-400">
-                {paymentConfirmed
-                  ? 'The customer checkout has been verified through Flutterwave. Finish the task and then complete it here.'
-                  : 'You can prepare the errand, but completion stays locked until SwiftDU confirms the customer payment.'}
+                {transferUnderReview
+                  ? errand.declinedMessage ||
+                    'The transaction was not found. Admin review is now in progress.'
+                  : paymentConfirmed
+                  ? 'The customer has marked the full transfer as sent. Finish the task and then complete it here.'
+                  : 'You can prepare the errand, but completion stays locked until the customer confirms the transfer.'}
               </p>
 
               <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
@@ -548,7 +610,7 @@ export default function ErrandDetailPage() {
           <div className="space-y-5">
             <div className="rounded-[2rem] border border-slate-200 bg-white/90 p-5 shadow-md shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/50">
               <h2 className="text-lg font-bold text-slate-900 dark:text-white">
-                Payment summary
+                Transfer summary
               </h2>
 
               <div className="mt-5 space-y-3">
@@ -557,7 +619,7 @@ export default function ErrandDetailPage() {
                     Total amount
                   </p>
                   <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
-                    {convertToNaira((errand.amount+errand.taskerFee))}
+                    {convertToNaira(errand.totalAmount || errand.amount + errand.commission)}
                   </p>
                 </div>
 
@@ -573,12 +635,26 @@ export default function ErrandDetailPage() {
 
                     <div className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
                       <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
-                        Tasker Fee
+                        Your fee
                       </p>
                       <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
                         {convertToNaira(errand.taskerFee || 0)}
                       </p>
                     </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
+                      Platform settlement due
+                    </p>
+                    <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                      {convertToNaira(errand.platformFee || 0)}
+                    </p>
+                    {errand.settlementDueAt ? (
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Due {formatDate(errand.settlementDueAt)}
+                      </p>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -587,50 +663,86 @@ export default function ErrandDetailPage() {
               <div className="rounded-[2rem] border border-slate-200 bg-white/90 p-5 shadow-md shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/50">
                 <h2 className="text-lg font-bold text-slate-900 dark:text-white">Task actions</h2>
 
-                <div className="mt-5 space-y-3">
-                  <Button
-                    onClick={() => setShowConfirmModal('complete')}
-                    disabled={!paymentConfirmed || Boolean(actionLoading)}
-                    className="h-12 w-full rounded-2xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    {actionLoading === 'complete' ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Completing task...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle2 className="mr-2 h-4 w-4" />
-                        Mark as completed
-                      </>
-                    )}
-                  </Button>
+                {transferUnderReview ? (
+                  <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4 dark:border-rose-900 dark:bg-rose-950/30">
+                    <div className="flex items-start gap-3">
+                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-300" />
+                      <div>
+                        <p className="font-semibold text-rose-900 dark:text-rose-100">
+                          Declined task awaiting admin review
+                        </p>
+                        <p className="mt-1 text-sm leading-6 text-rose-700 dark:text-rose-200">
+                          {errand.declinedMessage ||
+                            'The transaction was not found. Admin will review this dispute and contact the customer within 24 hours.'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-5 space-y-3">
+                    <Button
+                      onClick={() => setShowConfirmModal('complete')}
+                      disabled={!paymentConfirmed || Boolean(actionLoading)}
+                      className="h-12 w-full rounded-2xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {actionLoading === 'complete' ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Completing task...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          Mark as completed
+                        </>
+                      )}
+                    </Button>
 
-                  {!paymentConfirmed ? (
-                    <p className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-700 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-200">
-                      Completion unlocks automatically once the customer confirms payment.
-                    </p>
-                  ) : null}
-
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowConfirmModal('cancel')}
-                    disabled={Boolean(actionLoading)}
-                    className="h-12 w-full rounded-2xl border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
-                  >
-                    {actionLoading === 'cancel' ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Cancelling task...
-                      </>
+                    {paymentConfirmed ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => void handleReportTransferIssue()}
+                        disabled={Boolean(actionLoading)}
+                        className="h-12 w-full rounded-2xl border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950/30"
+                      >
+                        {actionLoading === 'report' ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Reporting issue...
+                          </>
+                        ) : (
+                          <>
+                            <AlertCircle className="mr-2 h-4 w-4" />
+                            Report transfer not received
+                          </>
+                        )}
+                      </Button>
                     ) : (
-                      <>
-                        <XCircle className="mr-2 h-4 w-4" />
-                        Cancel errand
-                      </>
+                      <p className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-700 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-200">
+                        Completion unlocks automatically once the customer confirms the transfer.
+                      </p>
                     )}
-                  </Button>
-                </div>
+
+                    <Button
+                      variant="outline"
+                      onClick={() => setShowConfirmModal('cancel')}
+                      disabled={Boolean(actionLoading)}
+                      className="h-12 w-full rounded-2xl border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
+                    >
+                      {actionLoading === 'cancel' ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Cancelling task...
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="mr-2 h-4 w-4" />
+                          Cancel errand
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                )}
               </div>
             ) : (
               <div className="rounded-[2rem] border border-slate-200 bg-white/90 p-5 shadow-md shadow-slate-200/50 dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/50">
@@ -639,9 +751,17 @@ export default function ErrandDetailPage() {
                   This errand is no longer active. You can head back to your dashboard to pick up
                   the next one.
                 </p>
+                {settlementOutstanding ? (
+                  <Button
+                    onClick={() => router.push(`/tasker-dashboard/payment/${errand._id}`)}
+                    className="mt-5 h-12 w-full rounded-2xl bg-amber-500 text-white hover:bg-amber-600"
+                  >
+                    Pay platform fee
+                  </Button>
+                ) : null}
                 <Button
                   onClick={() => router.push('/tasker-dashboard')}
-                  className="mt-5 h-12 w-full rounded-2xl bg-linear-to-r from-sky-600 to-indigo-600 text-white"
+                  className={`${settlementOutstanding ? 'mt-3' : 'mt-5'} h-12 w-full rounded-2xl bg-linear-to-r from-sky-600 to-indigo-600 text-white`}
                 >
                   Return to dashboard
                 </Button>

@@ -22,7 +22,7 @@ import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 
 const POLL_INTERVAL_MS = 4000
-const PAYMENT_RETURN_STORAGE_KEY = 'swiftdu-payment-order'
+const ACTIVE_ORDER_STATUSES = new Set(['pending', 'in_progress', 'paid'])
 
 interface Order {
   _id: string
@@ -41,6 +41,8 @@ interface Order {
   taskerId?: string
   createdAt: string
   hasPaid?: boolean
+  isDeclinedTask?: boolean
+  declinedMessage?: string
   paymentStatus?: 'unpaid' | 'initialized' | 'paid' | 'failed' | 'cancelled'
   paymentLink?: string
   paymentFailureReason?: string
@@ -52,6 +54,11 @@ interface TaskerDetails {
   name: string
   phone: string
   profileImage?: string | null
+  bankDetails?: {
+    bankName: string
+    accountName: string
+    accountNumber: string
+  }
 }
 
 const taskTypeLabels: Record<string, string> = {
@@ -85,7 +92,7 @@ const statusConfig: Record<
     icon: <Loader2 className="h-3.5 w-3.5 animate-spin" />,
   },
   paid: {
-    label: 'Paid',
+    label: 'Transfer confirmed',
     tone: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300',
     icon: <CheckCircle2 className="h-3.5 w-3.5" />,
   },
@@ -99,6 +106,12 @@ const statusConfig: Record<
     tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300',
     icon: <XCircle className="h-3.5 w-3.5" />,
   },
+}
+
+const declinedStatusConfig = {
+  label: 'Payment under review',
+  tone: 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300',
+  icon: <AlertCircle className="h-3.5 w-3.5" />,
 }
 
 const formatCurrency = (amount: number) =>
@@ -115,6 +128,9 @@ const formatDate = (date: string) =>
     hour: '2-digit',
     minute: '2-digit',
   })
+
+const isActiveOrder = (order: Pick<Order, 'status'>) =>
+  ACTIVE_ORDER_STATUSES.has(order.status)
 
 function TaskerAvatar({ tasker }: { tasker: TaskerDetails }) {
   if (tasker.profileImage) {
@@ -147,9 +163,7 @@ export default function OrdersPage() {
   const searchParams = useSearchParams()
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [isPaying, setIsPaying] = useState(false)
-  const [verifyingPayment, setVerifyingPayment] = useState(false)
-  const [startingPayment, setStartingPayment] = useState(false)
+  const [confirmingTransfer, setConfirmingTransfer] = useState(false)
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null)
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [taskerDetails, setTaskerDetails] = useState<TaskerDetails | null>(null)
@@ -161,14 +175,15 @@ export default function OrdersPage() {
     id: string
     taskerId?: string
     hasPaid?: boolean
+    isDeclinedTask?: boolean
   } | null>(null)
   const taskerOrderRef = useRef<string | null>(null)
   const fetchingRef = useRef(false)
   const queuedReloadRef = useRef(false)
   const queuedInitialReloadRef = useRef(false)
   const socketRef = useRef<Socket | null>(null)
-  const processedCallbackRef = useRef<string | null>(null)
   const redirectedToReviewRef = useRef<string | null>(null)
+  const requestedOrderId = searchParams.get('orderId')
 
   const disconnectSocket = useCallback(() => {
     socketRef.current?.disconnect()
@@ -257,7 +272,17 @@ export default function OrdersPage() {
           }
 
           if (!previousSnapshotRef.current.hasPaid && nextCurrentOrder.hasPaid) {
-            toast.success('Flutterwave payment verified. Your task is now moving.')
+            toast.success('Your transfer has been confirmed. Your task is now moving.')
+          }
+
+          if (
+            !previousSnapshotRef.current.isDeclinedTask &&
+            Boolean(nextCurrentOrder.isDeclinedTask)
+          ) {
+            toast.error(
+              nextCurrentOrder.declinedMessage ||
+                'We could not confirm that transfer. Our team will contact you within 24 hours.'
+            )
           }
         }
 
@@ -266,6 +291,7 @@ export default function OrdersPage() {
               id: nextCurrentOrder._id,
               taskerId: nextCurrentOrder.taskerId,
               hasPaid: nextCurrentOrder.hasPaid,
+              isDeclinedTask: nextCurrentOrder.isDeclinedTask,
             }
           : null
         trackedOrderIdRef.current = nextCurrentOrder?._id || null
@@ -295,10 +321,18 @@ export default function OrdersPage() {
   }, [loadOrders])
 
   useEffect(() => {
-    if (isPaying) {
+    if (!requestedOrderId || requestedOrderId === trackedOrderIdRef.current) {
       return
     }
 
+    trackedOrderIdRef.current = requestedOrderId
+    previousSnapshotRef.current = null
+    taskerOrderRef.current = null
+    setTaskerDetails(null)
+    void loadOrders(true)
+  }, [loadOrders, requestedOrderId])
+
+  useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') {
         void loadOrders(false)
@@ -315,14 +349,9 @@ export default function OrdersPage() {
       window.clearInterval(interval)
       window.removeEventListener('focus', onFocus)
     }
-  }, [isPaying, loadOrders])
+  }, [loadOrders])
 
   useEffect(() => {
-    if (isPaying) {
-      disconnectSocket()
-      return
-    }
-
     const socket = io({
       withCredentials: true,
       transports: ['websocket'],
@@ -342,7 +371,7 @@ export default function OrdersPage() {
 
       socket.disconnect()
     }
-  }, [disconnectSocket, isPaying, loadOrders])
+  }, [disconnectSocket, loadOrders])
 
   useEffect(() => {
     const orderId = currentOrder?._id
@@ -409,160 +438,57 @@ export default function OrdersPage() {
   }, [currentOrder?._id, currentOrder?.taskerId])
 
   useEffect(() => {
-    const hasPaymentCallback = Boolean(
-      searchParams.get('tx_ref') ||
-        searchParams.get('status') ||
-        searchParams.get('transaction_id')
-    )
-
-    const clearPendingCheckoutState = () => {
-      if (!window.sessionStorage.getItem(PAYMENT_RETURN_STORAGE_KEY) || hasPaymentCallback) {
-        return
-      }
-
-      window.sessionStorage.removeItem(PAYMENT_RETURN_STORAGE_KEY)
-      setIsPaying(false)
-      setStartingPayment(false)
-      void loadOrders(false)
-    }
-
-    const handlePageShow = () => clearPendingCheckoutState()
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        clearPendingCheckoutState()
-      }
-    }
-
-    window.addEventListener('pageshow', handlePageShow)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    return () => {
-      window.removeEventListener('pageshow', handlePageShow)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [loadOrders, searchParams])
-
-  useEffect(() => {
-    if (!currentOrder || (!currentOrder.hasPaid && currentOrder.status !== 'cancelled')) {
-      return
-    }
-
-    window.sessionStorage.removeItem(PAYMENT_RETURN_STORAGE_KEY)
-    setIsPaying(false)
-    setStartingPayment(false)
-  }, [currentOrder])
-
-  useEffect(() => {
-    const txRef = searchParams.get('tx_ref')
-    const status = searchParams.get('status')
-    const transactionId = searchParams.get('transaction_id')
-    const callbackOrderId = searchParams.get('orderId') || currentOrder?._id
-    const signature = `${callbackOrderId || ''}:${txRef || ''}:${status || ''}:${transactionId || ''}`
-
-    if (!callbackOrderId || !txRef || processedCallbackRef.current === signature) {
-      return
-    }
-
-    processedCallbackRef.current = signature
-    setIsPaying(true)
-    setVerifyingPayment(true)
-
-    void (async () => {
-      try {
-        const response = await fetch(
-          `/api/orders/${callbackOrderId}/payment/flutterwave/verify`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ txRef, status, transactionId }),
-          }
-        )
-        const payload = await response.json()
-
-        if (!response.ok) {
-          throw new Error(payload.error || 'Failed to verify payment')
-        }
-
-        setCurrentOrder(payload.order)
-        trackedOrderIdRef.current = payload.order?._id || callbackOrderId
-        previousSnapshotRef.current = payload.order
-          ? {
-              id: payload.order._id,
-              taskerId: payload.order.taskerId,
-              hasPaid: payload.order.hasPaid,
-            }
-          : null
-        toast.success('Flutterwave payment confirmed.')
-        void loadOrders(false)
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Failed to verify Flutterwave payment.')
-      } finally {
-        window.sessionStorage.removeItem(PAYMENT_RETURN_STORAGE_KEY)
-        setIsPaying(false)
-        setStartingPayment(false)
-        setVerifyingPayment(false)
-        router.replace('/dashboard/tasks')
-      }
-    })()
-  }, [currentOrder?._id, loadOrders, router, searchParams])
-
-  useEffect(() => {
     return () => {
       disconnectSocket()
     }
   }, [disconnectSocket])
 
-  const handleStartPayment = async () => {
+  const handleOpenOrder = (orderId: string) => {
+    if (trackedOrderIdRef.current === orderId) {
+      return
+    }
+
+    trackedOrderIdRef.current = orderId
+    previousSnapshotRef.current = null
+    taskerOrderRef.current = null
+    setTaskerDetails(null)
+    router.replace(`/dashboard/tasks?orderId=${orderId}`)
+    void loadOrders(false)
+  }
+
+  const handleConfirmTransfer = async () => {
     if (!currentOrder) {
       return
     }
 
     try {
-      setStartingPayment(true)
-      setIsPaying(true)
-      disconnectSocket()
+      setConfirmingTransfer(true)
 
-      let nextCheckoutUrl =
-        currentOrder.paymentStatus === 'initialized' ? currentOrder.paymentLink : undefined
+      const response = await fetch(`/api/orders/${currentOrder._id}/confirm-transfer`, {
+        method: 'POST',
+      })
+      const payload = await response.json()
 
-      if (!nextCheckoutUrl) {
-        const response = await fetch(
-          `/api/orders/${currentOrder._id}/payment/flutterwave/initialize`,
-          {
-            method: 'POST',
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to confirm the transfer.')
+      }
+
+      setCurrentOrder(payload.order)
+      trackedOrderIdRef.current = payload.order?._id || currentOrder._id
+      previousSnapshotRef.current = payload.order
+        ? {
+            id: payload.order._id,
+            taskerId: payload.order.taskerId,
+            hasPaid: payload.order.hasPaid,
+            isDeclinedTask: payload.order.isDeclinedTask,
           }
-        )
-        const payload = await response.json()
-
-        if (!response.ok) {
-          throw new Error(payload.error || 'Failed to open Flutterwave checkout.')
-        }
-
-        nextCheckoutUrl = payload.checkoutUrl
-        setCurrentOrder((previous) =>
-          previous
-            ? {
-                ...previous,
-                paymentStatus: 'initialized',
-                paymentLink: payload.checkoutUrl,
-              }
-            : previous
-        )
-      }
-
-      if (!nextCheckoutUrl) {
-        throw new Error('Flutterwave did not return a checkout link.')
-      }
-
-      window.sessionStorage.setItem(PAYMENT_RETURN_STORAGE_KEY, currentOrder._id)
-      window.location.assign(nextCheckoutUrl)
+        : null
+      toast.success('Payment noted. Your tasker can continue the errand.')
     } catch (err) {
-      setIsPaying(false)
-      setStartingPayment(false)
-      toast.error(
-        err instanceof Error ? err.message : 'Failed to open Flutterwave checkout.'
-      )
+      toast.error(err instanceof Error ? err.message : 'Failed to confirm the transfer.')
       void loadOrders(false)
+    } finally {
+      setConfirmingTransfer(false)
     }
   }
 
@@ -587,15 +513,12 @@ export default function OrdersPage() {
       trackedOrderIdRef.current = null
       taskerOrderRef.current = null
       previousSnapshotRef.current = null
-      window.sessionStorage.removeItem(PAYMENT_RETURN_STORAGE_KEY)
       setTaskerDetails(null)
       setCurrentOrder(null)
-      setIsPaying(false)
-      setStartingPayment(false)
       setRecentOrders((previous) => [data, ...previous.filter((order) => order._id !== data._id)])
-      toast.success('Order cancelled. You can book a new task now.')
-      router.replace('/dashboard')
-      router.refresh()
+      toast.success('Order cancelled.')
+      router.replace('/dashboard/tasks')
+      void loadOrders(true)
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to cancel order')
     } finally {
@@ -621,12 +544,21 @@ export default function OrdersPage() {
   const visibleRecentOrders = recentOrders.filter(
     (order) => !currentOrder || order._id !== currentOrder._id
   )
-  const currentStatus = currentOrder ? statusConfig[currentOrder.status] : null
+  const additionalActiveOrders = visibleRecentOrders.filter(isActiveOrder)
+  const pastOrders = visibleRecentOrders.filter((order) => !isActiveOrder(order))
+  const currentStatus = currentOrder
+    ? currentOrder.isDeclinedTask
+      ? declinedStatusConfig
+      : statusConfig[currentOrder.status]
+    : null
   const commission = currentOrder?.commission || 0
+  const isSearchingForTasker = currentOrder?.status === 'pending'
+  const transferUnderReview = Boolean(currentOrder?.isDeclinedTask)
+  const needsPayment = Boolean(currentOrder?.taskerId && !currentOrder?.hasPaid && !transferUnderReview)
 
   return (
     <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95">
+      <div className="sticky top-16 z-10 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 lg:top-0">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
@@ -642,7 +574,7 @@ export default function OrdersPage() {
           <button
             type="button"
             onClick={() => void loadOrders(false)}
-            disabled={refreshing || verifyingPayment || startingPayment}
+            disabled={refreshing || confirmingTransfer}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-slate-600 transition hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
             aria-label="Refresh orders"
           >
@@ -664,7 +596,9 @@ export default function OrdersPage() {
             <div className="space-y-3">
               <div
                 className={`rounded-xl border px-4 py-3 ${
-                  currentOrder.status === 'pending'
+                  currentOrder.isDeclinedTask
+                    ? 'border-rose-200 bg-rose-50 dark:border-rose-900/50 dark:bg-rose-950/30'
+                    : currentOrder.status === 'pending'
                     ? 'border-amber-200 bg-amber-50 dark:border-amber-900/50 dark:bg-amber-950/30'
                     : currentOrder.hasPaid
                       ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/30'
@@ -674,18 +608,47 @@ export default function OrdersPage() {
                 <p className="text-sm font-semibold text-slate-900 dark:text-white">
                   {currentOrder.status === 'pending'
                     ? 'Finding a tasker...'
+                    : currentOrder.isDeclinedTask
+                      ? 'Payment under review'
                     : currentOrder.hasPaid
-                      ? 'Flutterwave payment confirmed'
-                      : 'Tasker assigned, payment needed'}
+                      ? 'Transfer confirmed'
+                      : 'Tasker assigned, payment required'}
                 </p>
                 <p className="mt-1 text-xs text-slate-600 dark:text-slate-400">
                   {currentOrder.status === 'pending'
-                    ? 'Stay here, updates appear automatically.'
+                    ? 'Stay here while we search. This page updates automatically.'
+                    : currentOrder.isDeclinedTask
+                      ? currentOrder.declinedMessage ||
+                        'The transaction was not found and we will contact you within 24 hours.'
                     : currentOrder.hasPaid
                       ? `${taskerDetails?.name || 'Your tasker'} is handling your errand.`
-                      : 'Pay SwiftDU with Flutterwave to release the order.'}
+                      : 'Make payment now using the tasker bank details below, then confirm it in the app.'}
                 </p>
               </div>
+
+              {isSearchingForTasker ? (
+                <div className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm dark:border-amber-900/50 dark:bg-slate-900">
+                  <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
+                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                      <Loader2 className="h-6 w-6 animate-spin" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-base font-semibold text-slate-900 dark:text-white">
+                        Searching for an available tasker
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                        We&apos;re notifying verified taskers around campus right now. Keep this
+                        page open and you&apos;ll see the assignment as soon as someone accepts.
+                      </p>
+                      <div className="mt-3 flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-400" />
+                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500 [animation-delay:0.2s]" />
+                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-600 [animation-delay:0.4s]" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
@@ -710,7 +673,9 @@ export default function OrdersPage() {
                 <div className="space-y-4 p-4">
                   <div>
                     <h3 className="text-base font-semibold text-slate-900 dark:text-white">
-                      {currentOrder.description}
+                      {currentOrder.description ||
+                        taskTypeLabels[currentOrder.taskType] ||
+                        'Order details'}
                     </h3>
                     <div className="mt-2 flex flex-wrap gap-2">
                       <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
@@ -731,25 +696,62 @@ export default function OrdersPage() {
                   </div>
 
                   <div className="rounded-xl bg-slate-950 p-4 text-white">
-                    <p className="text-xs text-slate-400">Total amount collected by SwiftDU</p>
+                    <p className="text-xs text-slate-400">Total amount to transfer to your tasker</p>
                     <p className="mt-1 text-2xl font-bold">
                       {formatCurrency(currentOrder.totalAmount || currentOrder.amount)}
                     </p>
                     <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
                       <span>Item budget: {formatCurrency(currentOrder.amount)}</span>
-                      <span>Platform fee: {formatCurrency(commission)}</span>
+                      <span>Service fee: {formatCurrency(commission)}</span>
                     </div>
                   </div>
 
-                  {currentOrder.paymentStatus === 'failed' ||
-                  currentOrder.paymentStatus === 'cancelled' ? (
+                  {(currentOrder.paymentStatus === 'failed' ||
+                    currentOrder.paymentStatus === 'cancelled') &&
+                  !currentOrder.isDeclinedTask ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
                       {currentOrder.paymentFailureReason ||
-                        'The last Flutterwave payment attempt was not completed.'}
+                        'The transfer confirmation could not be completed.'}
                     </div>
                   ) : null}
                 </div>
               </div>
+
+              {needsPayment ? (
+                <div className="rounded-2xl border border-sky-200 bg-sky-50/80 p-4 dark:border-sky-900/60 dark:bg-sky-950/30">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-900/60 dark:text-sky-300">
+                      <CreditCard className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-base font-semibold text-slate-900 dark:text-white">
+                        Payment required to continue
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                        1. Copy the bank details below. 2. Make the full payment to your tasker.
+                        3. Return here and tap &quot;I&apos;ve sent the payment&quot;.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {transferUnderReview ? (
+                <div className="rounded-2xl border border-rose-200 bg-rose-50/90 p-4 dark:border-rose-900/60 dark:bg-rose-950/20">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-300" />
+                    <div>
+                      <p className="font-semibold text-slate-900 dark:text-white">
+                        Transaction not found
+                      </p>
+                      <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                        {currentOrder.declinedMessage ||
+                          'The transaction was not found and we will be in contact within 24 hours.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {currentOrder.taskerId ? (
                 <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -786,32 +788,61 @@ export default function OrdersPage() {
                         ) : null}
                       </div>
                     </div>
+
+                    {taskerDetails?.bankDetails ? (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+                        <div className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                            Bank
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                            {taskerDetails.bankDetails.bankName}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                            Account Name
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                            {taskerDetails.bankDetails.accountName}
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                            Account Number
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                            {taskerDetails.bankDetails.accountNumber}
+                          </p>
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
 
-              {currentOrder.taskerId && !currentOrder.hasPaid ? (
+              {currentOrder.taskerId && !currentOrder.hasPaid && !currentOrder.isDeclinedTask ? (
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Button
-                    onClick={() => void handleStartPayment()}
-                    disabled={startingPayment || verifyingPayment || updatingAction === 'cancel'}
+                    onClick={() => void handleConfirmTransfer()}
+                    disabled={confirmingTransfer || updatingAction === 'cancel'}
                     className="h-12 rounded-xl bg-linear-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700"
                   >
-                    {startingPayment || verifyingPayment ? (
+                    {confirmingTransfer ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        {verifyingPayment ? 'Verifying...' : 'Opening checkout...'}
+                        Confirming transfer...
                       </>
                     ) : (
                       <>
                         <CreditCard className="mr-2 h-4 w-4" />
-                        Pay with Flutterwave
+                        I&apos;ve sent the payment
                       </>
                     )}
                   </Button>
                   <Button
                     onClick={() => void handleCancelOrder()}
-                    disabled={updatingAction === 'cancel' || verifyingPayment || startingPayment}
+                    disabled={updatingAction === 'cancel' || confirmingTransfer}
                     variant="outline"
                     className="h-12 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950/30"
                   >
@@ -833,11 +864,10 @@ export default function OrdersPage() {
               {currentOrder.hasPaid ? (
                 <div className="rounded-2xl border border-emerald-200 bg-emerald-50/50 p-4 dark:border-emerald-900/50 dark:bg-emerald-950/20">
                   <p className="font-semibold text-slate-900 dark:text-white">
-                    SwiftDU has confirmed your payment.
+                    Your transfer has been marked as sent.
                   </p>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                    The tasker can now continue delivery. Payments are no longer sent directly
-                    to individual taskers.
+                    The tasker can now continue delivery and complete the errand after delivery.
                   </p>
                 </div>
               ) : null}
@@ -845,7 +875,7 @@ export default function OrdersPage() {
               {currentOrder.status === 'pending' ? (
                 <Button
                   onClick={() => void handleCancelOrder()}
-                  disabled={updatingAction === 'cancel' || verifyingPayment || startingPayment}
+                  disabled={updatingAction === 'cancel' || confirmingTransfer}
                   variant="outline"
                   className="h-11 w-full rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
                 >
@@ -884,20 +914,71 @@ export default function OrdersPage() {
             </div>
           )}
 
-          {visibleRecentOrders.length > 0 ? (
+          {additionalActiveOrders.length > 0 ? (
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  More Active Orders
+                </h2>
+                <span className="text-xs text-slate-500 dark:text-slate-400">
+                  {additionalActiveOrders.length} available to open
+                </span>
+              </div>
+              <div className="space-y-2">
+                {additionalActiveOrders.map((order) => {
+                  const status = order.isDeclinedTask ? declinedStatusConfig : statusConfig[order.status]
+
+                  return (
+                    <button
+                      key={order._id}
+                      type="button"
+                      onClick={() => handleOpenOrder(order._id)}
+                      className="flex w-full items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-sky-300 hover:shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:hover:border-sky-800"
+                    >
+                      <div
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${status.tone}`}
+                      >
+                        {taskTypeIcons[order.taskType] || taskTypeIcons.others}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="truncate text-sm font-medium text-slate-900 dark:text-white">
+                            {taskTypeLabels[order.taskType] || order.taskType}
+                          </p>
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider ${status.tone}`}
+                          >
+                            {status.label}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                          {formatDate(order.createdAt)} -{' '}
+                          {formatCurrency(order.totalAmount || order.amount)}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-xs font-semibold text-sky-600 dark:text-sky-400">
+                        Open
+                      </span>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : null}
+
+          {pastOrders.length > 0 ? (
             <div className="space-y-3 pt-2">
               <div className="flex items-center justify-between">
                 <h2 className="text-base font-bold text-slate-900 dark:text-white">
                   Recent Orders
                 </h2>
                 <span className="text-xs text-slate-500 dark:text-slate-400">
-                  {visibleRecentOrders.length} past{' '}
-                  {visibleRecentOrders.length === 1 ? 'order' : 'orders'}
+                  {pastOrders.length} past {pastOrders.length === 1 ? 'order' : 'orders'}
                 </span>
               </div>
               <div className="space-y-2">
-                {visibleRecentOrders.map((order) => {
-                  const status = statusConfig[order.status]
+                {pastOrders.map((order) => {
+                  const status = order.isDeclinedTask ? declinedStatusConfig : statusConfig[order.status]
 
                   return (
                     <div

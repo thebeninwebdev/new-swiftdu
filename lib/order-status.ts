@@ -9,6 +9,11 @@ export function isActiveOrderStatus(status: string | null | undefined) {
 export function canCustomerCancelOrder(order: {
   status: string;
   hasPaid?: boolean;
+  isDeclinedTask?: boolean;
 }) {
-  return (order.status === "pending" || order.status === "in_progress") && !order.hasPaid;
+  return (
+    !order.isDeclinedTask &&
+    (order.status === "pending" || order.status === "in_progress") &&
+    !order.hasPaid
+  );
 }

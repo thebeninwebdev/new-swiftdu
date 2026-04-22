@@ -34,9 +34,14 @@ interface Order {
   deadlineUnit: 'mins' | 'hours' | 'days'
   location: string
   store?: string
-  status: 'pending' | 'in_progress' | 'completed' | 'cancelled'
+  status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   taskerId?: string
   taskerName?: string
+  isDeclinedTask?: boolean
+  declinedMessage?: string
+  declinedAt?: string
+  paymentFailureReason?: string
+  requiresPremiumTasker?: boolean
   userId: string
   userName: string
   userEmail: string
@@ -58,6 +63,7 @@ export default function AdminOrdersPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [taskTypeFilter, setTaskTypeFilter] = useState('all')
+  const [declinedFilter, setDeclinedFilter] = useState('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -90,7 +96,8 @@ export default function AdminOrdersPage() {
         page: currentPage.toString(),
         search: searchTerm,
         status: statusFilter,
-        taskType: taskTypeFilter
+        taskType: taskTypeFilter,
+        declined: declinedFilter
       })
 
       const res = await fetch(`/api/admin/orders?${params}`)
@@ -108,7 +115,14 @@ export default function AdminOrdersPage() {
     } finally {
       setIsFetching(false)
     }
-  }, [currentPage, searchTerm, statusFilter, taskTypeFilter])
+  }, [currentPage, searchTerm, statusFilter, taskTypeFilter, declinedFilter])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const params = new URLSearchParams(window.location.search)
+    setDeclinedFilter(params.get('declined') || 'all')
+  }, [])
 
   useEffect(() => {
     if (admin) fetchOrders()
@@ -149,6 +163,8 @@ export default function AdminOrdersPage() {
         return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300'
       case 'completed':
         return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
+      case 'paid':
+        return 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-300'
       case 'cancelled':
         return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
       default:
@@ -163,6 +179,8 @@ export default function AdminOrdersPage() {
       case 'in_progress':
         return <Clock className="w-4 h-4" />
       case 'completed':
+        return <CheckCircle className="w-4 h-4" />
+      case 'paid':
         return <CheckCircle className="w-4 h-4" />
       case 'cancelled':
         return <XCircle className="w-4 h-4" />
@@ -189,12 +207,12 @@ export default function AdminOrdersPage() {
       {/* Header */}
       <div className="border-b border-border">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">Order Management</h1>
+              <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Order Management</h1>
               <p className="text-muted-foreground mt-1">Monitor and manage all platform orders</p>
             </div>
-            <Badge variant="secondary" className="px-3 py-1">
+            <Badge variant="secondary" className="w-fit px-3 py-1">
               Admin Panel
             </Badge>
           </div>
@@ -205,7 +223,7 @@ export default function AdminOrdersPage() {
         {/* Filters */}
         <Card className="mb-6">
           <CardContent className="pt-6">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -243,6 +261,17 @@ export default function AdminOrdersPage() {
                 </SelectContent>
               </Select>
 
+              <Select value={declinedFilter} onValueChange={(value) => setDeclinedFilter(value ?? 'all')}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by payment review" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Payment States</SelectItem>
+                  <SelectItem value="only">Declined Tasks</SelectItem>
+                  <SelectItem value="exclude">No Declined Tasks</SelectItem>
+                </SelectContent>
+              </Select>
+
               <Button onClick={() => setCurrentPage(1)} disabled={isFetching}>
                 {isFetching ? 'Loading...' : 'Apply Filters'}
               </Button>
@@ -263,15 +292,15 @@ export default function AdminOrdersPage() {
             orders.map((order) => (
               <Card key={order._id} className="overflow-hidden">
                 <CardContent className="p-6">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-4">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:space-x-4 sm:gap-0">
                       <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
                         <ShoppingBag className="w-6 h-6 text-primary" />
                       </div>
 
                       <div>
                         <h3 className="font-semibold text-lg capitalize">{order.taskType} Task</h3>
-                        <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                        <div className="mt-2 flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
                           <div className="flex items-center">
                             <User className="w-4 h-4 mr-1" />
                             {order.userName}
@@ -288,13 +317,16 @@ export default function AdminOrdersPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-4">
-                      <div className="text-right">
-                        <div className="flex items-center space-x-2 mb-2">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between xl:justify-end">
+                      <div className="text-left sm:text-right">
+                        <div className="mb-2 flex flex-wrap items-center gap-2 sm:justify-end">
                           {getStatusIcon(order.status)}
                           <Badge className={getStatusColor(order.status)}>
                             {order.status.replace('_', ' ').toUpperCase()}
                           </Badge>
+                          {order.isDeclinedTask ? (
+                            <Badge variant="destructive">DECLINED TASK</Badge>
+                          ) : null}
                         </div>
                         <p className="text-lg font-bold">₦{(order.totalAmount || order.amount).toLocaleString()}</p>
                         <p className="text-sm text-muted-foreground">
@@ -302,7 +334,7 @@ export default function AdminOrdersPage() {
                         </p>
                       </div>
 
-                      <div className="flex space-x-2">
+                      <div className="flex flex-wrap gap-2 sm:justify-end">
                         <Button
                           variant="outline"
                           size="sm"
@@ -374,6 +406,9 @@ export default function AdminOrdersPage() {
                               (+₦{order.platformFee || order.commission || 0} service fee = ₦{order.totalAmount.toLocaleString()} total)
                             </p>
                           )}
+                          {order.requiresPremiumTasker ? (
+                            <p className="text-xs text-emerald-600 mt-1">Premium taskers only</p>
+                          ) : null}
                         </div>
 
                         {order.store && (
@@ -414,6 +449,27 @@ export default function AdminOrdersPage() {
                         <p className="text-sm font-medium text-muted-foreground mb-2">Description</p>
                         <p className="text-sm bg-muted/50 p-3 rounded-lg">{order.description}</p>
                       </div>
+
+                      {order.isDeclinedTask ? (
+                        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+                          <div className="flex items-start gap-2">
+                            <AlertCircle className="mt-0.5 h-4 w-4 text-red-600" />
+                            <div>
+                              <p className="text-sm font-semibold text-red-900">Transfer dispute flagged</p>
+                              <p className="mt-1 text-sm text-red-700">
+                                {order.declinedMessage ||
+                                  order.paymentFailureReason ||
+                                  'The tasker reported that the transaction was not found.'}
+                              </p>
+                              {order.declinedAt ? (
+                                <p className="mt-2 text-xs text-red-600">
+                                  Flagged {new Date(order.declinedAt).toLocaleString()}
+                                </p>
+                              ) : null}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   )}
                 </CardContent>
@@ -424,7 +480,7 @@ export default function AdminOrdersPage() {
 
         {/* Pagination */}
         {totalPages > 1 && (
-          <div className="flex justify-center mt-8 space-x-2">
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
             <Button
               variant="outline"
               onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}

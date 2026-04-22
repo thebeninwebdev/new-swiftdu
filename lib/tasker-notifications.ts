@@ -32,6 +32,7 @@ function formatTaskType(taskType: string) {
     restaurant: 'food delivery',
     printing: 'printing',
     shopping: 'shopping',
+    water: 'water delivery',
     others: 'errand',
   }
 
@@ -55,6 +56,7 @@ export async function notifyTaskersOfNewTask(
   const taskers = await Tasker.find({
     isVerified: true,
     isRejected: { $ne: true },
+    isPremium: true,
   })
     .select('userId')
     .lean()
@@ -64,7 +66,7 @@ export async function notifyTaskersOfNewTask(
       recipientCount: 0,
       deliveredCount: 0,
       skipped: true,
-      reason: 'No verified taskers found.',
+      reason: 'No premium taskers found.',
     }
   }
 
@@ -113,7 +115,7 @@ export async function notifyTaskersOfNewTask(
         }),
         tags: [
           { name: 'email_type', value: 'new_task' },
-          { name: 'audience', value: 'tasker' },
+          { name: 'audience', value: 'premium_tasker' },
         ],
       })
     )

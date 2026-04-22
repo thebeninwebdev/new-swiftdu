@@ -25,6 +25,7 @@ import { io } from 'socket.io-client'
 import { toast } from 'sonner'
 
 import { authClient } from '@/lib/auth-client'
+import { PREMIUM_TASKER_MIN_BUDGET } from '@/lib/tasker-access'
 import { convertToNaira } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 
@@ -40,6 +41,7 @@ interface Errand {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
+  requiresPremiumTasker?: boolean
   location: string
   store?: string
   packaging?: string
@@ -52,6 +54,8 @@ interface Errand {
 interface TaskerData {
   _id: string
   isVerified: boolean
+  isPremium: boolean
+  isSettlementSuspended?: boolean
 }
 
 interface RealtimeTaskPayload {
@@ -64,6 +68,7 @@ interface RealtimeTaskPayload {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
+  requiresPremiumTasker?: boolean
   location?: string
   store?: string
   packaging?: string
@@ -206,6 +211,7 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
     platformFee: payload.platformFee,
     taskerFee: payload.taskerFee,
     totalAmount: payload.totalAmount,
+    requiresPremiumTasker: payload.requiresPremiumTasker,
     location: payload.location || '',
     store: payload.store,
     packaging: payload.packaging,
@@ -290,7 +296,13 @@ export default function TaskerDashboardPage() {
 
         if (!cancelled) {
           setTaskerProfile(tasker)
-          setError(tasker?.isVerified ? null : 'Your account is awaiting verification.')
+          setError(
+            !tasker?.isVerified
+              ? 'Your account is awaiting verification.'
+              : tasker?.isSettlementSuspended
+                ? 'Your tasker account is temporarily suspended until overdue platform settlements are paid.'
+                : null
+          )
         }
       } catch (profileError) {
         console.error('Failed to load tasker profile', profileError)
@@ -346,6 +358,16 @@ export default function TaskerDashboardPage() {
         return
       }
 
+      if (taskerProfile.isSettlementSuspended) {
+        setErrands([])
+        setError(
+          'Your tasker account is temporarily suspended until overdue platform settlements are paid.'
+        )
+        setLoading(false)
+        setRefreshing(false)
+        return
+      }
+
       if (fetchingRef.current) {
         queuedRefreshRef.current = true
         queuedInitialRef.current = queuedInitialRef.current || initial
@@ -365,6 +387,7 @@ export default function TaskerDashboardPage() {
         if (taskTypeFilter !== 'all') params.append('taskType', taskTypeFilter)
         if (locationFilter.trim()) params.append('location', locationFilter.trim())
         params.append('status', 'pending')
+        params.append('viewerTaskerId', taskerProfile._id)
 
         const [availableRes, acceptedRes] = await Promise.all([
           fetch(`/api/errands?${params.toString()}`, {
@@ -471,6 +494,7 @@ export default function TaskerDashboardPage() {
         const shouldShow =
           payload.status === 'pending' &&
           !payload.taskerId &&
+          (!payload.requiresPremiumTasker || Boolean(taskerProfile?.isPremium)) &&
           matchesRealtimeFilters(payload, taskTypeFilter, locationFilter)
 
         if (shouldShow) {
@@ -662,7 +686,7 @@ export default function TaskerDashboardPage() {
         variants={headerVariants}
         initial="hidden"
         animate="visible"
-        className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/50 dark:border-slate-800/50"
+        className="sticky top-16 z-40 border-b border-slate-200/50 bg-white/80 backdrop-blur-xl dark:border-slate-800/50 dark:bg-slate-900/80 lg:top-0"
       >
         <div className="px-4 py-4">
           <div className="flex items-center justify-between gap-4">
@@ -677,6 +701,11 @@ export default function TaskerDashboardPage() {
                 <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
                 <span>{errands.length} open {errands.length === 1 ? 'task' : 'tasks'}</span>
               </p>
+              {!taskerProfile?.isPremium ? (
+                <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  Orders from {convertToNaira(PREMIUM_TASKER_MIN_BUDGET)} are reserved for premium taskers.
+                </p>
+              ) : null}
             </div>
 
             <div className="flex items-center gap-2">
@@ -860,6 +889,11 @@ export default function TaskerDashboardPage() {
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${taskTypeBg[errand.taskType] || taskTypeBg.others}`}>
                       {errand.taskType}
                     </span>
+                    {errand.requiresPremiumTasker ? (
+                      <span className="inline-flex items-center rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900/60">
+                        Premium only
+                      </span>
+                    ) : null}
                     <span className="text-xs text-slate-400 flex items-center gap-1">
                       <Clock3 className="h-3 w-3" />
                       {formatTimeAgo(errand.createdAt)}
@@ -981,7 +1015,11 @@ export default function TaskerDashboardPage() {
           </div>
           <div className="flex items-center gap-1 text-xs font-medium text-sky-600 dark:text-sky-400">
             <ShieldCheck className="h-3.5 w-3.5" />
-            Verified Tasker
+            {taskerProfile?.isSettlementSuspended
+              ? 'Settlement Hold'
+              : taskerProfile?.isPremium
+                ? 'Premium Tasker'
+                : 'Verified Tasker'}
           </div>
         </div>
       </motion.div>

@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
       {
         $group: {
           _id: null,
-          total: { $sum: '$amount' },
+          total: { $sum: '$taskerFee' },
         },
       },
     ]);

@@ -33,8 +33,10 @@ interface UnpaidOrder {
   _id: string
   platformFee: number
   description: string
-  paidAt?: string
   status: string
+  settlementStatus: 'not_due' | 'pending' | 'initialized' | 'paid' | 'failed' | 'overdue'
+  settlementDueAt?: string
+  completedAt?: string
 }
 
 interface UserType {
@@ -48,9 +50,20 @@ interface UserType {
 
 interface TaskerProfileType {
   profileImage?: string
+  isSettlementSuspended?: boolean
 }
 
 const TASKER_NOTIFICATION_TOAST_ID = 'tasker-dashboard-notification'
+
+const formatDueDate = (date?: string) =>
+  date
+    ? new Date(date).toLocaleString('en-NG', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : 'soon'
 
 const navigation = [
   {
@@ -228,7 +241,7 @@ export default function TaskerSidebar() {
                     Notification
                   </p>
                   <p className="mt-1 text-base font-semibold text-slate-900 dark:text-white">
-                    Payment update
+                    Settlement reminder
                   </p>
                 </div>
 
@@ -246,24 +259,27 @@ export default function TaskerSidebar() {
               </div>
 
               <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                SwiftDU collected{' '}
+                Pay{' '}
                 <span className="font-semibold text-slate-900 dark:text-white">
                   NGN {activeNotification.platformFee.toLocaleString('en-NG')}
                 </span>{' '}
-                for{' '}
+                to SwiftDU for{' '}
                 <span className="font-medium text-slate-900 dark:text-white">
                   {activeNotification.description}
                 </span>
-                . Runner payouts are handled internally.
+                .{' '}
+                {activeNotification.settlementStatus === 'overdue'
+                  ? 'This settlement is overdue.'
+                  : `Due ${formatDueDate(activeNotification.settlementDueAt)}.`}
               </p>
 
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link
-                  href={`/tasker-dashboard/${activeNotification._id}`}
+                  href={`/tasker-dashboard/payment/${activeNotification._id}`}
                   onClick={() => toast.dismiss(TASKER_NOTIFICATION_TOAST_ID)}
                   className="inline-flex h-10 items-center justify-center rounded-2xl bg-amber-500 px-4 text-sm font-semibold text-white transition hover:bg-amber-600"
                 >
-                  View task
+                  Pay now
                 </Link>
                 <Link
                   href="/tasker-dashboard/notifications"
@@ -480,9 +496,19 @@ export default function TaskerSidebar() {
 
                 <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-3 text-xs">
                   <span className="text-muted-foreground">Status</span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-green-500/10 px-2 py-0.5 font-medium text-green-600">
-                    <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                    Online
+                  <span
+                    className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium ${
+                      taskerProfile?.isSettlementSuspended
+                        ? 'bg-amber-500/10 text-amber-600'
+                        : 'bg-green-500/10 text-green-600'
+                    }`}
+                  >
+                    <span
+                      className={`h-1.5 w-1.5 rounded-full ${
+                        taskerProfile?.isSettlementSuspended ? 'bg-amber-500' : 'bg-green-500'
+                      }`}
+                    />
+                    {taskerProfile?.isSettlementSuspended ? 'Settlement hold' : 'Online'}
                   </span>
                 </div>
               </div>

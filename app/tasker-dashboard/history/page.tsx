@@ -185,7 +185,7 @@ export default function HistoryPage() {
                 <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-sky-100 dark:bg-sky-950/50">
                   <Wallet className="h-4 w-4 text-sky-600 dark:text-sky-400" />
                 </div>
-                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Task Value</p>
+                <p className="text-xs font-medium text-slate-500 dark:text-slate-400">Your Earnings</p>
               </div>
               <p className="mt-2 text-2xl font-bold text-slate-900 dark:text-white">
                 {convertToNaira(totalTaskValue)}
@@ -341,8 +341,8 @@ export default function HistoryPage() {
                         </span>
                       </div>
                       <div className="mt-2 flex items-center justify-between text-xs">
-                        <span className="text-slate-400 dark:text-slate-500">Collected: {convertToNaira(order.totalAmount || order.amount)}</span>
-                        <span className="text-slate-400 dark:text-slate-500">Service fee: {convertToNaira(order.platformFee || 0)}</span>
+                        <span className="text-slate-400 dark:text-slate-500">Customer transfer: {convertToNaira(order.totalAmount || order.amount)}</span>
+                        <span className="text-slate-400 dark:text-slate-500">Platform fee: {convertToNaira(order.platformFee || 0)}</span>
                       </div>
                     </div>
                   </div>

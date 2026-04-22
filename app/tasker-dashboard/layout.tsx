@@ -9,7 +9,7 @@ export default function RootLayout({
   return (
     <div className="flex min-h-screen bg-background">
       <TaskerSidebar />
-      <main className="min-w-0 flex-1 overflow-x-hidden mt-10 px-3 pt-4 sm:px-4 md:px-6 lg:px-8">
+      <main className="min-w-0 flex-1 overflow-x-hidden px-3 pb-4 pt-4 sm:px-4 md:px-6 lg:px-8">
         {children}
       </main>
     </div>

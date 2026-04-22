@@ -38,6 +38,7 @@ export default function TaskerSignupPage() {
 
   // Profile image
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [isUploadingImage, setIsUploadingImage] = useState(false)
@@ -75,10 +76,7 @@ export default function TaskerSignupPage() {
 
   // ── Image handling ─────────────────────────────────────────────────────────
 
-  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-
+  const applySelectedImage = (file: File) => {
     if (!file.type.startsWith('image/')) {
       toast.error('Please select a valid image file')
       return
@@ -91,6 +89,14 @@ export default function TaskerSignupPage() {
     setImageFile(file)
     setImagePreview(URL.createObjectURL(file))
     setUploadedImage(null)
+  }
+
+  const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    applySelectedImage(file)
+    e.target.value = ''
   }
 
   const uploadToCloudinary = async (): Promise<CloudinaryResult | null> => {
@@ -348,11 +354,27 @@ export default function TaskerSignupPage() {
                     >
                       {imagePreview ? 'Change photo' : 'Upload photo'}
                     </button>
+                    <button
+                      type="button"
+                      style={styles.cameraBtn}
+                      onClick={() => cameraInputRef.current?.click()}
+                    >
+                      Take photo
+                    </button>
+                    <p style={styles.cameraHint}>On mobile, this opens your camera directly.</p>
                   </div>
                   <input
                     ref={fileInputRef}
                     type="file"
                     accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={handleImageSelect}
+                  />
+                  <input
+                    ref={cameraInputRef}
+                    type="file"
+                    accept="image/*"
+                    capture="user"
                     style={{ display: 'none' }}
                     onChange={handleImageSelect}
                   />
@@ -759,6 +781,25 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: 6,
     padding: '5px 12px',
     cursor: 'pointer',
+  },
+  cameraBtn: {
+    display: 'block',
+    marginTop: 8,
+    fontSize: 12,
+    fontWeight: 700,
+    color: '#ffffff',
+    background: COLOR.accent,
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: COLOR.accent,
+    borderRadius: 6,
+    padding: '5px 12px',
+    cursor: 'pointer',
+  },
+  cameraHint: {
+    fontSize: 11,
+    color: COLOR.mutedLight,
+    margin: '8px 0 0',
   },
   // Read-only group
   readOnlyGroup: {

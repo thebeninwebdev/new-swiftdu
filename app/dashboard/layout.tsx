@@ -12,7 +12,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <div className="lg:flex min-h-screen">
+    <div className="min-h-screen overflow-x-hidden lg:flex">
       <DashboardMenu />
       <main className="min-w-0 flex-1 pt-20 lg:pt-0">
         {children}

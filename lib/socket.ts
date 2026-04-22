@@ -1,4 +1,5 @@
 import type { Server as SocketIOServer } from 'socket.io'
+import { requiresPremiumTasker as requiresPremiumTaskerByAmount } from '@/lib/tasker-access'
 
 declare global {
   var __swiftDuIo: SocketIOServer | undefined
@@ -11,6 +12,8 @@ export type OrderSocketPayload = {
   taskerName?: string
   status: string
   hasPaid?: boolean
+  isDeclinedTask?: boolean
+  declinedMessage?: string
   taskType?: string
   description?: string
   amount?: number
@@ -18,6 +21,7 @@ export type OrderSocketPayload = {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
+  requiresPremiumTasker?: boolean
   location?: string
   store?: string
   packaging?: string
@@ -33,6 +37,8 @@ type SocketOrderLike = {
   taskerName?: string
   status: string
   hasPaid?: boolean
+  isDeclinedTask?: boolean
+  declinedMessage?: string
   taskType?: string
   description?: string
   amount?: number
@@ -40,6 +46,7 @@ type SocketOrderLike = {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
+  requiresPremiumTasker?: boolean
   location?: string
   store?: string
   packaging?: string
@@ -80,6 +87,8 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     taskerName: order.taskerName,
     status: String(order.status),
     hasPaid: order.hasPaid,
+    isDeclinedTask: order.isDeclinedTask,
+    declinedMessage: order.declinedMessage,
     taskType: order.taskType,
     description: order.description,
     amount: order.amount,
@@ -87,6 +96,8 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     platformFee: order.platformFee,
     taskerFee: order.taskerFee,
     totalAmount: order.totalAmount,
+    requiresPremiumTasker:
+      order.requiresPremiumTasker ?? requiresPremiumTaskerByAmount(order.amount),
     location: order.location,
     store: order.store,
     packaging: order.packaging,

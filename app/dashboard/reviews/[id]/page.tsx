@@ -307,7 +307,7 @@ export default function ReviewOrderPage() {
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md border-b border-slate-200 dark:border-slate-800"
+        className="sticky top-16 z-40 border-b border-slate-200 bg-white/80 backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/80 lg:top-0"
       >
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <Button

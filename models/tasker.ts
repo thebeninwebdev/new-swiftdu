@@ -13,6 +13,9 @@ export interface ITasker extends Document {
 
   rating: number;
   completedTasks: number;
+  isPremium: boolean;
+  isSettlementSuspended?: boolean;
+  settlementSuspendedAt?: Date | null;
 
   bankDetails: {
     bankName: string;
@@ -66,6 +69,18 @@ const TaskerSchema = new Schema<ITasker>(
     completedTasks: {
       type: Number,
       default: 0,
+    },
+    isPremium: {
+      type: Boolean,
+      default: false,
+    },
+    isSettlementSuspended: {
+      type: Boolean,
+      default: false,
+    },
+    settlementSuspendedAt: {
+      type: Date,
+      default: null,
     },
 
     bankDetails: {

@@ -11,6 +11,7 @@ export interface IOrder extends Document {
   serviceFee: number;
   pricingModel: 'tiered' | 'water';
   totalAmount: number;
+  requiresPremiumTasker: boolean;
   location: string;
   store?: string;
   packaging?: string;
@@ -27,8 +28,13 @@ export interface IOrder extends Document {
   createdAt: Date;
   hasPaid: boolean;
   updatedAt: Date;
-  taskerHasPaid:boolean;
-  paymentProvider?: 'flutterwave';
+  taskerHasPaid: boolean;
+  isDeclinedTask: boolean;
+  declinedAt?: Date;
+  declinedReason?: 'transaction_not_found' | 'other';
+  declinedMessage?: string;
+  declinedByTaskerAt?: Date;
+  paymentProvider?: 'flutterwave' | 'manual_transfer';
   paymentStatus: 'unpaid' | 'initialized' | 'paid' | 'failed' | 'cancelled';
   paymentReference?: string;
   paymentLink?: string;
@@ -36,6 +42,17 @@ export interface IOrder extends Document {
   paymentInitializedAt?: Date;
   paymentVerifiedAt?: Date;
   paymentFailureReason?: string;
+  customerTransferredAt?: Date;
+  settlementProvider?: 'paystack';
+  settlementStatus: 'not_due' | 'pending' | 'initialized' | 'paid' | 'failed' | 'overdue';
+  settlementReference?: string;
+  settlementAccessCode?: string;
+  settlementCheckoutUrl?: string;
+  settlementTransactionId?: string;
+  settlementInitializedAt?: Date;
+  settlementPaidAt?: Date;
+  settlementDueAt?: Date;
+  settlementFailureReason?: string;
 }
 
 const orderSchema = new Schema<IOrder>(
@@ -90,6 +107,10 @@ const orderSchema = new Schema<IOrder>(
       required: true,
       min: 0,
     },
+    requiresPremiumTasker: {
+      type: Boolean,
+      default: false,
+    },
     location: {
       type: String,
       required: true,
@@ -130,10 +151,22 @@ const orderSchema = new Schema<IOrder>(
       type: Boolean,
       default: false
     },
+    isDeclinedTask: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    declinedAt: Date,
+    declinedReason: {
+      type: String,
+      enum: ['transaction_not_found', 'other'],
+    },
+    declinedMessage: String,
+    declinedByTaskerAt: Date,
     taskerName: String,
     paymentProvider: {
       type: String,
-      enum: ['flutterwave'],
+      enum: ['flutterwave', 'manual_transfer'],
     },
     paymentStatus: {
       type: String,
@@ -146,6 +179,24 @@ const orderSchema = new Schema<IOrder>(
     paymentInitializedAt: Date,
     paymentVerifiedAt: Date,
     paymentFailureReason: String,
+    customerTransferredAt: Date,
+    settlementProvider: {
+      type: String,
+      enum: ['paystack'],
+    },
+    settlementStatus: {
+      type: String,
+      enum: ['not_due', 'pending', 'initialized', 'paid', 'failed', 'overdue'],
+      default: 'not_due',
+    },
+    settlementReference: String,
+    settlementAccessCode: String,
+    settlementCheckoutUrl: String,
+    settlementTransactionId: String,
+    settlementInitializedAt: Date,
+    settlementPaidAt: Date,
+    settlementDueAt: Date,
+    settlementFailureReason: String,
   },
   { timestamps: true }
 );

@@ -17,6 +17,8 @@ interface OrderReminder {
   taskerName?: string
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   hasPaid?: boolean
+  isDeclinedTask?: boolean
+  declinedMessage?: string
   taskerId?: string
   createdAt: string
 }
@@ -25,6 +27,7 @@ const taskTypeLabels: Record<string, string> = {
   restaurant: 'Restaurant order',
   printing: 'Printing job',
   shopping: 'Shopping task',
+  water: 'Water delivery',
   others: 'General errand',
 }
 
@@ -38,7 +41,7 @@ const formatCurrency = (amount: number) =>
 export default function DashboardNotifications() {
   const router = useRouter()
   const [loading, setLoading] = useState(true)
-  const [currentOrder, setCurrentOrder] = useState<OrderReminder | null>(null)
+  const [activeOrders, setActiveOrders] = useState<OrderReminder[]>([])
   const [pendingReviews, setPendingReviews] = useState<OrderReminder[]>([])
 
   useEffect(() => {
@@ -46,15 +49,15 @@ export default function DashboardNotifications() {
       try {
         setLoading(true)
 
-        const [currentResponse, reviewsResponse] = await Promise.all([
-          fetch('/api/orders?current=true'),
+        const [activeResponse, reviewsResponse] = await Promise.all([
+          fetch('/api/orders?status=pending,in_progress,paid&limit=12'),
           fetch('/api/orders?status=completed&needsReview=true'),
         ])
 
-        const currentData = currentResponse.ok ? await currentResponse.json() : null
+        const activeData = activeResponse.ok ? await activeResponse.json() : []
         const reviewsData = reviewsResponse.ok ? await reviewsResponse.json() : []
 
-        setCurrentOrder(currentData)
+        setActiveOrders(activeData)
         setPendingReviews(reviewsData)
       } finally {
         setLoading(false)
@@ -77,7 +80,13 @@ export default function DashboardNotifications() {
     )
   }
 
-  const needsPayment = !!currentOrder?.taskerId && !currentOrder.hasPaid
+  const transferIssueOrders = activeOrders.filter((order) => order.isDeclinedTask)
+  const paymentOrders = activeOrders.filter(
+    (order) => !!order.taskerId && !order.hasPaid && !order.isDeclinedTask
+  )
+  const openOrder = (orderId: string) => {
+    router.push(`/dashboard/tasks?orderId=${orderId}`)
+  }
 
   return (
     <div className="min-h-screen bg-linear-to-br from-[#f7f9fc] via-white to-[#eef7ff] px-4 py-6 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 md:px-6 md:py-8">
@@ -94,19 +103,24 @@ export default function DashboardNotifications() {
           </p>
         </div>
 
-        {needsPayment ? (
-          <Card className="rounded-[1.75rem] border-0 bg-white/90 shadow-lg shadow-sky-100/70 ring-1 ring-sky-200 dark:bg-slate-900/90 dark:shadow-none dark:ring-sky-900">
+        {transferIssueOrders.map((order) => (
+          <Card
+            key={order._id}
+            className="rounded-[1.75rem] border-0 bg-white/90 shadow-lg shadow-rose-100/70 ring-1 ring-rose-200 dark:bg-slate-900/90 dark:shadow-none dark:ring-rose-900"
+          >
             <CardHeader className="px-5 pt-5">
               <div className="flex items-start gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-900/60 dark:text-sky-300">
-                  <CreditCard className="h-5 w-5" />
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-100 text-rose-700 dark:bg-rose-900/60 dark:text-rose-300">
+                  <BellRing className="h-5 w-5" />
                 </div>
                 <div>
                   <CardTitle className="text-xl font-bold text-slate-900 dark:text-white">
-                    Payment needed
+                    Payment under review
                   </CardTitle>
                   <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    {currentOrder.taskerName || 'A tasker'} accepted your {taskTypeLabels[currentOrder.taskType] || 'order'}. Complete payment to get the errand moving.
+                    {taskTypeLabels[order.taskType] || 'This order'} is waiting for manual review.{' '}
+                    {order.declinedMessage ||
+                      'The transaction was not found and we will contact you within 24 hours.'}
                   </p>
                 </div>
               </div>
@@ -114,21 +128,62 @@ export default function DashboardNotifications() {
             <CardContent className="space-y-3 px-5 pb-5">
               <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/70 dark:ring-slate-800">
                 <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                  {formatCurrency(currentOrder.totalAmount || currentOrder.amount)}
+                  {formatCurrency(order.totalAmount || order.amount)}
                 </p>
                 <p className="mt-1 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">
-                  {currentOrder.description}
+                  {order.description || 'Open the tracker to view full order details.'}
                 </p>
               </div>
               <Button
-                onClick={() => router.push('/dashboard/tasks')}
+                onClick={() => openOrder(order._id)}
+                className="h-12 w-full rounded-2xl bg-linear-to-r from-rose-600 to-orange-500 text-white"
+              >
+                Open order tracker
+              </Button>
+            </CardContent>
+          </Card>
+        ))}
+
+        {paymentOrders.map((order) => (
+          <Card
+            key={order._id}
+            className="rounded-[1.75rem] border-0 bg-white/90 shadow-lg shadow-sky-100/70 ring-1 ring-sky-200 dark:bg-slate-900/90 dark:shadow-none dark:ring-sky-900"
+          >
+            <CardHeader className="px-5 pt-5">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-900/60 dark:text-sky-300">
+                  <CreditCard className="h-5 w-5" />
+                </div>
+                <div>
+                  <CardTitle className="text-xl font-bold text-slate-900 dark:text-white">
+                    Payment required
+                  </CardTitle>
+                  <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    {order.taskerName || 'A tasker'} accepted your{' '}
+                    {taskTypeLabels[order.taskType] || 'order'}. Make the full payment to the
+                    tasker, then confirm it in the app to get the errand moving.
+                  </p>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3 px-5 pb-5">
+              <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/70 dark:ring-slate-800">
+                <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                  {formatCurrency(order.totalAmount || order.amount)}
+                </p>
+                <p className="mt-1 line-clamp-2 text-sm text-slate-500 dark:text-slate-400">
+                  {order.description || 'Open the tracker to view full order details.'}
+                </p>
+              </div>
+              <Button
+                onClick={() => openOrder(order._id)}
                 className="h-12 w-full rounded-2xl bg-linear-to-r from-sky-600 to-indigo-600 text-white"
               >
                 Open order tracker
               </Button>
             </CardContent>
           </Card>
-        ) : null}
+        ))}
 
         <Card className="rounded-[1.75rem] border-0 bg-white/90 shadow-lg shadow-slate-200/60 ring-1 ring-slate-200 dark:bg-slate-900/90 dark:shadow-none dark:ring-slate-800">
           <CardHeader className="px-5 pt-5">
@@ -189,7 +244,9 @@ export default function DashboardNotifications() {
           </CardContent>
         </Card>
 
-        {!needsPayment && pendingReviews.length === 0 ? (
+        {transferIssueOrders.length === 0 &&
+        paymentOrders.length === 0 &&
+        pendingReviews.length === 0 ? (
           <Card className="rounded-[1.75rem] border-0 bg-white/90 shadow-md shadow-slate-200/60 ring-1 ring-slate-200 dark:bg-slate-900/90 dark:shadow-none dark:ring-slate-800">
             <CardContent className="px-5 py-6">
               <div className="flex items-start gap-3">
@@ -201,7 +258,7 @@ export default function DashboardNotifications() {
                     You&apos;re all caught up
                   </p>
                   <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                    No payments to confirm and no reviews waiting on you.
+                    No transfers to confirm and no reviews waiting on you.
                   </p>
                 </div>
               </div>

@@ -24,15 +24,18 @@ export async function GET(req: NextRequest) {
     const [
       totalUsers,
       totalTaskers,
+      premiumTaskers,
       totalOrders,
       totalRevenue,
       pendingOrders,
       completedOrders,
       totalReviews,
-      pendingTaskerApprovals
+      pendingTaskerApprovals,
+      declinedTasks
     ] = await Promise.all([
       User.countDocuments(),
       Tasker.countDocuments({ isVerified: true }),
+      Tasker.countDocuments({ isVerified: true, isPremium: true }),
       Order.countDocuments(),
       Order.aggregate([
         { $match: { status: 'completed' } },
@@ -41,7 +44,8 @@ export async function GET(req: NextRequest) {
       Order.countDocuments({ status: 'pending' }),
       Order.countDocuments({ status: 'completed' }),
       Review.countDocuments(),
-      Tasker.countDocuments({ isVerified: false, isRejected: false })
+      Tasker.countDocuments({ isVerified: false, isRejected: false }),
+      Order.countDocuments({ isDeclinedTask: true })
     ])
 
     // Calculate gross revenue, profit, and total compensation (only for completed orders)
@@ -83,6 +87,11 @@ export async function GET(req: NextRequest) {
       .populate('userId', 'name')
       .lean()
 
+    const recentDeclinedOrders = await Order.find({ isDeclinedTask: true })
+      .sort({ declinedAt: -1, updatedAt: -1 })
+      .limit(3)
+      .lean()
+
     const recentActivity = [
       ...recentOrders.map(order => ({
         id: order._id.toString(),
@@ -103,6 +112,13 @@ export async function GET(req: NextRequest) {
         type: 'review' as const,
         message: `${(review as any).userId?.name || 'User'} left a review`,
         timestamp: review.createdAt
+      })),
+      ...recentDeclinedOrders.map(order => ({
+        id: order._id.toString(),
+        type: 'declined' as const,
+        message: `Transfer issue flagged for ${order.taskType} in ${order.location}`,
+        timestamp: order.declinedAt || order.updatedAt || order.createdAt,
+        status: 'declined'
       }))
     ]
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
@@ -111,6 +127,7 @@ export async function GET(req: NextRequest) {
     const stats = {
       totalUsers,
       totalTaskers,
+      premiumTaskers,
       totalOrders,
       grossRevenue,
       profit,
@@ -119,7 +136,8 @@ export async function GET(req: NextRequest) {
       pendingOrders,
       completedOrders,
       totalReviews,
-      pendingTaskerApprovals
+      pendingTaskerApprovals,
+      declinedTasks
     }
 
     return NextResponse.json({

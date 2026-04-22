@@ -45,6 +45,7 @@ interface DashboardOrder {
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   hasPaid?: boolean
   taskerId?: string | null
+  isDeclinedTask?: boolean
 }
 
 export default function DashboardMenu() {
@@ -69,29 +70,29 @@ export default function DashboardMenu() {
         mobileDescription: 'Open the tasker signup page',
       }
 
-  // Notification check: unpaid, accepted orders
+  // Notification check: any active order that needs attention
   useEffect(() => {
     async function fetchNotifications() {
       try {
-        const [currentRes, reviewsRes] = await Promise.all([
-          fetch('/api/orders?current=true'),
+        const [activeRes, reviewsRes] = await Promise.all([
+          fetch('/api/orders?status=pending,in_progress,paid&limit=12'),
           fetch('/api/orders?status=completed&needsReview=true'),
         ])
 
-        const currentOrder: DashboardOrder | null = currentRes.ok
-          ? await currentRes.json()
-          : null
+        const activeOrders: DashboardOrder[] = activeRes.ok
+          ? await activeRes.json()
+          : []
         const pendingReviews: Array<{ _id: string }> = reviewsRes.ok
           ? await reviewsRes.json()
           : []
 
-        const hasUnpaidAccepted =
-          !!currentOrder &&
-          currentOrder.status !== 'pending' &&
-          !!currentOrder.taskerId &&
-          !currentOrder.hasPaid
+        const hasOutstandingActiveOrder = activeOrders.some(
+          (order) =>
+            order.isDeclinedTask ||
+            (order.status !== 'pending' && !!order.taskerId && !order.hasPaid)
+        )
 
-        setHasNotification(hasUnpaidAccepted || pendingReviews.length > 0)
+        setHasNotification(hasOutstandingActiveOrder || pendingReviews.length > 0)
       } catch {
         setHasNotification(false)
       }

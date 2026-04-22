@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import { calculateTaskerStats } from '@/lib/tasker-stats'
+import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import Tasker from "@/models/tasker"
 import {User} from "@/models/user"
 
@@ -98,6 +99,7 @@ export async function POST(req: NextRequest) {
         accountName: bankDetails.accountName.trim(),
       },
       isVerified: false,
+      isPremium: false,
       rating: 0,
       completedTasks: 0,
     })
@@ -160,6 +162,8 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       )
     }
+
+    await syncTaskerSettlementStatus(taskerId)
 
     const tasker = await Tasker.findById(taskerId).lean()
 

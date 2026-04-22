@@ -45,6 +45,13 @@ export async function GET(req: NextRequest) {
       filters.taskType = taskType
     }
 
+    const declined = searchParams.get('declined')
+    if (declined === 'only') {
+      filters.isDeclinedTask = true
+    } else if (declined === 'exclude') {
+      filters.isDeclinedTask = { $ne: true }
+    }
+
     // Get orders with user and tasker details
     const orders = await Order.find(filters)
       .sort({ createdAt: -1 })

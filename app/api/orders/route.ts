@@ -11,6 +11,8 @@ import {
   descriptionMentionsWater,
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
+import { splitServiceFee } from '@/lib/order-finance';
+import { requiresPremiumTasker } from '@/lib/tasker-access';
 
 export async function POST(request: NextRequest) {
   try {
@@ -86,29 +88,13 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const existingActiveOrder = await Order.findOne({
-      userId: session.user.id,
-      status: { $in: [...ACTIVE_ORDER_STATUSES] },
-    }).sort({ createdAt: -1 });
-
-    if (existingActiveOrder) {
-      return NextResponse.json(
-        {
-          error:
-            'You already have an active order. Complete or cancel it before booking another one.',
-          existingOrderId: existingActiveOrder._id,
-        },
-        { status: 409 }
-      );
-    }
-
     const pricing = calculateOrderPricing({
       amount: parsedAmount,
       taskType: normalizedTaskType,
       waterBags: parsedWaterBags,
     });
 
-    const taskedFee = pricing.serviceFee - (pricing.serviceFee * .02);
+    const settlement = splitServiceFee(pricing.serviceFee);
 
     const order = new Order({
       userId: session.user.id,
@@ -116,18 +102,22 @@ export async function POST(request: NextRequest) {
       description: normalizedDescription,
       amount: pricing.amount,
       commission: pricing.serviceFee,
-      platformFee: (taskedFee * .25),
-      taskerFee: (taskedFee * .75),
-      serviceFee: taskedFee,
+      platformFee: settlement.platformFee,
+      taskerFee: settlement.taskerFee,
+      serviceFee: settlement.serviceFee,
       pricingModel: pricing.pricingModel,
       totalAmount: pricing.totalAmount,
+      requiresPremiumTasker: requiresPremiumTasker(pricing.amount),
       location,
       store: store || undefined,
       packaging: packaging || undefined,
       waterBags: pricing.waterBags || undefined,
       waterFee: pricing.waterFee,
       status: 'pending',
+      paymentProvider: 'manual_transfer',
       paymentStatus: 'unpaid',
+      taskerHasPaid: false,
+      settlementStatus: 'not_due',
     });
 
     await order.save();

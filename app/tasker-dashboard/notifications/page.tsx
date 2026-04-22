@@ -11,8 +11,10 @@ interface UnpaidOrder {
   _id: string
   platformFee: number
   description: string
-  paidAt?: string
   status: string
+  settlementStatus: 'not_due' | 'pending' | 'initialized' | 'paid' | 'failed' | 'overdue'
+  settlementDueAt?: string
+  completedAt?: string
 }
 
 const formatDate = (date?: string) =>
@@ -25,6 +27,8 @@ const formatDate = (date?: string) =>
         minute: '2-digit',
       })
     : 'Recently'
+
+const isOverdue = (order: UnpaidOrder) => order.settlementStatus === 'overdue'
 
 export default function TaskerNotificationsPage() {
   const [orders, setOrders] = useState<UnpaidOrder[]>([])
@@ -86,7 +90,7 @@ export default function TaskerNotificationsPage() {
   return (
     <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 pt-10 sm:pt-0">
       {/* Sticky Header */}
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95">
+      <div className="sticky top-16 z-10 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 lg:top-0">
         <div className="mx-auto flex max-w-3xl items-center justify-between">
           <div>
             <h1 className="text-lg font-bold text-slate-900 dark:text-white">Notifications</h1>
@@ -120,7 +124,7 @@ export default function TaskerNotificationsPage() {
                 You&apos;re all caught up
               </h2>
               <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-slate-400">
-                No manual payment actions are waiting. SwiftDU now collects customer payments directly.
+                No platform settlements are waiting right now.
               </p>
             </div>
           ) : null}
@@ -134,10 +138,10 @@ export default function TaskerNotificationsPage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    Manual actions
+                    Outstanding settlements
                   </p>
                   <p className="text-xs text-slate-600 dark:text-slate-400">
-                    {orders.length} notification{orders.length === 1 ? '' : 's'} waiting
+                    {orders.length} payment{orders.length === 1 ? '' : 's'} waiting
                   </p>
                 </div>
               </div>
@@ -156,10 +160,16 @@ export default function TaskerNotificationsPage() {
                   <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                        Payment handled by SwiftDU
+                        Platform settlement
                       </span>
-                      <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold capitalize text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-                        {order.status.replace('_', ' ')}
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${
+                          isOverdue(order)
+                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300'
+                            : 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300'
+                        }`}
+                      >
+                        {order.settlementStatus.replace('_', ' ')}
                       </span>
                     </div>
                   </div>
@@ -171,33 +181,38 @@ export default function TaskerNotificationsPage() {
                         {order.description}
                       </h3>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        Customer payment was recorded {formatDate(order.paidAt)}
+                        Task completed {formatDate(order.completedAt)}
                       </p>
                     </div>
 
                     <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-950/50">
                       <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                        Service fee collected
+                        Platform fee due
                       </p>
                       <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">
                         {convertToNaira(order.platformFee)}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        {isOverdue(order)
+                          ? 'This settlement is overdue and can suspend tasker access.'
+                          : `Due ${formatDate(order.settlementDueAt)}`}
                       </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
                       <Link
-                        href={`/tasker-dashboard/${order._id}`}
+                        href={`/tasker-dashboard/payment/${order._id}`}
                         className="inline-flex h-11 items-center justify-center rounded-xl bg-linear-to-r from-amber-500 to-orange-500 px-4 text-sm font-semibold text-white transition active:scale-95 hover:from-amber-600 hover:to-orange-600"
                       >
-                        View task
+                        Pay now
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Link>
 
                       <Link
-                        href="/tasker-dashboard"
+                        href={`/tasker-dashboard/${order._id}`}
                         className="inline-flex h-11 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition active:scale-95 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
                       >
-                        Dashboard
+                        View task
                       </Link>
                     </div>
                   </div>

@@ -66,11 +66,21 @@ export async function PATCH(
 
     const { id } = await params
     const body = await req.json()
-    const { action } = body
+    const { action, isPremium } = body
 
-    if (!action || !['approve', 'reject'].includes(action)) {
+    if (
+      action !== undefined &&
+      !['approve', 'reject'].includes(action)
+    ) {
       return NextResponse.json(
         { error: 'action must be "approve" or "reject".' },
+        { status: 400 }
+      )
+    }
+
+    if (action === undefined && typeof isPremium !== 'boolean') {
+      return NextResponse.json(
+        { error: 'Provide either an approval action or an isPremium boolean.' },
         { status: 400 }
       )
     }
@@ -87,20 +97,30 @@ export async function PATCH(
     if (action === 'approve') {
       tasker.isVerified = true
       tasker.isRejected = false
-    } else {
+    } else if (action === 'reject') {
       tasker.isVerified = false
       tasker.isRejected = true
+    }
+
+    if (typeof isPremium === 'boolean') {
+      tasker.isPremium = isPremium
     }
 
     await tasker.save()
 
     return NextResponse.json(
       {
-        message: `Tasker ${action === 'approve' ? 'approved' : 'rejected'} successfully.`,
+        message:
+          action === 'approve'
+            ? 'Tasker approved successfully.'
+            : action === 'reject'
+              ? 'Tasker rejected successfully.'
+              : `Tasker premium status updated to ${tasker.isPremium ? 'premium' : 'standard'}.`,
         tasker: {
           id: tasker._id,
           isVerified: tasker.isVerified,
           isRejected: tasker.isRejected,
+          isPremium: tasker.isPremium,
         },
       },
       { status: 200 }

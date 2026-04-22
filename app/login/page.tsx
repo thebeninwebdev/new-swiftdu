@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [form, setForm] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState("");
   const { data: session } = authClient.useSession();
   
@@ -177,14 +178,39 @@ export default function LoginPage() {
               <label htmlFor="password" style={{ display: "block", fontSize: 13, fontWeight: 600, color: "#111827", marginBottom: 6 }}>
                 Password
               </label>
-              <input
-                id="password" name="password" type="password" autoComplete="current-password"
-                placeholder="Password"
-                value={form.password} onChange={handleChange}
-                style={errors.password ? errStyle : base}
-                onFocus={e => { e.currentTarget.style.borderColor = BRAND_PRIMARY; e.currentTarget.style.boxShadow = `0 0 0 3px ${BRAND_PRIMARY}22`; }}
-                onBlur={e => { e.currentTarget.style.borderColor = errors.password ? "#dc2626" : "#d1d5db"; e.currentTarget.style.boxShadow = "none"; }}
-              />
+              <div style={{ position: "relative" }}>
+                <input
+                  id="password" name="password" type={showPassword ? "text" : "password"} autoComplete="current-password"
+                  placeholder="Password"
+                  value={form.password} onChange={handleChange}
+                  style={{
+                    ...(errors.password ? errStyle : base),
+                    paddingRight: "84px",
+                  }}
+                  onFocus={e => { e.currentTarget.style.borderColor = BRAND_PRIMARY; e.currentTarget.style.boxShadow = `0 0 0 3px ${BRAND_PRIMARY}22`; }}
+                  onBlur={e => { e.currentTarget.style.borderColor = errors.password ? "#dc2626" : "#d1d5db"; e.currentTarget.style.boxShadow = "none"; }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((prev) => !prev)}
+                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    right: 12,
+                    transform: "translateY(-50%)",
+                    border: "none",
+                    background: "transparent",
+                    color: BRAND_PRIMARY,
+                    fontSize: 13,
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    padding: 0,
+                  }}
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
               {errors.password && (
                 <p style={{ marginTop: 5, fontSize: 13, color: "#dc2626", fontWeight: 500 }}>{errors.password}</p>
               )}

@@ -14,12 +14,14 @@ import {
   DollarSign,
   TrendingUp,
   Activity,
-  AlertCircle
+  AlertCircle,
+  ShieldCheck,
 } from 'lucide-react'
 
 interface DashboardStats {
   totalUsers: number
   totalTaskers: number
+  premiumTaskers: number
   totalOrders: number
   totalRevenue: number
   pendingOrders: number
@@ -29,11 +31,12 @@ interface DashboardStats {
   grossRevenue:number
   profit: number
   totalCompensation: number
+  declinedTasks: number
 }
 
 interface RecentActivity {
   id: string
-  type: 'order' | 'tasker' | 'review' | 'user'
+  type: 'order' | 'tasker' | 'review' | 'user' | 'declined'
   message: string
   timestamp: string
   status?: string
@@ -108,12 +111,12 @@ export default function AdminDashboard() {
       {/* Header */}
       <div className="border-b border-border">
         <div className="max-w-7xl mx-auto px-4 py-6">
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">Admin Dashboard</h1>
+              <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Admin Dashboard</h1>
               <p className="text-muted-foreground mt-1">Manage your Swiftdu platform</p>
             </div>
-            <Badge variant="secondary" className="px-3 py-1">
+            <Badge variant="secondary" className="w-fit px-3 py-1">
               Admin Panel
             </Badge>
           </div>
@@ -122,7 +125,7 @@ export default function AdminDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Income Breakdown */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Gross Revenue</CardTitle>
@@ -162,7 +165,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5 md:gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Users</CardTitle>
@@ -186,6 +189,19 @@ export default function AdminDashboard() {
                 {isStatsLoading ? '...' : stats?.totalTaskers || 0}
               </div>
               <p className="text-xs text-muted-foreground">Verified taskers</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Premium Taskers</CardTitle>
+              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                {isStatsLoading ? '...' : stats?.premiumTaskers || 0}
+              </div>
+              <p className="text-xs text-muted-foreground">Receive new task emails</p>
             </CardContent>
           </Card>
 
@@ -217,7 +233,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Main Content */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3 lg:gap-8">
           {/* Quick Actions */}
           <Card className="lg:col-span-1">
             <CardHeader>
@@ -227,11 +243,13 @@ export default function AdminDashboard() {
             <CardContent className="space-y-3">
               <Button
                 variant="outline"
-                className="w-full justify-start"
+                className="w-full justify-between text-left"
                 onClick={() => router.push('/admin/taskers')}
               >
-                <Users className="w-4 h-4 mr-2" />
-                Review Taskers
+                <span className="flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Review Taskers
+                </span>
                 {stats?.pendingTaskerApprovals ? (
                   <Badge variant="destructive" className="ml-auto">
                     {stats.pendingTaskerApprovals}
@@ -246,6 +264,36 @@ export default function AdminDashboard() {
               >
                 <ShoppingBag className="w-4 h-4 mr-2" />
                 Manage Orders
+              </Button>
+
+              <Button
+                variant="outline"
+                className="w-full justify-between text-left"
+                onClick={() => router.push('/admin/orders?declined=only')}
+              >
+                <span className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4" />
+                  Review Declined Tasks
+                </span>
+                {stats?.declinedTasks ? (
+                  <Badge variant="destructive" className="ml-auto">
+                    {stats.declinedTasks}
+                  </Badge>
+                ) : null}
+              </Button>
+
+              <Button
+                variant="outline"
+                className="w-full justify-between text-left"
+                onClick={() => router.push('/admin/taskers?status=verified')}
+              >
+                <span className="flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 mr-0" />
+                  Manage Premium Access
+                </span>
+                <Badge variant="secondary" className="ml-auto">
+                  {stats?.premiumTaskers || 0}
+                </Badge>
               </Button>
 
               <Button
@@ -292,15 +340,17 @@ export default function AdminDashboard() {
               ) : (
                 <div className="space-y-4">
                   {recentActivity.map((activity) => (
-                    <div key={activity.id} className="flex items-start space-x-3 p-3 rounded-lg border">
+                    <div key={activity.id} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-start sm:space-x-3 sm:gap-0">
                       <div className={`p-2 rounded-full ${
                         activity.type === 'order' ? 'bg-blue-100 text-blue-600' :
                         activity.type === 'tasker' ? 'bg-green-100 text-green-600' :
+                        activity.type === 'declined' ? 'bg-red-100 text-red-600' :
                         activity.type === 'review' ? 'bg-yellow-100 text-yellow-600' :
                         'bg-gray-100 text-gray-600'
                       }`}>
                         {activity.type === 'order' && <ShoppingBag className="w-4 h-4" />}
                         {activity.type === 'tasker' && <Users className="w-4 h-4" />}
+                        {activity.type === 'declined' && <AlertCircle className="w-4 h-4" />}
                         {activity.type === 'review' && <Star className="w-4 h-4" />}
                         {activity.type === 'user' && <Users className="w-4 h-4" />}
                       </div>
@@ -314,8 +364,9 @@ export default function AdminDashboard() {
                         <Badge variant={
                           activity.status === 'pending' ? 'secondary' :
                           activity.status === 'completed' ? 'default' :
+                          activity.status === 'declined' ? 'destructive' :
                           'destructive'
-                        }>
+                        } className="w-fit">
                           {activity.status}
                         </Badge>
                       )}
@@ -328,17 +379,17 @@ export default function AdminDashboard() {
         </div>
 
         {/* Additional Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+        <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
           <Card>
             <CardHeader>
               <CardTitle className="text-sm font-medium flex items-center">
-                <Star className="w-4 h-4 mr-2" />
-                Reviews
+                <AlertCircle className="w-4 h-4 mr-2" />
+                Declined Tasks
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats?.totalReviews || 0}</div>
-              <p className="text-xs text-muted-foreground">Total reviews</p>
+              <div className="text-2xl font-bold text-red-600">{stats?.declinedTasks || 0}</div>
+              <p className="text-xs text-muted-foreground">Transfer disputes flagged by taskers</p>
             </CardContent>
           </Card>
 

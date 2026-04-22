@@ -3,6 +3,8 @@ import { Order } from '@/models/order'
 import Tasker from "@/models/tasker"
 import { NextRequest, NextResponse } from 'next/server'
 import { emitOrderUpdated } from '@/lib/socket'
+import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
+import { PREMIUM_TASKER_MIN_BUDGET, requiresPremiumTasker } from '@/lib/tasker-access'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +17,7 @@ export async function GET(request: NextRequest) {
     const location = request.nextUrl.searchParams.get('location')
     const status = request.nextUrl.searchParams.get('status')
     const taskerId = request.nextUrl.searchParams.get('taskerId')
+    const viewerTaskerId = request.nextUrl.searchParams.get('viewerTaskerId')
     const sortBy = request.nextUrl.searchParams.get('sortBy') || 'createdAt'
     const accepted = request.nextUrl.searchParams.get('accepted')
 
@@ -46,6 +49,16 @@ export async function GET(request: NextRequest) {
 
     if (location && location !== 'all') {
       filter.location = { $regex: location, $options: 'i' } // Case-insensitive search
+    }
+
+    if (accepted !== 'true' && viewerTaskerId) {
+      const viewerTasker = await Tasker.findById(viewerTaskerId)
+        .select('isPremium')
+        .lean()
+
+      if (viewerTasker && !viewerTasker.isPremium) {
+        filter.amount = { $lt: PREMIUM_TASKER_MIN_BUDGET }
+      }
     }
 
     // Fetch pending orders with sorting
@@ -106,6 +119,18 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const settlementStatus = await syncTaskerSettlementStatus(tasker._id.toString())
+
+    if (settlementStatus.isSettlementSuspended || tasker.isSettlementSuspended) {
+      return NextResponse.json(
+        {
+          error:
+            'Your tasker account is temporarily suspended because a previous platform settlement is overdue.',
+        },
+        { status: 403 }
+      )
+    }
+
     // Find and update the order
     const order = await Order.findById(orderId)
 
@@ -125,11 +150,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    if (requiresPremiumTasker(order.amount) && !tasker.isPremium) {
+      return NextResponse.json(
+        {
+          error:
+            'Only premium taskers can accept orders with a budget of N10,000 and above.',
+        },
+        { status: 403 }
+      )
+    }
+
     // Update order with tasker info
     // acceptedBy stays as the tasker's userId (for session-based matching)
     order.acceptedBy = taskerId
     order.acceptedAt = new Date()
     order.status = 'in_progress'
+    order.paymentProvider = 'manual_transfer'
 
     // taskerId should be tasker._id from the Tasker collection (not the userId)
     order.taskerId = tasker._id

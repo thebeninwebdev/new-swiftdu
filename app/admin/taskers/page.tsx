@@ -21,6 +21,7 @@ interface Tasker {
   profileImage?: string
   isVerified: boolean
   isRejected: boolean
+  isPremium: boolean
   rating: number
   completedTasks: number
   bankDetails: {
@@ -54,11 +55,11 @@ export default function AdminTaskersPage() {
     const checkAuth = async () => {
       try {
         const { data, error } = await authClient.getSession()
-        if (error || !data?.user) { router.push('/sign-in'); return }
+        if (error || !data?.user) { router.push('/login'); return }
         // if (data.user.role !== 'admin') { router.push('/'); return }
         setAdmin(data.user)
       } catch {
-        router.push('/sign-in')
+        router.push('/login')
       } finally {
         setIsLoading(false)
       }
@@ -91,7 +92,7 @@ export default function AdminTaskersPage() {
   const handleAction = async (taskerId: string, action: 'approve' | 'reject') => {
     setActionLoading(`${taskerId}-${action}`)
     try {
-      const res = await fetch(`/api/taskers/${taskerId}`, {
+      const res = await fetch(`/api/admin/taskers/${taskerId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action }),
@@ -110,6 +111,30 @@ export default function AdminTaskersPage() {
     }
   }
 
+  const handlePremiumToggle = async (taskerId: string, nextPremium: boolean) => {
+    setActionLoading(`${taskerId}-${nextPremium ? 'premium-on' : 'premium-off'}`)
+    try {
+      const res = await fetch(`/api/admin/taskers/${taskerId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPremium: nextPremium }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Could not update premium access'); return }
+
+      toast.success(nextPremium ? 'Premium access enabled' : 'Premium access removed')
+      setTaskers((prev) =>
+        prev.map((tasker) =>
+          tasker._id === taskerId ? { ...tasker, isPremium: nextPremium } : tasker
+        )
+      )
+    } catch {
+      toast.error('Something went wrong')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   // ── Counts per filter ──────────────────────────────────────────────────────
 
   const FILTERS: { key: StatusFilter; label: string }[] = [
@@ -117,6 +142,20 @@ export default function AdminTaskersPage() {
     { key: 'verified', label: 'Approved' },
     { key: 'rejected', label: 'Rejected' },
   ]
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const requestedStatus = new URLSearchParams(window.location.search).get('status')
+
+    if (
+      requestedStatus === 'pending' ||
+      requestedStatus === 'verified' ||
+      requestedStatus === 'rejected'
+    ) {
+      setActiveFilter(requestedStatus)
+    }
+  }, [])
 
   // ── Loading ────────────────────────────────────────────────────────────────
 
@@ -144,7 +183,9 @@ export default function AdminTaskersPage() {
           <div>
             <span style={s.badge}>Admin Panel</span>
             <h1 style={s.title}>Tasker Applications</h1>
-            <p style={s.subtitle}>Review, approve or reject tasker sign-up requests.</p>
+            <p style={s.subtitle}>
+              Review applications and control which verified taskers receive new-task email alerts.
+            </p>
           </div>
           <div style={s.adminChip}>
             <div style={s.adminDot} />
@@ -231,15 +272,22 @@ export default function AdminTaskersPage() {
                     </div>
 
                     {/* Status pill */}
-                    <div style={{
-                      ...s.statusPill,
-                      ...(tasker.isVerified
-                        ? s.pillVerified
-                        : tasker.isRejected
-                        ? s.pillRejected
-                        : s.pillPending),
-                    }}>
-                      {tasker.isVerified ? 'Approved' : tasker.isRejected ? 'Rejected' : 'Pending'}
+                    <div style={s.statusWrap}>
+                      <div style={{
+                        ...s.statusPill,
+                        ...(tasker.isVerified
+                          ? s.pillVerified
+                          : tasker.isRejected
+                          ? s.pillRejected
+                          : s.pillPending),
+                      }}>
+                        {tasker.isVerified ? 'Approved' : tasker.isRejected ? 'Rejected' : 'Pending'}
+                      </div>
+                      {tasker.isPremium ? (
+                        <div style={{ ...s.statusPill, ...s.pillPremium }}>
+                          Premium
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -261,11 +309,34 @@ export default function AdminTaskersPage() {
                         <DetailRow label="Account Name" value={tasker.bankDetails.accountName} />
                         <DetailRow label="Completed Tasks" value={String(tasker.completedTasks)} />
                         <DetailRow label="Rating" value={tasker.rating > 0 ? `${tasker.rating}/5` : 'Not yet rated'} />
+                        <DetailRow label="Premium Email Alerts" value={tasker.isPremium ? 'Enabled' : 'Disabled'} />
                       </div>
                     </div>
                   )}
 
                   {/* Actions — only show for pending */}
+                  {tasker.isVerified && (
+                    <div style={s.actions}>
+                      <button
+                        style={{
+                          ...s.trustBtn,
+                          ...(tasker.isPremium ? s.trustBtnActive : {}),
+                          ...(isActing ? s.btnDisabled : {}),
+                        }}
+                        disabled={!!isActing}
+                        onClick={() => handlePremiumToggle(tasker._id, !tasker.isPremium)}
+                      >
+                        {actionLoading === `${tasker._id}-${tasker.isPremium ? 'premium-off' : 'premium-on'}`
+                          ? tasker.isPremium
+                            ? 'Removing...'
+                            : 'Saving...'
+                          : tasker.isPremium
+                            ? 'Remove Premium Access'
+                            : 'Make Premium'}
+                      </button>
+                    </div>
+                  )}
+
                   {!tasker.isVerified && !tasker.isRejected && (
                     <div style={s.actions}>
                       <button
@@ -368,7 +439,7 @@ const s: Record<string, React.CSSProperties> = {
     color: COLOR.text,
     position: 'relative',
     overflowX: 'hidden',
-    padding: '48px 16px 80px',
+    padding: '32px 14px 72px',
   },
   bgBlob: {
     position: 'fixed',
@@ -433,6 +504,7 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: 99,
     padding: '6px 14px',
     whiteSpace: 'nowrap' as const,
+    maxWidth: '100%',
   },
   adminDot: {
     width: 8,
@@ -451,7 +523,8 @@ const s: Record<string, React.CSSProperties> = {
     borderColor: COLOR.border,
     borderRadius: 10,
     padding: 4,
-    width: 'fit-content',
+    width: '100%',
+    overflowX: 'auto' as const,
   },
   tab: {
     display: 'flex',
@@ -469,6 +542,7 @@ const s: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontFamily: 'inherit',
     transition: 'all 0.15s',
+    whiteSpace: 'nowrap' as const,
   },
   tabActive: {
     background: COLOR.accent,
@@ -553,7 +627,7 @@ const s: Record<string, React.CSSProperties> = {
     borderStyle: 'solid',
     borderColor: COLOR.border,
     borderRadius: 14,
-    padding: '20px 22px',
+    padding: '18px 16px',
     boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
   },
   cardTop: {
@@ -599,9 +673,7 @@ const s: Record<string, React.CSSProperties> = {
     fontWeight: 700,
     color: COLOR.text,
     marginBottom: 3,
-    whiteSpace: 'nowrap' as const,
-    overflow: 'hidden',
-    textOverflow: 'ellipsis',
+    lineHeight: 1.35,
   },
   cardMeta: {
     fontSize: 13,
@@ -611,6 +683,7 @@ const s: Record<string, React.CSSProperties> = {
     flexWrap: 'wrap' as const,
     gap: 4,
     alignItems: 'center',
+    lineHeight: 1.5,
   },
   dot: {
     color: COLOR.mutedLight,
@@ -633,6 +706,12 @@ const s: Record<string, React.CSSProperties> = {
     borderWidth: 1,
     borderStyle: 'solid',
   },
+  statusWrap: {
+    display: 'flex',
+    flexWrap: 'wrap' as const,
+    gap: 6,
+    alignItems: 'center',
+  },
   pillPending: {
     background: COLOR.pendingDim,
     borderColor: COLOR.pendingBorder,
@@ -647,6 +726,11 @@ const s: Record<string, React.CSSProperties> = {
     background: COLOR.errorDim,
     borderColor: COLOR.errorBorder,
     color: COLOR.error,
+  },
+  pillPremium: {
+    background: COLOR.accentDim,
+    borderColor: 'rgba(37,99,235,0.22)',
+    color: COLOR.accentText,
   },
   // Expand button
   expandBtn: {
@@ -704,8 +788,10 @@ const s: Record<string, React.CSSProperties> = {
     gap: 8,
     marginTop: 16,
     justifyContent: 'flex-end',
+    flexWrap: 'wrap' as const,
   },
   rejectBtn: {
+    flex: '1 1 180px',
     padding: '8px 20px',
     fontSize: 13,
     fontWeight: 700,
@@ -718,8 +804,10 @@ const s: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontFamily: 'inherit',
     transition: 'opacity 0.15s',
+    textAlign: 'center' as const,
   },
   approveBtn: {
+    flex: '1 1 180px',
     padding: '8px 20px',
     fontSize: 13,
     fontWeight: 700,
@@ -732,6 +820,28 @@ const s: Record<string, React.CSSProperties> = {
     cursor: 'pointer',
     fontFamily: 'inherit',
     transition: 'opacity 0.15s',
+    textAlign: 'center' as const,
+  },
+  trustBtn: {
+    flex: '1 1 220px',
+    padding: '8px 20px',
+    fontSize: 13,
+    fontWeight: 700,
+    background: 'rgba(22,163,74,0.08)',
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: 'rgba(22,163,74,0.2)',
+    borderRadius: 8,
+    color: COLOR.success,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'opacity 0.15s',
+    textAlign: 'center' as const,
+  },
+  trustBtnActive: {
+    background: '#16a34a',
+    color: '#ffffff',
+    borderColor: '#16a34a',
   },
   btnDisabled: {
     opacity: 0.5,

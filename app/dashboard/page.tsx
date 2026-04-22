@@ -51,6 +51,8 @@ interface ActiveOrder {
   description: string
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   hasPaid?: boolean
+  isDeclinedTask?: boolean
+  declinedMessage?: string
   taskerId?: string | null
 }
 
@@ -104,7 +106,7 @@ const storeOptions: Record<string, Array<{ value: string; label: string }>> = {
   printing: [
     { value: '', label: 'Select a store...' },
     { value: 'teddy', label: 'Teddy Store' },
-    { value: 'wdu', label: 'WDU Store' },
+    { value: 'faith', label: 'Faith Store' },
   ],
   shopping: [
     { value: '', label: 'Select a store...' },
@@ -150,7 +152,6 @@ export default function ErrandWizardPage() {
   const [isRealtimePaused, setIsRealtimePaused] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
-  const [loadingActiveOrder, setLoadingActiveOrder] = useState(true)
   const socketRef = useRef<Socket | null>(null)
   const fetchingActiveOrderRef = useRef(false)
   const isRealtimePausedRef = useRef(false)
@@ -180,7 +181,6 @@ export default function ErrandWizardPage() {
       setActiveOrder(null)
     } finally {
       fetchingActiveOrderRef.current = false
-      setLoadingActiveOrder(false)
     }
   }, [])
 
@@ -411,12 +411,6 @@ if (stepNumber === 2) {
   const createOrder = async () => {
     pauseRealtime(REALTIME_PAUSE_MS * 2)
 
-    if (activeOrder) {
-      toast.info('You already have an active order. Track it before booking another one.')
-      router.push('/dashboard/tasks')
-      return
-    }
-
     setIsSubmitting(true)
     try {
       const response = await fetch('/api/orders', {
@@ -430,11 +424,6 @@ if (stepNumber === 2) {
 
       if (!response.ok) {
         const error = await response.json()
-        if (response.status === 409) {
-          toast.error(error.error || 'You already have an active order.')
-          router.push('/dashboard/tasks')
-          return
-        }
         toast.error(error.error || 'Failed to submit task.')
         return
       }
@@ -476,63 +465,27 @@ if (stepNumber === 2) {
 
   const stepTitles = ['Choose Task', 'Details', 'Delivery', 'Review']
   const stepIcons = [ShoppingBag, FileText, MapPin, CreditCard]
+  const activeStatusLabel = activeOrder
+    ? activeOrder.status === 'pending'
+      ? 'Searching for a tasker'
+      : activeOrder.isDeclinedTask
+        ? 'Payment under review'
+        : activeOrder.hasPaid
+          ? 'Transfer confirmed and task in progress'
+          : 'Tasker assigned, payment required'
+    : null
+  const activeStatusDescription = activeOrder
+    ? activeOrder.status === 'pending'
+      ? 'We are actively notifying taskers for this errand right now. You can still post another task below.'
+      : activeOrder.isDeclinedTask
+        ? activeOrder.declinedMessage ||
+          'The transfer is under review. You can still create another task while our team follows up.'
+        : activeOrder.hasPaid
+          ? 'Your payment has been confirmed and the task is moving. You can still book another errand below.'
+          : 'This order is waiting for payment confirmation. You can open the tracker anytime and still post another task now.'
+    : null
 
   if (!mounted) return null
-
-  if (loadingActiveOrder) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-linear-to-br from-slate-50 via-white to-slate-100 px-4 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <Loader2 className="h-5 w-5 animate-spin text-indigo-600" />
-          <p className="text-sm text-slate-600 dark:text-slate-300">Checking your current order...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (activeOrder) {
-    const currentStatusLabel =
-      activeOrder.status === 'pending'
-        ? 'Searching for a tasker'
-        : activeOrder.hasPaid
-          ? 'Payment confirmed and task in progress'
-          : 'Tasker assigned, checkout pending'
-
-    return (
-      <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-        <div className="mx-auto flex min-h-screen w-full max-w-2xl items-center px-4 py-10">
-          <div className="w-full overflow-hidden rounded-[2rem] border border-slate-200/80 bg-white/90 shadow-2xl shadow-slate-200/60 backdrop-blur dark:border-slate-800 dark:bg-slate-900/90 dark:shadow-slate-950/60">
-            <div className="bg-linear-to-r from-indigo-600 via-sky-600 to-cyan-500 px-6 py-8 text-white">
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-indigo-100">Current order locked</p>
-              <h1 className="mt-3 text-3xl font-bold">Finish your active task first</h1>
-              <p className="mt-3 text-sm leading-6 text-indigo-50">
-                Follow assignment, Flutterwave payment, and delivery updates from the tracker before posting another task.
-              </p>
-            </div>
-
-            <div className="space-y-5 px-6 py-6">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/60">
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Active status</p>
-                <p className="mt-2 text-xl font-semibold text-slate-900 dark:text-white">{currentStatusLabel}</p>
-                <div className="mt-4 rounded-2xl bg-white p-4 ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">{activeOrder.description}</p>
-                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Task type: {activeOrder.taskType}</p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => router.push('/dashboard/tasks')}
-                className="flex h-14 w-full items-center justify-center rounded-2xl bg-linear-to-r from-indigo-600 to-cyan-500 px-4 text-sm font-semibold text-white shadow-lg shadow-indigo-500/30 transition-transform hover:scale-[1.01]"
-              >
-                Open current order tracker
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
@@ -543,6 +496,31 @@ if (stepNumber === 2) {
               Fixed fees for regular errands. Water is charged per bag.
             </div>
           </div>
+
+          {activeOrder ? (
+            <div className="mb-5 rounded-3xl border border-indigo-200/80 bg-linear-to-r from-indigo-50 via-white to-cyan-50 p-4 shadow-sm dark:border-indigo-900/60 dark:from-indigo-950/40 dark:via-slate-900 dark:to-cyan-950/40 md:mb-8 md:p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-indigo-700 dark:text-indigo-300">
+                    Latest active order
+                  </p>
+                  <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
+                    {activeStatusLabel}
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
+                    {activeStatusDescription}
+                  </p>
+                </div>
+                <Button
+                  onClick={() => router.push(`/dashboard/tasks?orderId=${activeOrder._id}`)}
+                  className="h-11 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 px-4 text-white hover:from-indigo-700 hover:to-cyan-600"
+                >
+                  Open Tracker
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
 
           {isTasker ? (
             <div className="mb-5 rounded-3xl border border-emerald-200/80 bg-linear-to-r from-emerald-50 via-white to-teal-50 p-4 shadow-sm dark:border-emerald-900/60 dark:from-emerald-950/40 dark:via-slate-900 dark:to-teal-950/40 md:mb-8 md:p-5">
@@ -749,7 +727,7 @@ if (stepNumber === 2) {
                   <div>
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Wallet className="h-4 w-4 text-indigo-500" />Item Budget (NGN)</label>
                     <input type="number" name="amount" value={formData.amount} onChange={handleInputChange} placeholder="How much will it cost?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 font-mono text-lg outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />
-                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">SwiftDU adds the delivery fee separately at checkout.</p>
+                    <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">SwiftDU adds the delivery fee to the total you will later transfer to the tasker.</p>
                     {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
                   </div>
                 </div>
@@ -804,8 +782,8 @@ if (stepNumber === 2) {
                   </div>
                   <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
                     <div className="flex items-start gap-3">
-                      <div className="rounded-full bg-blue-100 p-2 text-blue-600 dark:bg-blue-900/70 dark:text-blue-300"><Info className="h-4 w-4" /></div>
-                      <p>After a tasker accepts, payment is made to SwiftDU through Flutterwave. Runner payouts are handled internally by the team.</p>
+                  <div className="rounded-full bg-blue-100 p-2 text-blue-600 dark:bg-blue-900/70 dark:text-blue-300"><Info className="h-4 w-4" /></div>
+                      <p>After a tasker accepts, the app moves you into a payment step where you see the tasker&apos;s bank details, make payment, and confirm it inside the tracker.</p>
                     </div>
                   </div>
                 </div>
@@ -830,9 +808,9 @@ if (stepNumber === 2) {
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-500 dark:text-slate-400 sm:mt-8 sm:gap-6 sm:text-sm">
-            <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-sky-500" /><span>Flutterwave Checkout</span></div>
+            <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-sky-500" /><span>Direct Tasker Transfer</span></div>
             <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-emerald-500" /><span>Verified Taskers</span></div>
-            <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-amber-500" /><span>SwiftDU Handles Payouts</span></div>
+            <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-amber-500" /><span>Tasker Settles Platform Fee</span></div>
             <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-indigo-500" /><span>Secure Order Tracking</span></div>
           </div>
         </div>

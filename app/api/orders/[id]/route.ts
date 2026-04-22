@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { syncTaskerStats } from '@/lib/tasker-stats';
+import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement';
 import {Order} from "@/models/order"
 import { auth } from '@/lib/auth'; 
 import { canCustomerCancelOrder } from '@/lib/order-status';
 import { emitOrderUpdated } from '@/lib/socket';
+import { getSettlementDueAt, splitServiceFee } from '@/lib/order-finance';
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
+import { requiresPremiumTasker } from '@/lib/tasker-access';
 
 export async function PATCH(
   request: NextRequest,
@@ -139,18 +142,29 @@ export async function PATCH(
         taskType: nextTaskType,
         waterBags: nextWaterBags,
       });
+      const settlement = splitServiceFee(pricing.serviceFee);
 
       order.taskType = nextTaskType;
       order.description = nextDescription;
       order.amount = pricing.amount;
       order.commission = pricing.serviceFee;
-      order.platformFee = pricing.serviceFee;
-      order.taskerFee = 0;
-      order.serviceFee = pricing.serviceFee;
+      order.platformFee = settlement.platformFee;
+      order.taskerFee = settlement.taskerFee;
+      order.serviceFee = settlement.serviceFee;
       order.pricingModel = pricing.pricingModel;
       order.totalAmount = pricing.totalAmount;
+      order.requiresPremiumTasker = requiresPremiumTasker(pricing.amount);
       order.waterBags = pricing.waterBags || undefined;
       order.waterFee = pricing.waterFee;
+      order.hasPaid = false;
+      order.paidAt = undefined;
+      order.taskerHasPaid = false;
+      order.isDeclinedTask = false;
+      order.declinedAt = undefined;
+      order.declinedReason = undefined;
+      order.declinedMessage = undefined;
+      order.declinedByTaskerAt = undefined;
+      order.paymentProvider = 'manual_transfer';
       order.paymentStatus = 'unpaid';
       order.paymentReference = undefined;
       order.paymentLink = undefined;
@@ -158,6 +172,17 @@ export async function PATCH(
       order.paymentInitializedAt = undefined;
       order.paymentVerifiedAt = undefined;
       order.paymentFailureReason = undefined;
+      order.customerTransferredAt = undefined;
+      order.settlementProvider = undefined;
+      order.settlementStatus = 'not_due';
+      order.settlementReference = undefined;
+      order.settlementAccessCode = undefined;
+      order.settlementCheckoutUrl = undefined;
+      order.settlementTransactionId = undefined;
+      order.settlementInitializedAt = undefined;
+      order.settlementPaidAt = undefined;
+      order.settlementDueAt = undefined;
+      order.settlementFailureReason = undefined;
 
       if (deadlineValue !== undefined) order.deadlineValue = parseInt(deadlineValue);
       if (deadlineUnit !== undefined) order.deadlineUnit = deadlineUnit;
@@ -172,7 +197,7 @@ export async function PATCH(
       return NextResponse.json(
         {
           error:
-            'Customer payment is now confirmed automatically after Flutterwave verifies the transaction.',
+            'Use the manual transfer confirmation action once you have sent the task amount.',
         },
         { status: 400 }
       );
@@ -186,7 +211,9 @@ export async function PATCH(
           return NextResponse.json(
             {
               error:
-                'You can only cancel an order before payment is confirmed.',
+                order.isDeclinedTask
+                  ? 'This order is under payment review and can only be handled by admin.'
+                  : 'You can only cancel an order before payment is confirmed.',
             },
             { status: 400 }
           );
@@ -197,17 +224,52 @@ export async function PATCH(
         if (!order.hasPaid) {
           order.paymentStatus = 'cancelled';
         }
+        order.settlementStatus = 'not_due';
+        order.settlementReference = undefined;
+        order.settlementAccessCode = undefined;
+        order.settlementCheckoutUrl = undefined;
+        order.settlementTransactionId = undefined;
+        order.settlementInitializedAt = undefined;
+        order.settlementPaidAt = undefined;
+        order.settlementDueAt = undefined;
+        order.settlementFailureReason = undefined;
       } else if (status === 'cancelled' && isTaskerOwner) {
+        if (order.isDeclinedTask) {
+          return NextResponse.json(
+            { error: 'This order is under payment review and must be handled by admin.' },
+            { status: 400 }
+          );
+        }
+
         order.status = 'cancelled';
         order.cancelledAt = new Date();
         if (!order.hasPaid) {
           order.paymentStatus = 'cancelled';
         }
+        order.settlementStatus = 'not_due';
+        order.settlementReference = undefined;
+        order.settlementAccessCode = undefined;
+        order.settlementCheckoutUrl = undefined;
+        order.settlementTransactionId = undefined;
+        order.settlementInitializedAt = undefined;
+        order.settlementPaidAt = undefined;
+        order.settlementDueAt = undefined;
+        order.settlementFailureReason = undefined;
       } else if (status === 'completed') {
         if (!isTaskerOwner) {
           return NextResponse.json(
             { error: 'Only the assigned tasker can complete this order' },
             { status: 403 }
+          );
+        }
+
+        if (order.isDeclinedTask) {
+          return NextResponse.json(
+            {
+              error:
+                'This order has a transfer issue under review and cannot be completed yet.',
+            },
+            { status: 400 }
           );
         }
 
@@ -220,6 +282,12 @@ export async function PATCH(
 
         order.status = 'completed';
         order.completedAt = new Date();
+        if (!order.taskerHasPaid) {
+          order.settlementStatus = 'pending';
+          order.settlementDueAt =
+            order.settlementDueAt || getSettlementDueAt(order.completedAt);
+          order.settlementFailureReason = undefined;
+        }
       } else if (status === 'in_progress' || status === 'pending') {
         if (!isTaskerOwner) {
           return NextResponse.json(
@@ -338,6 +406,27 @@ export async function GET(
         { error: 'Forbidden: You do not own this order' },
         { status: 403 }
       );
+    }
+
+    if (order.taskerId === session.user.taskerId && session.user.taskerId) {
+      await syncTaskerSettlementStatus(session.user.taskerId)
+
+      if (
+        order.status === 'completed' &&
+        !order.taskerHasPaid &&
+        order.settlementDueAt &&
+        order.settlementDueAt.getTime() <= Date.now() &&
+        order.settlementStatus !== 'overdue'
+      ) {
+        order.settlementStatus = 'overdue'
+        await order.save()
+      }
+
+      const refreshedOrder = await Order.findById(id)
+
+      if (refreshedOrder) {
+        return NextResponse.json(refreshedOrder)
+      }
     }
 
     return NextResponse.json(order);
