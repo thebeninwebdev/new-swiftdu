@@ -20,6 +20,14 @@ import { io, type Socket } from 'socket.io-client'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 const POLL_INTERVAL_MS = 4000
 const ACTIVE_ORDER_STATUSES = new Set(['pending', 'in_progress', 'paid'])
@@ -129,6 +137,19 @@ const formatDate = (date: string) =>
     minute: '2-digit',
   })
 
+const getWhatsAppHref = (phone: string) => {
+  const digits = phone.replace(/\D/g, '')
+
+  if (!digits) {
+    return null
+  }
+
+  const normalized =
+    digits.startsWith('0') && digits.length === 11 ? `234${digits.slice(1)}` : digits
+
+  return `https://wa.me/${normalized}`
+}
+
 const isActiveOrder = (order: Pick<Order, 'status'>) =>
   ACTIVE_ORDER_STATUSES.has(order.status)
 
@@ -138,22 +159,15 @@ function TaskerAvatar({ tasker }: { tasker: TaskerDetails }) {
       // eslint-disable-next-line @next/next/no-img-element
       <img
         src={tasker.profileImage}
-        alt={tasker.name}
+        alt="Tasker profile"
         className="h-12 w-12 rounded-xl object-cover ring-2 ring-white dark:ring-slate-800"
       />
     )
   }
 
-  const initials = tasker.name
-    .split(' ')
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('')
-
   return (
     <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-linear-to-br from-sky-500 to-indigo-600 font-bold text-white">
-      {initials || 'T'}
+      T
     </div>
   )
 }
@@ -167,6 +181,7 @@ export default function OrdersPage() {
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null)
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [taskerDetails, setTaskerDetails] = useState<TaskerDetails | null>(null)
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [loadingTasker, setLoadingTasker] = useState(false)
   const [updatingAction, setUpdatingAction] = useState<'cancel' | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -268,7 +283,7 @@ export default function OrdersPage() {
           }
 
           if (!previousSnapshotRef.current.taskerId && nextCurrentOrder.taskerId) {
-            toast.success(`${nextCurrentOrder.taskerName || 'A tasker'} accepted your order.`)
+            toast.success('A tasker accepted your order.')
           }
 
           if (!previousSnapshotRef.current.hasPaid && nextCurrentOrder.hasPaid) {
@@ -443,6 +458,19 @@ export default function OrdersPage() {
     }
   }, [disconnectSocket])
 
+  const transferUnderReview = Boolean(currentOrder?.isDeclinedTask)
+  const needsPayment = Boolean(currentOrder?.taskerId && !currentOrder?.hasPaid && !transferUnderReview)
+  const whatsappHref = taskerDetails?.phone ? getWhatsAppHref(taskerDetails.phone) : null
+
+  useEffect(() => {
+    if (needsPayment) {
+      setPaymentModalOpen(true)
+      return
+    }
+
+    setPaymentModalOpen(false)
+  }, [currentOrder?._id, needsPayment])
+
   const handleOpenOrder = (orderId: string) => {
     if (trackedOrderIdRef.current === orderId) {
       return
@@ -483,7 +511,8 @@ export default function OrdersPage() {
             isDeclinedTask: payload.order.isDeclinedTask,
           }
         : null
-      toast.success('Payment noted. Your tasker can continue the errand.')
+      setPaymentModalOpen(false)
+      toast.success('Payment updated. Open WhatsApp and stay online for your tasker.')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Failed to confirm the transfer.')
       void loadOrders(false)
@@ -553,8 +582,6 @@ export default function OrdersPage() {
     : null
   const commission = currentOrder?.commission || 0
   const isSearchingForTasker = currentOrder?.status === 'pending'
-  const transferUnderReview = Boolean(currentOrder?.isDeclinedTask)
-  const needsPayment = Boolean(currentOrder?.taskerId && !currentOrder?.hasPaid && !transferUnderReview)
 
   return (
     <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
@@ -621,8 +648,8 @@ export default function OrdersPage() {
                       ? currentOrder.declinedMessage ||
                         'The transaction was not found and we will contact you within 24 hours.'
                     : currentOrder.hasPaid
-                      ? `${taskerDetails?.name || 'Your tasker'} is handling your errand.`
-                      : 'Make payment now using the tasker bank details below, then confirm it in the app.'}
+                      ? 'Open WhatsApp with the number below and stay online so your tasker can reach you.'
+                      : 'Use the transfer modal to pay your tasker, then tap "I\'ve paid".'}
                 </p>
               </div>
 
@@ -728,10 +755,38 @@ export default function OrdersPage() {
                         Payment required to continue
                       </p>
                       <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                        1. Copy the bank details below. 2. Make the full payment to your tasker.
-                        3. Return here and tap &quot;I&apos;ve sent the payment&quot;.
+                        Your transfer details are ready in the payment modal. Copy the account
+                        number, send the full amount, then tap &quot;I&apos;ve paid&quot;.
                       </p>
                     </div>
+                  </div>
+                  <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Button
+                      onClick={() => setPaymentModalOpen(true)}
+                      disabled={confirmingTransfer || updatingAction === 'cancel'}
+                      className="h-12 rounded-xl bg-linear-to-r from-sky-600 to-indigo-600 text-white hover:from-sky-700 hover:to-indigo-700"
+                    >
+                      <CreditCard className="mr-2 h-4 w-4" />
+                      Open transfer details
+                    </Button>
+                    <Button
+                      onClick={() => void handleCancelOrder()}
+                      disabled={updatingAction === 'cancel' || confirmingTransfer}
+                      variant="outline"
+                      className="h-12 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950/30"
+                    >
+                      {updatingAction === 'cancel' ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Cancelling...
+                        </>
+                      ) : (
+                        <>
+                          <XCircle className="mr-2 h-4 w-4" />
+                          Cancel
+                        </>
+                      )}
+                    </Button>
                   </div>
                 </div>
               ) : null}
@@ -753,11 +808,11 @@ export default function OrdersPage() {
                 </div>
               ) : null}
 
-              {currentOrder.taskerId ? (
+              {currentOrder.taskerId && !needsPayment ? (
                 <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                   <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
                     <p className="text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-                      Assigned Tasker
+                      Tasker Contact
                     </p>
                   </div>
                   <div className="p-4">
@@ -770,13 +825,10 @@ export default function OrdersPage() {
                         </div>
                       )}
                       <div className="min-w-0 flex-1">
-                        <p className="font-semibold text-slate-900 dark:text-white">
-                          {taskerDetails?.name || currentOrder.taskerName || 'Loading...'}
-                        </p>
                         {taskerDetails?.phone ? (
                           <a
                             href={`tel:${taskerDetails.phone}`}
-                            className="mt-1 inline-flex items-center gap-1.5 text-sm text-sky-600 dark:text-sky-400"
+                            className="inline-flex items-center gap-1.5 text-sm font-medium text-sky-600 dark:text-sky-400"
                           >
                             <Phone className="h-3.5 w-3.5" />
                             {taskerDetails.phone}
@@ -787,77 +839,24 @@ export default function OrdersPage() {
                           </p>
                         ) : null}
                       </div>
+                      {currentOrder.hasPaid && whatsappHref ? (
+                        <a
+                          href={whatsappHref}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-10 items-center justify-center rounded-xl bg-emerald-500 px-4 text-sm font-semibold text-white transition hover:bg-emerald-600"
+                        >
+                          Open WhatsApp
+                        </a>
+                      ) : null}
                     </div>
-
-                    {taskerDetails?.bankDetails ? (
-                      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-                        <div className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                            Bank
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                            {taskerDetails.bankDetails.bankName}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                            Account Name
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                            {taskerDetails.bankDetails.accountName}
-                          </p>
-                        </div>
-                        <div className="rounded-xl border border-slate-200 px-4 py-3 dark:border-slate-800">
-                          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-                            Account Number
-                          </p>
-                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                            {taskerDetails.bankDetails.accountNumber}
-                          </p>
-                        </div>
+                    {currentOrder.hasPaid ? (
+                      <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200">
+                        Call or message this number on WhatsApp and stay online so your tasker can
+                        reach you quickly.
                       </div>
                     ) : null}
                   </div>
-                </div>
-              ) : null}
-
-              {currentOrder.taskerId && !currentOrder.hasPaid && !currentOrder.isDeclinedTask ? (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  <Button
-                    onClick={() => void handleConfirmTransfer()}
-                    disabled={confirmingTransfer || updatingAction === 'cancel'}
-                    className="h-12 rounded-xl bg-linear-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700"
-                  >
-                    {confirmingTransfer ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Confirming transfer...
-                      </>
-                    ) : (
-                      <>
-                        <CreditCard className="mr-2 h-4 w-4" />
-                        I&apos;ve sent the payment
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    onClick={() => void handleCancelOrder()}
-                    disabled={updatingAction === 'cancel' || confirmingTransfer}
-                    variant="outline"
-                    className="h-12 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950/30"
-                  >
-                    {updatingAction === 'cancel' ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Cancelling...
-                      </>
-                    ) : (
-                      <>
-                        <XCircle className="mr-2 h-4 w-4" />
-                        Cancel
-                      </>
-                    )}
-                  </Button>
                 </div>
               ) : null}
 
@@ -867,7 +866,8 @@ export default function OrdersPage() {
                     Your transfer has been marked as sent.
                   </p>
                   <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">
-                    The tasker can now continue delivery and complete the errand after delivery.
+                    Call the number on WhatsApp and stay online so the tasker can reach you while
+                    handling your errand.
                   </p>
                 </div>
               ) : null}
@@ -1014,6 +1014,107 @@ export default function OrdersPage() {
           ) : null}
         </div>
       </div>
+
+      <Dialog open={paymentModalOpen} onOpenChange={setPaymentModalOpen}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Transfer to your tasker</DialogTitle>
+            <DialogDescription>
+              Send{' '}
+              <span className="font-semibold text-slate-900 dark:text-white">
+                {formatCurrency(currentOrder?.totalAmount || currentOrder?.amount || 0)}
+              </span>{' '}
+              to the account below, then tap &quot;I&apos;ve paid&quot;.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-2xl bg-slate-950 p-4 text-white">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                Transfer Amount
+              </p>
+              <p className="mt-2 text-3xl font-bold">
+                {formatCurrency(currentOrder?.totalAmount || currentOrder?.amount || 0)}
+              </p>
+            </div>
+
+            {loadingTasker && !taskerDetails ? (
+              <div className="flex items-center gap-3 rounded-2xl border border-slate-200 px-4 py-5 dark:border-slate-800">
+                <Loader2 className="h-5 w-5 animate-spin text-slate-500" />
+                <p className="text-sm text-slate-600 dark:text-slate-300">
+                  Loading transfer details...
+                </p>
+              </div>
+            ) : null}
+
+            {taskerDetails?.bankDetails ? (
+              <div className="grid gap-3">
+                <div className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Bank
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                    {taskerDetails.bankDetails.bankName || 'Not available'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+                    Account Name
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                    {taskerDetails.bankDetails.accountName || 'Not available'}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-sky-50/70 px-4 py-4 dark:border-slate-800 dark:bg-sky-950/20">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-600 dark:text-sky-300">
+                    Account Number
+                  </p>
+                  <p className="mt-2 text-2xl font-bold tracking-[0.08em] text-slate-900 dark:text-white">
+                    {taskerDetails.bankDetails.accountNumber || 'Not available'}
+                  </p>
+                </div>
+              </div>
+            ) : null}
+
+            {(currentOrder?.paymentStatus === 'failed' || currentOrder?.paymentStatus === 'cancelled') &&
+            !currentOrder?.isDeclinedTask ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+                {currentOrder?.paymentFailureReason ||
+                  'The transfer confirmation could not be completed.'}
+              </div>
+            ) : null}
+          </div>
+
+          <DialogFooter className="flex-col gap-3 sm:flex-col">
+            <Button
+              onClick={() => void handleConfirmTransfer()}
+              disabled={confirmingTransfer || !taskerDetails?.bankDetails?.accountNumber}
+              className="h-12 rounded-xl bg-linear-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700"
+            >
+              {confirmingTransfer ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Updating order...
+                </>
+              ) : (
+                <>
+                  <CreditCard className="mr-2 h-4 w-4" />
+                  I&apos;ve paid
+                </>
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setPaymentModalOpen(false)}
+              disabled={confirmingTransfer}
+              className="h-12 rounded-xl"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

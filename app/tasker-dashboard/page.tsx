@@ -30,6 +30,7 @@ import { convertToNaira } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 
 const DASHBOARD_REFRESH_MS = 5000
+const REALTIME_REVALIDATE_DELAY_MS = 1200
 
 interface Errand {
   _id: string
@@ -243,6 +244,8 @@ export default function TaskerDashboardPage() {
   const queuedInitialRef = useRef(false)
   const prevErrandsCount = useRef(0)
   const alertTimeoutRef = useRef<number | null>(null)
+  const refreshTimeoutRef = useRef<number | null>(null)
+  const loadDashboardRef = useRef<(initial?: boolean) => Promise<void>>(async () => {})
 
   const taskerUserId = session?.user?.id ? String(session.user.id) : null
   const taskerId = session?.user?.taskerId ? String(session.user.taskerId) : null
@@ -452,6 +455,21 @@ export default function TaskerDashboardPage() {
   )
 
   useEffect(() => {
+    loadDashboardRef.current = loadDashboard
+  }, [loadDashboard])
+
+  const scheduleDashboardRefresh = useCallback(() => {
+    if (refreshTimeoutRef.current) {
+      window.clearTimeout(refreshTimeoutRef.current)
+    }
+
+    refreshTimeoutRef.current = window.setTimeout(() => {
+      refreshTimeoutRef.current = null
+      void loadDashboardRef.current(false)
+    }, REALTIME_REVALIDATE_DELAY_MS)
+  }, [])
+
+  useEffect(() => {
     if (sessionPending || loadingTaskerProfile) {
       return
     }
@@ -506,38 +524,46 @@ export default function TaskerDashboardPage() {
 
           if (!shouldShow) {
             if (currentIndex === -1) {
+              prevErrandsCount.current = previous.length
               return previous
             }
 
-            return previous.filter((item) => item._id !== payload._id)
+            const next = previous.filter((item) => item._id !== payload._id)
+            prevErrandsCount.current = next.length
+            return next
           }
 
           const nextErrand = toErrand(payload)
 
           if (currentIndex === -1) {
-            return sortErrands([nextErrand, ...previous])
+            const next = sortErrands([nextErrand, ...previous])
+            prevErrandsCount.current = next.length
+            return next
           }
 
           const next = [...previous]
           next[currentIndex] = { ...next[currentIndex], ...nextErrand }
-          return sortErrands(next)
+          const sorted = sortErrands(next)
+          prevErrandsCount.current = sorted.length
+          return sorted
         })
       }
 
-      void loadDashboard(false)
+      scheduleDashboardRefresh()
     })
 
     return () => {
       socket.disconnect()
     }
   }, [
-    loadDashboard,
     loadingTaskerProfile,
     locationFilter,
     router,
+    scheduleDashboardRefresh,
     sessionPending,
     taskTypeFilter,
     taskerProfile?._id,
+    taskerProfile?.isPremium,
     triggerNewTaskAlert,
   ])
 
@@ -545,6 +571,10 @@ export default function TaskerDashboardPage() {
     return () => {
       if (alertTimeoutRef.current) {
         window.clearTimeout(alertTimeoutRef.current)
+      }
+
+      if (refreshTimeoutRef.current) {
+        window.clearTimeout(refreshTimeoutRef.current)
       }
     }
   }, [])
