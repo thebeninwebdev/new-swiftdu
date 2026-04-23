@@ -62,6 +62,8 @@ export interface FlutterwaveVerifyResponse {
     amount?: number | string
     currency?: string
     status?: string
+    created_at?: string
+    charged_at?: string
   }
 }
 
@@ -96,6 +98,17 @@ export async function verifyFlutterwavePayment(txRef: string) {
 
   return flutterwaveRequest<FlutterwaveVerifyResponse>(
     `/transactions/verify_by_reference?tx_ref=${encodedReference}`,
+    {
+      method: 'GET',
+    }
+  )
+}
+
+export async function verifyFlutterwaveTransaction(transactionId: string | number) {
+  const encodedTransactionId = encodeURIComponent(String(transactionId).trim())
+
+  return flutterwaveRequest<FlutterwaveVerifyResponse>(
+    `/transactions/${encodedTransactionId}/verify`,
     {
       method: 'GET',
     }

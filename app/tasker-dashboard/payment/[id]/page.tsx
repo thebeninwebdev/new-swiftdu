@@ -25,9 +25,13 @@ interface SettlementOrder {
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   taskerHasPaid?: boolean
   settlementStatus?: 'not_due' | 'pending' | 'initialized' | 'paid' | 'failed' | 'overdue'
+  settlementReference?: string
   settlementDueAt?: string
   settlementPaidAt?: string
 }
+
+const MAX_VERIFY_RETRIES = 12
+const VERIFY_RETRY_MS = 5000
 
 const formatDate = (date?: string) =>
   date
@@ -39,6 +43,9 @@ const formatDate = (date?: string) =>
         minute: '2-digit',
       })
     : 'Not available'
+
+const getPendingSettlementStorageKey = (orderId: string) =>
+  `swiftdu:pending-settlement:${orderId}`
 
 export default function TaskerPaymentPage() {
   const router = useRouter()
@@ -52,6 +59,52 @@ export default function TaskerPaymentPage() {
   const [verifying, setVerifying] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const processedReferenceRef = useRef<string | null>(null)
+  const processedRedirectRef = useRef<string | null>(null)
+  const autoVerifyingReferenceRef = useRef<string | null>(null)
+  const retryTimeoutRef = useRef<number | null>(null)
+
+  const clearRetryTimeout = useCallback(() => {
+    if (retryTimeoutRef.current !== null) {
+      window.clearTimeout(retryTimeoutRef.current)
+      retryTimeoutRef.current = null
+    }
+  }, [])
+
+  const getStoredPendingReference = useCallback(() => {
+    if (typeof window === 'undefined' || !orderId) {
+      return null
+    }
+
+    return window.localStorage.getItem(getPendingSettlementStorageKey(orderId))
+  }, [orderId])
+
+  const storePendingReference = useCallback(
+    (reference?: string | null) => {
+      if (typeof window === 'undefined' || !orderId) {
+        return
+      }
+
+      const normalizedReference = String(reference || '').trim()
+
+      if (!normalizedReference) {
+        return
+      }
+
+      window.localStorage.setItem(
+        getPendingSettlementStorageKey(orderId),
+        normalizedReference
+      )
+    },
+    [orderId]
+  )
+
+  const clearStoredPendingReference = useCallback(() => {
+    if (typeof window === 'undefined' || !orderId) {
+      return
+    }
+
+    window.localStorage.removeItem(getPendingSettlementStorageKey(orderId))
+  }, [orderId])
 
   const loadOrder = useCallback(async () => {
     if (!orderId) {
@@ -88,50 +141,220 @@ export default function TaskerPaymentPage() {
     }
   }, [orderId, router])
 
-  useEffect(() => {
-    void loadOrder()
-  }, [loadOrder])
+  const verifySettlement = useCallback(
+    async ({
+      reference,
+      transactionId,
+      attempt = 0,
+      allowRetry = false,
+      showSuccessToast = true,
+    }: {
+      reference?: string | null
+      transactionId?: string | null
+      attempt?: number
+      allowRetry?: boolean
+      showSuccessToast?: boolean
+    }) => {
+      if (!orderId) {
+        return
+      }
 
-  useEffect(() => {
-    const reference = searchParams.get('reference')
+      const resolvedReference = String(
+        reference || order?.settlementReference || getStoredPendingReference() || ''
+      ).trim()
+      const resolvedTransactionId = String(transactionId || '').trim()
 
-    if (!reference || !orderId || processedReferenceRef.current === reference) {
-      return
-    }
+      if (!resolvedReference && !resolvedTransactionId) {
+        return
+      }
 
-    processedReferenceRef.current = reference
-    setVerifying(true)
+      setVerifying(true)
+      clearRetryTimeout()
 
-    void (async () => {
       try {
         const response = await fetch(`/api/orders/${orderId}/pay-platform-fee/verify`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ reference }),
+          body: JSON.stringify({
+            reference: resolvedReference || undefined,
+            transactionId: resolvedTransactionId || undefined,
+          }),
         })
         const payload = await response.json()
 
+        if (response.status === 202 || payload.pending) {
+          setOrder(payload.order)
+          setError(null)
+          storePendingReference(resolvedReference)
+
+          if (allowRetry && attempt + 1 < MAX_VERIFY_RETRIES) {
+            retryTimeoutRef.current = window.setTimeout(() => {
+              void verifySettlement({
+                reference: resolvedReference,
+                transactionId: resolvedTransactionId,
+                attempt: attempt + 1,
+                allowRetry: true,
+                showSuccessToast,
+              })
+            }, VERIFY_RETRY_MS)
+          }
+
+          return
+        }
+
         if (!response.ok) {
-          throw new Error(payload.error || 'Failed to verify the Paystack payment.')
+          throw new Error(payload.error || 'Failed to verify the Flutterwave payment.')
         }
 
         setOrder(payload.order)
-        toast.success('Platform settlement paid successfully.')
+        setError(null)
+        clearStoredPendingReference()
+        autoVerifyingReferenceRef.current = null
+
+        if (showSuccessToast) {
+          toast.success('Platform settlement paid successfully.')
+        }
       } catch (verifyError) {
+        setError(
+          verifyError instanceof Error
+            ? verifyError.message
+            : 'Failed to verify the Flutterwave payment.'
+        )
         toast.error(
           verifyError instanceof Error
             ? verifyError.message
-            : 'Failed to verify the Paystack payment.'
+            : 'Failed to verify the Flutterwave payment.'
         )
       } finally {
         setVerifying(false)
-        router.replace(`/tasker-dashboard/payment/${orderId}`)
-        void loadOrder()
       }
-    })()
-  }, [loadOrder, orderId, router, searchParams])
+    },
+    [
+      clearRetryTimeout,
+      clearStoredPendingReference,
+      getStoredPendingReference,
+      order?.settlementReference,
+      orderId,
+      storePendingReference,
+    ]
+  )
+
+  useEffect(() => {
+    void loadOrder()
+  }, [loadOrder])
+
+  useEffect(() => {
+    return () => {
+      clearRetryTimeout()
+    }
+  }, [clearRetryTimeout])
+
+  useEffect(() => {
+    if (!order) {
+      return
+    }
+
+    const isPaid = Boolean(order.taskerHasPaid || order.settlementStatus === 'paid')
+
+    if (isPaid) {
+      clearRetryTimeout()
+      clearStoredPendingReference()
+      autoVerifyingReferenceRef.current = null
+    }
+  }, [clearRetryTimeout, clearStoredPendingReference, order])
+
+  useEffect(() => {
+    const settlement = String(searchParams.get('settlement') || '').toLowerCase()
+    const message = String(searchParams.get('message') || '').trim()
+    const redirectKey = settlement ? `${settlement}:${message}` : null
+
+    if (!redirectKey || !orderId || processedRedirectRef.current === redirectKey) {
+      return
+    }
+
+    processedRedirectRef.current = redirectKey
+
+    if (settlement === 'paid') {
+      clearStoredPendingReference()
+      toast.success('Platform settlement paid successfully.')
+    } else if (settlement === 'cancelled') {
+      clearStoredPendingReference()
+      toast.error(message || 'Flutterwave checkout was cancelled.')
+    } else {
+      toast.error(message || 'Failed to verify the Flutterwave payment.')
+    }
+
+    router.replace(`/tasker-dashboard/payment/${orderId}`)
+    void loadOrder()
+  }, [clearStoredPendingReference, loadOrder, orderId, router, searchParams])
+
+  useEffect(() => {
+    const settlement = String(searchParams.get('settlement') || '').toLowerCase()
+    const reference = searchParams.get('tx_ref') || searchParams.get('reference')
+    const transactionId = searchParams.get('transaction_id')
+    const status = String(searchParams.get('status') || '').toLowerCase()
+
+    if (
+      settlement ||
+      !reference ||
+      !orderId ||
+      processedReferenceRef.current === reference
+    ) {
+      return
+    }
+
+    if (status && status !== 'successful' && status !== 'pending') {
+      processedReferenceRef.current = reference
+      toast.error(
+        status === 'cancelled'
+          ? 'Flutterwave checkout was cancelled.'
+          : 'Flutterwave payment was not successful.'
+      )
+      router.replace(`/tasker-dashboard/payment/${orderId}`)
+      void loadOrder()
+      return
+    }
+
+    processedReferenceRef.current = reference
+    storePendingReference(reference)
+
+    void verifySettlement({
+      reference,
+      transactionId,
+      allowRetry: true,
+    }).finally(() => {
+      router.replace(`/tasker-dashboard/payment/${orderId}`)
+      void loadOrder()
+    })
+  }, [loadOrder, orderId, router, searchParams, storePendingReference, verifySettlement])
+
+  useEffect(() => {
+    if (!order || !orderId || verifying) {
+      return
+    }
+
+    const storedReference = getStoredPendingReference()
+    const orderReference = String(order.settlementReference || '').trim()
+    const isPaid = Boolean(order.taskerHasPaid || order.settlementStatus === 'paid')
+    const canAutoVerify =
+      Boolean(storedReference) &&
+      Boolean(orderReference) &&
+      storedReference === orderReference &&
+      (order.settlementStatus === 'initialized' || order.settlementStatus === 'pending')
+
+    if (!canAutoVerify || isPaid || autoVerifyingReferenceRef.current === orderReference) {
+      return
+    }
+
+    autoVerifyingReferenceRef.current = orderReference
+
+    void verifySettlement({
+      reference: orderReference,
+      allowRetry: true,
+    })
+  }, [getStoredPendingReference, order, orderId, verifySettlement, verifying])
 
   const handleStartPayment = async () => {
     if (!order) {
@@ -146,19 +369,20 @@ export default function TaskerPaymentPage() {
       const payload = await response.json()
 
       if (!response.ok) {
-        throw new Error(payload.error || 'Failed to open the Paystack checkout.')
+        throw new Error(payload.error || 'Failed to open the Flutterwave checkout.')
       }
 
       if (!payload.checkoutUrl) {
-        throw new Error('Paystack did not return a checkout link.')
+        throw new Error('Flutterwave did not return a checkout link.')
       }
 
+      storePendingReference(payload.reference)
       window.location.assign(payload.checkoutUrl)
     } catch (paymentError) {
       toast.error(
         paymentError instanceof Error
           ? paymentError.message
-          : 'Failed to open the Paystack checkout.'
+          : 'Failed to open the Flutterwave checkout.'
       )
     } finally {
       setStartingPayment(false)
@@ -193,6 +417,7 @@ export default function TaskerPaymentPage() {
   const isCompleted = order.status === 'completed'
   const isPaid = Boolean(order.taskerHasPaid || order.settlementStatus === 'paid')
   const isOverdue = order.settlementStatus === 'overdue'
+  const isAwaitingConfirmation = order.settlementStatus === 'pending'
 
   return (
     <div className="mx-auto mt-10 max-w-xl px-4">
@@ -274,6 +499,13 @@ export default function TaskerPaymentPage() {
           </div>
         ) : null}
 
+        {isAwaitingConfirmation ? (
+          <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-200">
+            Flutterwave has not finished confirming this payment yet. We will keep checking
+            automatically for you.
+          </div>
+        ) : null}
+
         {isPaid ? (
           <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/30 dark:text-emerald-200">
             <div className="flex items-start gap-3">
@@ -297,12 +529,12 @@ export default function TaskerPaymentPage() {
             {startingPayment || verifying ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {verifying ? 'Verifying...' : 'Opening Paystack...'}
+                {verifying ? 'Verifying...' : 'Opening Flutterwave...'}
               </>
             ) : (
               <>
                 <CreditCard className="mr-2 h-4 w-4" />
-                Pay with Paystack
+                Pay with Flutterwave
               </>
             )}
           </Button>
@@ -311,11 +543,27 @@ export default function TaskerPaymentPage() {
           </Button>
         </div>
 
+        {!isPaid && order.settlementReference ? (
+          <Button
+            variant="outline"
+            onClick={() =>
+              void verifySettlement({
+                reference: order.settlementReference,
+                allowRetry: true,
+              })
+            }
+            disabled={startingPayment || verifying}
+            className="mt-3 w-full"
+          >
+            {verifying ? 'Checking payment status...' : 'I already paid, check status'}
+          </Button>
+        ) : null}
+
         {!isPaid ? (
           <div className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
             <p>
-              Paystack is used only for the platform share. The customer transfer goes directly to
+              Flutterwave is used only for the platform share. The customer transfer goes directly to
               your bank account.
             </p>
           </div>

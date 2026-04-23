@@ -2,10 +2,9 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
+import { getAppBaseUrl, initializeFlutterwaveCheckout } from '@/lib/flutterwave'
 import { getSettlementDueAt } from '@/lib/order-finance'
-import { initializePaystackTransaction } from '@/lib/paystack'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
-import { getAppBaseUrl } from '@/lib/flutterwave'
 import { emitOrderUpdated } from '@/lib/socket'
 import { Order } from '@/models/order'
 
@@ -62,19 +61,25 @@ export async function POST(
     }
 
     const reference = `swiftdu-settlement-${order._id.toString()}-${Date.now()}`
-    const callbackUrl = `${getAppBaseUrl(request.nextUrl.origin)}/tasker-dashboard/payment/${order._id.toString()}`
-    const fullName = String(session.user.name || '').trim()
-    const [firstName, ...lastNameParts] = fullName.split(/\s+/).filter(Boolean)
+    const callbackUrl = `${getAppBaseUrl(
+      request.nextUrl.origin
+    )}/api/orders/${order._id.toString()}/pay-platform-fee/callback`
+    const fullName = String(session.user.name || 'Tasker').trim() || 'Tasker'
 
-    const checkout = await initializePaystackTransaction({
-      amount: Math.round(order.platformFee * 100),
-      email: session.user.email || `tasker-${session.user.id}@swiftdu.local`,
-      reference,
-      callback_url: callbackUrl,
-      first_name: firstName || undefined,
-      last_name: lastNameParts.join(' ') || undefined,
-      phone: session.user.phone || undefined,
-      metadata: {
+    const checkout = await initializeFlutterwaveCheckout({
+      amount: Number(order.platformFee || 0),
+      tx_ref: reference,
+      redirect_url: callbackUrl,
+      customer: {
+        email: session.user.email || `tasker-${session.user.id}@swiftdu.local`,
+        name: fullName,
+        phone_number: session.user.phone || undefined,
+      },
+      customizations: {
+        title: 'SwiftDU Platform Settlement',
+        description: `Platform fee payment for order ${order._id.toString()}`,
+      },
+      meta: {
         orderId: order._id.toString(),
         taskerId: session.user.taskerId,
         taskerUserId: session.user.id,
@@ -82,17 +87,16 @@ export async function POST(
       },
     })
 
-    const checkoutUrl = checkout.data?.authorization_url
-    const accessCode = checkout.data?.access_code
+    const checkoutUrl = checkout.data?.link
 
-    if (!checkoutUrl || !accessCode) {
-      throw new Error('Paystack did not return a checkout URL.')
+    if (!checkoutUrl) {
+      throw new Error('Flutterwave did not return a checkout URL.')
     }
 
-    order.settlementProvider = 'paystack'
+    order.settlementProvider = 'flutterwave'
     order.settlementStatus = 'initialized'
     order.settlementReference = reference
-    order.settlementAccessCode = accessCode
+    order.settlementAccessCode = undefined
     order.settlementCheckoutUrl = checkoutUrl
     order.settlementTransactionId = undefined
     order.settlementInitializedAt = new Date()
@@ -115,7 +119,7 @@ export async function POST(
         error:
           error instanceof Error
             ? error.message
-            : 'Failed to initialize Paystack settlement.',
+            : 'Failed to initialize Flutterwave settlement.',
       },
       { status: 500 }
     )

@@ -266,6 +266,17 @@ export default function ErrandDetailPage() {
           : 'Errand cancelled successfully.'
       )
 
+      if (
+        action === 'complete' &&
+        payload.status === 'completed' &&
+        !payload.taskerHasPaid &&
+        payload.settlementStatus !== 'paid' &&
+        Number(payload.platformFee || 0) > 0
+      ) {
+        router.replace(`/tasker-dashboard/payment/${payload._id}`)
+        return
+      }
+
       window.setTimeout(() => {
         router.replace('/tasker-dashboard')
       }, 1200)
@@ -352,7 +363,10 @@ export default function ErrandDetailPage() {
   const isActive = errand.status === 'pending' || errand.status === 'in_progress' || errand.status === 'paid'
   const paymentConfirmed = Boolean(errand.hasPaid || errand.status === 'paid')
   const transferUnderReview = Boolean(errand.isDeclinedTask)
-  const settlementOutstanding = errand.status === 'completed' && !errand.taskerHasPaid
+  const settlementOutstanding =
+    errand.status === 'completed' &&
+    !errand.taskerHasPaid &&
+    errand.settlementStatus !== 'paid'
 
   return (
     <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] px-1 py-2 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 sm:px-2 md:px-3">

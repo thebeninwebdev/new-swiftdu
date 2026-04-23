@@ -41,6 +41,23 @@ async function backfillSettlementMetadata(taskerId: string) {
 }
 
 export async function syncTaskerSettlementStatus(taskerId: string) {
+  await Order.updateMany(
+    {
+      taskerId,
+      status: 'completed',
+      taskerHasPaid: false,
+      settlementStatus: 'paid',
+    },
+    {
+      $set: {
+        taskerHasPaid: true,
+      },
+      $unset: {
+        settlementFailureReason: 1,
+      },
+    }
+  )
+
   await backfillSettlementMetadata(taskerId)
 
   const now = new Date()

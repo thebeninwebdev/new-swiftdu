@@ -43,7 +43,7 @@ export interface IOrder extends Document {
   paymentVerifiedAt?: Date;
   paymentFailureReason?: string;
   customerTransferredAt?: Date;
-  settlementProvider?: 'paystack';
+  settlementProvider?: 'paystack' | 'flutterwave';
   settlementStatus: 'not_due' | 'pending' | 'initialized' | 'paid' | 'failed' | 'overdue';
   settlementReference?: string;
   settlementAccessCode?: string;
@@ -182,7 +182,7 @@ const orderSchema = new Schema<IOrder>(
     customerTransferredAt: Date,
     settlementProvider: {
       type: String,
-      enum: ['paystack'],
+      enum: ['paystack', 'flutterwave'],
     },
     settlementStatus: {
       type: String,
