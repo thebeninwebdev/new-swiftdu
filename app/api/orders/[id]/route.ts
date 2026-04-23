@@ -4,7 +4,7 @@ import { syncTaskerStats } from '@/lib/tasker-stats';
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement';
 import {Order} from "@/models/order"
 import { auth } from '@/lib/auth'; 
-import { canCustomerCancelOrder } from '@/lib/order-status';
+import { canCustomerCancelOrder, canTaskerCancelOrder } from '@/lib/order-status';
 import { emitOrderUpdated } from '@/lib/socket';
 import { getSettlementDueAt, splitServiceFee } from '@/lib/order-finance';
 import {
@@ -234,9 +234,14 @@ export async function PATCH(
         order.settlementDueAt = undefined;
         order.settlementFailureReason = undefined;
       } else if (status === 'cancelled' && isTaskerOwner) {
-        if (order.isDeclinedTask) {
+        if (!canTaskerCancelOrder(order)) {
           return NextResponse.json(
-            { error: 'This order is under payment review and must be handled by admin.' },
+            {
+              error:
+                order.isDeclinedTask
+                  ? 'This order is under payment review and must be handled by admin.'
+                  : 'You cannot cancel an order after customer payment is confirmed.',
+            },
             { status: 400 }
           );
         }

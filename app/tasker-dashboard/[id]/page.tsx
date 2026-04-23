@@ -18,6 +18,7 @@ import { io } from 'socket.io-client'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { canTaskerCancelOrder, isCustomerPaymentConfirmed } from '@/lib/order-status'
 import { convertToNaira } from '@/lib/utils'
 
 const DETAIL_REFRESH_MS = 5000
@@ -235,6 +236,12 @@ export default function ErrandDetailPage() {
   }, [errandId, loadErrand])
 
   const handleAction = async (action: 'complete' | 'cancel') => {
+    if (action === 'cancel' && errand && !canTaskerCancelOrder(errand)) {
+      setShowConfirmModal(null)
+      toast.error('Customer payment has already been confirmed, so this errand can no longer be cancelled.')
+      return
+    }
+
     try {
       setActionLoading(action)
       setShowConfirmModal(null)
@@ -361,8 +368,9 @@ export default function ErrandDetailPage() {
   }
 
   const isActive = errand.status === 'pending' || errand.status === 'in_progress' || errand.status === 'paid'
-  const paymentConfirmed = Boolean(errand.hasPaid || errand.status === 'paid')
+  const paymentConfirmed = isCustomerPaymentConfirmed(errand)
   const transferUnderReview = Boolean(errand.isDeclinedTask)
+  const taskerCanCancel = canTaskerCancelOrder(errand)
   const settlementOutstanding =
     errand.status === 'completed' &&
     !errand.taskerHasPaid &&
@@ -737,24 +745,30 @@ export default function ErrandDetailPage() {
                       </p>
                     )}
 
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowConfirmModal('cancel')}
-                      disabled={Boolean(actionLoading)}
-                      className="h-12 w-full rounded-2xl border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
-                    >
-                      {actionLoading === 'cancel' ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Cancelling task...
-                        </>
-                      ) : (
-                        <>
-                          <XCircle className="mr-2 h-4 w-4" />
-                          Cancel errand
-                        </>
-                      )}
-                    </Button>
+                    {taskerCanCancel ? (
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowConfirmModal('cancel')}
+                        disabled={Boolean(actionLoading)}
+                        className="h-12 w-full rounded-2xl border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
+                      >
+                        {actionLoading === 'cancel' ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Cancelling task...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="mr-2 h-4 w-4" />
+                            Cancel errand
+                          </>
+                        )}
+                      </Button>
+                    ) : (
+                      <p className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600 dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-300">
+                        Cancellation is locked after the customer confirms payment.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
