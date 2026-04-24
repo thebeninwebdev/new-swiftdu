@@ -153,6 +153,7 @@ export default function SignUpPage() {
 
       const { error: verificationError } = await authClient.sendVerificationEmail({
         email: normalizedEmail,
+        callbackURL: "/login",
       });
 
       if (verificationError) {
