@@ -17,10 +17,10 @@ import {
   User,
   X,
 } from 'lucide-react'
-import { io } from 'socket.io-client'
 import { toast } from 'sonner'
 
 import { authClient } from '@/lib/auth-client'
+import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -195,18 +195,17 @@ export default function TaskerSidebar() {
       return
     }
 
-    const socket = io({
-      withCredentials: true,
-      transports: ['websocket'],
-    })
-
-    socket.on('tasks:updated', () => {
+    const socket = acquireSharedSocket()
+    const handleTaskUpdate = () => {
       void fetchUnpaidOrders()
       void fetchTaskerStats(user.taskerId as string)
-    })
+    }
+
+    socket.on('tasks:updated', handleTaskUpdate)
 
     return () => {
-      socket.disconnect()
+      socket.off('tasks:updated', handleTaskUpdate)
+      releaseSharedSocket(socket)
     }
   }, [fetchTaskerStats, fetchUnpaidOrders, user?.taskerId])
 

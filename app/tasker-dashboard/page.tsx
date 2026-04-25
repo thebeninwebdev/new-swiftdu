@@ -21,10 +21,10 @@ import {
   TrendingUp,
   AlertCircle,
 } from 'lucide-react'
-import { io } from 'socket.io-client'
 import { toast } from 'sonner'
 
 import { authClient } from '@/lib/auth-client'
+import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
 import { PREMIUM_TASKER_MIN_BUDGET } from '@/lib/tasker-access'
 import { convertToNaira } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -496,12 +496,11 @@ export default function TaskerDashboardPage() {
       return
     }
 
-    const socket = io({
-      withCredentials: true,
-      transports: ['websocket'],
-    })
-
-    socket.on('tasks:updated', (payload?: RealtimeTaskPayload) => {
+    const socket = acquireSharedSocket()
+    const handleConnect = () => {
+      void loadDashboardRef.current(false)
+    }
+    const handleTaskUpdate = (payload?: RealtimeTaskPayload) => {
       if (payload?.taskerId && payload.taskerId === taskerProfile._id && payload.status !== 'cancelled') {
         setRedirectingOrderId(payload._id)
         router.replace(`/tasker-dashboard/${payload._id}`)
@@ -550,10 +549,16 @@ export default function TaskerDashboardPage() {
       }
 
       scheduleDashboardRefresh()
-    })
+    }
+
+    socket.on('connect', handleConnect)
+    socket.on('tasks:updated', handleTaskUpdate)
+    handleConnect()
 
     return () => {
-      socket.disconnect()
+      socket.off('connect', handleConnect)
+      socket.off('tasks:updated', handleTaskUpdate)
+      releaseSharedSocket(socket)
     }
   }, [
     loadingTaskerProfile,

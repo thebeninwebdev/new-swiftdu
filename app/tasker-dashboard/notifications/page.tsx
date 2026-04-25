@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { ArrowRight, BellRing, CreditCard, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
-import { io } from 'socket.io-client'
 
+import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
 import { convertToNaira } from '@/lib/utils'
 
 interface UnpaidOrder {
@@ -58,17 +58,16 @@ export default function TaskerNotificationsPage() {
   }, [fetchNotifications])
 
   useEffect(() => {
-    const socket = io({
-      withCredentials: true,
-      transports: ['websocket'],
-    })
-
-    socket.on('tasks:updated', () => {
+    const socket = acquireSharedSocket()
+    const handleTaskUpdate = () => {
       void fetchNotifications()
-    })
+    }
+
+    socket.on('tasks:updated', handleTaskUpdate)
 
     return () => {
-      socket.disconnect()
+      socket.off('tasks:updated', handleTaskUpdate)
+      releaseSharedSocket(socket)
     }
   }, [fetchNotifications])
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { notifyTaskersOfNewTask } from '@/lib/tasker-notifications';
+import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
 import { Order } from '@/models/order';
 import { auth } from '@/lib/auth';
 import { Review } from '@/models/review';
@@ -122,19 +123,50 @@ export async function POST(request: NextRequest) {
 
     await order.save();
 
-    try {
-      await notifyTaskersOfNewTask({
-        taskType,
-        description,
-        amount: parsedAmount,
+    emitOrderUpdated(order);
+
+    const [taskerNotificationResult, adminAlertResult] = await Promise.allSettled([
+      notifyTaskersOfNewTask({
+        taskType: normalizedTaskType,
+        description: normalizedDescription,
+        amount: pricing.amount,
         location,
         userName: session.user.name || 'A customer',
-      });
-    } catch (notificationError) {
-      console.error('[Orders POST Tasker Notification Error]:', notificationError);
+      }),
+      notifyAdminsOfOrderEvent({
+        event: 'created',
+        order,
+        actorName: session.user.name || null,
+        actorEmail: session.user.email || null,
+        actorRole: 'customer',
+      }),
+    ]);
+
+    if (taskerNotificationResult.status === 'fulfilled') {
+      if (
+        taskerNotificationResult.value.skipped ||
+        taskerNotificationResult.value.deliveredCount <
+          taskerNotificationResult.value.recipientCount
+      ) {
+        console.warn('[Orders POST Tasker Notification]:', taskerNotificationResult.value);
+      }
+    } else {
+      console.error(
+        '[Orders POST Tasker Notification Error]:',
+        taskerNotificationResult.reason
+      );
     }
 
-    emitOrderUpdated(order);
+    if (adminAlertResult.status === 'fulfilled') {
+      if (
+        adminAlertResult.value.skipped ||
+        adminAlertResult.value.deliveredCount < adminAlertResult.value.recipientCount
+      ) {
+        console.warn('[Orders POST Admin Notification]:', adminAlertResult.value);
+      }
+    } else {
+      console.error('[Orders POST Admin Notification Error]:', adminAlertResult.reason);
+    }
 
     return NextResponse.json(order, { status: 201 });
   } catch (error) {

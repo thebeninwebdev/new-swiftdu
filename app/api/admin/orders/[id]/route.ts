@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import { Order } from '@/models/order'
+import { emitOrderUpdated } from '@/lib/socket'
 
 // ─── PATCH /api/admin/orders/[id] ───────────────────────────────────────────
 // Update order status (cancel, complete).
@@ -52,6 +53,8 @@ export async function PATCH(
         { status: 404 }
       )
     }
+
+    emitOrderUpdated(order)
 
     return NextResponse.json(order)
 

@@ -14,10 +14,10 @@ import {
   Wallet,
   XCircle,
 } from 'lucide-react'
-import { io } from 'socket.io-client'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
 import { canTaskerCancelOrder, isCustomerPaymentConfirmed } from '@/lib/order-status'
 import { convertToNaira } from '@/lib/utils'
 
@@ -212,26 +212,27 @@ export default function ErrandDetailPage() {
       return
     }
 
-    const socket = io({
-      withCredentials: true,
-      transports: ['websocket'],
-    })
-
-    socket.on('connect', () => {
+    const socket = acquireSharedSocket()
+    const handleConnect = () => {
       socket.emit('order:watch', errandId)
-    })
-
-    socket.on('order:updated', (payload?: { _id?: string }) => {
+    }
+    const handleOrderUpdate = (payload?: { _id?: string }) => {
       if (!payload?._id || payload._id === errandId) {
         void loadErrand(false)
       }
-    })
+    }
+
+    socket.on('connect', handleConnect)
+    socket.on('order:updated', handleOrderUpdate)
+    handleConnect()
 
     return () => {
+      socket.off('connect', handleConnect)
+      socket.off('order:updated', handleOrderUpdate)
       if (socket.connected) {
         socket.emit('order:unwatch', errandId)
       }
-      socket.disconnect()
+      releaseSharedSocket(socket)
     }
   }, [errandId, loadErrand])
 
