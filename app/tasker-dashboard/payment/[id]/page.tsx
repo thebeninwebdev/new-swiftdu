@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertTriangle,
@@ -47,7 +47,7 @@ const formatDate = (date?: string) =>
 const getPendingSettlementStorageKey = (orderId: string) =>
   `swiftdu:pending-settlement:${orderId}`
 
-export default function TaskerPaymentPage() {
+function TaskerPaymentPageContent() {
   const router = useRouter()
   const params = useParams()
   const searchParams = useSearchParams()
@@ -570,5 +570,19 @@ export default function TaskerPaymentPage() {
         ) : null}
       </div>
     </div>
+  )
+}
+
+export default function TaskerPaymentPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center px-6 text-center text-sm text-slate-500">
+          Loading payment details...
+        </div>
+      }
+    >
+      <TaskerPaymentPageContent />
+    </Suspense>
   )
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -51,7 +51,7 @@ const STEP_COPY: Record<
   },
 };
 
-export default function CompleteProfilePage() {
+function CompleteProfilePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { data: session, isPending } = authClient.useSession();
@@ -504,5 +504,19 @@ export default function CompleteProfilePage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function CompleteProfilePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center px-6 text-center text-sm text-slate-500">
+          Loading your account setup...
+        </div>
+      }
+    >
+      <CompleteProfilePageContent />
+    </Suspense>
   );
 }

@@ -19,15 +19,17 @@ export const COUNTRY_CODES = [
   { code: "ES", dial: "+34", flag: "🇪🇸" },
 ] as const;
 
+export type CountryCodeOption = (typeof COUNTRY_CODES)[number];
+
 export const LOCATIONS = [
   { value: "", label: "Select your hostel / location", disabled: true },
-  { value: "Amnesty", label: "Amnesty" },
-  { value: "Girls Hostel", label: "Girls Hostel" },
-  { value: "Law Hall", label: "Law Hall" },
-  { value: "Staff Quarters", label: "Staff Quarters" },
+  { value: "Amnesty", label: "Amnesty", disabled: false },
+  { value: "Girls Hostel", label: "Girls Hostel", disabled: false },
+  { value: "Law Hall", label: "Law Hall", disabled: false },
+  { value: "Staff Quarters", label: "Staff Quarters", disabled: false },
 ] as const;
 
-export const DEFAULT_COUNTRY_CODE = COUNTRY_CODES[0];
+export const DEFAULT_COUNTRY_CODE: CountryCodeOption = COUNTRY_CODES[0];
 export const COMPLETE_PROFILE_PATH = "/signup/complete-profile";
 
 const hasText = (value?: string | null) => Boolean(value?.trim());
