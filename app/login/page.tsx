@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import { getPostAuthRedirect } from "@/lib/profile-completion";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -11,10 +12,6 @@ const BRAND_PRIMARY = "#4f46e5";
 const BRAND_PRIMARY_DARK = "#4338ca";
 const CARD_BORDER = "rgba(255,255,255,0.6)";
 const CARD_SHADOW = "0 24px 80px rgba(79,70,229,0.18)";
-
-function getRedirectPath(role?: string | null) {
-  return role === "admin" ? "/admin" : "/dashboard";
-}
 
 export default function LoginPage() {
   const router = useRouter();
@@ -28,7 +25,7 @@ export default function LoginPage() {
   
     useEffect(() => {
       if (session?.user) {
-        router.replace(getRedirectPath(session.user.role))
+        router.replace(getPostAuthRedirect(session.user))
       }
     }, [router, session?.user]);
 
@@ -73,7 +70,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push(getRedirectPath(data?.user?.role));
+      router.push(getPostAuthRedirect(data?.user));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setServerError(err?.message || "Invalid email or password.");
@@ -89,8 +86,8 @@ export default function LoginPage() {
     try {
       const { error } = await authClient.signIn.social({
         provider: "google",
-        callbackURL: "/login",
-        newUserCallbackURL: "/login",
+        callbackURL: "/signup/complete-profile",
+        newUserCallbackURL: "/signup/complete-profile",
         errorCallbackURL: "/login",
       });
 

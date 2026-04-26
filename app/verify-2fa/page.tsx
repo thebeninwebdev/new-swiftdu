@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/lib/auth-client";
+import { getPostAuthRedirect } from "@/lib/profile-completion";
 import { toast } from "sonner";
 import { ShieldCheck, ArrowRight, RotateCcw } from "lucide-react";
 
@@ -84,7 +85,8 @@ export default function VerifyCodesPage() {
     }
 
     toast.success("Verified! Welcome to SwiftDu.");
-    router.push("/dashboard");
+    const { data } = await authClient.getSession();
+    router.push(getPostAuthRedirect(data?.user));
   };
 
   return (

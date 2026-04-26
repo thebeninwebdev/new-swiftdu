@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useEffect } from 'react';
 import {authClient} from "@/lib/auth-client";
+import { getPostAuthRedirect } from "@/lib/profile-completion";
 import InstallPwaButton from "@/components/InstallPwaButton";
 
 // --- Animation Variants ---
@@ -416,7 +417,7 @@ export default function LandingPage() {
   const { data: session } = authClient.useSession();
   useEffect(() => {
     if (session?.user) {
-      router.replace('/dashboard')
+      router.replace(getPostAuthRedirect(session.user))
     }
   }, [session?.user, router]);
 

@@ -2,6 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
+import {
+  getPostAuthRedirect,
+  normalizePhoneNumber,
+} from "@/lib/profile-completion";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
@@ -45,13 +49,14 @@ export default function SignUpPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
-    const router = useRouter();
-    const { data: session } = authClient.useSession();
-    useEffect(() => {
-      if (session?.user) {
-        router.replace('/dashboard')
-      }
-    }, [session?.user, router]);
+  const router = useRouter();
+  const { data: session } = authClient.useSession();
+
+  useEffect(() => {
+    if (session?.user) {
+      router.replace(getPostAuthRedirect(session.user));
+    }
+  }, [session?.user, router]);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -144,7 +149,7 @@ export default function SignUpPage() {
         name: `${form.firstName} ${form.lastName}`,
         email: normalizedEmail,
         password: form.password,
-        phone: `${countryDial.dial}${form.phone}`,
+        phone: normalizePhoneNumber(countryDial.dial, form.phone),
         location: form.location,
       });
 
@@ -203,8 +208,8 @@ export default function SignUpPage() {
     try {
       const { error } = await authClient.signIn.social({
         provider: "google",
-        callbackURL: "/login",
-        newUserCallbackURL: "/login",
+        callbackURL: "/signup/complete-profile",
+        newUserCallbackURL: "/signup/complete-profile",
         errorCallbackURL: "/signup",
       });
 

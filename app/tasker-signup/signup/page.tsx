@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
+import { getPostAuthRedirect } from '@/lib/profile-completion'
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -64,6 +65,13 @@ export default function TaskerSignupPage() {
           router.push('/login')
           return
         }
+
+        const nextPath = getPostAuthRedirect(data.user, '/tasker-signup/signup')
+        if (nextPath !== '/tasker-signup/signup') {
+          router.replace(nextPath)
+          return
+        }
+
         setUser(data.user)
       } catch {
         router.push('/login')
