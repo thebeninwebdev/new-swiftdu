@@ -21,6 +21,7 @@ export interface IOrder extends Document {
   taskerId?: string;
   taskerName?: string;
   acceptedBy?: string;
+  bookedAt?: Date;
   acceptedAt?: Date;
   paidAt?: Date;
   completedAt?: Date;
@@ -141,6 +142,11 @@ const orderSchema = new Schema<IOrder>(
     },
     acceptedBy: {
       type: String,
+      index: true,
+    },
+    bookedAt: {
+      type: Date,
+      default: Date.now,
       index: true,
     },
     acceptedAt: Date,

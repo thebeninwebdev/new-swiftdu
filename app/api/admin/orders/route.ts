@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
+import { getOrderResponseTime } from '@/lib/order-response-time'
 import { Order } from '@/models/order'
 import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
@@ -87,9 +88,19 @@ export async function GET(req: NextRequest) {
     // Attach user and tasker details
     const ordersWithDetails = orders.map(order => ({
       ...order,
+      bookedAt: order.bookedAt || order.createdAt,
       userName: userMap[order.userId.toString()]?.name || 'Unknown User',
       userEmail: userMap[order.userId.toString()]?.email || '',
-      taskerName: order.taskerId ? taskerMap[order.taskerId.toString()] : undefined
+      taskerName: order.taskerId ? taskerMap[order.taskerId.toString()] : undefined,
+      ...(() => {
+        const responseTiming = getOrderResponseTime(order)
+
+        return {
+          responseOutcome: responseTiming.responseOutcome,
+          firstResponseAt: responseTiming.firstResponseAt?.toISOString() || null,
+          responseTimeMs: responseTiming.responseTimeMs,
+        }
+      })()
     }))
 
     const totalOrders = await Order.countDocuments(filters)

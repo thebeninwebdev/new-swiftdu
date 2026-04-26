@@ -6,6 +6,7 @@ import {
   getEmailFromName,
   getEmailReplyTo,
 } from "@/lib/email-config";
+import { sendWhatsAppAdminAlert } from "@/lib/whatsapp";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -18,6 +19,37 @@ interface SendTransactionalEmailInput {
   replyTo?: string;
   tags?: Tag[];
   headers?: Record<string, string>;
+}
+
+function getRecipientSummary(to: string | string[]) {
+  if (Array.isArray(to)) {
+    return to.length <= 3 ? to.join(", ") : `${to.length} recipients`;
+  }
+
+  return to;
+}
+
+async function notifyEmailFailureViaWhatsApp(
+  input: SendTransactionalEmailInput,
+  error: Error
+) {
+  const emailType =
+    input.tags?.find((tag) => tag.name === "email_type")?.value || "transactional";
+
+  try {
+    await sendWhatsAppAdminAlert({
+      dedupeKey: ["email-failure", emailType, input.subject, error.message].join("|"),
+      message: [
+        "SwiftDU email delivery failed.",
+        `Type: ${emailType}`,
+        `Subject: ${input.subject}`,
+        `To: ${getRecipientSummary(input.to)}`,
+        `Error: ${error.message}`,
+      ].join("\n"),
+    });
+  } catch (whatsAppError) {
+    console.error("[Email Failure WhatsApp Fallback Error]:", whatsAppError);
+  }
 }
 
 function getEmailConfig() {
@@ -50,37 +82,45 @@ function getEmailConfig() {
 export async function sendTransactionalEmail(
   input: SendTransactionalEmailInput
 ) {
-  const { from, replyTo: defaultReplyTo } = getEmailConfig();
-  const html = await renderEmailHtml(input.react);
-  const replyTo = input.replyTo?.trim().toLowerCase() || defaultReplyTo;
+  try {
+    const { from, replyTo: defaultReplyTo } = getEmailConfig();
+    const html = await renderEmailHtml(input.react);
+    const replyTo = input.replyTo?.trim().toLowerCase() || defaultReplyTo;
 
-  if (replyTo && !EMAIL_ADDRESS_PATTERN.test(replyTo)) {
-    throw new Error("replyTo must be a valid email address.");
+    if (replyTo && !EMAIL_ADDRESS_PATTERN.test(replyTo)) {
+      throw new Error("replyTo must be a valid email address.");
+    }
+
+    const response = await resend.emails.send({
+      from,
+      to: input.to,
+      replyTo,
+      subject: input.subject,
+      html,
+      headers: {
+        "X-Auto-Response-Suppress": "OOF, AutoReply",
+        "X-Entity-Ref-ID": `swiftdu-${crypto.randomUUID()}`,
+        ...input.headers,
+      },
+      tags: [
+        { name: "app", value: "swiftdu" },
+        { name: "environment", value: process.env.NODE_ENV || "development" },
+        ...(input.tags ?? []),
+      ],
+    });
+
+    if (response.error) {
+      throw new Error(response.error.message);
+    }
+
+    return response.data?.id ?? null;
+  } catch (error) {
+    const resolvedError =
+      error instanceof Error ? error : new Error("Failed to send email.");
+
+    await notifyEmailFailureViaWhatsApp(input, resolvedError);
+    throw resolvedError;
   }
-
-  const response = await resend.emails.send({
-    from,
-    to: input.to,
-    replyTo,
-    subject: input.subject,
-    html,
-    headers: {
-      "X-Auto-Response-Suppress": "OOF, AutoReply",
-      "X-Entity-Ref-ID": `swiftdu-${crypto.randomUUID()}`,
-      ...input.headers,
-    },
-    tags: [
-      { name: "app", value: "swiftdu" },
-      { name: "environment", value: process.env.NODE_ENV || "development" },
-      ...(input.tags ?? []),
-    ],
-  });
-
-  if (response.error) {
-    throw new Error(response.error.message);
-  }
-
-  return response.data?.id ?? null;
 }
 
 async function renderEmailHtml(react: ReactElement) {

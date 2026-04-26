@@ -37,6 +37,12 @@ interface Order {
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   taskerId?: string
   taskerName?: string
+  bookedAt?: string
+  acceptedAt?: string | null
+  cancelledAt?: string | null
+  firstResponseAt?: string | null
+  responseOutcome?: 'accepted' | 'cancelled' | null
+  responseTimeMs?: number | null
   isDeclinedTask?: boolean
   declinedMessage?: string
   declinedAt?: string
@@ -52,6 +58,55 @@ interface Order {
 interface AdminUser {
   id: string
   role?: string | null
+}
+
+const formatDateTime = (value?: string | null) => {
+  if (!value) {
+    return 'Not yet'
+  }
+
+  return new Date(value).toLocaleString('en-NG', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
+const formatResponseTime = (value?: number | null) => {
+  if (value === null || value === undefined) {
+    return 'Awaiting response'
+  }
+
+  const totalMinutes = Math.max(Math.round(value / 60000), 0)
+  const days = Math.floor(totalMinutes / 1440)
+  const hours = Math.floor((totalMinutes % 1440) / 60)
+  const minutes = totalMinutes % 60
+
+  return [
+    days > 0 ? `${days}d` : null,
+    hours > 0 ? `${hours}h` : null,
+    minutes > 0 || (!days && !hours) ? `${minutes}m` : null,
+  ]
+    .filter(Boolean)
+    .join(' ')
+}
+
+const formatResponseSummary = (order: Pick<Order, 'responseOutcome' | 'responseTimeMs' | 'status'>) => {
+  if (order.responseOutcome === 'accepted') {
+    return `Accepted in ${formatResponseTime(order.responseTimeMs)}`
+  }
+
+  if (order.responseOutcome === 'cancelled') {
+    return `Cancelled after ${formatResponseTime(order.responseTimeMs)}`
+  }
+
+  if (order.status === 'pending') {
+    return 'Awaiting tasker response'
+  }
+
+  return 'No response timing yet'
 }
 
 export default function AdminOrdersPage() {
@@ -332,6 +387,9 @@ export default function AdminOrdersPage() {
                         <p className="text-sm text-muted-foreground">
                           {new Date(order.createdAt).toLocaleDateString()}
                         </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatResponseSummary(order)}
+                        </p>
                       </div>
 
                       <div className="flex flex-wrap gap-2 sm:justify-end">
@@ -435,6 +493,26 @@ export default function AdminOrdersPage() {
                           <p className="text-sm">
                             {new Date(order.createdAt).toLocaleString()}
                           </p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground mb-1">Booked</p>
+                          <p className="text-sm">{formatDateTime(order.bookedAt || order.createdAt)}</p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground mb-1">Accepted</p>
+                          <p className="text-sm">{formatDateTime(order.acceptedAt)}</p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground mb-1">Cancelled</p>
+                          <p className="text-sm">{formatDateTime(order.cancelledAt)}</p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground mb-1">Response Time</p>
+                          <p className="text-sm">{formatResponseSummary(order)}</p>
                         </div>
 
                         <div>

@@ -97,14 +97,14 @@ export default function EmailLayout({
                   <Link href={siteUrl} className="text-slate-700 underline">
                     {siteHost}
                   </Link>{' '}
-                  <span className="mx-1">•</span>
+                  <span className="mx-1">&middot;</span>
                   <Link href={`mailto:${supportEmail}`} className="text-slate-700 underline">
                     {supportEmail}
                   </Link>
                 </Text>
 
                 <Text className="m-0 mt-2 text-[12px] leading-5 text-slate-400">
-                  © {new Date().getFullYear()} SwiftDU. All rights reserved.
+                  &copy; {new Date().getFullYear()} SwiftDU. All rights reserved.
                 </Text>
               </Section>
             </Section>

@@ -6,6 +6,7 @@ import NavbarClientWrapper from "@/components/NavbarClientWrapper";
 import Wrapper from "@/components/wrapper";
 import { Footer } from "@/components/Footer";
 import { adsenseAccount, adsenseScriptSrc, siteUrl } from "@/lib/site";
+import { Analytics } from "@vercel/analytics/next"
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -96,6 +97,7 @@ export default function RootLayout({
         </Wrapper>
         </Wrapper>
         </Wrapper>
+        <Analytics />
         {children}
         <Wrapper path="/dashboard">
         <Wrapper path="/tasker-signup">

@@ -97,6 +97,8 @@ export async function POST(request: NextRequest) {
 
     const settlement = splitServiceFee(pricing.serviceFee);
 
+    const bookedAt = new Date();
+
     const order = new Order({
       userId: session.user.id,
       taskType: normalizedTaskType,
@@ -115,6 +117,7 @@ export async function POST(request: NextRequest) {
       waterBags: pricing.waterBags || undefined,
       waterFee: pricing.waterFee,
       status: 'pending',
+      bookedAt,
       paymentProvider: 'manual_transfer',
       paymentStatus: 'unpaid',
       taskerHasPaid: false,

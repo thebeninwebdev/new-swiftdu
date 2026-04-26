@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
+import { ensureBookedAt } from '@/lib/order-response-time'
 import { Order } from '@/models/order'
 import { emitOrderUpdated } from '@/lib/socket'
 
@@ -31,21 +32,7 @@ export async function PATCH(
       )
     }
 
-    const updateData: any = {
-      updatedAt: new Date()
-    }
-
-    if (action === 'cancel') {
-      updateData.status = 'cancelled'
-    } else if (action === 'complete') {
-      updateData.status = 'completed'
-    }
-
-    const order = await Order.findByIdAndUpdate(
-      id,
-      updateData,
-      { new: true }
-    )
+    const order = await Order.findById(id)
 
     if (!order) {
       return NextResponse.json(
@@ -53,6 +40,30 @@ export async function PATCH(
         { status: 404 }
       )
     }
+
+    ensureBookedAt(order)
+
+    if (action === 'cancel') {
+      order.status = 'cancelled'
+      order.cancelledAt = new Date()
+      if (!order.hasPaid) {
+        order.paymentStatus = 'cancelled'
+      }
+      order.settlementStatus = 'not_due'
+      order.settlementReference = undefined
+      order.settlementAccessCode = undefined
+      order.settlementCheckoutUrl = undefined
+      order.settlementTransactionId = undefined
+      order.settlementInitializedAt = undefined
+      order.settlementPaidAt = undefined
+      order.settlementDueAt = undefined
+      order.settlementFailureReason = undefined
+    } else if (action === 'complete') {
+      order.status = 'completed'
+      order.completedAt = new Date()
+    }
+
+    await order.save()
 
     emitOrderUpdated(order)
 

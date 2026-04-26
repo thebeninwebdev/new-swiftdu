@@ -6,8 +6,8 @@ export interface IUser extends Document {
   emailVerified: boolean;
   password?: string;
   role: "user" | "admin" | "tasker";
-  phone: string;
-  location: string;
+  phone?: string;
+  location?: string;
   twoFactorEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -47,11 +47,11 @@ const UserSchema = new Schema<IUser>(
     },
     phone: {
       type: String,
-      required: true,
+      required: false,
     },
     location: {
       type: String,
-      required: true,
+      required: false,
     },
     twoFactorEnabled: {
       type: Boolean,

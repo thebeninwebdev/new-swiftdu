@@ -3,6 +3,7 @@ import { Order } from '@/models/order'
 import Tasker from "@/models/tasker"
 import { NextRequest, NextResponse } from 'next/server'
 import { emitOrderUpdated } from '@/lib/socket'
+import { ensureBookedAt } from '@/lib/order-response-time'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import { PREMIUM_TASKER_MIN_BUDGET, requiresPremiumTasker } from '@/lib/tasker-access'
 
@@ -162,6 +163,7 @@ export async function POST(request: NextRequest) {
 
     // Update order with tasker info
     // acceptedBy stays as the tasker's userId (for session-based matching)
+    ensureBookedAt(order)
     order.acceptedBy = taskerId
     order.acceptedAt = new Date()
     order.status = 'in_progress'

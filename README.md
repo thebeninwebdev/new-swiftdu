@@ -1,4 +1,4 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+This is the SwiftDU Next.js application.
 
 ## Getting Started
 
@@ -16,7 +16,28 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## WhatsApp Alerts
+
+Order admin alerts now support both email and WhatsApp notifications. New bookings and booking cancellations will send a WhatsApp alert to the configured admin number when the WhatsApp worker is available.
+
+Set these environment variables for the worker:
+
+```bash
+WHATSAPP_WEB_ENABLED=true
+WHATSAPP_ALERT_RECIPIENTS=2349014116505
+WHATSAPP_WEB_HEADLESS=true
+WHATSAPP_WEB_SESSION_NAME=swiftdu-admin-alerts
+```
+
+Leave `WHATSAPP_WEB_CHROME_PATH` unset to use the default Chrome or Chromium executable.
+
+Start the worker with:
+
+```bash
+npm run whatsapp:worker
+```
+
+Important: `whatsapp-web.js` needs a long-lived Node.js process plus writable session storage. Because this app is hosted on Vercel, the WhatsApp worker cannot stay authenticated inside Vercel Functions. Keep the web app on Vercel if you like, but run the WhatsApp worker on a persistent Node host such as a VPS, Railway, or Render service. The first worker start will print a QR code in the server logs so you can link your WhatsApp account.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 

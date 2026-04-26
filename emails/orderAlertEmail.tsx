@@ -2,6 +2,7 @@ import * as React from 'react'
 import { Button, Section, Text } from '@react-email/components'
 
 import EmailLayout from '@/emails/components/EmailLayout'
+import { primaryButtonStyle } from '@/emails/components/styles'
 
 type OrderAlertEvent = 'created' | 'cancelled'
 
@@ -131,10 +132,7 @@ export default function OrderAlertEmail({
       </Section>
 
       <Section className="mt-8 text-center">
-        <Button
-          href={dashboardUrl}
-          className="inline-block rounded-[14px] bg-sky-600 px-8 py-4 text-[16px] font-semibold text-white no-underline"
-        >
+        <Button href={dashboardUrl} style={primaryButtonStyle}>
           Open Admin Orders
         </Button>
       </Section>

@@ -8,6 +8,7 @@ import { auth } from '@/lib/auth';
 import { canCustomerCancelOrder, canTaskerCancelOrder } from '@/lib/order-status';
 import { emitOrderUpdated } from '@/lib/socket';
 import { getSettlementDueAt, splitServiceFee } from '@/lib/order-finance';
+import { ensureBookedAt } from '@/lib/order-response-time';
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
@@ -39,6 +40,8 @@ export async function PATCH(
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
     }
+
+    ensureBookedAt(order);
 
     const previousStatus = order.status;
     let shouldSendCancellationAlert = false;
@@ -399,23 +402,32 @@ const session = await auth.api.getSession({
       );
     }
 
-    const deletedOrder = order.toObject();
     const cancelledAt = new Date();
 
-    deletedOrder.status = 'cancelled';
-    deletedOrder.cancelledAt = cancelledAt;
-    if (!deletedOrder.hasPaid) {
-      deletedOrder.paymentStatus = 'cancelled';
+    ensureBookedAt(order);
+    order.status = 'cancelled';
+    order.cancelledAt = cancelledAt;
+    if (!order.hasPaid) {
+      order.paymentStatus = 'cancelled';
     }
+    order.settlementStatus = 'not_due';
+    order.settlementReference = undefined;
+    order.settlementAccessCode = undefined;
+    order.settlementCheckoutUrl = undefined;
+    order.settlementTransactionId = undefined;
+    order.settlementInitializedAt = undefined;
+    order.settlementPaidAt = undefined;
+    order.settlementDueAt = undefined;
+    order.settlementFailureReason = undefined;
 
-    await Order.findByIdAndDelete(id);
+    await order.save();
 
-    emitOrderUpdated(deletedOrder);
+    emitOrderUpdated(order);
 
     try {
       const adminAlertResult = await notifyAdminsOfOrderEvent({
         event: 'cancelled',
-        order: deletedOrder,
+        order,
         actorName: session.user.name || null,
         actorEmail: session.user.email || null,
         actorRole: 'customer',
@@ -431,7 +443,7 @@ const session = await auth.api.getSession({
       console.error('[Orders DELETE Admin Notification Error]:', notificationError);
     }
 
-    return NextResponse.json({ message: 'Order deleted successfully' });
+    return NextResponse.json(order);
   } catch (error) {
     console.error('[Orders DELETE Error]:', error);
     return NextResponse.json(
