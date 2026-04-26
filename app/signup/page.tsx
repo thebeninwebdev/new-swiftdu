@@ -40,6 +40,7 @@ export default function SignUpPage() {
   const [countryDial, setCountryDial] = useState(COUNTRY_CODES[0]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [serverError, setServerError] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -192,6 +193,36 @@ export default function SignUpPage() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setServerError("");
+    setGoogleLoading(true);
+
+    try {
+      const { error } = await authClient.signIn.social({
+        provider: "google",
+        callbackURL: "/login",
+        newUserCallbackURL: "/login",
+        errorCallbackURL: "/signup",
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Google sign up failed. Please try again.";
+
+      setServerError(message);
+      toast.error("Google sign up failed", {
+        description: message,
+      });
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -423,10 +454,48 @@ export default function SignUpPage() {
               </div>
             </div>
 
+            <div className="space-y-3">
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-200" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase tracking-[0.18em] text-gray-400">
+                  <span className="bg-white px-3">Or continue with</span>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleGoogleSignIn}
+                disabled={loading || googleLoading}
+                className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-6 py-3 text-sm font-semibold text-gray-700 shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 sm:text-base"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="#EA4335"
+                    d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 3.9 1.5l2.7-2.6C16.9 3.2 14.7 2.2 12 2.2a9.8 9.8 0 1 0 0 19.6c5.6 0 9.3-3.9 9.3-9.4 0-.6-.1-1.1-.2-1.5H12Z"
+                  />
+                  <path
+                    fill="#4285F4"
+                    d="M3.9 7.4 7.1 9.8c.9-2.1 2.8-3.6 4.9-3.6 1.9 0 3.2.8 3.9 1.5l2.7-2.6C16.9 3.2 14.7 2.2 12 2.2c-3.7 0-7 2.1-8.1 5.2Z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M12 21.8c2.6 0 4.8-.9 6.4-2.5l-3-2.4c-.8.6-1.9 1.1-3.4 1.1-3.9 0-5.2-2.6-5.5-3.9L3.4 16.4c1.1 3.2 4.4 5.4 8.6 5.4Z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M3.4 16.4 6.5 14c-.2-.6-.4-1.3-.4-2s.1-1.4.4-2L3.4 7.4A9.8 9.8 0 0 0 2.2 12c0 1.6.4 3.1 1.2 4.4Z"
+                  />
+                </svg>
+                <span>{googleLoading ? "Connecting to Google..." : "Continue with Google"}</span>
+              </button>
+            </div>
+
             {/* Submit Button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || googleLoading}
               className="mt-2 flex w-full items-center justify-center gap-2 rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 sm:text-base"
             >
               {loading ? (

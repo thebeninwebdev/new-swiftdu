@@ -7,6 +7,14 @@ import { twoFactor } from "better-auth/plugins";
 
 const client = await clientPromise;
 const db = client.db();
+const googleClientId =
+  process.env.GOOGLE_CLIENT_ID?.trim() ||
+  process.env.AUTH_GOOGLE_ID?.trim() ||
+  "";
+const googleClientSecret =
+  process.env.GOOGLE_CLIENT_SECRET?.trim() ||
+  process.env.AUTH_GOOGLE_SECRET?.trim() ||
+  "";
 
 const suspendedUserGuard = (): BetterAuthPlugin => ({
   id: "suspended-user-guard",
@@ -87,6 +95,20 @@ export const auth = betterAuth({
     },
     requireEmailVerification: true,
   },
+  socialProviders:
+    googleClientId && googleClientSecret
+      ? {
+          google: {
+            clientId: googleClientId,
+            clientSecret: googleClientSecret,
+          },
+        }
+      : {},
+  account: {
+    accountLinking: {
+      trustedProviders: ["google"],
+    },
+  },
   user: {
     additionalFields: {
       role: {
@@ -97,15 +119,36 @@ export const auth = betterAuth({
       },
       phone: {
         type: "string",
-        required: true,
+        required: false,
       },
       location: {
         type: "string",
-        required: true,
+        required: false,
       },
       taskerId: {
         type: "string",
         required: false,
+      },
+    },
+  },
+  databaseHooks: {
+    session: {
+      create: {
+        before: async (session) => {
+          await connectDB();
+
+          const user = await User.findById(session.userId)
+            .select("isSuspended")
+            .lean();
+
+          if (user?.isSuspended) {
+            throw APIError.from("FORBIDDEN", {
+              code: "USER_SUSPENDED",
+              message:
+                "Your account has been suspended. Please contact support.",
+            });
+          }
+        },
       },
     },
   },

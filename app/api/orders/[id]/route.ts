@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { syncTaskerStats } from '@/lib/tasker-stats';
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement';
-import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
 import {Order} from "@/models/order"
 import { auth } from '@/lib/auth'; 
 import { canCustomerCancelOrder, canTaskerCancelOrder } from '@/lib/order-status';
@@ -44,8 +43,6 @@ export async function PATCH(
     ensureBookedAt(order);
 
     const previousStatus = order.status;
-    let shouldSendCancellationAlert = false;
-    let cancellationActorRole: 'customer' | 'tasker' = 'customer';
 
     const isUserOwner = order.userId === session.user.id;
     const isTaskerOwner = order.taskerId === session.user.taskerId;
@@ -239,8 +236,6 @@ export async function PATCH(
         order.settlementPaidAt = undefined;
         order.settlementDueAt = undefined;
         order.settlementFailureReason = undefined;
-        shouldSendCancellationAlert = true;
-        cancellationActorRole = 'customer';
       } else if (status === 'cancelled' && isTaskerOwner) {
         if (!canTaskerCancelOrder(order)) {
           return NextResponse.json(
@@ -268,8 +263,6 @@ export async function PATCH(
         order.settlementPaidAt = undefined;
         order.settlementDueAt = undefined;
         order.settlementFailureReason = undefined;
-        shouldSendCancellationAlert = true;
-        cancellationActorRole = 'tasker';
       } else if (status === 'completed') {
         if (!isTaskerOwner) {
           return NextResponse.json(
@@ -332,27 +325,6 @@ export async function PATCH(
     }
 
     emitOrderUpdated(order);
-
-    if (shouldSendCancellationAlert && previousStatus !== order.status) {
-      try {
-        const adminAlertResult = await notifyAdminsOfOrderEvent({
-          event: 'cancelled',
-          order,
-          actorName: session.user.name || null,
-          actorEmail: session.user.email || null,
-          actorRole: cancellationActorRole,
-        });
-
-        if (
-          adminAlertResult.skipped ||
-          adminAlertResult.deliveredCount < adminAlertResult.recipientCount
-        ) {
-          console.warn('[Orders PATCH Admin Notification]:', adminAlertResult);
-        }
-      } catch (notificationError) {
-        console.error('[Orders PATCH Admin Notification Error]:', notificationError);
-      }
-    }
 
     return NextResponse.json(order);
   } catch (error) {
@@ -423,25 +395,6 @@ const session = await auth.api.getSession({
     await order.save();
 
     emitOrderUpdated(order);
-
-    try {
-      const adminAlertResult = await notifyAdminsOfOrderEvent({
-        event: 'cancelled',
-        order,
-        actorName: session.user.name || null,
-        actorEmail: session.user.email || null,
-        actorRole: 'customer',
-      });
-
-      if (
-        adminAlertResult.skipped ||
-        adminAlertResult.deliveredCount < adminAlertResult.recipientCount
-      ) {
-        console.warn('[Orders DELETE Admin Notification]:', adminAlertResult);
-      }
-    } catch (notificationError) {
-      console.error('[Orders DELETE Admin Notification Error]:', notificationError);
-    }
 
     return NextResponse.json(order);
   } catch (error) {

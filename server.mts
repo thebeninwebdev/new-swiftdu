@@ -3,8 +3,6 @@ import { createServer } from 'node:http'
 import next from 'next'
 import { Server as SocketIOServer } from 'socket.io'
 
-import { initializeWhatsAppClient, isWhatsAppWebEnabled } from '@/lib/whatsapp'
-
 const dev =
   process.env.NODE_ENV !== 'production' &&
   process.env.npm_lifecycle_event !== 'start'
@@ -45,12 +43,6 @@ async function getSocketSession(cookieHeader?: string) {
 
 async function bootstrap() {
   await app.prepare()
-
-  if (isWhatsAppWebEnabled()) {
-    void initializeWhatsAppClient().catch((error) => {
-      console.error('[WhatsApp Web] Startup initialization failed.', error)
-    })
-  }
 
   const httpServer = createServer((request, response) => {
     handle(request, response)

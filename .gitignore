@@ -27,7 +27,6 @@ upath-*.tgz
 # misc
 .DS_Store
 *.pem
-.wwebjs_auth/
 .npm-cache/
 
 # debug

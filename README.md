@@ -16,28 +16,30 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-## WhatsApp Alerts
+## Twilio WhatsApp Alerts
 
-Order admin alerts now support both email and WhatsApp notifications. New bookings and booking cancellations will send a WhatsApp alert to the configured admin number when the WhatsApp worker is available.
+Order admin alerts support email plus WhatsApp notifications through Twilio. New bookings and booking cancellations will send a WhatsApp alert to the configured admin number directly from the app server.
 
-Set these environment variables for the worker:
+Add these environment variables:
 
 ```bash
-WHATSAPP_WEB_ENABLED=true
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_WHATSAPP_FROM=+14155238886
 WHATSAPP_ALERT_RECIPIENTS=2349014116505
-WHATSAPP_WEB_HEADLESS=true
-WHATSAPP_WEB_SESSION_NAME=swiftdu-admin-alerts
 ```
 
-Leave `WHATSAPP_WEB_CHROME_PATH` unset to use the default Chrome or Chromium executable.
+You can also use `TWILIO_WHATSAPP_TO` instead of `WHATSAPP_ALERT_RECIPIENTS`, and `TWILIO_MESSAGING_SERVICE_SID` instead of `TWILIO_WHATSAPP_FROM` if you prefer a messaging service.
 
-Start the worker with:
+For Google sign-in, make sure your Google OAuth app allows this redirect URI:
 
 ```bash
-npm run whatsapp:worker
+http://localhost:3000/api/auth/callback/google
 ```
 
-Important: `whatsapp-web.js` needs a long-lived Node.js process plus writable session storage. Because this app is hosted on Vercel, the WhatsApp worker cannot stay authenticated inside Vercel Functions. Keep the web app on Vercel if you like, but run the WhatsApp worker on a persistent Node host such as a VPS, Railway, or Render service. The first worker start will print a QR code in the server logs so you can link your WhatsApp account.
+In production, add the matching deployed callback URL too, for example `https://your-domain.com/api/auth/callback/google`.
+
+If you are using the Twilio WhatsApp sandbox, the recipient number must join the sandbox first. For a production WhatsApp sender, Twilio and Meta may require an approved sender or template before business-initiated messages can be delivered reliably.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 

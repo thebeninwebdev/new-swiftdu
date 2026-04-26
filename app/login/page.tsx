@@ -12,20 +12,25 @@ const BRAND_PRIMARY_DARK = "#4338ca";
 const CARD_BORDER = "rgba(255,255,255,0.6)";
 const CARD_SHADOW = "0 24px 80px rgba(79,70,229,0.18)";
 
+function getRedirectPath(role?: string | null) {
+  return role === "admin" ? "/admin" : "/dashboard";
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const [form, setForm] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState("");
   const { data: session } = authClient.useSession();
   
     useEffect(() => {
       if (session?.user) {
-        router.replace('/dashboard')
+        router.replace(getRedirectPath(session.user.role))
       }
-    }, [session?.user, router]);
+    }, [router, session?.user]);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -68,19 +73,42 @@ export default function LoginPage() {
         return;
       }
 
-      // Role-based redirect
-      if (data?.user?.role === 'admin') {
-        router.push('/admin');
-      } else if (data?.user?.role === 'tasker') {
-        router.push('/dashboard');
-      } else {
-        router.push('/dashboard');
-      }
+      router.push(getRedirectPath(data?.user?.role));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setServerError(err?.message || "Invalid email or password.");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setServerError("");
+    setGoogleLoading(true);
+
+    try {
+      const { error } = await authClient.signIn.social({
+        provider: "google",
+        callbackURL: "/login",
+        newUserCallbackURL: "/login",
+        errorCallbackURL: "/login",
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Google sign in failed. Please try again.";
+
+      setServerError(message);
+      toast.error("Google sign in failed", {
+        description: message,
+      });
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -229,23 +257,93 @@ export default function LoginPage() {
             {/* Log in button */}
             <button
               type="submit"
-              disabled={loading}
+              disabled={loading || googleLoading}
               style={{
                 width: "100%", borderRadius: "999px",
                 background: BRAND_PRIMARY, color: "#fff", border: "none",
                 padding: "15px", fontSize: "16px", fontWeight: 700,
-                cursor: loading ? "not-allowed" : "pointer",
-                opacity: loading ? 0.65 : 1,
+                cursor: loading || googleLoading ? "not-allowed" : "pointer",
+                opacity: loading || googleLoading ? 0.65 : 1,
                 transition: "background 0.15s, transform 0.1s, box-shadow 0.15s",
                 letterSpacing: "0.01em",
                 boxShadow: "0 16px 32px rgba(99,102,241,0.22)",
               }}
-              onMouseEnter={e => { if (!loading) e.currentTarget.style.background = BRAND_PRIMARY_DARK; }}
+              onMouseEnter={e => { if (!loading && !googleLoading) e.currentTarget.style.background = BRAND_PRIMARY_DARK; }}
               onMouseLeave={e => { e.currentTarget.style.background = BRAND_PRIMARY; }}
               onMouseDown={e => { e.currentTarget.style.transform = "scale(0.98)"; }}
               onMouseUp={e => { e.currentTarget.style.transform = "scale(1)"; }}
             >
               {loading ? "Logging in…" : "Log in"}
+            </button>
+
+            <div style={{ position: "relative", marginTop: 18, marginBottom: 2 }}>
+              <div style={{ position: "absolute", inset: "50% 0 auto", borderTop: "1px solid #e5e7eb" }} />
+              <div style={{ position: "relative", textAlign: "center" }}>
+                <span
+                  style={{
+                    background: "rgba(255,255,255,0.92)",
+                    padding: "0 12px",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: "0.14em",
+                    textTransform: "uppercase",
+                    color: "#9ca3af",
+                  }}
+                >
+                  Or continue with
+                </span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleGoogleSignIn}
+              disabled={loading || googleLoading}
+              style={{
+                width: "100%",
+                marginTop: 18,
+                borderRadius: "999px",
+                border: "1px solid #e5e7eb",
+                background: "#fff",
+                color: "#374151",
+                padding: "14px 16px",
+                fontSize: "15px",
+                fontWeight: 700,
+                cursor: loading || googleLoading ? "not-allowed" : "pointer",
+                opacity: loading || googleLoading ? 0.65 : 1,
+                transition: "background 0.15s, transform 0.1s, box-shadow 0.15s",
+                boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: 10,
+              }}
+              onMouseEnter={e => {
+                if (!loading && !googleLoading) e.currentTarget.style.background = "#f9fafb";
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = "#fff";
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  fill="#EA4335"
+                  d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 3.9 1.5l2.7-2.6C16.9 3.2 14.7 2.2 12 2.2a9.8 9.8 0 1 0 0 19.6c5.6 0 9.3-3.9 9.3-9.4 0-.6-.1-1.1-.2-1.5H12Z"
+                />
+                <path
+                  fill="#4285F4"
+                  d="M3.9 7.4 7.1 9.8c.9-2.1 2.8-3.6 4.9-3.6 1.9 0 3.2.8 3.9 1.5l2.7-2.6C16.9 3.2 14.7 2.2 12 2.2c-3.7 0-7 2.1-8.1 5.2Z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M12 21.8c2.6 0 4.8-.9 6.4-2.5l-3-2.4c-.8.6-1.9 1.1-3.4 1.1-3.9 0-5.2-2.6-5.5-3.9L3.4 16.4c1.1 3.2 4.4 5.4 8.6 5.4Z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M3.4 16.4 6.5 14c-.2-.6-.4-1.3-.4-2s.1-1.4.4-2L3.4 7.4A9.8 9.8 0 0 0 2.2 12c0 1.6.4 3.1 1.2 4.4Z"
+                />
+              </svg>
+              <span>{googleLoading ? "Connecting to Google..." : "Continue with Google"}</span>
             </button>
           </form>
 
