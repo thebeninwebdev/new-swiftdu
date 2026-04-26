@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
       taskType: normalizedTaskType,
       description: normalizedDescription,
       amount: pricing.amount,
-      commission: pricing.serviceFee,
+      commission: settlement.serviceFee,
       platformFee: settlement.platformFee,
       taskerFee: settlement.taskerFee,
       serviceFee: settlement.serviceFee,

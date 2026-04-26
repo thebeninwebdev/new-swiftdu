@@ -150,7 +150,7 @@ export async function PATCH(
       order.taskType = nextTaskType;
       order.description = nextDescription;
       order.amount = pricing.amount;
-      order.commission = pricing.serviceFee;
+      order.commission = settlement.serviceFee;
       order.platformFee = settlement.platformFee;
       order.taskerFee = settlement.taskerFee;
       order.serviceFee = settlement.serviceFee;

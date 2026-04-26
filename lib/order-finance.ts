@@ -1,15 +1,14 @@
-export const PLATFORM_SETTLEMENT_SHARE = 0.2
-export const TASKER_SETTLEMENT_SHARE = 0.8
+export const PLATFORM_SETTLEMENT_SHARE = 0.24
 export const SETTLEMENT_WINDOW_HOURS = 24
 
-function roundNaira(value: number) {
-  return Math.round(value)
+function normalizeCurrency(value: number) {
+  return Number.isFinite(value) ? Math.max(value, 0) : 0
 }
 
 export function splitServiceFee(serviceFee: number) {
-  const normalizedServiceFee = roundNaira(serviceFee)
-  const platformFee = roundNaira(normalizedServiceFee * PLATFORM_SETTLEMENT_SHARE)
-  const taskerFee = roundNaira(normalizedServiceFee - platformFee)
+  const normalizedServiceFee = normalizeCurrency(serviceFee)
+  const platformFee = Math.floor(normalizedServiceFee * PLATFORM_SETTLEMENT_SHARE)
+  const taskerFee = normalizedServiceFee - platformFee
 
   return {
     platformFee,
