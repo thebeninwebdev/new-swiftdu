@@ -1,5 +1,5 @@
 import OrderAlertEmail from '@/emails/orderAlertEmail'
-import { sendBrevoEmailWithReactComponent } from '@/lib/brevo'
+import { sendTransactionalEmail } from '@/lib/email'
 import { getSupportEmailAddress } from '@/lib/email-config'
 import { getSiteUrl } from '@/lib/site'
 import { User } from '@/models/user'
@@ -167,7 +167,7 @@ export async function notifyAdminsOfOrderEvent(
   const createdAt = serializeDate(input.order.createdAt)
   const cancelledAt = serializeDate(input.order.cancelledAt)
 
-  const emailResult = process.env.BREVO_API_KEY?.trim()
+  const emailResult = process.env.RESEND_API_KEY?.trim()
     ? await (async () => {
         const recipients = await getOrderAlertRecipients()
 
@@ -177,7 +177,7 @@ export async function notifyAdminsOfOrderEvent(
 
         const results = await Promise.allSettled(
           recipients.map((recipient) =>
-            sendBrevoEmailWithReactComponent({
+            sendTransactionalEmail({
               to: recipient,
               subject,
               react: OrderAlertEmail({
@@ -196,7 +196,15 @@ export async function notifyAdminsOfOrderEvent(
                 cancelledAt,
                 dashboardUrl,
               }),
-              tags: ['order_alert', input.event, orderId],
+              tags: [
+                { name: 'email_type', value: 'order_alert' },
+                { name: 'order_event', value: input.event },
+                { name: 'order_id', value: orderId },
+              ],
+              headers: {
+                'X-SwiftDU-Order-Id': orderId,
+                'X-SwiftDU-Order-Event': input.event,
+              },
             })
           )
         )
@@ -207,7 +215,7 @@ export async function notifyAdminsOfOrderEvent(
           skipped: false,
         }
       })()
-    : createSkippedChannelResult('Brevo email configuration is missing.')
+    : createSkippedChannelResult('Email configuration is missing.')
 
  return {
   recipientCount: emailResult.recipientCount,
