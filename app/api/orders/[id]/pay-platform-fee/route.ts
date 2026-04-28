@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
-import { getAppBaseUrl, initializeFlutterwaveCheckout } from '@/lib/flutterwave'
+import { getAppBaseUrl, initializePaystackCheckout } from '@/lib/paystack-settlement'
 import { getSettlementDueAt } from '@/lib/order-finance'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import { emitOrderUpdated } from '@/lib/socket'
@@ -66,20 +66,14 @@ export async function POST(
     )}/api/orders/${order._id.toString()}/pay-platform-fee/callback`
     const fullName = String(session.user.name || 'Tasker').trim() || 'Tasker'
 
-    const checkout = await initializeFlutterwaveCheckout({
+    const checkout = await initializePaystackCheckout({
       amount: Number(order.platformFee || 0),
-      tx_ref: reference,
-      redirect_url: callbackUrl,
-      customer: {
-        email: session.user.email || `tasker-${session.user.id}@swiftdu.local`,
-        name: fullName,
-        phone_number: session.user.phone || undefined,
-      },
-      customizations: {
-        title: 'SwiftDU Platform Settlement',
-        description: `Platform fee payment for order ${order._id.toString()}`,
-      },
-      meta: {
+      email: session.user.email || `tasker-${session.user.id}@swiftdu.local`,
+      reference,
+      customer_name: fullName,
+      phone: session.user.phone || undefined,
+      callback_url: callbackUrl,
+      metadata: {
         orderId: order._id.toString(),
         taskerId: session.user.taskerId,
         taskerUserId: session.user.id,
@@ -87,16 +81,17 @@ export async function POST(
       },
     })
 
-    const checkoutUrl = checkout.data?.link
+    const checkoutUrl = checkout.data?.authorization_url
+    const accessCode = checkout.data?.access_code
 
     if (!checkoutUrl) {
-      throw new Error('Flutterwave did not return a checkout URL.')
+      throw new Error('Paystack did not return a checkout URL.')
     }
 
-    order.settlementProvider = 'flutterwave'
+    order.settlementProvider = 'paystack'
     order.settlementStatus = 'initialized'
     order.settlementReference = reference
-    order.settlementAccessCode = undefined
+    order.settlementAccessCode = accessCode || undefined
     order.settlementCheckoutUrl = checkoutUrl
     order.settlementTransactionId = undefined
     order.settlementInitializedAt = new Date()
@@ -119,7 +114,7 @@ export async function POST(
         error:
           error instanceof Error
             ? error.message
-            : 'Failed to initialize Flutterwave settlement.',
+            : 'Failed to initialize Paystack settlement.',
       },
       { status: 500 }
     )

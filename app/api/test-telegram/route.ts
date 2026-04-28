@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { testBotConnection, sendTelegramMessage, getBotInfo } from '@/lib/telegram'
+import { testBotConnection, sendTelegramMessage, getBotInfo, getChatInfo } from '@/lib/telegram'
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,9 +11,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: botWorking, message: botWorking ? 'Bot is working' : 'Bot connection failed' })
     }
 
-    if (action === 'get_bot_info') {
-      const botInfo = await getBotInfo()
-      return NextResponse.json(botInfo || { error: 'Bot info not available' })
+    if (action === 'get_chat_info') {
+      const chatInfo = await getChatInfo()
+      return NextResponse.json(chatInfo || { error: 'Chat info not available' })
     }
 
     if (action === 'test_message') {

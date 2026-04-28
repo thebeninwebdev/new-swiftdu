@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 import { connectDB } from '@/lib/db'
-import { getAppBaseUrl } from '@/lib/flutterwave'
+import { getAppBaseUrl } from '@/lib/paystack-settlement'
 import {
   PendingSettlementVerificationError,
   verifyAndMarkOrderSettlementPaid,
@@ -43,8 +43,8 @@ export async function GET(
     redirectUrl.searchParams.set(
       'message',
       status === 'cancelled'
-        ? 'Flutterwave checkout was cancelled.'
-        : 'Flutterwave payment was not successful.'
+        ? 'Paystack checkout was cancelled.'
+        : 'Paystack payment was not successful.'
     )
 
     return NextResponse.redirect(redirectUrl)
@@ -94,7 +94,7 @@ export async function GET(
       'message',
       error instanceof Error
         ? error.message
-        : 'Failed to verify Flutterwave settlement.'
+        : 'Failed to verify Paystack settlement.'
     )
 
     return NextResponse.redirect(redirectUrl)

@@ -58,6 +58,7 @@ export async function sendTelegramMessage(
     if (!data.ok) {
       console.error('Telegram API error:', data.description);
       console.error('Failed to send message to:', targetChatId);
+      console.error('Full response:', JSON.stringify(data, null, 2));
       return false;
     }
 
@@ -69,25 +70,28 @@ export async function sendTelegramMessage(
   }
 }
 
-export async function getBotInfo() {
+export async function getChatInfo(chatId?: string) {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const targetChatId = chatId || process.env.TELEGRAM_CHANNEL_ID;
 
-  if (!botToken) {
+  if (!botToken || !targetChatId) {
     return null;
   }
 
   try {
-    const response = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/getChat?chat_id=${targetChatId}`);
     const data = await response.json();
 
     if (data.ok) {
       return data.result;
+    } else {
+      console.error('Failed to get chat info:', data.description);
+      return null;
     }
   } catch (error) {
-    console.error('Error getting bot info:', error);
+    console.error('Error getting chat info:', error);
+    return null;
   }
-
-  return null;
 }
 
 export async function testBotConnection(): Promise<boolean> {

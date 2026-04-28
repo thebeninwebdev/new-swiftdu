@@ -205,7 +205,7 @@ function TaskerPaymentPageContent() {
         }
 
         if (!response.ok) {
-          throw new Error(payload.error || 'Failed to verify the Flutterwave payment.')
+          throw new Error(payload.error || 'Failed to verify the Paystack payment.')
         }
 
         setOrder(payload.order)
@@ -220,12 +220,12 @@ function TaskerPaymentPageContent() {
         setError(
           verifyError instanceof Error
             ? verifyError.message
-            : 'Failed to verify the Flutterwave payment.'
+            : 'Failed to verify the Paystack payment.'
         )
         toast.error(
           verifyError instanceof Error
             ? verifyError.message
-            : 'Failed to verify the Flutterwave payment.'
+            : 'Failed to verify the Paystack payment.'
         )
       } finally {
         setVerifying(false)
@@ -281,9 +281,9 @@ function TaskerPaymentPageContent() {
       toast.success('Platform settlement paid successfully.')
     } else if (settlement === 'cancelled') {
       clearStoredPendingReference()
-      toast.error(message || 'Flutterwave checkout was cancelled.')
+      toast.error(message || 'Paystack checkout was cancelled.')
     } else {
-      toast.error(message || 'Failed to verify the Flutterwave payment.')
+      toast.error(message || 'Failed to verify the Paystack payment.')
     }
 
     router.replace(`/tasker-dashboard/payment/${orderId}`)
@@ -309,8 +309,8 @@ function TaskerPaymentPageContent() {
       processedReferenceRef.current = reference
       toast.error(
         status === 'cancelled'
-          ? 'Flutterwave checkout was cancelled.'
-          : 'Flutterwave payment was not successful.'
+          ? 'Paystack checkout was cancelled.'
+          : 'Paystack payment was not successful.'
       )
       router.replace(`/tasker-dashboard/payment/${orderId}`)
       void loadOrder()
@@ -373,7 +373,7 @@ function TaskerPaymentPageContent() {
       }
 
       if (!payload.checkoutUrl) {
-        throw new Error('Flutterwave did not return a checkout link.')
+        throw new Error('Paystack did not return a checkout link.')
       }
 
       storePendingReference(payload.reference)
@@ -382,7 +382,7 @@ function TaskerPaymentPageContent() {
       toast.error(
         paymentError instanceof Error
           ? paymentError.message
-          : 'Failed to open the Flutterwave checkout.'
+          : 'Failed to open the Paystack checkout.'
       )
     } finally {
       setStartingPayment(false)
@@ -501,7 +501,7 @@ function TaskerPaymentPageContent() {
 
         {isAwaitingConfirmation ? (
           <div className="mt-4 rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-700 dark:border-sky-900 dark:bg-sky-950/30 dark:text-sky-200">
-            Flutterwave has not finished confirming this payment yet. We will keep checking
+            Paystack has not finished confirming this payment yet. We will keep checking
             automatically for you.
           </div>
         ) : null}
@@ -529,12 +529,12 @@ function TaskerPaymentPageContent() {
             {startingPayment || verifying ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {verifying ? 'Verifying...' : 'Opening Flutterwave...'}
+                {verifying ? 'Verifying...' : 'Opening Paystack...'}
               </>
             ) : (
               <>
                 <CreditCard className="mr-2 h-4 w-4" />
-                Pay with Flutterwave
+                Pay with Paystack
               </>
             )}
           </Button>
@@ -563,7 +563,7 @@ function TaskerPaymentPageContent() {
           <div className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
             <p>
-              Flutterwave is used only for the platform share. The customer transfer goes directly to
+              Paystack is used only for the platform share. The customer transfer goes directly to
               your bank account.
             </p>
           </div>

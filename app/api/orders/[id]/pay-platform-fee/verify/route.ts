@@ -69,7 +69,7 @@ export async function POST(
         error:
           error instanceof Error
             ? error.message
-            : 'Failed to verify Flutterwave settlement.',
+            : 'Failed to verify Paystack settlement.',
       },
       { status: 500 }
     )

@@ -1,8 +1,5 @@
 import { getSettlementDueAt } from '@/lib/order-finance'
-import {
-  verifyFlutterwavePayment,
-  verifyFlutterwaveTransaction,
-} from '@/lib/flutterwave'
+import { verifyPaystackPayment } from '@/lib/paystack-settlement'
 import { Order, type IOrder } from '@/models/order'
 
 interface VerifySettlementInput {
@@ -32,7 +29,7 @@ async function markOrderSettlementPending({
     order._id,
     {
       $set: {
-        settlementProvider: 'flutterwave',
+        settlementProvider: 'paystack',
         settlementStatus: 'pending',
         settlementReference:
           normalizeString(reference || order.settlementReference) || undefined,
@@ -83,15 +80,15 @@ export async function verifyAndMarkOrderSettlementPaid({
   const resolvedTransactionId = normalizeString(transactionId)
 
   if (!resolvedReference && !resolvedTransactionId) {
-    throw new Error('Missing Flutterwave settlement reference.')
+    throw new Error('Missing Paystack settlement reference.')
   }
 
   let verification
 
   try {
-    verification = resolvedTransactionId
-      ? await verifyFlutterwaveTransaction(resolvedTransactionId)
-      : await verifyFlutterwavePayment(resolvedReference)
+    // Paystack uses reference for verification, not transactionId
+    const referenceToVerify = resolvedReference || resolvedTransactionId
+    verification = await verifyPaystackPayment(referenceToVerify)
   } catch (error) {
     if (isTransactionNotReadyError(error)) {
       const pendingOrder = await markOrderSettlementPending({
@@ -101,7 +98,7 @@ export async function verifyAndMarkOrderSettlementPaid({
       })
 
       throw new PendingSettlementVerificationError(
-        'Payment is still awaiting Flutterwave confirmation.',
+        'Payment is still awaiting Paystack confirmation.',
         pendingOrder
       )
     }
@@ -112,13 +109,13 @@ export async function verifyAndMarkOrderSettlementPaid({
   const transaction = verification.data
 
   if (!transaction) {
-    throw new Error('Flutterwave verification returned no transaction data.')
+    throw new Error('Paystack verification returned no transaction data.')
   }
 
   const verifiedStatus = normalizeString(transaction.status).toLowerCase()
-  const verifiedAmount = Number(transaction.amount || 0)
+  const verifiedAmount = Number(transaction.amount || 0) / 100 // Convert from kobo
   const verifiedCurrency = normalizeString(transaction.currency).toUpperCase()
-  const verifiedReference = normalizeString(transaction.tx_ref || resolvedReference)
+  const verifiedReference = normalizeString(transaction.reference || resolvedReference)
   const expectedAmount = Number(order.platformFee || 0)
   const amountsMatch =
     Math.round(verifiedAmount * 100) === Math.round(expectedAmount * 100)
@@ -134,13 +131,13 @@ export async function verifyAndMarkOrderSettlementPaid({
     })
 
     throw new PendingSettlementVerificationError(
-      'Payment is still awaiting Flutterwave confirmation.',
+      'Payment is still awaiting Paystack confirmation.',
       pendingOrder
     )
   }
 
   if (
-    verifiedStatus !== 'successful' ||
+    verifiedStatus !== 'success' ||
     verifiedCurrency !== 'NGN' ||
     (resolvedReference && verifiedReference !== resolvedReference) ||
     !amountsMatch
@@ -153,7 +150,7 @@ export async function verifyAndMarkOrderSettlementPaid({
           settlementReference: verifiedReference || resolvedReference || undefined,
           settlementTransactionId: resolvedVerificationTransactionId || undefined,
           settlementFailureReason:
-            'Flutterwave verification did not match the expected settlement details.',
+            'Paystack verification did not match the expected settlement details.',
         },
       },
       {
@@ -166,11 +163,11 @@ export async function verifyAndMarkOrderSettlementPaid({
       throw new Error('Order not found while saving settlement verification.')
     }
 
-    throw new Error('Flutterwave settlement verification failed.')
+    throw new Error('Paystack settlement verification failed.')
   }
 
   const settlementPaidAt = new Date(
-    normalizeString(transaction.created_at || transaction.charged_at) ||
+    normalizeString(transaction.paid_at || transaction.created_at) ||
       new Date().toISOString()
   )
   const settlementDueAt =
@@ -180,7 +177,7 @@ export async function verifyAndMarkOrderSettlementPaid({
     {
       $set: {
         taskerHasPaid: true,
-        settlementProvider: 'flutterwave',
+        settlementProvider: 'paystack',
         settlementStatus: 'paid',
         settlementReference: verifiedReference || resolvedReference || undefined,
         settlementTransactionId: resolvedVerificationTransactionId || undefined,
