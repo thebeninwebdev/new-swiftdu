@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { testBotConnection, sendTelegramMessage, getBotInfo, getChatInfo } from '@/lib/telegram'
+import { testBotConnection, sendTelegramMessage, getChatInfo } from '@/lib/telegram'
 
 export async function GET(request: NextRequest) {
   try {
