@@ -1,8 +1,7 @@
 import OrderAlertEmail from '@/emails/orderAlertEmail'
-import { sendTransactionalEmail } from '@/lib/email'
+import { sendBrevoEmailWithReactComponent } from '@/lib/brevo'
 import { getSupportEmailAddress } from '@/lib/email-config'
 import { getSiteUrl } from '@/lib/site'
-import { sendWhatsAppAdminAlert } from '@/lib/whatsapp'
 import { User } from '@/models/user'
 
 type OrderLike = {
@@ -35,7 +34,6 @@ interface NotifyAdminsOfOrderEventResult {
   skipped: boolean
   reason?: string
   email: AlertChannelResult
-  whatsapp: AlertChannelResult
 }
 
 const EMAIL_ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -84,28 +82,6 @@ function formatTaskType(taskType?: string) {
   }
 
   return labels[taskType || ''] || taskType || 'errand'
-}
-
-function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-NG', {
-    style: 'currency',
-    currency: 'NGN',
-    maximumFractionDigits: 0,
-  }).format(amount)
-}
-
-function formatDate(value?: string) {
-  if (!value) {
-    return 'Not available'
-  }
-
-  return new Date(value).toLocaleString('en-NG', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
 }
 
 function getActorLabel(
@@ -161,85 +137,6 @@ function createSkippedChannelResult(reason: string): AlertChannelResult {
   }
 }
 
-function mergeChannelResults(
-  email: AlertChannelResult,
-  whatsapp: AlertChannelResult
-): NotifyAdminsOfOrderEventResult {
-  const skipped = email.skipped && whatsapp.skipped
-  const reason = skipped
-    ? [email.reason, whatsapp.reason].filter((value): value is string => Boolean(value)).join(' ')
-    : undefined
-
-  return {
-    recipientCount: email.recipientCount + whatsapp.recipientCount,
-    deliveredCount: email.deliveredCount + whatsapp.deliveredCount,
-    skipped,
-    reason,
-    email,
-    whatsapp,
-  }
-}
-
-function buildWhatsAppOrderAlertMessage({
-  event,
-  orderId,
-  taskType,
-  description,
-  amount,
-  totalAmount,
-  location,
-  customerName,
-  customerEmail,
-  actorLabel,
-  taskerName,
-  createdAt,
-  cancelledAt,
-  dashboardUrl,
-}: {
-  event: OrderAlertEvent
-  orderId: string
-  taskType?: string
-  description?: string
-  amount: number
-  totalAmount: number
-  location: string
-  customerName?: string
-  customerEmail?: string
-  actorLabel?: string
-  taskerName?: string
-  createdAt?: string
-  cancelledAt?: string
-  dashboardUrl: string
-}) {
-  const lines = [
-    event === 'cancelled' ? 'SwiftDU booking cancelled.' : 'New SwiftDU booking received.',
-    `Order ID: ${orderId}`,
-    `Task type: ${formatTaskType(taskType)}`,
-    `Customer: ${customerName || 'Unknown customer'}${customerEmail ? ` (${customerEmail})` : ''}`,
-    `Budget: ${formatCurrency(amount)}`,
-    `Total collected: ${formatCurrency(totalAmount)}`,
-    `Location: ${location}`,
-    `Description: ${description?.trim() || 'No description provided.'}`,
-    `Booked at: ${formatDate(createdAt)}`,
-  ]
-
-  if (taskerName) {
-    lines.push(`Tasker: ${taskerName}`)
-  }
-
-  if (event === 'cancelled') {
-    lines.push(`Cancelled at: ${formatDate(cancelledAt)}`)
-
-    if (actorLabel) {
-      lines.push(`Cancelled by: ${actorLabel}`)
-    }
-  }
-
-  lines.push(`Dashboard: ${dashboardUrl}`)
-
-  return lines.join('\n')
-}
-
 export async function notifyAdminsOfOrderEvent(
   input: NotifyAdminsOfOrderEventInput
 ): Promise<NotifyAdminsOfOrderEventResult> {
@@ -253,7 +150,6 @@ export async function notifyAdminsOfOrderEvent(
       skipped: true,
       reason: 'Order identifiers are missing.',
       email: createSkippedChannelResult('Order identifiers are missing.'),
-      whatsapp: createSkippedChannelResult('Order identifiers are missing.'),
     }
   }
 
@@ -271,7 +167,7 @@ export async function notifyAdminsOfOrderEvent(
   const createdAt = serializeDate(input.order.createdAt)
   const cancelledAt = serializeDate(input.order.cancelledAt)
 
-  const emailResult = process.env.RESEND_API_KEY?.trim()
+  const emailResult = process.env.BREVO_API_KEY?.trim()
     ? await (async () => {
         const recipients = await getOrderAlertRecipients()
 
@@ -281,7 +177,7 @@ export async function notifyAdminsOfOrderEvent(
 
         const results = await Promise.allSettled(
           recipients.map((recipient) =>
-            sendTransactionalEmail({
+            sendBrevoEmailWithReactComponent({
               to: recipient,
               subject,
               react: OrderAlertEmail({
@@ -300,15 +196,7 @@ export async function notifyAdminsOfOrderEvent(
                 cancelledAt,
                 dashboardUrl,
               }),
-              tags: [
-                { name: 'email_type', value: 'order_alert' },
-                { name: 'order_event', value: input.event },
-                { name: 'order_id', value: orderId },
-              ],
-              headers: {
-                'X-SwiftDU-Order-Id': orderId,
-                'X-SwiftDU-Order-Event': input.event,
-              },
+              tags: ['order_alert', input.event, orderId],
             })
           )
         )
@@ -319,28 +207,13 @@ export async function notifyAdminsOfOrderEvent(
           skipped: false,
         }
       })()
-    : createSkippedChannelResult('Email configuration is missing.')
+    : createSkippedChannelResult('Brevo email configuration is missing.')
 
-  const whatsappResult = await sendWhatsAppAdminAlert({
-    dedupeKey: ['order-alert', input.event, orderId].join('|'),
-    cooldownMs: 60 * 1000,
-    message: buildWhatsAppOrderAlertMessage({
-      event: input.event,
-      orderId,
-      taskType: input.order.taskType,
-      description: input.order.description,
-      amount,
-      totalAmount,
-      location,
-      customerName: customer?.name,
-      customerEmail: customer?.email,
-      actorLabel,
-      taskerName: input.order.taskerName,
-      createdAt,
-      cancelledAt,
-      dashboardUrl,
-    }),
-  })
-
-  return mergeChannelResults(emailResult, whatsappResult)
+ return {
+  recipientCount: emailResult.recipientCount,
+  deliveredCount: emailResult.deliveredCount,
+  skipped: emailResult.skipped,
+  reason: emailResult.reason,
+  email: emailResult
+}
 }

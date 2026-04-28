@@ -6,7 +6,6 @@ import {
   getEmailFromName,
   getEmailReplyTo,
 } from "@/lib/email-config";
-import { sendWhatsAppAdminAlert } from "@/lib/whatsapp";
 
 const EMAIL_ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -37,37 +36,6 @@ interface SendTransactionalEmailInput {
   replyTo?: string;
   tags?: Tag[];
   headers?: Record<string, string>;
-}
-
-function getRecipientSummary(to: string | string[]) {
-  if (Array.isArray(to)) {
-    return to.length <= 3 ? to.join(", ") : `${to.length} recipients`;
-  }
-
-  return to;
-}
-
-async function notifyEmailFailureViaWhatsApp(
-  input: SendTransactionalEmailInput,
-  error: Error
-) {
-  const emailType =
-    input.tags?.find((tag) => tag.name === "email_type")?.value || "transactional";
-
-  try {
-    await sendWhatsAppAdminAlert({
-      dedupeKey: ["email-failure", emailType, input.subject, error.message].join("|"),
-      message: [
-        "SwiftDU email delivery failed.",
-        `Type: ${emailType}`,
-        `Subject: ${input.subject}`,
-        `To: ${getRecipientSummary(input.to)}`,
-        `Error: ${error.message}`,
-      ].join("\n"),
-    });
-  } catch (whatsAppError) {
-    console.error("[Email Failure WhatsApp Fallback Error]:", whatsAppError);
-  }
 }
 
 function getEmailConfig() {
@@ -148,7 +116,6 @@ export async function sendTransactionalEmail(
       error: resolvedError.message,
     });
 
-    await notifyEmailFailureViaWhatsApp(input, resolvedError);
     throw resolvedError;
   }
 }

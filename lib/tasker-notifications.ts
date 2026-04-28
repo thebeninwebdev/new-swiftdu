@@ -1,5 +1,6 @@
 import NewTaskEmail from '@/emails/newTaskEmail'
-import { getResendApiKey, sendTransactionalEmail } from '@/lib/email'
+import { getResendApiKey } from '@/lib/email'
+import { sendBrevoEmailWithReactComponent } from '@/lib/brevo'
 import { sendTelegramMessage } from '@/lib/telegram'
 import Tasker from '@/models/tasker'
 import { User } from '@/models/user'
@@ -68,30 +69,33 @@ export async function notifyTaskersOfNewTask(
     }
   }
 
-  // Get all verified taskers (not just premium)
-  const allTaskers = await Tasker.find({
-    isVerified: true,
-    isRejected: { $ne: true },
-  })
-    .select('userId isPremium')
-    .lean()
+const premiumTaskers = await Tasker.find({
+  isVerified: true,
+  isPremium: true,
+  isRejected: { $ne: true },
+})
+  .select('userId isPremium')
+  .lean()
 
-  console.log('[Tasker Notifications] Found taskers:', allTaskers.length);
+console.log(
+  '[Tasker Notifications] Found premium taskers:',
+  premiumTaskers.length
+)
 
-  if (allTaskers.length === 0) {
-    return {
-      recipientCount: 0,
-      deliveredCount: 0,
-      skipped: true,
-      reason: 'No verified taskers found.',
-    }
+if (premiumTaskers.length === 0) {
+  return {
+    recipientCount: 0,
+    deliveredCount: 0,
+    skipped: true,
+    reason: 'No verified premium taskers found.',
   }
+}
 
   // Get users for email notifications
   let emailRecipients: any[] = [];
   if (hasEmailConfig) {
     const users = await User.find({
-      _id: { $in: allTaskers.map((tasker) => tasker.userId) },
+      _id: { $in: premiumTaskers.map((tasker) => tasker.userId) },
       role: 'tasker',
       emailVerified: true,
       isSuspended: { $ne: true },
@@ -124,10 +128,10 @@ export async function notifyTaskersOfNewTask(
   // Prepare notification promises
   const notificationPromises: Promise<any>[] = []
 
-  // Email notifications
+  // Email notifications - using Brevo for tasker emails
   if (hasEmailConfig && emailRecipients.length > 0) {
     const emailPromises = emailRecipients.map((recipient) =>
-      sendTransactionalEmail({
+      sendBrevoEmailWithReactComponent({
         to: recipient.email,
         subject,
         react: NewTaskEmail({
@@ -139,10 +143,7 @@ export async function notifyTaskersOfNewTask(
           userName: input.userName,
           taskUrl,
         }),
-        tags: [
-          { name: 'email_type', value: 'new_task' },
-          { name: 'audience', value: 'premium_tasker' },
-        ],
+        tags: ['new_task', 'premium_tasker'],
       })
     )
     notificationPromises.push(...emailPromises)
@@ -159,8 +160,7 @@ export async function notifyTaskersOfNewTask(
   const totalRecipients = (hasEmailConfig ? emailRecipients.length : 0) + (hasTelegramConfig ? 1 : 0)
   const deliveredCount = results.filter((result) => {
     if (result.status === 'fulfilled') {
-      // For email, result.value is undefined on success
-      // For Telegram, result.value is boolean
+      // Both Brevo and Telegram return truthy values on success
       return result.value === undefined || result.value === true
     }
     return false
