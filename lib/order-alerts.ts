@@ -136,7 +136,6 @@ async function getOrderAlertRecipients() {
 
   const adminUsers = await User.find({
     role: 'admin',
-    emailVerified: true,
     isSuspended: { $ne: true },
   })
     .select('email')

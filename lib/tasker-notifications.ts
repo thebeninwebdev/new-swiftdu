@@ -1,5 +1,6 @@
 import NewTaskEmail from '@/emails/newTaskEmail'
 import { sendTransactionalEmail } from '@/lib/email'
+import { sendTelegramMessage } from '@/lib/telegram'
 import Tasker from '@/models/tasker'
 import { User } from '@/models/user'
 
@@ -42,65 +43,87 @@ function formatTaskType(taskType: string) {
 export async function notifyTaskersOfNewTask(
   input: NotifyTaskersOfNewTaskInput
 ): Promise<NotifyTaskersOfNewTaskResult> {
-  if (
-    !process.env.RESEND_API_KEY
-  ) {
+  // Check if either email or Telegram channel is configured
+  const hasEmailConfig = Boolean(process.env.RESEND_API_KEY);
+  const hasTelegramConfig = Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHANNEL_ID);
+
+  console.log('[Tasker Notifications] Config check:', { hasEmailConfig, hasTelegramConfig });
+
+  // Test bot connection if Telegram channel is configured
+  if (hasTelegramConfig) {
+    const { testBotConnection } = await import('@/lib/telegram');
+    const botWorking = await testBotConnection();
+    console.log('[Tasker Notifications] Bot connection test:', botWorking);
+  }
+
+  if (!hasEmailConfig && !hasTelegramConfig) {
     return {
       recipientCount: 0,
       deliveredCount: 0,
       skipped: true,
-      reason: 'Email configuration is missing.',
+      reason: 'No notification configuration found (email or Telegram channel).',
     }
   }
 
-  const taskers = await Tasker.find({
+  // Get all verified taskers (not just premium)
+  const allTaskers = await Tasker.find({
     isVerified: true,
     isRejected: { $ne: true },
-    isPremium: true,
   })
-    .select('userId')
+    .select('userId isPremium')
     .lean()
 
-  if (taskers.length === 0) {
+  console.log('[Tasker Notifications] Found taskers:', allTaskers.length);
+
+  if (allTaskers.length === 0) {
     return {
       recipientCount: 0,
       deliveredCount: 0,
       skipped: true,
-      reason: 'No premium taskers found.',
+      reason: 'No verified taskers found.',
     }
   }
 
-  const users = await User.find({
-    _id: { $in: taskers.map((tasker) => tasker.userId) },
-    role: 'tasker',
-    emailVerified: true,
-    isSuspended: { $ne: true },
-  })
-    .select('name email')
-    .lean()
+  // Get users for email notifications
+  let emailRecipients: any[] = [];
+  if (hasEmailConfig) {
+    const users = await User.find({
+      _id: { $in: allTaskers.map((tasker) => tasker.userId) },
+      role: 'tasker',
+      emailVerified: true,
+      isSuspended: { $ne: true },
+    })
+      .select('name email')
+      .lean()
 
-  const recipients = Array.from(
-    new Map(
-      users
-        .filter((user) => Boolean(user.email))
-        .map((user) => [user.email.toLowerCase(), user])
-    ).values()
-  )
-
-  if (recipients.length === 0) {
-    return {
-      recipientCount: 0,
-      deliveredCount: 0,
-      skipped: true,
-      reason: 'No deliverable tasker emails found.',
-    }
+    emailRecipients = Array.from(
+      new Map(
+        users
+          .filter((user) => Boolean(user.email))
+          .map((user) => [user.email.toLowerCase(), user])
+      ).values()
+    )
   }
 
   const taskUrl = `${getAppBaseUrl()}/tasker-dashboard`
   const subject = `New ${formatTaskType(input.taskType)} task posted on SwiftDU`
 
-  const results = await Promise.allSettled(
-    recipients.map((recipient) =>
+  const telegramMessage = `<b>New ${formatTaskType(input.taskType)} task posted on SwiftDU</b>
+
+📋 <b>Task:</b> ${formatTaskType(input.taskType)}
+📝 <b>Description:</b> ${input.description}
+💰 <b>Amount:</b> ₦${input.amount.toLocaleString()}
+📍 <b>Location:</b> ${input.location}
+👤 <b>Customer:</b> ${input.userName}
+
+🔗 <a href="${taskUrl}">View Task Details</a>`
+
+  // Prepare notification promises
+  const notificationPromises: Promise<any>[] = []
+
+  // Email notifications
+  if (hasEmailConfig && emailRecipients.length > 0) {
+    const emailPromises = emailRecipients.map((recipient) =>
       sendTransactionalEmail({
         to: recipient.email,
         subject,
@@ -119,11 +142,37 @@ export async function notifyTaskersOfNewTask(
         ],
       })
     )
-  )
+    notificationPromises.push(...emailPromises)
+  }
+
+  // Telegram channel notification
+  if (hasTelegramConfig) {
+    console.log('[Tasker Notifications] Sending Telegram message to channel');
+    notificationPromises.push(sendTelegramMessage(telegramMessage))
+  }
+
+  const results = await Promise.allSettled(notificationPromises)
+
+  const totalRecipients = (hasEmailConfig ? emailRecipients.length : 0) + (hasTelegramConfig ? 1 : 0)
+  const deliveredCount = results.filter((result) => {
+    if (result.status === 'fulfilled') {
+      // For email, result.value is undefined on success
+      // For Telegram, result.value is boolean
+      return result.value === undefined || result.value === true
+    }
+    return false
+  }).length
+
+  console.log('[Tasker Notifications] Final result:', {
+    totalRecipients,
+    deliveredCount,
+    emailRecipients: emailRecipients.length,
+    telegramChannel: Boolean(hasTelegramConfig),
+  });
 
   return {
-    recipientCount: recipients.length,
-    deliveredCount: results.filter((result) => result.status === 'fulfilled').length,
+    recipientCount: totalRecipients,
+    deliveredCount,
     skipped: false,
   }
 }

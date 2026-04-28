@@ -46,21 +46,6 @@ export async function PATCH(req: NextRequest) {
       updateData.location = location;
     }
 
-    if (bankDetails !== undefined) {
-      const { bankName, accountNumber, accountName } = bankDetails;
-      if (!bankName || !accountNumber || !accountName) {
-        return NextResponse.json(
-          { error: 'All bank details are required' },
-          { status: 400 }
-        );
-      }
-      updateData.bankDetails = {
-        bankName,
-        accountNumber,
-        accountName,
-      };
-    }
-
     if (Object.keys(updateData).length === 0) {
       return NextResponse.json(
         { error: 'No fields to update' },
