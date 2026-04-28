@@ -8,9 +8,27 @@ import {
 } from "@/lib/email-config";
 import { sendWhatsAppAdminAlert } from "@/lib/whatsapp";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
-
 const EMAIL_ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function getResendApiKey() {
+  return (
+    process.env.RESEND_API_KEY?.trim() ||
+    process.env.RESEND_KEY?.trim() ||
+    process.env.RESEND_APIKEY?.trim()
+  );
+}
+
+function getResendClient() {
+  const apiKey = getResendApiKey();
+
+  if (!apiKey) {
+    throw new Error(
+      "RESEND_API_KEY is missing. Set RESEND_API_KEY or RESEND_KEY in production environment."
+    );
+  }
+
+  return new Resend(apiKey);
+}
 
 interface SendTransactionalEmailInput {
   to: string | string[];
@@ -57,8 +75,8 @@ function getEmailConfig() {
   const fromAddress = getEmailFromAddress();
   const replyTo = getEmailReplyTo();
 
-  if (!process.env.RESEND_API_KEY?.trim()) {
-    throw new Error("RESEND_API_KEY is missing.");
+  if (!getResendApiKey()) {
+    throw new Error("RESEND_API_KEY is missing. Set RESEND_API_KEY or RESEND_KEY.");
   }
 
   if (!fromName || !fromAddress) {
@@ -91,7 +109,7 @@ export async function sendTransactionalEmail(
       throw new Error("replyTo must be a valid email address.");
     }
 
-    const response = await resend.emails.send({
+    const response = await getResendClient().emails.send({
       from,
       to: input.to,
       replyTo,
@@ -110,13 +128,25 @@ export async function sendTransactionalEmail(
     });
 
     if (response.error) {
-      throw new Error(response.error.message);
+      const reason = response.error.message || "Unknown Resend error";
+      console.error("[sendTransactionalEmail] Resend returned an error", {
+        to: input.to,
+        subject: input.subject,
+        resendError: response.error,
+      });
+      throw new Error(`Resend API error: ${reason}`);
     }
 
     return response.data?.id ?? null;
   } catch (error) {
     const resolvedError =
       error instanceof Error ? error : new Error("Failed to send email.");
+
+    console.error("[sendTransactionalEmail] email send failed", {
+      to: input.to,
+      subject: input.subject,
+      error: resolvedError.message,
+    });
 
     await notifyEmailFailureViaWhatsApp(input, resolvedError);
     throw resolvedError;

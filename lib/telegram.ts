@@ -19,20 +19,34 @@ interface TelegramSendMessageResponse {
   description?: string;
 }
 
+function getTelegramBotToken() {
+  return (
+    process.env.TELEGRAM_BOT_TOKEN?.trim() ||
+    process.env.TELEGRAM_BOT_API_TOKEN?.trim()
+  );
+}
+
+function getTelegramChatId() {
+  return (
+    process.env.TELEGRAM_CHANNEL_ID?.trim() ||
+    process.env.TELEGRAM_CHAT_ID?.trim()
+  );
+}
+
 export async function sendTelegramMessage(
   text: string,
   chatId?: string
 ): Promise<boolean> {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const targetChatId = chatId || process.env.TELEGRAM_CHANNEL_ID;
+  const botToken = getTelegramBotToken();
+  const targetChatId = chatId || getTelegramChatId();
 
   if (!botToken) {
-    console.error('Telegram bot token not configured');
+    console.error('[Telegram] bot token not configured');
     return false;
   }
 
   if (!targetChatId) {
-    console.error('Telegram channel ID not configured');
+    console.error('[Telegram] chat id not configured');
     return false;
   }
 
@@ -71,8 +85,8 @@ export async function sendTelegramMessage(
 }
 
 export async function getChatInfo(chatId?: string) {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
-  const targetChatId = chatId || process.env.TELEGRAM_CHANNEL_ID;
+  const botToken = getTelegramBotToken();
+  const targetChatId = chatId || getTelegramChatId();
 
   if (!botToken || !targetChatId) {
     return null;
@@ -95,7 +109,7 @@ export async function getChatInfo(chatId?: string) {
 }
 
 export async function testBotConnection(): Promise<boolean> {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const botToken = getTelegramBotToken();
 
   if (!botToken) {
     console.error('Telegram bot token not configured');

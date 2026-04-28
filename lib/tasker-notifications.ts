@@ -1,5 +1,5 @@
 import NewTaskEmail from '@/emails/newTaskEmail'
-import { sendTransactionalEmail } from '@/lib/email'
+import { getResendApiKey, sendTransactionalEmail } from '@/lib/email'
 import { sendTelegramMessage } from '@/lib/telegram'
 import Tasker from '@/models/tasker'
 import { User } from '@/models/user'
@@ -44,8 +44,11 @@ export async function notifyTaskersOfNewTask(
   input: NotifyTaskersOfNewTaskInput
 ): Promise<NotifyTaskersOfNewTaskResult> {
   // Check if either email or Telegram channel is configured
-  const hasEmailConfig = Boolean(process.env.RESEND_API_KEY);
-  const hasTelegramConfig = Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHANNEL_ID);
+  const hasEmailConfig = Boolean(getResendApiKey());
+  const hasTelegramConfig = Boolean(
+    process.env.TELEGRAM_BOT_TOKEN &&
+    (process.env.TELEGRAM_CHANNEL_ID || process.env.TELEGRAM_CHAT_ID)
+  );
 
   console.log('[Tasker Notifications] Config check:', { hasEmailConfig, hasTelegramConfig });
 
