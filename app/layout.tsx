@@ -7,7 +7,7 @@ import Wrapper from "@/components/wrapper";
 import { Footer } from "@/components/Footer";
 import { adsenseAccount, adsenseScriptSrc, siteUrl } from "@/lib/site";
 import { Analytics } from "@vercel/analytics/next"
-import Script from "next/script";
+import { GoogleAnalytics } from "@/components/google-analytics";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -99,12 +99,8 @@ export default function RootLayout({
         </Wrapper>
         </Wrapper>
         <Analytics />
+        <GoogleAnalytics />
         {children}
-
-        <Script
-          src={`https://www.googletagmanager.com/gtag/js?id=${process.env.NEXT_PUBLIC_GA_ID}`}
-          strategy="afterInteractive"
-        />
         <Wrapper path="/dashboard">
         <Wrapper path="/tasker-signup">
         <Wrapper path="/signup">
