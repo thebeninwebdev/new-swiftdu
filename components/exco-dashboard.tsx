@@ -8,9 +8,6 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
-  Cell,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -66,6 +63,8 @@ type DashboardData = {
   range: {
     days: number;
     since: string;
+    key?: string;
+    label?: string;
   };
   cards: CardDatum[];
   insights: InsightDatum[];
@@ -179,8 +178,10 @@ type DashboardData = {
     analytics: {
       totalPageViews: number;
       uniqueVisitors: number;
+      bounceRate: number;
       topPages: CountDatum[];
       topReferralSources: CountDatum[];
+      topCountries: CountDatum[];
       deviceBreakdown: CountDatum[];
       browserBreakdown: CountDatum[];
       conversionEvents: CountDatum[];
@@ -248,8 +249,14 @@ const ROLE_CONFIG = {
   badge: string;
 }>;
 
-const CHART_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed", "#0891b2"];
 const CFO_PAGE_SIZE = 5;
+const CMO_RANGE_OPTIONS = [
+  { value: "24h", label: "Last 24 hours" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "3mo", label: "Last 3 months" },
+  { value: "12mo", label: "Last 12 months" },
+  { value: "24mo", label: "Last 24 months" },
+] as const;
 
 function usePagedItems<T>(items: T[], pageSize = CFO_PAGE_SIZE) {
   const [page, setPage] = useState(1);
@@ -903,20 +910,27 @@ function RankedList({ data, emptyLabel }: { data: CountDatum[]; emptyLabel: stri
   );
 }
 
-function PieBreakdown({ data, emptyLabel }: { data: CountDatum[]; emptyLabel: string }) {
+function VerticalBarChart({ data, emptyLabel }: { data: CountDatum[]; emptyLabel: string }) {
   if (!data.length) return <EmptyState label={emptyLabel} />;
 
   return (
-    <div className="h-64">
+    <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie data={data} dataKey="count" nameKey="label" innerRadius={54} outerRadius={92} paddingAngle={3}>
-            {data.map((entry, index) => (
-              <Cell key={entry.label} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-            ))}
-          </Pie>
+        <BarChart data={data} margin={{ top: 8, right: 12, bottom: 54, left: 0 }}>
+          <CartesianGrid strokeDasharray="3 3" vertical={false} />
+          <XAxis
+            dataKey="label"
+            interval={0}
+            angle={-35}
+            textAnchor="end"
+            height={72}
+            tick={{ fontSize: 11 }}
+            tickFormatter={(value) => (String(value).length > 14 ? `${String(value).slice(0, 14)}...` : String(value))}
+          />
+          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
           <Tooltip />
-        </PieChart>
+          <Bar dataKey="count" fill="#111827" radius={[6, 6, 0, 0]} />
+        </BarChart>
       </ResponsiveContainer>
     </div>
   );
@@ -961,23 +975,38 @@ function TrafficChart({ data }: { data: DashboardData["marketing"]["analytics"][
   return (
     <div className="h-80">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={data}>
+        <AreaChart data={data} margin={{ top: 12, right: 8, bottom: 0, left: 0 }}>
           <defs>
             <linearGradient id="pageViewsTrend" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#2563eb" stopOpacity={0.35} />
-              <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
+              <stop offset="5%" stopColor="#111827" stopOpacity={0.28} />
+              <stop offset="95%" stopColor="#111827" stopOpacity={0.03} />
             </linearGradient>
             <linearGradient id="visitorTrend" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.35} />
-              <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+              <stop offset="5%" stopColor="#2563eb" stopOpacity={0.2} />
+              <stop offset="95%" stopColor="#2563eb" stopOpacity={0} />
             </linearGradient>
           </defs>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-          <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
+          <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+          <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={20} />
+          <YAxis allowDecimals={false} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={36} />
           <Tooltip />
-          <Area type="monotone" dataKey="pageViews" stroke="#2563eb" fill="url(#pageViewsTrend)" />
-          <Area type="monotone" dataKey="uniqueVisitors" stroke="#f59e0b" fill="url(#visitorTrend)" />
+          <Area
+            type="monotone"
+            dataKey="pageViews"
+            name="Page views"
+            stroke="#111827"
+            strokeWidth={2.5}
+            fill="url(#pageViewsTrend)"
+            activeDot={{ r: 5 }}
+          />
+          <Area
+            type="monotone"
+            dataKey="uniqueVisitors"
+            name="Visitors"
+            stroke="#2563eb"
+            strokeWidth={2}
+            fill="url(#visitorTrend)"
+          />
         </AreaChart>
       </ResponsiveContainer>
     </div>
@@ -1065,7 +1094,7 @@ function FinanceSections({ data }: { data: DashboardData }) {
           <CardDescription>Tasker settlement state across recent orders.</CardDescription>
         </CardHeader>
         <CardContent>
-          <PieBreakdown data={data.charts.settlementBreakdown} emptyLabel="No settlements recorded yet" />
+          <VerticalBarChart data={data.charts.settlementBreakdown} emptyLabel="No settlements recorded yet" />
         </CardContent>
       </Card>
 
@@ -1405,19 +1434,68 @@ function CancelledFinanceOrdersTable({
   );
 }
 
-function MarketingSections({ data }: { data: DashboardData }) {
+function MarketingMetric({
+  label,
+  value,
+  format = "number",
+}: {
+  label: string;
+  value: number;
+  format?: "number" | "percent";
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">{label}</p>
+      <p className="mt-3 text-3xl font-bold text-slate-950 dark:text-white md:text-4xl">
+        {formatValue(value, format)}
+      </p>
+    </div>
+  );
+}
+
+function MarketingSections({
+  data,
+  range,
+  onRangeChange,
+}: {
+  data: DashboardData;
+  range: string;
+  onRangeChange: (range: string) => void;
+}) {
+  const analytics = data.marketing.analytics;
+
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <LineChart className="h-5 w-5 text-rose-600" />
-            Analytics Traffic
-          </CardTitle>
-          <CardDescription>Page views and unique visitors from the existing analytics tracker.</CardDescription>
+        <CardHeader className="gap-4 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <LineChart className="h-5 w-5 text-rose-600" />
+              Web Analytics
+            </CardTitle>
+            <CardDescription>
+              Visitors, page views, and acquisition quality for {data.range.label || "the selected period"}.
+            </CardDescription>
+          </div>
+          <select
+            value={range}
+            onChange={(event) => onRangeChange(event.target.value)}
+            className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800 shadow-sm outline-none transition focus:border-slate-400 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100"
+          >
+            {CMO_RANGE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
         </CardHeader>
-        <CardContent>
-          <TrafficChart data={data.marketing.analytics.trafficChart} />
+        <CardContent className="space-y-5">
+          <div className="grid gap-3 md:grid-cols-3">
+            <MarketingMetric label="Visitors" value={analytics.uniqueVisitors} />
+            <MarketingMetric label="Page Views" value={analytics.totalPageViews} />
+            <MarketingMetric label="Bounce Rate" value={analytics.bounceRate || 0} format="percent" />
+          </div>
+          <TrafficChart data={analytics.trafficChart} />
         </CardContent>
       </Card>
 
@@ -1428,17 +1506,37 @@ function MarketingSections({ data }: { data: DashboardData }) {
             <CardDescription>Pages with the strongest visitor attention.</CardDescription>
           </CardHeader>
           <CardContent>
-            <HorizontalBarChart data={data.marketing.analytics.topPages} emptyLabel="No page views recorded yet" />
+            <HorizontalBarChart data={analytics.topPages} emptyLabel="No page views recorded yet" />
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
             <CardTitle>Referral Sources</CardTitle>
-            <CardDescription>Channels bringing users into SwiftDU.</CardDescription>
+            <CardDescription>Channels bringing users into SwiftDU, shown as a rotated bar chart.</CardDescription>
           </CardHeader>
           <CardContent>
-            <PieBreakdown data={data.marketing.analytics.topReferralSources} emptyLabel="No referral sources recorded yet" />
+            <VerticalBarChart data={analytics.topReferralSources} emptyLabel="No referral sources recorded yet" />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Countries</CardTitle>
+            <CardDescription>Where page views are coming from.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <VerticalBarChart data={analytics.topCountries} emptyLabel="No country data recorded yet" />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Device Mix</CardTitle>
+            <CardDescription>Devices visitors use when they reach SwiftDU.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <VerticalBarChart data={analytics.deviceBreakdown} emptyLabel="No device data recorded yet" />
           </CardContent>
         </Card>
 
@@ -1458,7 +1556,7 @@ function MarketingSections({ data }: { data: DashboardData }) {
             <CardDescription>Tracked actions beyond page views.</CardDescription>
           </CardHeader>
           <CardContent>
-            <RankedList data={data.marketing.analytics.conversionEvents} emptyLabel="No conversion events recorded yet" />
+            <VerticalBarChart data={analytics.conversionEvents} emptyLabel="No conversion events recorded yet" />
           </CardContent>
         </Card>
       </div>
@@ -1491,7 +1589,7 @@ function OperationsSections({ data }: { data: DashboardData }) {
           <CardDescription>Where non-cancelled work is sitting right now.</CardDescription>
         </CardHeader>
         <CardContent>
-          <PieBreakdown data={data.charts.statusBreakdown} emptyLabel="No status data recorded yet" />
+          <VerticalBarChart data={data.charts.statusBreakdown} emptyLabel="No status data recorded yet" />
         </CardContent>
       </Card>
 
@@ -1601,7 +1699,7 @@ function TechnologySections({ data }: { data: DashboardData }) {
           <CardDescription>Prioritize QA by the devices customers actually use.</CardDescription>
         </CardHeader>
         <CardContent>
-          <PieBreakdown data={data.technology.deviceBreakdown} emptyLabel="No device data recorded yet" />
+          <VerticalBarChart data={data.technology.deviceBreakdown} emptyLabel="No device data recorded yet" />
         </CardContent>
       </Card>
 
@@ -1635,11 +1733,18 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
   const [data, setData] = useState<DashboardData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [marketingRange, setMarketingRange] = useState("7d");
 
   useEffect(() => {
     async function loadDashboard() {
       try {
-        const response = await fetch(`/api/exco/dashboard?role=${role}&days=30`, {
+        setIsLoading(true);
+        setError(null);
+        const query =
+          role === "CMO"
+            ? `/api/exco/dashboard?role=${role}&range=${marketingRange}`
+            : `/api/exco/dashboard?role=${role}&days=30`;
+        const response = await fetch(query, {
           cache: "no-store",
         });
 
@@ -1656,15 +1761,23 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
     }
 
     void loadDashboard();
-  }, [role]);
+  }, [role, marketingRange]);
 
   const section = useMemo(() => {
     if (!data) return null;
     if (role === "CFO") return <FinanceSections data={data} />;
-    if (role === "CMO") return <MarketingSections data={data} />;
+    if (role === "CMO") {
+      return (
+        <MarketingSections
+          data={data}
+          range={marketingRange}
+          onRangeChange={setMarketingRange}
+        />
+      );
+    }
     if (role === "COO") return <OperationsSections data={data} />;
     return <TechnologySections data={data} />;
-  }, [data, role]);
+  }, [data, marketingRange, role]);
 
   if (isLoading) {
     return (

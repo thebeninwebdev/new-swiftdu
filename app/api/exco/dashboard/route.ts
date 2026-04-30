@@ -9,6 +9,43 @@ import Tasker from "@/models/tasker";
 import { User } from "@/models/user";
 
 const DEFAULT_DAYS = 30;
+const ANALYTICS_RANGES = {
+  "24h": {
+    label: "Last 24 hours",
+    days: 1,
+    amount: 24,
+    unit: "hours",
+    dateFormat: "%Y-%m-%d %H:00",
+  },
+  "7d": {
+    label: "Last 7 days",
+    days: 7,
+    amount: 7,
+    unit: "days",
+    dateFormat: "%Y-%m-%d",
+  },
+  "3mo": {
+    label: "Last 3 months",
+    days: 90,
+    amount: 3,
+    unit: "months",
+    dateFormat: "%Y-%m-%d",
+  },
+  "12mo": {
+    label: "Last 12 months",
+    days: 365,
+    amount: 12,
+    unit: "months",
+    dateFormat: "%Y-%m",
+  },
+  "24mo": {
+    label: "Last 24 months",
+    days: 730,
+    amount: 24,
+    unit: "months",
+    dateFormat: "%Y-%m",
+  },
+} as const;
 const OUTSTANDING_SETTLEMENT_STATUSES = [
   "not_due",
   "pending",
@@ -38,6 +75,8 @@ type DashboardCard = {
   format: "number" | "currency" | "percent" | "minutes";
   description: string;
 };
+
+type AnalyticsRangeKey = keyof typeof ANALYTICS_RANGES;
 
 type RecentActivity = {
   id: string;
@@ -122,6 +161,33 @@ function toDateWindow(days: number) {
   previousSince.setDate(previousSince.getDate() - days);
 
   return { since, previousSince };
+}
+
+function getAnalyticsRange(value: string | null) {
+  const key = value && value in ANALYTICS_RANGES ? (value as AnalyticsRangeKey) : "7d";
+  const config = ANALYTICS_RANGES[key];
+  const since = new Date();
+
+  if (config.unit === "hours") {
+    since.setHours(since.getHours() - config.amount, 0, 0, 0);
+  } else if (config.unit === "months") {
+    since.setMonth(since.getMonth() - config.amount);
+    since.setHours(0, 0, 0, 0);
+  } else {
+    since.setDate(since.getDate() - config.amount + 1);
+    since.setHours(0, 0, 0, 0);
+  }
+
+  const previousSince = new Date(since);
+  if (config.unit === "hours") {
+    previousSince.setHours(previousSince.getHours() - config.amount);
+  } else if (config.unit === "months") {
+    previousSince.setMonth(previousSince.getMonth() - config.amount);
+  } else {
+    previousSince.setDate(previousSince.getDate() - config.amount);
+  }
+
+  return { key, ...config, since, previousSince };
 }
 
 function toPercent(numerator: number, denominator: number) {
@@ -550,16 +616,18 @@ async function getRecentActivity(limit = 10): Promise<RecentActivity[]> {
     .slice(0, limit);
 }
 
-async function getAnalyticsSummary(match: Record<string, unknown>, limit = 8) {
+async function getAnalyticsSummary(match: Record<string, unknown>, limit = 8, dateFormat = "%Y-%m-%d") {
   const [
     totalPageViews,
     uniqueVisitors,
     topPages,
     topReferralSources,
+    topCountries,
     deviceBreakdown,
     browserBreakdown,
     conversionEvents,
     trafficChart,
+    bounceSummary,
   ] = await Promise.all([
     AnalyticsEventModel.countDocuments({ ...match, eventType: "page_view" }),
     AnalyticsEventModel.distinct("visitorId", match),
@@ -570,8 +638,14 @@ async function getAnalyticsSummary(match: Record<string, unknown>, limit = 8) {
       { $limit: limit },
     ]),
     AnalyticsEventModel.aggregate<CountDatum>([
-      { $match: match },
+      { $match: { ...match, eventType: "page_view" } },
       { $group: { _id: "$referrer", count: { $sum: 1 } } },
+      { $sort: { count: -1 } },
+      { $limit: limit },
+    ]),
+    AnalyticsEventModel.aggregate<CountDatum>([
+      { $match: { ...match, eventType: "page_view" } },
+      { $group: { _id: "$country", count: { $sum: 1 } } },
       { $sort: { count: -1 } },
       { $limit: limit },
     ]),
@@ -596,7 +670,7 @@ async function getAnalyticsSummary(match: Record<string, unknown>, limit = 8) {
       { $match: match },
       {
         $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+          _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
           pageViews: {
             $sum: { $cond: [{ $eq: ["$eventType", "page_view"] }, 1, 0] },
           },
@@ -605,13 +679,36 @@ async function getAnalyticsSummary(match: Record<string, unknown>, limit = 8) {
       },
       { $sort: { _id: 1 } },
     ]),
+    AnalyticsEventModel.aggregate<{ _id: null; totalVisitors: number; bouncedVisitors: number }>([
+      { $match: { ...match, eventType: "page_view" } },
+      {
+        $group: {
+          _id: "$visitorId",
+          pageViews: { $sum: 1 },
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          totalVisitors: { $sum: 1 },
+          bouncedVisitors: {
+            $sum: { $cond: [{ $eq: ["$pageViews", 1] }, 1, 0] },
+          },
+        },
+      },
+    ]),
   ]);
+
+  const bounceVisitors = bounceSummary[0]?.bouncedVisitors || 0;
+  const totalVisitors = bounceSummary[0]?.totalVisitors || 0;
 
   return {
     totalPageViews,
     uniqueVisitors: uniqueVisitors.length,
+    bounceRate: toPercent(bounceVisitors, totalVisitors),
     topPages: mapCounts(topPages, "/"),
     topReferralSources: mapCounts(topReferralSources, "Direct"),
+    topCountries: mapCounts(topCountries),
     deviceBreakdown: mapCounts(deviceBreakdown),
     browserBreakdown: mapCounts(browserBreakdown),
     conversionEvents: mapCounts(conversionEvents),
@@ -869,8 +966,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const days = clampDays(request.nextUrl.searchParams.get("days"));
-  const { since, previousSince } = toDateWindow(days);
+  const requestedAnalyticsRange = getAnalyticsRange(request.nextUrl.searchParams.get("range"));
+  const hasAnalyticsRange = request.nextUrl.searchParams.has("range");
+  const days = hasAnalyticsRange ? requestedAnalyticsRange.days : clampDays(request.nextUrl.searchParams.get("days"));
+  const dateWindow = hasAnalyticsRange ? requestedAnalyticsRange : toDateWindow(days);
+  const { since, previousSince } = dateWindow;
   const match = {
     createdAt: { $gte: since },
     status: { $ne: "cancelled" },
@@ -995,7 +1095,7 @@ export async function GET(request: NextRequest) {
       },
       { $sort: { _id: 1 } },
     ]),
-    getAnalyticsSummary(match),
+    getAnalyticsSummary(match, 8, hasAnalyticsRange ? requestedAnalyticsRange.dateFormat : "%Y-%m-%d"),
     requestedRole === "CFO" ? getUnsettledTaskers() : Promise.resolve([]),
     requestedRole === "CFO" ? getActiveFinanceTasks() : Promise.resolve([]),
     requestedRole === "CFO" ? getCancelledFinanceOrders(since) : Promise.resolve([]),
@@ -1043,6 +1143,8 @@ export async function GET(request: NextRequest) {
     range: {
       days,
       since: since.toISOString(),
+      key: hasAnalyticsRange ? requestedAnalyticsRange.key : `${days}d`,
+      label: hasAnalyticsRange ? requestedAnalyticsRange.label : `Last ${days} days`,
     },
     cards: buildCards(requestedRole, dashboardData),
     insights: buildInsights(requestedRole, {
