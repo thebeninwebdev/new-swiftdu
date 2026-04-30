@@ -22,6 +22,7 @@ interface Tasker {
   isVerified: boolean
   isRejected: boolean
   isPremium: boolean
+  isSettlementSuspended?: boolean
   rating: number
   completedTasks: number
   bankDetails: {
@@ -89,7 +90,7 @@ export default function AdminTaskersPage() {
 
   // ── Approve / Reject ───────────────────────────────────────────────────────
 
-  const handleAction = async (taskerId: string, action: 'approve' | 'reject') => {
+  const handleAction = async (taskerId: string, action: 'approve' | 'reject' | 'suspend' | 'activate') => {
     setActionLoading(`${taskerId}-${action}`)
     try {
       const res = await fetch(`/api/admin/taskers/${taskerId}`, {
@@ -100,10 +101,27 @@ export default function AdminTaskersPage() {
       const data = await res.json()
       if (!res.ok) { toast.error(data.error || 'Action failed'); return }
 
-      toast.success(action === 'approve' ? 'Tasker approved ✓' : 'Tasker rejected')
-      // Remove from current list since status changed
-      setTaskers((prev) => prev.filter((t) => t._id !== taskerId))
-      if (expandedId === taskerId) setExpandedId(null)
+      toast.success(
+        action === 'approve'
+          ? 'Tasker approved'
+          : action === 'reject'
+            ? 'Tasker rejected'
+            : action === 'suspend'
+              ? 'Tasker suspended'
+              : 'Tasker restored'
+      )
+      setTaskers((prev) =>
+        action === 'approve' || action === 'reject'
+          ? prev.filter((t) => t._id !== taskerId)
+          : prev.map((tasker) =>
+              tasker._id === taskerId
+                ? { ...tasker, isSettlementSuspended: action === 'suspend' }
+                : tasker
+            )
+      )
+      if ((action === 'approve' || action === 'reject') && expandedId === taskerId) {
+        setExpandedId(null)
+      }
     } catch {
       toast.error('Something went wrong')
     } finally {
@@ -288,6 +306,11 @@ export default function AdminTaskersPage() {
                           Premium
                         </div>
                       ) : null}
+                      {tasker.isSettlementSuspended ? (
+                        <div style={{ ...s.statusPill, ...s.pillRejected }}>
+                          Suspended
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 
@@ -310,6 +333,7 @@ export default function AdminTaskersPage() {
                         <DetailRow label="Completed Tasks" value={String(tasker.completedTasks)} />
                         <DetailRow label="Rating" value={tasker.rating > 0 ? `${tasker.rating}/5` : 'Not yet rated'} />
                         <DetailRow label="Premium Email Alerts" value={tasker.isPremium ? 'Enabled' : 'Disabled'} />
+                        <DetailRow label="Tasker Suspension" value={tasker.isSettlementSuspended ? 'Suspended' : 'Active'} />
                       </div>
                     </div>
                   )}
@@ -365,6 +389,23 @@ export default function AdminTaskersPage() {
                   {/* Re-action for already reviewed */}
                   {(tasker.isVerified || tasker.isRejected) && (
                     <div style={s.actions}>
+                      {tasker.isVerified && (
+                        <button
+                          style={{
+                            ...s.rejectBtn,
+                            ...(tasker.isSettlementSuspended ? s.activateBtn : {}),
+                            ...(isActing ? s.btnDisabled : {}),
+                          }}
+                          disabled={!!isActing}
+                          onClick={() => handleAction(tasker._id, tasker.isSettlementSuspended ? 'activate' : 'suspend')}
+                        >
+                          {actionLoading === `${tasker._id}-${tasker.isSettlementSuspended ? 'activate' : 'suspend'}`
+                            ? 'Saving...'
+                            : tasker.isSettlementSuspended
+                              ? 'Restore Tasker'
+                              : 'Suspend Tasker'}
+                        </button>
+                      )}
                       {tasker.isVerified && (
                         <button
                           style={{ ...s.rejectBtn, ...(isActing ? s.btnDisabled : {}) }}
@@ -821,6 +862,11 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: 'inherit',
     transition: 'opacity 0.15s',
     textAlign: 'center' as const,
+  },
+  activateBtn: {
+    background: COLOR.successDim,
+    borderColor: COLOR.successBorder,
+    color: COLOR.success,
   },
   trustBtn: {
     flex: '1 1 220px',

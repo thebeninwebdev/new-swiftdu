@@ -93,7 +93,15 @@ export default function RootLayout({
         <Wrapper path="/login">
         <Wrapper path="/admin">
         <Wrapper path="/tasker-dashboard">
+        <Wrapper path="/cfo-dashboard">
+        <Wrapper path="/cmo-dashboard">
+        <Wrapper path="/coo-dashboard">
+        <Wrapper path="/cto-dashboard">
           <NavbarClientWrapper />
+        </Wrapper>
+        </Wrapper>
+        </Wrapper>
+        </Wrapper>
         </Wrapper></Wrapper>
         </Wrapper>
         </Wrapper>
@@ -108,7 +116,15 @@ export default function RootLayout({
         <Wrapper path="/signup">
         <Wrapper path="/admin">
         <Wrapper path="/tasker-dashboard">
+        <Wrapper path="/cfo-dashboard">
+        <Wrapper path="/cmo-dashboard">
+        <Wrapper path="/coo-dashboard">
+        <Wrapper path="/cto-dashboard">
           <Footer />
+        </Wrapper>
+        </Wrapper>
+        </Wrapper>
+        </Wrapper>
         </Wrapper></Wrapper>
         </Wrapper>
         </Wrapper>

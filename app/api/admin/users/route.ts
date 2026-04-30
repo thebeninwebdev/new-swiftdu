@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit
 
     // Build filters
-    const filters: any = {}
+    const filters: Record<string, unknown> = {}
 
     const search = searchParams.get('search')
     if (search) {
@@ -44,6 +44,8 @@ export async function GET(req: NextRequest) {
       filters.emailVerified = true
     } else if (status === 'unverified') {
       filters.emailVerified = false
+    } else if (status === 'suspended') {
+      filters.isSuspended = true
     }
 
     // Get users with order counts

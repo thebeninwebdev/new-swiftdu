@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
+import { normalizeExcoRole } from '@/lib/exco-constants'
 import Tasker from '@/models/tasker'
 
 export async function PATCH(
@@ -13,7 +14,11 @@ export async function PATCH(
       headers: req.headers,
     })
 
-    if (!session?.user || session.user.role !== 'admin') {
+    const excoRole = normalizeExcoRole(
+      (session?.user as { excoRole?: string | null } | undefined)?.excoRole
+    )
+
+    if (!session?.user || (session.user.role !== 'admin' && excoRole !== 'COO')) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 
@@ -22,9 +27,9 @@ export async function PATCH(
     const { id } = await params
     const { action, isPremium } = await req.json()
 
-    if (action !== undefined && !['approve', 'reject'].includes(action)) {
+    if (action !== undefined && !['approve', 'reject', 'suspend', 'activate'].includes(action)) {
       return NextResponse.json(
-        { error: 'action must be "approve" or "reject".' },
+        { error: 'action must be "approve", "reject", "suspend", or "activate".' },
         { status: 400 }
       )
     }
@@ -49,6 +54,12 @@ export async function PATCH(
       tasker.isVerified = false
       tasker.isRejected = true
       tasker.isPremium = false
+    } else if (action === 'suspend') {
+      tasker.isSettlementSuspended = true
+      tasker.settlementSuspendedAt = new Date()
+    } else if (action === 'activate') {
+      tasker.isSettlementSuspended = false
+      tasker.settlementSuspendedAt = null
     }
 
     if (typeof isPremium === 'boolean' && action !== 'reject') {
@@ -70,6 +81,7 @@ export async function PATCH(
           isVerified: tasker.isVerified,
           isRejected: tasker.isRejected,
           isPremium: tasker.isPremium,
+          isSettlementSuspended: tasker.isSettlementSuspended,
         },
       },
       { status: 200 }

@@ -39,6 +39,14 @@ type DashboardCard = {
   description: string;
 };
 
+type RecentActivity = {
+  id: string;
+  type: "order" | "tasker" | "review" | "cancelled" | "declined";
+  message: string;
+  timestamp: string;
+  status?: string;
+};
+
 type UnsettledTasker = {
   taskerId: string;
   taskerName: string;
@@ -75,6 +83,23 @@ type ActiveFinanceTask = {
   totalAmount: number;
   acceptedAt: string | null;
   paidAt: string | null;
+  bookedAt: string | null;
+};
+
+type CancelledFinanceOrder = {
+  orderId: string;
+  taskType: string;
+  description: string;
+  location: string;
+  userId: string;
+  userName: string;
+  userEmail: string;
+  taskerId: string;
+  taskerName: string;
+  amount: number;
+  platformFee: number;
+  totalAmount: number;
+  cancelledAt: string | null;
   bookedAt: string | null;
 };
 
@@ -381,6 +406,150 @@ async function getActiveFinanceTasks(): Promise<ActiveFinanceTask[]> {
   }));
 }
 
+async function getCancelledFinanceOrders(since: Date): Promise<CancelledFinanceOrder[]> {
+  const rows = await Order.aggregate<{
+    orderId: string;
+    taskType?: string;
+    description?: string;
+    location?: string;
+    userId?: string;
+    userName?: string;
+    userEmail?: string;
+    taskerId?: string;
+    taskerName?: string;
+    amount?: number;
+    platformFee?: number;
+    totalAmount?: number;
+    cancelledAt?: Date | null;
+    bookedAt?: Date | null;
+  }>([
+    {
+      $match: {
+        status: "cancelled",
+        createdAt: { $gte: since },
+      },
+    },
+    { $sort: { cancelledAt: -1, updatedAt: -1, createdAt: -1 } },
+    { $limit: 25 },
+    {
+      $addFields: {
+        userObjectId: {
+          $convert: {
+            input: "$userId",
+            to: "objectId",
+            onError: null,
+            onNull: null,
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "user",
+        localField: "userObjectId",
+        foreignField: "_id",
+        as: "customer",
+      },
+    },
+    { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        _id: 0,
+        orderId: { $toString: "$_id" },
+        taskType: "$taskType",
+        description: { $ifNull: ["$description", "$taskType"] },
+        location: "$location",
+        userId: "$userId",
+        userName: { $ifNull: ["$customer.name", "Unknown customer"] },
+        userEmail: { $ifNull: ["$customer.email", ""] },
+        taskerId: { $ifNull: ["$taskerId", ""] },
+        taskerName: { $ifNull: ["$taskerName", "Unassigned"] },
+        amount: "$amount",
+        platformFee: "$platformFee",
+        totalAmount: "$totalAmount",
+        cancelledAt: "$cancelledAt",
+        bookedAt: { $ifNull: ["$bookedAt", "$createdAt"] },
+      },
+    },
+  ]);
+
+  return rows.map((row) => ({
+    orderId: row.orderId,
+    taskType: row.taskType || "others",
+    description: row.description || row.taskType || "Cancelled order",
+    location: row.location || "Unknown location",
+    userId: row.userId || "",
+    userName: row.userName || "Unknown customer",
+    userEmail: row.userEmail || "",
+    taskerId: row.taskerId || "",
+    taskerName: row.taskerName || "Unassigned",
+    amount: row.amount || 0,
+    platformFee: row.platformFee || 0,
+    totalAmount: row.totalAmount || 0,
+    cancelledAt: row.cancelledAt ? row.cancelledAt.toISOString() : null,
+    bookedAt: row.bookedAt ? row.bookedAt.toISOString() : null,
+  }));
+}
+
+async function getRecentActivity(limit = 10): Promise<RecentActivity[]> {
+  const [recentOrders, recentTaskers, recentReviews] = await Promise.all([
+    Order.find()
+      .sort({ createdAt: -1 })
+      .limit(6)
+      .select("taskType location status isDeclinedTask declinedAt updatedAt createdAt")
+      .lean(),
+    Tasker.find({ isVerified: false, isRejected: false })
+      .sort({ createdAt: -1 })
+      .limit(4)
+      .populate("userId", "name")
+      .lean(),
+    Review.find()
+      .sort({ createdAt: -1 })
+      .limit(4)
+      .populate("userId", "name")
+      .lean(),
+  ]);
+
+  return [
+    ...recentOrders.map((order) => ({
+      id: order._id.toString(),
+      type:
+        order.status === "cancelled"
+          ? ("cancelled" as const)
+          : order.isDeclinedTask
+            ? ("declined" as const)
+            : ("order" as const),
+      message:
+        order.status === "cancelled"
+          ? `Cancelled order: ${order.taskType} task in ${order.location}`
+          : order.isDeclinedTask
+            ? `Transfer issue flagged for ${order.taskType} in ${order.location}`
+            : `Order update: ${order.taskType} task in ${order.location}`,
+      timestamp: (
+        order.isDeclinedTask
+          ? order.declinedAt || order.updatedAt || order.createdAt
+          : order.updatedAt || order.createdAt
+      ).toISOString(),
+      status: order.status,
+    })),
+    ...recentTaskers.map((tasker) => ({
+      id: tasker._id.toString(),
+      type: "tasker" as const,
+      message: `${(tasker as { userId?: { name?: string } }).userId?.name || "New user"} applied to be a tasker`,
+      timestamp: tasker.createdAt.toISOString(),
+      status: "pending",
+    })),
+    ...recentReviews.map((review) => ({
+      id: review._id.toString(),
+      type: "review" as const,
+      message: `${(review as { userId?: { name?: string } }).userId?.name || "User"} left a review`,
+      timestamp: review.createdAt.toISOString(),
+    })),
+  ]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, limit);
+}
+
 async function getAnalyticsSummary(match: Record<string, unknown>, limit = 8) {
   const [
     totalPageViews,
@@ -459,6 +628,7 @@ function buildCards(role: ExcoRole, data: {
   completedOrders: number;
   pendingOrders: number;
   activeOrders: number;
+  cancelledOrders: number;
   declinedTasks: number;
   paymentFailures: number;
   totalUsers: number;
@@ -484,16 +654,16 @@ function buildCards(role: ExcoRole, data: {
         description: "Total customer value created in this period.",
       },
       {
-        label: "Completed revenue",
-        value: data.completedMoney.totalAmount,
-        format: "currency",
-        description: "Value from completed errands only.",
-      },
-      {
-        label: "Platform fees",
+        label: "Profit made",
         value: data.completedMoney.platformFee,
         format: "currency",
-        description: "SwiftDU earnings from completed work.",
+        description: "SwiftDU platform fees from completed orders.",
+      },
+      {
+        label: "Paid to taskers",
+        value: data.completedMoney.taskerFee,
+        format: "currency",
+        description: "Tasker compensation from completed orders.",
       },
       {
         label: "Unpaid platform fees",
@@ -546,6 +716,12 @@ function buildCards(role: ExcoRole, data: {
         value: data.completedOrders,
         format: "number",
         description: "Operational throughput this period.",
+      },
+      {
+        label: "Cancelled orders",
+        value: data.cancelledOrders,
+        format: "number",
+        description: "Cancelled orders included in COO completion rate.",
       },
       {
         label: "Avg response time",
@@ -712,6 +888,7 @@ export async function GET(request: NextRequest) {
     completedOrders,
     pendingOrders,
     activeOrders,
+    cancelledOrders,
     declinedTasks,
     paymentFailures,
     totalUsers,
@@ -733,12 +910,15 @@ export async function GET(request: NextRequest) {
     analytics,
     unsettledTaskers,
     activeFinanceTasks,
+    cancelledFinanceOrders,
+    recentActivity,
   ] = await Promise.all([
     Order.countDocuments(match),
     Order.countDocuments(previousMatch),
     Order.countDocuments({ ...match, status: "completed" }),
     Order.countDocuments({ ...match, status: "pending" }),
     Order.countDocuments({ ...match, status: { $in: ["pending", "in_progress", "paid"] } }),
+    Order.countDocuments({ createdAt: { $gte: since }, status: "cancelled" }),
     Order.countDocuments({ ...match, isDeclinedTask: true }),
     Order.countDocuments({ ...match, paymentStatus: "failed" }),
     User.countDocuments(),
@@ -818,13 +998,18 @@ export async function GET(request: NextRequest) {
     getAnalyticsSummary(match),
     requestedRole === "CFO" ? getUnsettledTaskers() : Promise.resolve([]),
     requestedRole === "CFO" ? getActiveFinanceTasks() : Promise.resolve([]),
+    requestedRole === "CFO" ? getCancelledFinanceOrders(since) : Promise.resolve([]),
+    requestedRole === "COO" ? getRecentActivity() : Promise.resolve([]),
   ]);
 
   const conversionsTotal = analytics.conversionEvents.reduce(
     (total, item) => total + item.count,
     0
   );
-  const completionRate = toPercent(completedOrders, totalOrders);
+  const completionRate = toPercent(
+    completedOrders,
+    requestedRole === "COO" ? totalOrders + cancelledOrders : totalOrders
+  );
   const conversionRate = toPercent(totalOrders, analytics.uniqueVisitors);
   const averageResponseMinutes = Math.round(
     (averageResponseSummary[0]?.averageMinutes || 0) * 10
@@ -835,6 +1020,7 @@ export async function GET(request: NextRequest) {
     completedOrders,
     pendingOrders,
     activeOrders,
+    cancelledOrders,
     declinedTasks,
     paymentFailures,
     totalUsers,
@@ -877,6 +1063,7 @@ export async function GET(request: NextRequest) {
       outstandingPlatformFees: outstandingPlatformFeesSummary.platformFee,
       unsettledTaskers,
       activeFinanceTasks,
+      cancelledFinanceOrders,
     },
     operations: {
       totalOrders,
@@ -884,11 +1071,13 @@ export async function GET(request: NextRequest) {
       completedOrders,
       pendingOrders,
       activeOrders,
+      cancelledOrders,
       declinedTasks,
       activeTaskers,
       completionRate,
       averageResponseMinutes,
       reviews,
+      recentActivity,
     },
     technology: {
       paymentFailures,

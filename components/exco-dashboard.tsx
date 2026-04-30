@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Area,
@@ -128,6 +128,22 @@ type DashboardData = {
       paidAt: string | null;
       bookedAt: string | null;
     }>;
+    cancelledFinanceOrders: Array<{
+      orderId: string;
+      taskType: string;
+      description: string;
+      location: string;
+      userId: string;
+      userName: string;
+      userEmail: string;
+      taskerId: string;
+      taskerName: string;
+      amount: number;
+      platformFee: number;
+      totalAmount: number;
+      cancelledAt: string | null;
+      bookedAt: string | null;
+    }>;
   };
   operations: {
     totalOrders: number;
@@ -135,11 +151,19 @@ type DashboardData = {
     completedOrders: number;
     pendingOrders: number;
     activeOrders: number;
+    cancelledOrders: number;
     declinedTasks: number;
     activeTaskers: number;
     completionRate: number;
     averageResponseMinutes: number;
     reviews: number;
+    recentActivity: Array<{
+      id: string;
+      type: "order" | "tasker" | "review" | "cancelled" | "declined";
+      message: string;
+      timestamp: string;
+      status?: string;
+    }>;
   };
   technology: {
     paymentFailures: number;
@@ -225,6 +249,28 @@ const ROLE_CONFIG = {
 }>;
 
 const CHART_COLORS = ["#2563eb", "#16a34a", "#f59e0b", "#dc2626", "#7c3aed", "#0891b2"];
+const CFO_PAGE_SIZE = 5;
+
+function usePagedItems<T>(items: T[], pageSize = CFO_PAGE_SIZE) {
+  const [page, setPage] = useState(1);
+  const pageCount = Math.max(Math.ceil(items.length / pageSize), 1);
+  const safePage = Math.min(page, pageCount);
+
+  const pageItems = useMemo(() => {
+    const start = (safePage - 1) * pageSize;
+    return items.slice(start, start + pageSize);
+  }, [items, safePage, pageSize]);
+
+  return {
+    page: safePage,
+    pageCount,
+    pageItems,
+    setPage,
+    startItem: items.length === 0 ? 0 : (safePage - 1) * pageSize + 1,
+    endItem: Math.min(safePage * pageSize, items.length),
+    totalItems: items.length,
+  };
+}
 
 function formatValue(value: string | number, format: InsightDatum["format"]) {
   if (format === "text") return String(value);
@@ -252,6 +298,55 @@ function EmptyState({ label }: { label: string }) {
   );
 }
 
+function PaginationControls({
+  page,
+  pageCount,
+  startItem,
+  endItem,
+  totalItems,
+  onPageChange,
+}: {
+  page: number;
+  pageCount: number;
+  startItem: number;
+  endItem: number;
+  totalItems: number;
+  onPageChange: (page: number) => void;
+}) {
+  if (totalItems <= CFO_PAGE_SIZE) return null;
+
+  return (
+    <div className="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-4 text-sm dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+      <p className="text-slate-500 dark:text-slate-400">
+        Showing {startItem}-{endItem} of {totalItems}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={page <= 1}
+          onClick={() => onPageChange(page - 1)}
+        >
+          Previous
+        </Button>
+        <span className="rounded-md bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 dark:bg-slate-900 dark:text-slate-300">
+          Page {page} of {pageCount}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={page >= pageCount}
+          onClick={() => onPageChange(page + 1)}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function MetricCard({ item }: { item: CardDatum }) {
   return (
     <Card className="border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
@@ -268,31 +363,542 @@ function MetricCard({ item }: { item: CardDatum }) {
   );
 }
 
+type ExcoTasker = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  location: string;
+  isVerified: boolean;
+  isRejected: boolean;
+  isPremium: boolean;
+  isSettlementSuspended: boolean;
+  completedTasks: number;
+  rating: number;
+};
+
+type ExcoReview = {
+  id: string;
+  rating: number;
+  comment: string;
+  userName: string;
+  userEmail: string;
+  taskerName: string;
+  createdAt: string;
+};
+
+type ExcoUser = {
+  id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  emailVerified: boolean;
+  isSuspended: boolean;
+  orderCount: number;
+  createdAt: string;
+};
+
+type ExcoSupportTicket = {
+  id: string;
+  title: string;
+  description: string;
+  category: string;
+  priority: string;
+  status: string;
+  taskerName: string;
+  taskerEmail: string;
+  taskerPhone: string;
+  createdAt: string;
+};
+
+function useManagementResource<T>(resource: string, enabled: boolean) {
+  const [items, setItems] = useState<T[]>([]);
+  const [isLoading, setIsLoading] = useState(enabled);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    if (!enabled) return;
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await fetch(`/api/exco/management?resource=${resource}`, {
+        cache: "no-store",
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || "Unable to load management data.");
+      }
+
+      setItems((payload.items || []) as T[]);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Unable to load management data.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [enabled, resource]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return { items, isLoading, error, reload: load };
+}
+
+async function patchManagement(resource: string, body: Record<string, unknown>) {
+  const response = await fetch(`/api/exco/management?resource=${resource}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json();
+
+  if (!response.ok) {
+    throw new Error(payload.error || "Action failed.");
+  }
+}
+
+function ManagementShell({
+  title,
+  description,
+  isLoading,
+  error,
+  emptyLabel,
+  hasItems,
+  children,
+}: {
+  title: string;
+  description: string;
+  isLoading: boolean;
+  error: string | null;
+  emptyLabel: string;
+  hasItems: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <EmptyState label="Loading..." />
+        ) : error ? (
+          <EmptyState label={error} />
+        ) : !hasItems ? (
+          <EmptyState label={emptyLabel} />
+        ) : (
+          children
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ExcoManagementPanels({ role }: { role: ExcoRole }) {
+  if (role === "COO") {
+    return (
+      <div className="space-y-4">
+        <TaskerManagementPanel />
+        <UserManagementPanel title="User Phone Management" allowSuspension={false} />
+        <ReviewsPanel />
+      </div>
+    );
+  }
+
+  if (role === "CTO") {
+    return (
+      <div className="space-y-4">
+        <UserManagementPanel title="User Management" allowSuspension />
+        <SupportTicketsPanel />
+      </div>
+    );
+  }
+
+  return null;
+}
+
+function TaskerManagementPanel() {
+  const { items, isLoading, error, reload } = useManagementResource<ExcoTasker>("taskers", true);
+  const paged = usePagedItems(items);
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  const runAction = async (id: string, action: "approve" | "reject" | "suspend" | "activate") => {
+    setActionId(`${id}-${action}`);
+    try {
+      await patchManagement("taskers", { id, action });
+      await reload();
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  return (
+    <ManagementShell
+      title="Tasker Management"
+      description="Approve, reject, suspend, or restore taskers directly from the COO dashboard."
+      isLoading={isLoading}
+      error={error}
+      emptyLabel="No taskers found"
+      hasItems={items.length > 0}
+    >
+      <div className="space-y-3">
+        {paged.pageItems.map((tasker) => (
+          <div key={tasker.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="font-semibold text-slate-950 dark:text-white">{tasker.name}</p>
+                <p className="mt-1 text-xs text-slate-500">{tasker.email} - {tasker.phone}</p>
+                <p className="mt-1 text-xs text-slate-500">{tasker.location}</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <Badge variant="outline">{tasker.isVerified ? "approved" : tasker.isRejected ? "rejected" : "pending"}</Badge>
+                  {tasker.isPremium ? <Badge variant="outline">premium</Badge> : null}
+                  {tasker.isSettlementSuspended ? <Badge variant="destructive">suspended</Badge> : null}
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                {!tasker.isVerified ? (
+                  <Button size="sm" onClick={() => runAction(tasker.id, "approve")} disabled={Boolean(actionId)}>
+                    Approve
+                  </Button>
+                ) : null}
+                {!tasker.isRejected ? (
+                  <Button size="sm" variant="outline" onClick={() => runAction(tasker.id, "reject")} disabled={Boolean(actionId)}>
+                    Reject
+                  </Button>
+                ) : null}
+                {tasker.isVerified ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => runAction(tasker.id, tasker.isSettlementSuspended ? "activate" : "suspend")}
+                    disabled={Boolean(actionId)}
+                  >
+                    {tasker.isSettlementSuspended ? "Restore" : "Suspend"}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <PaginationControls {...paged} onPageChange={paged.setPage} />
+    </ManagementShell>
+  );
+}
+
+function UserManagementPanel({
+  title,
+  allowSuspension,
+}: {
+  title: string;
+  allowSuspension: boolean;
+}) {
+  const { items, isLoading, error, reload } = useManagementResource<ExcoUser>("users", true);
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const filteredItems = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return items.filter((user) => {
+      const matchesSearch =
+        !query ||
+        user.name.toLowerCase().includes(query) ||
+        user.email.toLowerCase().includes(query) ||
+        user.phone.toLowerCase().includes(query);
+      const matchesRole = roleFilter === "all" || user.role === roleFilter;
+      const matchesStatus =
+        statusFilter === "all" ||
+        (statusFilter === "verified" && user.emailVerified) ||
+        (statusFilter === "unverified" && !user.emailVerified) ||
+        (statusFilter === "suspended" && user.isSuspended);
+
+      return matchesSearch && matchesRole && matchesStatus;
+    });
+  }, [items, roleFilter, search, statusFilter]);
+  const paged = usePagedItems(filteredItems);
+  const [phoneEdits, setPhoneEdits] = useState<Record<string, string>>({});
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  const updateUser = async (user: ExcoUser, body: Record<string, unknown>) => {
+    setActionId(user.id);
+    try {
+      await patchManagement("users", { id: user.id, ...body });
+      await reload();
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  return (
+    <ManagementShell
+      title={title}
+      description="Search users, update phone numbers, and manage account access inside this dashboard."
+      isLoading={isLoading}
+      error={error}
+      emptyLabel="No users found"
+      hasItems={items.length > 0}
+    >
+      <div className="mb-4 grid gap-2 md:grid-cols-3">
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+          placeholder="Search users"
+        />
+        <select
+          value={roleFilter}
+          onChange={(event) => setRoleFilter(event.target.value)}
+          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+        >
+          <option value="all">All roles</option>
+          <option value="user">Users</option>
+          <option value="tasker">Taskers</option>
+          <option value="admin">Admins</option>
+        </select>
+        <select
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value)}
+          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+        >
+          <option value="all">All status</option>
+          <option value="verified">Verified</option>
+          <option value="unverified">Unverified</option>
+          <option value="suspended">Suspended</option>
+        </select>
+      </div>
+      {filteredItems.length === 0 ? (
+        <EmptyState label="No users match these filters" />
+      ) : null}
+      <div className="space-y-3">
+        {paged.pageItems.map((user) => (
+          <div key={user.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="font-semibold text-slate-950 dark:text-white">{user.name}</p>
+                <p className="mt-1 text-xs text-slate-500">{user.email} - {user.role} - {user.orderCount} orders</p>
+                {user.isSuspended ? <Badge variant="destructive" className="mt-2">suspended</Badge> : null}
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  value={phoneEdits[user.id] ?? user.phone ?? ""}
+                  onChange={(event) =>
+                    setPhoneEdits((previous) => ({ ...previous, [user.id]: event.target.value }))
+                  }
+                  className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+                  placeholder="Phone number"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={actionId === user.id}
+                  onClick={() => updateUser(user, { phone: phoneEdits[user.id] ?? user.phone })}
+                >
+                  Save Phone
+                </Button>
+                {allowSuspension && user.role !== "admin" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={actionId === user.id}
+                    onClick={() => updateUser(user, { action: user.isSuspended ? "activate" : "suspend" })}
+                  >
+                    {user.isSuspended ? "Activate" : "Suspend"}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <PaginationControls {...paged} onPageChange={paged.setPage} />
+    </ManagementShell>
+  );
+}
+
+function ReviewsPanel() {
+  const { items, isLoading, error } = useManagementResource<ExcoReview>("reviews", true);
+  const paged = usePagedItems(items);
+
+  return (
+    <ManagementShell
+      title="Reviews"
+      description="Recent customer feedback for operations quality checks."
+      isLoading={isLoading}
+      error={error}
+      emptyLabel="No reviews found"
+      hasItems={items.length > 0}
+    >
+      <div className="space-y-3">
+        {paged.pageItems.map((review) => (
+          <div key={review.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="font-semibold text-slate-950 dark:text-white">{review.rating}/5 for {review.taskerName}</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{review.comment}</p>
+                <p className="mt-2 text-xs text-slate-500">{review.userName} - {review.userEmail}</p>
+              </div>
+              <p className="text-xs text-slate-500">{formatDate(review.createdAt)}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <PaginationControls {...paged} onPageChange={paged.setPage} />
+    </ManagementShell>
+  );
+}
+
+function SupportTicketsPanel() {
+  const { items, isLoading, error, reload } = useManagementResource<ExcoSupportTicket>("support", true);
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [priorityFilter, setPriorityFilter] = useState("all");
+  const filteredItems = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    return items.filter((ticket) => {
+      const matchesSearch =
+        !query ||
+        ticket.title.toLowerCase().includes(query) ||
+        ticket.description.toLowerCase().includes(query) ||
+        ticket.taskerName.toLowerCase().includes(query) ||
+        ticket.taskerEmail.toLowerCase().includes(query);
+      const matchesStatus = statusFilter === "all" || ticket.status === statusFilter;
+      const matchesPriority = priorityFilter === "all" || ticket.priority === priorityFilter;
+
+      return matchesSearch && matchesStatus && matchesPriority;
+    });
+  }, [items, priorityFilter, search, statusFilter]);
+  const paged = usePagedItems(filteredItems);
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  const runAction = async (id: string, action: "start" | "resolve" | "close") => {
+    setActionId(`${id}-${action}`);
+    try {
+      await patchManagement("support", { id, action });
+      await reload();
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  return (
+    <ManagementShell
+      title="Support Tickets"
+      description="Investigate and update support tickets directly from the CTO dashboard."
+      isLoading={isLoading}
+      error={error}
+      emptyLabel="No support tickets found"
+      hasItems={items.length > 0}
+    >
+      <div className="mb-4 grid gap-2 md:grid-cols-3">
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+          placeholder="Search tickets"
+        />
+        <select
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value)}
+          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+        >
+          <option value="all">All status</option>
+          <option value="open">Open</option>
+          <option value="in-progress">In progress</option>
+          <option value="resolved">Resolved</option>
+          <option value="closed">Closed</option>
+        </select>
+        <select
+          value={priorityFilter}
+          onChange={(event) => setPriorityFilter(event.target.value)}
+          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+        >
+          <option value="all">All priority</option>
+          <option value="low">Low</option>
+          <option value="medium">Medium</option>
+          <option value="high">High</option>
+        </select>
+      </div>
+      {filteredItems.length === 0 ? (
+        <EmptyState label="No support tickets match these filters" />
+      ) : null}
+      <div className="space-y-3">
+        {paged.pageItems.map((ticket) => (
+          <div key={ticket.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="flex flex-wrap gap-2">
+                  <Badge variant="outline">{ticket.status}</Badge>
+                  <Badge variant="outline">{ticket.priority}</Badge>
+                  <Badge variant="outline">{ticket.category}</Badge>
+                </div>
+                <p className="mt-2 font-semibold text-slate-950 dark:text-white">{ticket.title}</p>
+                <p className="mt-1 text-sm text-slate-600 dark:text-slate-300">{ticket.description}</p>
+                <p className="mt-2 text-xs text-slate-500">{ticket.taskerName} - {ticket.taskerEmail}</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button size="sm" variant="outline" disabled={Boolean(actionId)} onClick={() => runAction(ticket.id, "start")}>
+                  Start
+                </Button>
+                <Button size="sm" variant="outline" disabled={Boolean(actionId)} onClick={() => runAction(ticket.id, "resolve")}>
+                  Resolve
+                </Button>
+                <Button size="sm" variant="outline" disabled={Boolean(actionId)} onClick={() => runAction(ticket.id, "close")}>
+                  Close
+                </Button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <PaginationControls {...paged} onPageChange={paged.setPage} />
+    </ManagementShell>
+  );
+}
+
 function RankedList({ data, emptyLabel }: { data: CountDatum[]; emptyLabel: string }) {
+  const paged = usePagedItems(data);
+
   if (!data.length) return <EmptyState label={emptyLabel} />;
 
   const max = Math.max(...data.map((item) => item.count), 1);
 
   return (
-    <div className="space-y-4">
-      {data.map((item) => (
-        <div key={item.label} className="space-y-2">
-          <div className="flex items-center justify-between gap-4 text-sm">
-            <span className="min-w-0 truncate font-medium text-slate-700 dark:text-slate-200">
-              {item.label}
-            </span>
-            <span className="font-semibold text-slate-950 dark:text-white">
-              {formatValue(item.count, "number")}
-            </span>
+    <div>
+      <div className="space-y-4">
+        {paged.pageItems.map((item) => (
+          <div key={item.label} className="space-y-2">
+            <div className="flex items-center justify-between gap-4 text-sm">
+              <span className="min-w-0 truncate font-medium text-slate-700 dark:text-slate-200">
+                {item.label}
+              </span>
+              <span className="font-semibold text-slate-950 dark:text-white">
+                {formatValue(item.count, "number")}
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800">
+              <div
+                className="h-2 rounded-full bg-blue-600"
+                style={{ width: `${Math.max((item.count / max) * 100, 4)}%` }}
+              />
+            </div>
           </div>
-          <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800">
-            <div
-              className="h-2 rounded-full bg-blue-600"
-              style={{ width: `${Math.max((item.count / max) * 100, 4)}%` }}
-            />
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
+      <PaginationControls
+        page={paged.page}
+        pageCount={paged.pageCount}
+        startItem={paged.startItem}
+        endItem={paged.endItem}
+        totalItems={paged.totalItems}
+        onPageChange={paged.setPage}
+      />
     </div>
   );
 }
@@ -431,11 +1037,13 @@ function InsightPanel({ insights }: { insights: InsightDatum[] }) {
 function FinanceSections({ data }: { data: DashboardData }) {
   const unsettledTaskers = data.finance.unsettledTaskers ?? [];
   const activeFinanceTasks = data.finance.activeFinanceTasks ?? [];
+  const cancelledFinanceOrders = data.finance.cancelledFinanceOrders ?? [];
 
   return (
     <div className="space-y-4">
       <UnsettledTaskersTable taskers={unsettledTaskers} />
       <ActiveFinanceTasksTable tasks={activeFinanceTasks} />
+      <CancelledFinanceOrdersTable orders={cancelledFinanceOrders} />
 
       <div className="grid gap-4 xl:grid-cols-2">
       <Card>
@@ -515,6 +1123,8 @@ function UnsettledTaskersTable({
 }: {
   taskers: DashboardData["finance"]["unsettledTaskers"];
 }) {
+  const paged = usePagedItems(taskers);
+
   return (
     <Card>
       <CardHeader>
@@ -539,7 +1149,7 @@ function UnsettledTaskersTable({
                 </tr>
               </thead>
               <tbody>
-                {taskers.map((tasker) => (
+                {paged.pageItems.map((tasker) => (
                   <tr key={tasker.taskerId} className="border-b border-slate-100 align-top dark:border-slate-900">
                     <td className="py-4 pr-4">
                       <div className="font-semibold text-slate-950 dark:text-white">
@@ -604,6 +1214,14 @@ function UnsettledTaskersTable({
                 ))}
               </tbody>
             </table>
+            <PaginationControls
+              page={paged.page}
+              pageCount={paged.pageCount}
+              startItem={paged.startItem}
+              endItem={paged.endItem}
+              totalItems={paged.totalItems}
+              onPageChange={paged.setPage}
+            />
           </div>
         )}
       </CardContent>
@@ -616,6 +1234,8 @@ function ActiveFinanceTasksTable({
 }: {
   tasks: DashboardData["finance"]["activeFinanceTasks"];
 }) {
+  const paged = usePagedItems(tasks);
+
   return (
     <Card>
       <CardHeader>
@@ -640,7 +1260,7 @@ function ActiveFinanceTasksTable({
                 </tr>
               </thead>
               <tbody>
-                {tasks.map((task) => (
+                {paged.pageItems.map((task) => (
                   <tr key={task.orderId} className="border-b border-slate-100 align-top dark:border-slate-900">
                     <td className="py-4 pr-4">
                       <div className="font-semibold text-slate-950 dark:text-white">
@@ -680,6 +1300,104 @@ function ActiveFinanceTasksTable({
                 ))}
               </tbody>
             </table>
+            <PaginationControls
+              page={paged.page}
+              pageCount={paged.pageCount}
+              startItem={paged.startItem}
+              endItem={paged.endItem}
+              totalItems={paged.totalItems}
+              onPageChange={paged.setPage}
+            />
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CancelledFinanceOrdersTable({
+  orders,
+}: {
+  orders: DashboardData["finance"]["cancelledFinanceOrders"];
+}) {
+  const paged = usePagedItems(orders);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Cancelled Orders</CardTitle>
+        <CardDescription>
+          These orders are shown for visibility only and are excluded from CFO totals, revenue, and settlement calculations.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {orders.length === 0 ? (
+          <EmptyState label="No cancelled orders in this period" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                  <th className="pb-3 pr-4 font-semibold">Order</th>
+                  <th className="pb-3 pr-4 font-semibold">Customer</th>
+                  <th className="pb-3 pr-4 font-semibold">Tasker</th>
+                  <th className="pb-3 pr-4 font-semibold">Value</th>
+                  <th className="pb-3 pr-4 font-semibold">Cancelled</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paged.pageItems.map((order) => (
+                  <tr key={order.orderId} className="border-b border-slate-100 align-top dark:border-slate-900">
+                    <td className="py-4 pr-4">
+                      <div className="font-semibold text-slate-950 dark:text-white">
+                        {order.description}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {order.taskType} - {order.location}
+                      </p>
+                    </td>
+                    <td className="py-4 pr-4">
+                      <div className="font-medium text-slate-900 dark:text-white">
+                        {order.userName}
+                      </div>
+                      {order.userEmail ? (
+                        <p className="mt-1 text-xs text-slate-500">{order.userEmail}</p>
+                      ) : null}
+                    </td>
+                    <td className="py-4 pr-4">
+                      <div className="font-medium text-slate-900 dark:text-white">
+                        {order.taskerName}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {order.taskerId ? "Assigned before cancellation" : "No tasker assigned"}
+                      </p>
+                    </td>
+                    <td className="py-4 pr-4">
+                      <div className="font-semibold">
+                        {formatValue(order.totalAmount, "currency")}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Platform fee would have been {formatValue(order.platformFee, "currency")}
+                      </p>
+                    </td>
+                    <td className="py-4 pr-4 text-slate-600 dark:text-slate-300">
+                      {formatDate(order.cancelledAt || order.bookedAt)}
+                      <Badge variant="outline" className="mt-2 block w-fit border-slate-200 bg-slate-50 text-slate-600">
+                        Excluded
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <PaginationControls
+              page={paged.page}
+              pageCount={paged.pageCount}
+              startItem={paged.startItem}
+              endItem={paged.endItem}
+              totalItems={paged.totalItems}
+              onPageChange={paged.setPage}
+            />
           </div>
         )}
       </CardContent>
@@ -750,7 +1468,10 @@ function MarketingSections({ data }: { data: DashboardData }) {
 
 function OperationsSections({ data }: { data: DashboardData }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
+    <div className="space-y-4">
+      <CooRecentActivity activity={data.operations.recentActivity ?? []} />
+
+      <div className="grid gap-4 xl:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -767,7 +1488,7 @@ function OperationsSections({ data }: { data: DashboardData }) {
       <Card>
         <CardHeader>
           <CardTitle>Order Status Mix</CardTitle>
-          <CardDescription>Where work is sitting right now.</CardDescription>
+          <CardDescription>Where non-cancelled work is sitting right now.</CardDescription>
         </CardHeader>
         <CardContent>
           <PieBreakdown data={data.charts.statusBreakdown} emptyLabel="No status data recorded yet" />
@@ -793,7 +1514,68 @@ function OperationsSections({ data }: { data: DashboardData }) {
           <RankedList data={data.charts.categoryBreakdown} emptyLabel="No category data recorded yet" />
         </CardContent>
       </Card>
+      </div>
     </div>
+  );
+}
+
+function CooRecentActivity({
+  activity,
+}: {
+  activity: DashboardData["operations"]["recentActivity"];
+}) {
+  const paged = usePagedItems(activity);
+  const toneByType = {
+    order: "border-blue-200 bg-blue-50 text-blue-700",
+    tasker: "border-emerald-200 bg-emerald-50 text-emerald-700",
+    review: "border-amber-200 bg-amber-50 text-amber-700",
+    cancelled: "border-slate-200 bg-slate-50 text-slate-700",
+    declined: "border-red-200 bg-red-50 text-red-700",
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Recent Activity</CardTitle>
+        <CardDescription>Latest order, tasker, review, cancellation, and transfer issue activity.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {activity.length === 0 ? (
+          <EmptyState label="No recent activity yet" />
+        ) : (
+          <div>
+            <div className="space-y-3">
+              {paged.pageItems.map((item) => (
+                <div key={item.id} className="flex flex-col gap-3 rounded-lg border border-slate-200 p-3 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className={toneByType[item.type]}>
+                        {item.type}
+                      </Badge>
+                      {item.status ? (
+                        <span className="text-xs text-slate-500">{item.status.replace("_", " ")}</span>
+                      ) : null}
+                    </div>
+                    <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
+                      {item.message}
+                    </p>
+                  </div>
+                  <p className="text-xs text-slate-500">{formatDate(item.timestamp)}</p>
+                </div>
+              ))}
+            </div>
+            <PaginationControls
+              page={paged.page}
+              pageCount={paged.pageCount}
+              startItem={paged.startItem}
+              endItem={paged.endItem}
+              totalItems={paged.totalItems}
+              onPageChange={paged.setPage}
+            />
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -916,7 +1698,7 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-950 dark:bg-slate-950 dark:text-slate-50">
-      <div className="mx-auto max-w-7xl space-y-6 px-4 py-6 md:px-8 md:py-8">
+      <div className="mx-auto max-w-7xl space-y-6 px-4 pb-8 pt-8 md:px-8 md:pb-10 md:pt-10">
         <div className="flex flex-col gap-4 border-b border-slate-200 pb-6 dark:border-slate-800 lg:flex-row lg:items-end lg:justify-between">
           <div className="flex items-start gap-4">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -956,6 +1738,7 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
         </div>
 
         <InsightPanel insights={data.insights} />
+        <ExcoManagementPanels role={role} />
 
         {section}
       </div>

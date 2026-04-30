@@ -21,9 +21,9 @@ export async function PATCH(
     await connectDB()
 
     const { id } = await params
-    const { action } = await req.json()
+    const { action, phone } = await req.json()
 
-    if (!['verify', 'suspend', 'activate'].includes(action)) {
+    if (!['verify', 'suspend', 'activate', 'update-phone'].includes(action)) {
       return NextResponse.json(
         { error: 'Invalid action' },
         { status: 400 }
@@ -46,7 +46,7 @@ export async function PATCH(
       )
     }
 
-    const updateData: { isVerified?: boolean; isSuspended?: boolean } = {}
+    const updateData: { isVerified?: boolean; isSuspended?: boolean; phone?: string } = {}
 
     if (action === 'verify') {
       updateData.isVerified = true
@@ -54,6 +54,17 @@ export async function PATCH(
       updateData.isSuspended = true
     } else if (action === 'activate') {
       updateData.isSuspended = false
+    } else if (action === 'update-phone') {
+      const normalizedPhone = typeof phone === 'string' ? phone.trim() : ''
+
+      if (!normalizedPhone) {
+        return NextResponse.json(
+          { error: 'Phone number is required' },
+          { status: 400 }
+        )
+      }
+
+      updateData.phone = normalizedPhone
     }
 
     const user = await User.findByIdAndUpdate(

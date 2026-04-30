@@ -58,7 +58,10 @@ export async function GET(request: NextRequest) {
         .lean()
 
       if (viewerTasker && !viewerTasker.isPremium) {
-        filter.amount = { $lt: PREMIUM_TASKER_MIN_BUDGET }
+        filter.$or = [
+          { status: { $ne: 'pending' } },
+          { amount: { $lt: PREMIUM_TASKER_MIN_BUDGET } },
+        ]
       }
     }
 

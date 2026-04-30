@@ -389,7 +389,7 @@ export default function TaskerDashboardPage() {
         const params = new URLSearchParams()
         if (taskTypeFilter !== 'all') params.append('taskType', taskTypeFilter)
         if (locationFilter.trim()) params.append('location', locationFilter.trim())
-        params.append('status', 'pending')
+        params.append('status', 'pending,in_progress,paid')
         params.append('viewerTaskerId', taskerProfile._id)
 
         const [availableRes, acceptedRes] = await Promise.all([
@@ -509,9 +509,12 @@ export default function TaskerDashboardPage() {
 
       if (payload) {
         const shouldShow =
-          payload.status === 'pending' &&
-          !payload.taskerId &&
-          (!payload.requiresPremiumTasker || Boolean(taskerProfile?.isPremium)) &&
+          ((payload.status === 'pending' && !payload.taskerId) ||
+            ((payload.status === 'in_progress' || payload.status === 'paid') &&
+              payload.taskerId !== taskerProfile._id)) &&
+          (payload.status !== 'pending' ||
+            !payload.requiresPremiumTasker ||
+            Boolean(taskerProfile?.isPremium)) &&
           matchesRealtimeFilters(payload, taskTypeFilter, locationFilter)
 
         if (shouldShow) {
@@ -924,6 +927,11 @@ export default function TaskerDashboardPage() {
                     <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border ${taskTypeBg[errand.taskType] || taskTypeBg.others}`}>
                       {errand.taskType}
                     </span>
+                    {errand.status !== 'pending' ? (
+                      <span className="inline-flex items-center rounded-lg bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900/60">
+                        Accepted
+                      </span>
+                    ) : null}
                     {errand.requiresPremiumTasker ? (
                       <span className="inline-flex items-center rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900/60">
                         Premium only
@@ -1005,10 +1013,15 @@ export default function TaskerDashboardPage() {
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={() => handleAcceptErrand(errand._id)}
-                    disabled={submitting === errand._id}
+                    disabled={submitting === errand._id || errand.status !== 'pending'}
                     className="w-full h-12 bg-slate-900 dark:bg-white text-white dark:text-slate-900 rounded-2xl font-semibold text-sm flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-slate-900/20 dark:shadow-white/20"
                   >
-                    {submitting === errand._id ? (
+                    {errand.status !== 'pending' ? (
+                      <>
+                        <Clock3 className="h-5 w-5" />
+                        Being fulfilled
+                      </>
+                    ) : submitting === errand._id ? (
                       <>
                         <Loader2 className="h-5 w-5 animate-spin" />
                         Accepting...

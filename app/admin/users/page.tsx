@@ -121,6 +121,7 @@ export default function AdminUsersPage() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [phoneEdits, setPhoneEdits] = useState<Record<string, string>>({})
   const [suspendConfirm, setSuspendConfirm] = useState<{ show: boolean; userId?: string; willSuspend?: boolean }>({ show: false })
 
   // Auth check
@@ -223,6 +224,38 @@ export default function AdminUsersPage() {
       userId,
       willSuspend: !isSuspended
     })
+  }
+
+  const handlePhoneUpdate = async (userId: string) => {
+    const nextPhone = phoneEdits[userId]?.trim()
+
+    if (!nextPhone) {
+      toast.error('Enter a phone number')
+      return
+    }
+
+    try {
+      const res = await fetch(`/api/admin/users/${userId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update-phone', phone: nextPhone }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        toast.error(data.error || 'Could not update phone number')
+        return
+      }
+
+      toast.success('Phone number updated')
+      setUsers((previous) =>
+        previous.map((user) =>
+          user._id === userId ? { ...user, phone: nextPhone } : user
+        )
+      )
+    } catch {
+      toast.error('Something went wrong')
+    }
   }
 
   const confirmSuspendAction = async () => {
@@ -593,17 +626,33 @@ export default function AdminUsersPage() {
                                   <p className="text-sm font-medium truncate">{user.email}</p>
                                 </motion.div>
 
-                                {user.phone && (
-                                  <motion.div 
-                                    className="space-y-1"
+                                <motion.div 
+                                    className="space-y-2"
                                     initial={{ opacity: 0, x: -10 }}
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ delay: 0.2 }}
                                   >
                                     <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Phone</p>
-                                    <p className="text-sm font-medium">{user.phone}</p>
+                                    <div className="flex gap-2">
+                                      <Input
+                                        value={phoneEdits[user._id] ?? user.phone ?? ''}
+                                        onChange={(event) =>
+                                          setPhoneEdits((previous) => ({
+                                            ...previous,
+                                            [user._id]: event.target.value,
+                                          }))
+                                        }
+                                        className="h-9"
+                                      />
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => handlePhoneUpdate(user._id)}
+                                      >
+                                        Save
+                                      </Button>
+                                    </div>
                                   </motion.div>
-                                )}
 
                                 {user.location && (
                                   <motion.div 
