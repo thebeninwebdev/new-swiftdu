@@ -19,6 +19,17 @@ interface NotifyTaskersOfNewTaskResult {
   reason?: string
 }
 
+interface TaskerNotificationTarget {
+  userId: unknown
+  isPremium?: boolean
+  location?: string
+}
+
+interface EmailRecipient {
+  name?: string
+  email: string
+}
+
 function getAppBaseUrl() {
   return (
     process.env.NEXT_PUBLIC_BASE_URL ||
@@ -40,6 +51,15 @@ function formatTaskType(taskType: string) {
   return labels[taskType] || taskType
 }
 
+function normalizeLocation(value: string) {
+  return value.toLowerCase().replace(/[^a-z]/g, '')
+}
+
+function isGirlsHostelLocation(value: string) {
+  const normalized = normalizeLocation(value)
+  return normalized.includes('girlshostel') || normalized.includes('girlshotel')
+}
+
 export async function notifyTaskersOfNewTask(
   input: NotifyTaskersOfNewTaskInput
 ): Promise<NotifyTaskersOfNewTaskResult> {
@@ -49,6 +69,7 @@ export async function notifyTaskersOfNewTask(
     process.env.TELEGRAM_BOT_TOKEN &&
     (process.env.TELEGRAM_CHANNEL_ID || process.env.TELEGRAM_CHAT_ID)
   );
+  const girlsHostelOnly = isGirlsHostelLocation(input.location)
 
   console.log('[Tasker Notifications] Config check:', { hasEmailConfig, hasTelegramConfig });
 
@@ -68,33 +89,52 @@ export async function notifyTaskersOfNewTask(
     }
   }
 
-const premiumTaskers = await Tasker.find({
-  isVerified: true,
-  isPremium: true,
-  isRejected: { $ne: true },
-})
-  .select('userId isPremium')
-  .lean()
-
-console.log(
-  '[Tasker Notifications] Found premium taskers:',
-  premiumTaskers.length
-)
-
-if (premiumTaskers.length === 0) {
-  return {
-    recipientCount: 0,
-    deliveredCount: 0,
-    skipped: true,
-    reason: 'No verified premium taskers found.',
+  if (girlsHostelOnly && !hasEmailConfig) {
+    return {
+      recipientCount: 0,
+      deliveredCount: 0,
+      skipped: true,
+      reason: 'Girls Hostel task notifications require email configuration.',
+    }
   }
-}
+
+  const taskerFilter = girlsHostelOnly
+    ? {
+        isVerified: true,
+        isRejected: { $ne: true },
+        location: { $regex: 'girls?\\s*hos?tel', $options: 'i' },
+      }
+    : {
+        isVerified: true,
+        isPremium: true,
+        isRejected: { $ne: true },
+      }
+
+  const targetTaskers = await Tasker.find(taskerFilter)
+    .select('userId isPremium location')
+    .lean<TaskerNotificationTarget[]>()
+
+  console.log('[Tasker Notifications] Found target taskers:', {
+    count: targetTaskers.length,
+    girlsHostelOnly,
+  })
+
+  if (targetTaskers.length === 0) {
+    return {
+      recipientCount: 0,
+      deliveredCount: 0,
+      skipped: true,
+      reason: girlsHostelOnly
+        ? 'No verified Girls Hostel taskers found.'
+        : 'No verified premium taskers found.',
+    }
+  }
 
   // Get users for email notifications
-  let emailRecipients: any[] = [];
+  let emailRecipients: EmailRecipient[] = [];
   if (hasEmailConfig) {
     const users = await User.find({
-      _id: { $in: premiumTaskers.map((tasker) => tasker.userId) },
+      _id: { $in: targetTaskers.map((tasker) => tasker.userId) },
       role: 'tasker',
       emailVerified: true,
       isSuspended: { $ne: true },
@@ -111,6 +151,7 @@ if (premiumTaskers.length === 0) {
     )
   }
 
+  const shouldSendTelegram = hasTelegramConfig && !girlsHostelOnly
   const taskUrl = `${getAppBaseUrl()}/tasker-dashboard`
   const subject = `New ${formatTaskType(input.taskType)} task posted on SwiftDU`
 
@@ -125,7 +166,7 @@ if (premiumTaskers.length === 0) {
 🔗 <a href="${taskUrl}">View Task Details</a>`
 
   // Prepare notification promises
-  const notificationPromises: Promise<any>[] = []
+  const notificationPromises: Array<Promise<unknown>> = []
 
   // Email notifications
   if (hasEmailConfig && emailRecipients.length > 0) {
@@ -144,7 +185,7 @@ if (premiumTaskers.length === 0) {
         }),
         tags: [
           { name: 'email_type', value: 'new_task' },
-          { name: 'audience', value: 'premium_tasker' },
+          { name: 'audience', value: girlsHostelOnly ? 'girls_hostel_tasker' : 'premium_tasker' },
         ],
       })
     )
@@ -152,14 +193,14 @@ if (premiumTaskers.length === 0) {
   }
 
   // Telegram channel notification
-  if (hasTelegramConfig) {
+  if (shouldSendTelegram) {
     console.log('[Tasker Notifications] Sending Telegram message to channel');
     notificationPromises.push(sendTelegramMessage(telegramMessage))
   }
 
   const results = await Promise.allSettled(notificationPromises)
 
-  const totalRecipients = (hasEmailConfig ? emailRecipients.length : 0) + (hasTelegramConfig ? 1 : 0)
+  const totalRecipients = (hasEmailConfig ? emailRecipients.length : 0) + (shouldSendTelegram ? 1 : 0)
   const deliveredCount = results.filter((result) => {
     if (result.status === 'fulfilled') {
       // For email, result.value is undefined on success
@@ -173,7 +214,8 @@ if (premiumTaskers.length === 0) {
     totalRecipients,
     deliveredCount,
     emailRecipients: emailRecipients.length,
-    telegramChannel: Boolean(hasTelegramConfig),
+    telegramChannel: Boolean(shouldSendTelegram),
+    girlsHostelOnly,
   });
 
   return {
