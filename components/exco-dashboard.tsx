@@ -91,6 +91,43 @@ type DashboardData = {
       platformFee: number;
     };
     outstandingPlatformFees: number;
+    unsettledTaskers: Array<{
+      taskerId: string;
+      taskerName: string;
+      taskerEmail: string;
+      taskerPhone: string;
+      isSettlementSuspended: boolean;
+      totalOutstanding: number;
+      taskCount: number;
+      overdueCount: number;
+      oldestDueAt: string | null;
+      latestCompletedAt: string | null;
+      tasks: Array<{
+        orderId: string;
+        description: string;
+        taskType: string;
+        platformFee: number;
+        settlementStatus: string;
+        settlementDueAt: string | null;
+        completedAt: string | null;
+      }>;
+    }>;
+    activeFinanceTasks: Array<{
+      orderId: string;
+      taskerId: string;
+      taskerName: string;
+      taskerEmail: string;
+      taskerPhone: string;
+      taskType: string;
+      description: string;
+      location: string;
+      status: string;
+      platformFee: number;
+      totalAmount: number;
+      acceptedAt: string | null;
+      paidAt: string | null;
+      bookedAt: string | null;
+    }>;
   };
   operations: {
     totalOrders: number;
@@ -392,8 +429,15 @@ function InsightPanel({ insights }: { insights: InsightDatum[] }) {
 }
 
 function FinanceSections({ data }: { data: DashboardData }) {
+  const unsettledTaskers = data.finance.unsettledTaskers ?? [];
+  const activeFinanceTasks = data.finance.activeFinanceTasks ?? [];
+
   return (
-    <div className="grid gap-4 xl:grid-cols-2">
+    <div className="space-y-4">
+      <UnsettledTaskersTable taskers={unsettledTaskers} />
+      <ActiveFinanceTasksTable tasks={activeFinanceTasks} />
+
+      <div className="grid gap-4 xl:grid-cols-2">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -446,7 +490,200 @@ function FinanceSections({ data }: { data: DashboardData }) {
           ))}
         </CardContent>
       </Card>
+      </div>
     </div>
+  );
+}
+
+function formatDate(value: string | null) {
+  if (!value) return "Not set";
+  return new Intl.DateTimeFormat("en-NG", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function statusTone(status: string) {
+  if (status === "overdue") return "border-red-200 bg-red-50 text-red-700";
+  if (status === "failed") return "border-amber-200 bg-amber-50 text-amber-700";
+  if (status === "initialized") return "border-blue-200 bg-blue-50 text-blue-700";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function UnsettledTaskersTable({
+  taskers,
+}: {
+  taskers: DashboardData["finance"]["unsettledTaskers"];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Taskers Owing Platform Fees</CardTitle>
+        <CardDescription>
+          Completed tasks where the tasker has not settled SwiftDU&apos;s platform fee.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {taskers.length === 0 ? (
+          <EmptyState label="All taskers are settled" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[900px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                  <th className="pb-3 pr-4 font-semibold">Tasker</th>
+                  <th className="pb-3 pr-4 font-semibold">Outstanding</th>
+                  <th className="pb-3 pr-4 font-semibold">Tasks</th>
+                  <th className="pb-3 pr-4 font-semibold">Oldest Due</th>
+                  <th className="pb-3 pr-4 font-semibold">Recent Unpaid Tasks</th>
+                </tr>
+              </thead>
+              <tbody>
+                {taskers.map((tasker) => (
+                  <tr key={tasker.taskerId} className="border-b border-slate-100 align-top dark:border-slate-900">
+                    <td className="py-4 pr-4">
+                      <div className="font-semibold text-slate-950 dark:text-white">
+                        {tasker.taskerName}
+                      </div>
+                      <div className="mt-1 space-y-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        {tasker.taskerEmail ? <p>{tasker.taskerEmail}</p> : null}
+                        {tasker.taskerPhone ? <p>{tasker.taskerPhone}</p> : null}
+                      </div>
+                      {tasker.isSettlementSuspended ? (
+                        <Badge variant="outline" className="mt-2 border-red-200 bg-red-50 text-red-700">
+                          Suspended
+                        </Badge>
+                      ) : null}
+                    </td>
+                    <td className="py-4 pr-4">
+                      <div className="font-bold text-emerald-700 dark:text-emerald-300">
+                        {formatValue(tasker.totalOutstanding, "currency")}
+                      </div>
+                      {tasker.overdueCount > 0 ? (
+                        <p className="mt-1 text-xs font-medium text-red-600">
+                          {tasker.overdueCount} overdue
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-xs text-slate-500">No overdue tasks</p>
+                      )}
+                    </td>
+                    <td className="py-4 pr-4">
+                      <span className="font-semibold">{tasker.taskCount}</span>
+                      <span className="text-slate-500"> unpaid</span>
+                    </td>
+                    <td className="py-4 pr-4 text-slate-600 dark:text-slate-300">
+                      {formatDate(tasker.oldestDueAt)}
+                    </td>
+                    <td className="py-4 pr-4">
+                      <div className="space-y-2">
+                        {tasker.tasks.map((task) => (
+                          <div key={task.orderId} className="rounded-lg border border-slate-200 bg-slate-50 p-3 dark:border-slate-800 dark:bg-slate-900">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="truncate font-medium text-slate-900 dark:text-white">
+                                  {task.description}
+                                </p>
+                                <p className="mt-1 text-xs text-slate-500">
+                                  {task.taskType} - completed {formatDate(task.completedAt)}
+                                </p>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <p className="font-semibold">
+                                  {formatValue(task.platformFee, "currency")}
+                                </p>
+                                <span className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-xs ${statusTone(task.settlementStatus)}`}>
+                                  {task.settlementStatus.replace("_", " ")}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function ActiveFinanceTasksTable({
+  tasks,
+}: {
+  tasks: DashboardData["finance"]["activeFinanceTasks"];
+}) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Tasks Still In Progress</CardTitle>
+        <CardDescription>
+          These assigned tasks have platform fees, but they are not settlement debts until the task is completed.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {tasks.length === 0 ? (
+          <EmptyState label="No active tasker tasks with pending platform fees" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                  <th className="pb-3 pr-4 font-semibold">Task</th>
+                  <th className="pb-3 pr-4 font-semibold">Tasker</th>
+                  <th className="pb-3 pr-4 font-semibold">Status</th>
+                  <th className="pb-3 pr-4 font-semibold">Platform Fee</th>
+                  <th className="pb-3 pr-4 font-semibold">Accepted</th>
+                </tr>
+              </thead>
+              <tbody>
+                {tasks.map((task) => (
+                  <tr key={task.orderId} className="border-b border-slate-100 align-top dark:border-slate-900">
+                    <td className="py-4 pr-4">
+                      <div className="font-semibold text-slate-950 dark:text-white">
+                        {task.description}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        {task.taskType} - {task.location}
+                      </p>
+                    </td>
+                    <td className="py-4 pr-4">
+                      <div className="font-medium text-slate-900 dark:text-white">
+                        {task.taskerName}
+                      </div>
+                      <div className="mt-1 space-y-0.5 text-xs text-slate-500 dark:text-slate-400">
+                        {task.taskerEmail ? <p>{task.taskerEmail}</p> : null}
+                        {task.taskerPhone ? <p>{task.taskerPhone}</p> : null}
+                      </div>
+                    </td>
+                    <td className="py-4 pr-4">
+                      <span className="inline-flex rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">
+                        {task.status.replace("_", " ")}
+                      </span>
+                      <p className="mt-2 text-xs text-slate-500">Not due yet</p>
+                    </td>
+                    <td className="py-4 pr-4">
+                      <div className="font-semibold">
+                        {formatValue(task.platformFee, "currency")}
+                      </div>
+                      <p className="mt-1 text-xs text-slate-500">
+                        Order total {formatValue(task.totalAmount, "currency")}
+                      </p>
+                    </td>
+                    <td className="py-4 pr-4 text-slate-600 dark:text-slate-300">
+                      {formatDate(task.acceptedAt || task.paidAt || task.bookedAt)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

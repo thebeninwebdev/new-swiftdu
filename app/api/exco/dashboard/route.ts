@@ -9,6 +9,13 @@ import Tasker from "@/models/tasker";
 import { User } from "@/models/user";
 
 const DEFAULT_DAYS = 30;
+const OUTSTANDING_SETTLEMENT_STATUSES = [
+  "not_due",
+  "pending",
+  "initialized",
+  "failed",
+  "overdue",
+] as const;
 
 type CountDatum = {
   _id: string;
@@ -30,6 +37,45 @@ type DashboardCard = {
   value: number;
   format: "number" | "currency" | "percent" | "minutes";
   description: string;
+};
+
+type UnsettledTasker = {
+  taskerId: string;
+  taskerName: string;
+  taskerEmail: string;
+  taskerPhone: string;
+  isSettlementSuspended: boolean;
+  totalOutstanding: number;
+  taskCount: number;
+  overdueCount: number;
+  oldestDueAt: string | null;
+  latestCompletedAt: string | null;
+  tasks: Array<{
+    orderId: string;
+    description: string;
+    taskType: string;
+    platformFee: number;
+    settlementStatus: string;
+    settlementDueAt: string | null;
+    completedAt: string | null;
+  }>;
+};
+
+type ActiveFinanceTask = {
+  orderId: string;
+  taskerId: string;
+  taskerName: string;
+  taskerEmail: string;
+  taskerPhone: string;
+  taskType: string;
+  description: string;
+  location: string;
+  status: string;
+  platformFee: number;
+  totalAmount: number;
+  acceptedAt: string | null;
+  paidAt: string | null;
+  bookedAt: string | null;
 };
 
 function clampDays(value: string | null) {
@@ -89,6 +135,250 @@ async function getMoneySummary(match: Record<string, unknown>) {
     taskerFee: summary?.taskerFee || 0,
     waterFee: summary?.waterFee || 0,
   };
+}
+
+async function getUnsettledTaskers(): Promise<UnsettledTasker[]> {
+  const rows = await Order.aggregate<{
+    taskerId: string;
+    taskerName?: string;
+    taskerEmail?: string;
+    taskerPhone?: string;
+    isSettlementSuspended?: boolean;
+    totalOutstanding: number;
+    taskCount: number;
+    overdueCount: number;
+    oldestDueAt?: Date | null;
+    latestCompletedAt?: Date | null;
+    tasks: Array<{
+      orderId: string;
+      description?: string;
+      taskType?: string;
+      platformFee?: number;
+      settlementStatus?: string;
+      settlementDueAt?: Date | null;
+      completedAt?: Date | null;
+    }>;
+  }>([
+    {
+      $match: {
+        status: "completed",
+        platformFee: { $gt: 0 },
+        taskerId: { $exists: true, $nin: [null, ""] },
+        $and: [
+          {
+            $or: [{ taskerHasPaid: false }, { taskerHasPaid: { $exists: false } }],
+          },
+          {
+            $or: [
+              { settlementStatus: { $in: [...OUTSTANDING_SETTLEMENT_STATUSES] } },
+              { settlementStatus: { $exists: false } },
+              { settlementStatus: null },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      $sort: {
+        settlementDueAt: 1,
+        completedAt: -1,
+        createdAt: -1,
+      },
+    },
+    {
+      $group: {
+        _id: "$taskerId",
+        firstTaskerName: { $first: "$taskerName" },
+        totalOutstanding: { $sum: "$platformFee" },
+        taskCount: { $sum: 1 },
+        overdueCount: {
+          $sum: { $cond: [{ $eq: ["$settlementStatus", "overdue"] }, 1, 0] },
+        },
+        oldestDueAt: { $min: "$settlementDueAt" },
+        latestCompletedAt: { $max: "$completedAt" },
+        tasks: {
+          $push: {
+            orderId: { $toString: "$_id" },
+            description: { $ifNull: ["$description", "$taskType"] },
+            taskType: "$taskType",
+            platformFee: "$platformFee",
+            settlementStatus: "$settlementStatus",
+            settlementDueAt: "$settlementDueAt",
+            completedAt: "$completedAt",
+          },
+        },
+      },
+    },
+    { $sort: { overdueCount: -1, totalOutstanding: -1, oldestDueAt: 1 } },
+    { $limit: 25 },
+    {
+      $addFields: {
+        taskerObjectId: {
+          $convert: {
+            input: "$_id",
+            to: "objectId",
+            onError: null,
+            onNull: null,
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "taskers",
+        localField: "taskerObjectId",
+        foreignField: "_id",
+        as: "tasker",
+      },
+    },
+    { $unwind: { path: "$tasker", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "user",
+        localField: "tasker.userId",
+        foreignField: "_id",
+        as: "taskerUser",
+      },
+    },
+    { $unwind: { path: "$taskerUser", preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        _id: 0,
+        taskerId: "$_id",
+        taskerName: {
+          $ifNull: ["$taskerUser.name", { $ifNull: ["$firstTaskerName", "Unknown tasker"] }],
+        },
+        taskerEmail: { $ifNull: ["$taskerUser.email", ""] },
+        taskerPhone: { $ifNull: ["$tasker.phone", ""] },
+        isSettlementSuspended: { $ifNull: ["$tasker.isSettlementSuspended", false] },
+        totalOutstanding: 1,
+        taskCount: 1,
+        overdueCount: 1,
+        oldestDueAt: 1,
+        latestCompletedAt: 1,
+        tasks: { $slice: ["$tasks", 3] },
+      },
+    },
+  ]);
+
+  return rows.map((row) => ({
+    taskerId: row.taskerId,
+    taskerName: row.taskerName || "Unknown tasker",
+    taskerEmail: row.taskerEmail || "",
+    taskerPhone: row.taskerPhone || "",
+    isSettlementSuspended: Boolean(row.isSettlementSuspended),
+    totalOutstanding: row.totalOutstanding || 0,
+    taskCount: row.taskCount || 0,
+    overdueCount: row.overdueCount || 0,
+    oldestDueAt: row.oldestDueAt ? row.oldestDueAt.toISOString() : null,
+    latestCompletedAt: row.latestCompletedAt ? row.latestCompletedAt.toISOString() : null,
+    tasks: row.tasks.map((task) => ({
+      orderId: task.orderId,
+      description: task.description || task.taskType || "Completed task",
+      taskType: task.taskType || "others",
+      platformFee: task.platformFee || 0,
+      settlementStatus: task.settlementStatus || "pending",
+      settlementDueAt: task.settlementDueAt ? task.settlementDueAt.toISOString() : null,
+      completedAt: task.completedAt ? task.completedAt.toISOString() : null,
+    })),
+  }));
+}
+
+async function getActiveFinanceTasks(): Promise<ActiveFinanceTask[]> {
+  const rows = await Order.aggregate<{
+    orderId: string;
+    taskerId?: string;
+    taskerName?: string;
+    taskerEmail?: string;
+    taskerPhone?: string;
+    taskType?: string;
+    description?: string;
+    location?: string;
+    status?: string;
+    platformFee?: number;
+    totalAmount?: number;
+    acceptedAt?: Date | null;
+    paidAt?: Date | null;
+    bookedAt?: Date | null;
+  }>([
+    {
+      $match: {
+        status: { $in: ["in_progress", "paid"] },
+        platformFee: { $gt: 0 },
+        taskerId: { $exists: true, $nin: [null, ""] },
+      },
+    },
+    { $sort: { acceptedAt: -1, paidAt: -1, createdAt: -1 } },
+    { $limit: 25 },
+    {
+      $addFields: {
+        taskerObjectId: {
+          $convert: {
+            input: "$taskerId",
+            to: "objectId",
+            onError: null,
+            onNull: null,
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "taskers",
+        localField: "taskerObjectId",
+        foreignField: "_id",
+        as: "tasker",
+      },
+    },
+    { $unwind: { path: "$tasker", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "user",
+        localField: "tasker.userId",
+        foreignField: "_id",
+        as: "taskerUser",
+      },
+    },
+    { $unwind: { path: "$taskerUser", preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        _id: 0,
+        orderId: { $toString: "$_id" },
+        taskerId: "$taskerId",
+        taskerName: {
+          $ifNull: ["$taskerUser.name", { $ifNull: ["$taskerName", "Unknown tasker"] }],
+        },
+        taskerEmail: { $ifNull: ["$taskerUser.email", ""] },
+        taskerPhone: { $ifNull: ["$tasker.phone", ""] },
+        taskType: "$taskType",
+        description: { $ifNull: ["$description", "$taskType"] },
+        location: "$location",
+        status: "$status",
+        platformFee: "$platformFee",
+        totalAmount: "$totalAmount",
+        acceptedAt: "$acceptedAt",
+        paidAt: "$paidAt",
+        bookedAt: { $ifNull: ["$bookedAt", "$createdAt"] },
+      },
+    },
+  ]);
+
+  return rows.map((row) => ({
+    orderId: row.orderId,
+    taskerId: row.taskerId || "",
+    taskerName: row.taskerName || "Unknown tasker",
+    taskerEmail: row.taskerEmail || "",
+    taskerPhone: row.taskerPhone || "",
+    taskType: row.taskType || "others",
+    description: row.description || row.taskType || "Active task",
+    location: row.location || "Unknown location",
+    status: row.status || "in_progress",
+    platformFee: row.platformFee || 0,
+    totalAmount: row.totalAmount || 0,
+    acceptedAt: row.acceptedAt ? row.acceptedAt.toISOString() : null,
+    paidAt: row.paidAt ? row.paidAt.toISOString() : null,
+    bookedAt: row.bookedAt ? row.bookedAt.toISOString() : null,
+  }));
 }
 
 async function getAnalyticsSummary(match: Record<string, unknown>, limit = 8) {
@@ -435,6 +725,8 @@ export async function GET(request: NextRequest) {
     averageResponseSummary,
     orderTrend,
     analytics,
+    unsettledTaskers,
+    activeFinanceTasks,
   ] = await Promise.all([
     Order.countDocuments(match),
     Order.countDocuments(previousMatch),
@@ -518,6 +810,8 @@ export async function GET(request: NextRequest) {
       { $sort: { _id: 1 } },
     ]),
     getAnalyticsSummary(match),
+    requestedRole === "CFO" ? getUnsettledTaskers() : Promise.resolve([]),
+    requestedRole === "CFO" ? getActiveFinanceTasks() : Promise.resolve([]),
   ]);
 
   const conversionsTotal = analytics.conversionEvents.reduce(
@@ -575,6 +869,8 @@ export async function GET(request: NextRequest) {
       completedMoney,
       previousMoney,
       outstandingPlatformFees: outstandingPlatformFeesSummary.platformFee,
+      unsettledTaskers,
+      activeFinanceTasks,
     },
     operations: {
       totalOrders,
