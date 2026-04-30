@@ -23,7 +23,12 @@ export const authClient = createAuthClient({
         taskerId: {
           type: "string",
           required: false,
-        }
+        },
+        excoRole: {
+          type: "string",
+          required: false,
+          input: false,
+        },
 }
     }),
     twoFactorClient(),

@@ -1,4 +1,6 @@
-import mongoose, { Schema, Document, models, model } from "mongoose";
+import { Schema, Document, models, model } from "mongoose";
+
+export type ExcoRole = "CFO" | "CMO" | "COO" | "CTO";
 
 export interface IUser extends Document {
   name: string;
@@ -13,6 +15,7 @@ export interface IUser extends Document {
   updatedAt: Date;
   isSuspended?: boolean;
   taskerId?: string;
+  excoRole?: ExcoRole;
 }
 
 const UserSchema = new Schema<IUser>(
@@ -59,6 +62,11 @@ const UserSchema = new Schema<IUser>(
     },
     taskerId: {
       type: String,
+      required: false,
+    },
+    excoRole: {
+      type: String,
+      enum: ["CFO", "CMO", "COO", "CTO"],
       required: false,
     }
   },

@@ -129,6 +129,11 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      excoRole: {
+        type: "string",
+        required: false,
+        input: false,
+      },
     },
   },
   databaseHooks: {

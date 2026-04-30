@@ -3,7 +3,7 @@
 import {useState, useEffect} from 'react'
 import {useRouter, usePathname} from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import {LogOut, Menu, X, PlusCircle, ListTodo, User, Bell, UserPlus, Star} from 'lucide-react'
+import {LogOut, Menu, X, PlusCircle, ListTodo, User, Bell, UserPlus, Star, BriefcaseBusiness} from 'lucide-react'
 
 
 // Navigation items configuration
@@ -48,13 +48,21 @@ interface DashboardOrder {
   isDeclinedTask?: boolean
 }
 
+interface ExcoDashboardAccess {
+  excoRole: string
+  label: string
+  dashboardPath: string
+}
+
 export default function DashboardMenu() {
   const { data: session } = authClient.useSession()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [hasNotification, setHasNotification] = useState(false)
+  const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
 
   const router = useRouter()
   const pathname = usePathname()
+  const sessionUserId = session?.user?.id
   const isTasker = session?.user.role === 'tasker'
   const taskerAction = isTasker
     ? {
@@ -99,6 +107,32 @@ export default function DashboardMenu() {
     }
     fetchNotifications()
   }, [])
+
+  useEffect(() => {
+    if (!sessionUserId) return
+
+    async function fetchExcoDashboard() {
+      try {
+        const response = await fetch('/api/exco/me', { cache: 'no-store' })
+        if (!response.ok) return
+
+        const data = (await response.json()) as Partial<ExcoDashboardAccess>
+        if (data.excoRole && data.label && data.dashboardPath) {
+          setExcoDashboard({
+            excoRole: data.excoRole,
+            label: data.label,
+            dashboardPath: data.dashboardPath,
+          })
+        } else {
+          setExcoDashboard(null)
+        }
+      } catch {
+        setExcoDashboard(null)
+      }
+    }
+
+    void fetchExcoDashboard()
+  }, [sessionUserId])
 
   const signOut = async () => {
     await authClient.signOut({
@@ -184,6 +218,25 @@ export default function DashboardMenu() {
               </div>
             </div>
           </button>
+
+          {excoDashboard ? (
+            <button
+              onClick={() => handleNavigation(excoDashboard.dashboardPath)}
+              className="mt-3 w-full rounded-2xl bg-linear-to-r from-amber-500 to-sky-500 p-4 text-left text-white shadow-lg shadow-amber-500/20 transition-transform duration-300 hover:scale-[1.01]"
+            >
+              <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-xl bg-white/20 p-2">
+                  <BriefcaseBusiness className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">{excoDashboard.excoRole} Dashboard</p>
+                  <p className="mt-1 text-xs text-amber-50">
+                    Open your executive workspace.
+                  </p>
+                </div>
+              </div>
+            </button>
+          ) : null}
         </div>
 
         {/* User Section */}
@@ -259,6 +312,25 @@ export default function DashboardMenu() {
                       </div>
                     </button>
                   </div>
+
+                  {excoDashboard ? (
+                    <div className="pt-2">
+                      <button
+                        onClick={() => handleNavigation(excoDashboard.dashboardPath)}
+                        className="w-full rounded-xl bg-linear-to-r from-amber-500 to-sky-500 px-4 py-3 text-left text-white shadow-lg shadow-amber-500/20 transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="rounded-lg bg-white/20 p-2">
+                            <BriefcaseBusiness className="w-5 h-5" />
+                          </div>
+                          <div>
+                            <p className="font-medium">{excoDashboard.excoRole} Dashboard</p>
+                            <p className="text-xs text-amber-50">Open your executive workspace</p>
+                          </div>
+                        </div>
+                      </button>
+                    </div>
+                  ) : null}
                   
                   <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
                     <button 

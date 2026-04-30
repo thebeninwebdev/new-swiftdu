@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
+  BriefcaseBusiness,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -62,6 +63,12 @@ interface TaskTypeConfig {
   description: string
   icon: LucideIcon
   accent: string
+}
+
+interface ExcoDashboardAccess {
+  excoRole: string;
+  label: string;
+  dashboardPath: string;
 }
 
 const taskTypes: TaskTypeConfig[] = [
@@ -152,6 +159,7 @@ export default function ErrandWizardPage() {
   const [isRealtimePaused, setIsRealtimePaused] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
+  const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
   const socketRef = useRef<Socket | null>(null)
   const fetchingActiveOrderRef = useRef(false)
   const isRealtimePausedRef = useRef(false)
@@ -167,6 +175,7 @@ export default function ErrandWizardPage() {
     packaging: '',
     waterBags: '',
   })
+  const sessionUserId = session?.user?.id
 
   const fetchCurrentOrder = useCallback(async () => {
     if (fetchingActiveOrderRef.current) return
@@ -219,6 +228,32 @@ export default function ErrandWizardPage() {
     if (!mounted) return
     void fetchCurrentOrder()
   }, [fetchCurrentOrder, mounted])
+
+  useEffect(() => {
+    if (!mounted || !sessionUserId) return
+
+    async function fetchExcoDashboard() {
+      try {
+        const response = await fetch('/api/exco/me', { cache: 'no-store' })
+        if (!response.ok) return
+
+        const data = (await response.json()) as Partial<ExcoDashboardAccess>
+        if (data.excoRole && data.label && data.dashboardPath) {
+          setExcoDashboard({
+            excoRole: data.excoRole,
+            label: data.label,
+            dashboardPath: data.dashboardPath,
+          })
+        } else {
+          setExcoDashboard(null)
+        }
+      } catch {
+        setExcoDashboard(null)
+      }
+    }
+
+    void fetchExcoDashboard()
+  }, [mounted, sessionUserId])
 
   useEffect(() => {
     if (!mounted) return
@@ -537,6 +572,32 @@ if (stepNumber === 2) {
                   className="h-11 rounded-xl bg-linear-to-r from-emerald-600 to-teal-600 px-4 text-white hover:from-emerald-700 hover:to-teal-700"
                 >
                   Open Tasker Dashboard
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          ) : null}
+
+          {excoDashboard ? (
+            <div className="mb-5 rounded-3xl border border-amber-200/80 bg-linear-to-r from-amber-50 via-white to-sky-50 p-4 shadow-sm dark:border-amber-900/60 dark:from-amber-950/30 dark:via-slate-900 dark:to-sky-950/30 md:mb-8 md:p-5">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">
+                    Executive access enabled
+                  </p>
+                  <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
+                    Open your {excoDashboard.excoRole} dashboard.
+                  </h2>
+                  <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
+                    Review the metrics and decision signals for the {excoDashboard.label} role.
+                  </p>
+                </div>
+                <Button
+                  onClick={() => router.push(excoDashboard.dashboardPath)}
+                  className="h-11 rounded-xl bg-linear-to-r from-amber-600 to-sky-600 px-4 text-white hover:from-amber-700 hover:to-sky-700"
+                >
+                  <BriefcaseBusiness className="mr-2 h-4 w-4" />
+                  Open Executive Dashboard
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </div>

@@ -8,6 +8,7 @@ import { Footer } from "@/components/Footer";
 import { adsenseAccount, adsenseScriptSrc, siteUrl } from "@/lib/site";
 import { Analytics } from "@vercel/analytics/next"
 import { GoogleAnalytics } from "@/components/google-analytics";
+import { AnalyticsTracker } from "@/components/analytics-tracker";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -100,6 +101,7 @@ export default function RootLayout({
         </Wrapper>
         <Analytics />
         <GoogleAnalytics />
+        <AnalyticsTracker />
         {children}
         <Wrapper path="/dashboard">
         <Wrapper path="/tasker-signup">
