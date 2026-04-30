@@ -253,6 +253,7 @@ const CFO_PAGE_SIZE = 5;
 const CMO_RANGE_OPTIONS = [
   { value: "24h", label: "Last 24 hours" },
   { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
   { value: "3mo", label: "Last 3 months" },
   { value: "12mo", label: "Last 12 months" },
   { value: "24mo", label: "Last 24 months" },
@@ -910,32 +911,6 @@ function RankedList({ data, emptyLabel }: { data: CountDatum[]; emptyLabel: stri
   );
 }
 
-function VerticalBarChart({ data, emptyLabel }: { data: CountDatum[]; emptyLabel: string }) {
-  if (!data.length) return <EmptyState label={emptyLabel} />;
-
-  return (
-    <div className="h-72">
-      <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} margin={{ top: 8, right: 12, bottom: 54, left: 0 }}>
-          <CartesianGrid strokeDasharray="3 3" vertical={false} />
-          <XAxis
-            dataKey="label"
-            interval={0}
-            angle={-35}
-            textAnchor="end"
-            height={72}
-            tick={{ fontSize: 11 }}
-            tickFormatter={(value) => (String(value).length > 14 ? `${String(value).slice(0, 14)}...` : String(value))}
-          />
-          <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-          <Tooltip />
-          <Bar dataKey="count" fill="#111827" radius={[6, 6, 0, 0]} />
-        </BarChart>
-      </ResponsiveContainer>
-    </div>
-  );
-}
-
 function OrderTrendChart({ data, role }: { data: DashboardData["charts"]["orderTrend"]; role: ExcoRole }) {
   if (!data.length) return <EmptyState label="Order trend appears after activity is recorded" />;
 
@@ -969,7 +944,102 @@ function OrderTrendChart({ data, role }: { data: DashboardData["charts"]["orderT
   );
 }
 
-function TrafficChart({ data }: { data: DashboardData["marketing"]["analytics"]["trafficChart"] }) {
+function parseTrafficDate(value: string, range = "30d") {
+  if (range === "24h") {
+    const match = value.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):00$/);
+    if (match) {
+      return new Date(
+        Number(match[1]),
+        Number(match[2]) - 1,
+        Number(match[3]),
+        Number(match[4])
+      );
+    }
+  }
+
+  if (range === "12mo" || range === "24mo") {
+    const match = value.match(/^(\d{4})-(\d{2})$/);
+    if (match) return new Date(Number(match[1]), Number(match[2]) - 1, 1);
+  }
+
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+
+  return null;
+}
+
+function formatTrafficTick(value: string, range = "30d") {
+  const date = parseTrafficDate(value, range);
+  if (!date) return value;
+
+  if (range === "24h") {
+    return date
+      .toLocaleTimeString("en", { hour: "numeric", hour12: true })
+      .replace(" ", "")
+      .toLowerCase();
+  }
+
+  if (range === "7d") {
+    return date.toLocaleDateString("en", { day: "numeric", month: "short" });
+  }
+
+  if (range === "12mo" || range === "24mo") {
+    return date.toLocaleDateString("en", { month: "short", year: "2-digit" });
+  }
+
+  return date.toLocaleDateString("en", { month: "short", day: "numeric" });
+}
+
+function formatTrafficTooltipLabel(value: string, range = "30d") {
+  const date = parseTrafficDate(value, range);
+  if (!date) return value;
+
+  const now = new Date();
+
+  if (range === "24h") {
+    const hours = Math.max(0, Math.round((now.getTime() - date.getTime()) / 3_600_000));
+    if (hours <= 0) return "This hour";
+    if (hours === 1) return "1 hour ago";
+    return `${hours} hours ago`;
+  }
+
+  if (range === "12mo" || range === "24mo") {
+    const months = Math.max(
+      0,
+      (now.getFullYear() - date.getFullYear()) * 12 + now.getMonth() - date.getMonth()
+    );
+    if (months <= 0) return "This month";
+    if (months === 1) return "1 month ago";
+    return `${months} months ago`;
+  }
+
+  const days = Math.max(
+    0,
+    Math.round(
+      (new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - date.getTime()) /
+        86_400_000
+    )
+  );
+  if (days <= 0) return "Today";
+  if (days === 1) return "Yesterday";
+  return `${days} days ago`;
+}
+
+function getTrafficTickInterval(range: string, length: number) {
+  if (range === "24h") return length > 8 ? 2 : 0;
+  if (range === "7d") return 0;
+  if (range === "30d") return length > 12 ? 5 : 0;
+  if (range === "3mo") return length > 12 ? 13 : 0;
+  return length > 12 ? 2 : 0;
+}
+
+function TrafficChart({
+  data,
+  range = "30d",
+}: {
+  data: DashboardData["marketing"]["analytics"]["trafficChart"];
+  range?: string;
+}) {
   if (!data.length) return <EmptyState label="Traffic trends will appear after production visits" />;
 
   return (
@@ -987,9 +1057,16 @@ function TrafficChart({ data }: { data: DashboardData["marketing"]["analytics"][
             </linearGradient>
           </defs>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-          <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} minTickGap={20} />
+          <XAxis
+            dataKey="date"
+            tick={{ fontSize: 11 }}
+            tickLine={false}
+            axisLine={false}
+            interval={getTrafficTickInterval(range, data.length)}
+            tickFormatter={(value) => formatTrafficTick(String(value), range)}
+          />
           <YAxis allowDecimals={false} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={36} />
-          <Tooltip />
+          <Tooltip labelFormatter={(value) => formatTrafficTooltipLabel(String(value), range)} />
           <Area
             type="monotone"
             dataKey="pageViews"
@@ -1019,18 +1096,23 @@ function HorizontalBarChart({ data, emptyLabel }: { data: CountDatum[]; emptyLab
   return (
     <div className="h-72">
       <ResponsiveContainer width="100%" height="100%">
-        <BarChart data={data} layout="vertical" margin={{ left: 14, right: 18 }}>
-          <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-          <XAxis type="number" allowDecimals={false} />
+        <BarChart data={data} layout="vertical" margin={{ top: 8, right: 18, bottom: 8, left: 14 }}>
+          <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#e2e8f0" />
+          <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
           <YAxis
             dataKey="label"
             type="category"
             width={120}
             tick={{ fontSize: 12 }}
-            tickFormatter={(value) => (value.length > 18 ? `${value.slice(0, 18)}...` : value)}
+            tickLine={false}
+            axisLine={false}
+            tickFormatter={(value) => {
+              const label = String(value);
+              return label.length > 18 ? `${label.slice(0, 18)}...` : label;
+            }}
           />
           <Tooltip />
-          <Bar dataKey="count" fill="#2563eb" radius={[0, 6, 6, 0]} />
+          <Bar dataKey="count" fill="#2563eb" radius={[0, 6, 6, 0]} barSize={18} />
         </BarChart>
       </ResponsiveContainer>
     </div>
@@ -1094,7 +1176,7 @@ function FinanceSections({ data }: { data: DashboardData }) {
           <CardDescription>Tasker settlement state across recent orders.</CardDescription>
         </CardHeader>
         <CardContent>
-          <VerticalBarChart data={data.charts.settlementBreakdown} emptyLabel="No settlements recorded yet" />
+          <HorizontalBarChart data={data.charts.settlementBreakdown} emptyLabel="No settlements recorded yet" />
         </CardContent>
       </Card>
 
@@ -1495,7 +1577,7 @@ function MarketingSections({
             <MarketingMetric label="Page Views" value={analytics.totalPageViews} />
             <MarketingMetric label="Bounce Rate" value={analytics.bounceRate || 0} format="percent" />
           </div>
-          <TrafficChart data={analytics.trafficChart} />
+          <TrafficChart data={analytics.trafficChart} range={range} />
         </CardContent>
       </Card>
 
@@ -1513,10 +1595,10 @@ function MarketingSections({
         <Card>
           <CardHeader>
             <CardTitle>Referral Sources</CardTitle>
-            <CardDescription>Channels bringing users into SwiftDU, shown as a rotated bar chart.</CardDescription>
+            <CardDescription>Channels bringing users into SwiftDU.</CardDescription>
           </CardHeader>
           <CardContent>
-            <VerticalBarChart data={analytics.topReferralSources} emptyLabel="No referral sources recorded yet" />
+            <HorizontalBarChart data={analytics.topReferralSources} emptyLabel="No referral sources recorded yet" />
           </CardContent>
         </Card>
 
@@ -1526,7 +1608,7 @@ function MarketingSections({
             <CardDescription>Where page views are coming from.</CardDescription>
           </CardHeader>
           <CardContent>
-            <VerticalBarChart data={analytics.topCountries} emptyLabel="No country data recorded yet" />
+            <HorizontalBarChart data={analytics.topCountries} emptyLabel="No country data recorded yet" />
           </CardContent>
         </Card>
 
@@ -1536,7 +1618,7 @@ function MarketingSections({
             <CardDescription>Devices visitors use when they reach SwiftDU.</CardDescription>
           </CardHeader>
           <CardContent>
-            <VerticalBarChart data={analytics.deviceBreakdown} emptyLabel="No device data recorded yet" />
+            <HorizontalBarChart data={analytics.deviceBreakdown} emptyLabel="No device data recorded yet" />
           </CardContent>
         </Card>
 
@@ -1556,7 +1638,7 @@ function MarketingSections({
             <CardDescription>Tracked actions beyond page views.</CardDescription>
           </CardHeader>
           <CardContent>
-            <VerticalBarChart data={analytics.conversionEvents} emptyLabel="No conversion events recorded yet" />
+            <HorizontalBarChart data={analytics.conversionEvents} emptyLabel="No conversion events recorded yet" />
           </CardContent>
         </Card>
       </div>
@@ -1589,7 +1671,7 @@ function OperationsSections({ data }: { data: DashboardData }) {
           <CardDescription>Where non-cancelled work is sitting right now.</CardDescription>
         </CardHeader>
         <CardContent>
-          <VerticalBarChart data={data.charts.statusBreakdown} emptyLabel="No status data recorded yet" />
+          <HorizontalBarChart data={data.charts.statusBreakdown} emptyLabel="No status data recorded yet" />
         </CardContent>
       </Card>
 
@@ -1699,7 +1781,7 @@ function TechnologySections({ data }: { data: DashboardData }) {
           <CardDescription>Prioritize QA by the devices customers actually use.</CardDescription>
         </CardHeader>
         <CardContent>
-          <VerticalBarChart data={data.technology.deviceBreakdown} emptyLabel="No device data recorded yet" />
+          <HorizontalBarChart data={data.technology.deviceBreakdown} emptyLabel="No device data recorded yet" />
         </CardContent>
       </Card>
 

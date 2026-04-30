@@ -24,6 +24,13 @@ const ANALYTICS_RANGES = {
     unit: "days",
     dateFormat: "%Y-%m-%d",
   },
+  "30d": {
+    label: "Last 30 days",
+    days: 30,
+    amount: 30,
+    unit: "days",
+    dateFormat: "%Y-%m-%d",
+  },
   "3mo": {
     label: "Last 3 months",
     days: 90,
@@ -200,6 +207,54 @@ function mapCounts(items: CountDatum[], fallback = "Unknown") {
     label: item._id || fallback,
     count: item.count,
   }));
+}
+
+function padDatePart(value: number) {
+  return String(value).padStart(2, "0");
+}
+
+function formatAnalyticsBucket(date: Date, dateFormat: string) {
+  const year = date.getUTCFullYear();
+  const month = padDatePart(date.getUTCMonth() + 1);
+  const day = padDatePart(date.getUTCDate());
+  const hour = padDatePart(date.getUTCHours());
+
+  if (dateFormat === "%Y-%m-%d %H:00") return `${year}-${month}-${day} ${hour}:00`;
+  if (dateFormat === "%Y-%m") return `${year}-${month}`;
+  return `${year}-${month}-${day}`;
+}
+
+function buildAnalyticsBuckets(rangeKey: AnalyticsRangeKey, since: Date, dateFormat: string) {
+  const buckets: string[] = [];
+  const cursor = new Date(since);
+  const now = new Date();
+
+  if (rangeKey === "24h") {
+    cursor.setUTCMinutes(0, 0, 0);
+    while (cursor <= now) {
+      buckets.push(formatAnalyticsBucket(cursor, dateFormat));
+      cursor.setUTCHours(cursor.getUTCHours() + 1);
+    }
+    return buckets;
+  }
+
+  if (rangeKey === "12mo" || rangeKey === "24mo") {
+    cursor.setUTCDate(1);
+    cursor.setUTCHours(0, 0, 0, 0);
+    while (cursor <= now) {
+      buckets.push(formatAnalyticsBucket(cursor, dateFormat));
+      cursor.setUTCMonth(cursor.getUTCMonth() + 1);
+    }
+    return buckets;
+  }
+
+  cursor.setUTCHours(0, 0, 0, 0);
+  while (cursor <= now) {
+    buckets.push(formatAnalyticsBucket(cursor, dateFormat));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return buckets;
 }
 
 async function getMoneySummary(match: Record<string, unknown>) {
@@ -616,7 +671,13 @@ async function getRecentActivity(limit = 10): Promise<RecentActivity[]> {
     .slice(0, limit);
 }
 
-async function getAnalyticsSummary(match: Record<string, unknown>, limit = 8, dateFormat = "%Y-%m-%d") {
+async function getAnalyticsSummary(
+  match: Record<string, unknown>,
+  limit = 8,
+  dateFormat = "%Y-%m-%d",
+  rangeKey?: AnalyticsRangeKey,
+  since?: Date
+) {
   const [
     totalPageViews,
     uniqueVisitors,
@@ -702,6 +763,29 @@ async function getAnalyticsSummary(match: Record<string, unknown>, limit = 8, da
   const bounceVisitors = bounceSummary[0]?.bouncedVisitors || 0;
   const totalVisitors = bounceSummary[0]?.totalVisitors || 0;
 
+  const trafficMap = new Map(
+    trafficChart.map((item) => [
+      item._id,
+      {
+        date: item._id,
+        pageViews: item.pageViews,
+        uniqueVisitors: item.uniqueVisitors.length,
+      },
+    ])
+  );
+  const filledTrafficChart =
+    rangeKey && since
+      ? buildAnalyticsBuckets(rangeKey, since, dateFormat).map((bucket) => ({
+          date: bucket,
+          pageViews: trafficMap.get(bucket)?.pageViews || 0,
+          uniqueVisitors: trafficMap.get(bucket)?.uniqueVisitors || 0,
+        }))
+      : trafficChart.map((item) => ({
+          date: item._id,
+          pageViews: item.pageViews,
+          uniqueVisitors: item.uniqueVisitors.length,
+        }));
+
   return {
     totalPageViews,
     uniqueVisitors: uniqueVisitors.length,
@@ -712,11 +796,7 @@ async function getAnalyticsSummary(match: Record<string, unknown>, limit = 8, da
     deviceBreakdown: mapCounts(deviceBreakdown),
     browserBreakdown: mapCounts(browserBreakdown),
     conversionEvents: mapCounts(conversionEvents),
-    trafficChart: trafficChart.map((item) => ({
-      date: item._id,
-      pageViews: item.pageViews,
-      uniqueVisitors: item.uniqueVisitors.length,
-    })),
+    trafficChart: filledTrafficChart,
   };
 }
 
@@ -1095,7 +1175,13 @@ export async function GET(request: NextRequest) {
       },
       { $sort: { _id: 1 } },
     ]),
-    getAnalyticsSummary(match, 8, hasAnalyticsRange ? requestedAnalyticsRange.dateFormat : "%Y-%m-%d"),
+    getAnalyticsSummary(
+      match,
+      8,
+      hasAnalyticsRange ? requestedAnalyticsRange.dateFormat : "%Y-%m-%d",
+      hasAnalyticsRange ? requestedAnalyticsRange.key : undefined,
+      hasAnalyticsRange ? since : undefined
+    ),
     requestedRole === "CFO" ? getUnsettledTaskers() : Promise.resolve([]),
     requestedRole === "CFO" ? getActiveFinanceTasks() : Promise.resolve([]),
     requestedRole === "CFO" ? getCancelledFinanceOrders(since) : Promise.resolve([]),
