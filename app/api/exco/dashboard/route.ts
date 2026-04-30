@@ -695,8 +695,14 @@ export async function GET(request: NextRequest) {
 
   const days = clampDays(request.nextUrl.searchParams.get("days"));
   const { since, previousSince } = toDateWindow(days);
-  const match = { createdAt: { $gte: since } };
-  const previousMatch = { createdAt: { $gte: previousSince, $lt: since } };
+  const match = {
+    createdAt: { $gte: since },
+    status: { $ne: "cancelled" },
+  };
+  const previousMatch = {
+    createdAt: { $gte: previousSince, $lt: since },
+    status: { $ne: "cancelled" },
+  };
 
   await connectDB();
 
