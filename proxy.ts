@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
+import { EXCO_DASHBOARD_PATHS, getExcoDashboardPath } from '@/lib/exco-constants';
 
 const PUBLIC_ROUTES = [
   '/',
@@ -14,7 +15,12 @@ const PUBLIC_ROUTES = [
   '/terms',
 ];
 
-function getDefaultRouteForRole(role?: string | null) {
+const EXCO_DASHBOARD_ROUTES = Object.values(EXCO_DASHBOARD_PATHS);
+
+function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) {
+  const excoDashboardPath = getExcoDashboardPath(excoRole);
+  if (excoDashboardPath) return excoDashboardPath;
+
   switch (role) {
     case 'admin':
       return '/admin';
@@ -35,7 +41,11 @@ export async function proxy(request: NextRequest) {
 
   const user = session?.user;
   const role = user?.role ?? 'user';
-  const defaultRoute = getDefaultRouteForRole(role);
+  const excoRole = (user as { excoRole?: string | null } | undefined)?.excoRole;
+  const defaultRoute = getDefaultRouteForRole(role, excoRole);
+  const isExcoDashboardRoute = EXCO_DASHBOARD_ROUTES.some((route) =>
+    pathname.startsWith(route)
+  );
 
   const isPublicRoute = PUBLIC_ROUTES.some((route) =>
     route === '/' ? pathname === '/' : pathname.startsWith(route)
@@ -61,6 +71,10 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL(defaultRoute, request.url));
   }
 
+  if (isExcoDashboardRoute) {
+    return NextResponse.next();
+  }
+
   if (
     pathname.startsWith('/dashboard') &&
     role !== 'user' &&
@@ -84,6 +98,10 @@ export const config = {
     // '/terms',
     '/dashboard/:path*',
     '/tasker-dashboard/:path*',
+    '/cfo-dashboard/:path*',
+    '/cmo-dashboard/:path*',
+    '/coo-dashboard/:path*',
+    '/cto-dashboard/:path*',
     '/admin/:path*',
   ],
 };

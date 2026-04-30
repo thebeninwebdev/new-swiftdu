@@ -1,4 +1,4 @@
-import { Types } from "mongoose";
+import { ObjectId, type Filter } from "mongodb";
 
 import { auth } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
@@ -24,9 +24,51 @@ export {
 export interface ExcoAccess {
   isAuthenticated: boolean;
   userId?: string;
+  email?: string;
   userRole?: string;
   taskerId?: string;
   excoRole: ExcoRole | null;
+}
+
+interface UserAccessSnapshot {
+  _id?: ObjectId;
+  id?: string;
+  email?: string;
+  role?: string;
+  taskerId?: string;
+  excoRole?: string | null;
+}
+
+async function findUserAccessSnapshot({
+  id,
+  email,
+}: {
+  id?: string;
+  email?: string | null;
+}) {
+  const lookup: Array<Filter<UserAccessSnapshot>> = [];
+
+  if (id) {
+    if (ObjectId.isValid(id)) {
+      lookup.push({ _id: new ObjectId(id) });
+    }
+
+    lookup.push({ id });
+  }
+
+  const normalizedEmail = email?.trim().toLowerCase();
+  if (normalizedEmail) {
+    lookup.push({ email: normalizedEmail });
+  }
+
+  if (lookup.length === 0) return null;
+
+  await connectDB();
+
+  return User.collection.findOne<UserAccessSnapshot>(
+    { $or: lookup },
+    { projection: { role: 1, taskerId: 1, excoRole: 1 } }
+  );
 }
 
 export async function getExcoAccess(headers: Headers): Promise<ExcoAccess> {
@@ -41,33 +83,21 @@ export async function getExcoAccess(headers: Headers): Promise<ExcoAccess> {
 
   const sessionUser = session.user as {
     id?: string;
+    email?: string | null;
     role?: string;
     taskerId?: string;
     excoRole?: string | null;
   };
 
-  let dbUser:
-    | {
-        role?: string;
-        taskerId?: string;
-        excoRole?: string | null;
-      }
-    | null = null;
-
-  if (sessionUser.id && Types.ObjectId.isValid(sessionUser.id)) {
-    await connectDB();
-    dbUser = await User.findById(sessionUser.id)
-      .select("role taskerId excoRole")
-      .lean<{
-        role?: string;
-        taskerId?: string;
-        excoRole?: string | null;
-      }>();
-  }
+  const dbUser = await findUserAccessSnapshot({
+    id: sessionUser.id,
+    email: sessionUser.email,
+  });
 
   return {
     isAuthenticated: true,
     userId: sessionUser.id,
+    email: sessionUser.email ?? undefined,
     userRole: dbUser?.role ?? sessionUser.role,
     taskerId: dbUser?.taskerId ?? sessionUser.taskerId,
     excoRole: normalizeExcoRole(dbUser?.excoRole ?? sessionUser.excoRole),
