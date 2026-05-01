@@ -47,6 +47,7 @@ interface Errand {
   store?: string
   packaging?: string
   status: string
+  taskerId?: string
   acceptedBy?: string
   acceptedAt?: string
   hasPaid?: boolean
@@ -224,6 +225,7 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
     store: payload.store,
     packaging: payload.packaging,
     status: payload.status || 'pending',
+    taskerId: payload.taskerId,
     acceptedAt: payload.acceptedAt,
     hasPaid: payload.hasPaid,
     isDeclinedTask: payload.isDeclinedTask,
@@ -402,7 +404,7 @@ export default function TaskerDashboardPage() {
         const params = new URLSearchParams()
         if (taskTypeFilter !== 'all') params.append('taskType', taskTypeFilter)
         if (locationFilter.trim()) params.append('location', locationFilter.trim())
-        params.append('status', 'pending')
+        params.append('status', 'pending,in_progress')
         params.append('viewerTaskerId', taskerProfile._id)
 
         const [availableRes, acceptedRes] = await Promise.all([
@@ -423,13 +425,17 @@ export default function TaskerDashboardPage() {
           acceptedRes.json(),
         ])
 
-        if (!initial && availableErrands.length > prevErrandsCount.current) {
+        const visibleAvailableErrands = availableErrands.filter(
+          (errand) => String(errand.taskerId || '') !== taskerProfile._id
+        )
+
+        if (!initial && visibleAvailableErrands.length > prevErrandsCount.current) {
           triggerNewTaskAlert()
         }
-        prevErrandsCount.current = availableErrands.length
+        prevErrandsCount.current = visibleAvailableErrands.length
 
         setAcceptedErrands(sortErrands(acceptedErrands))
-        setErrands(sortErrands(availableErrands))
+        setErrands(sortErrands(visibleAvailableErrands))
         setError(null)
       } catch (dashboardError) {
         console.error('Failed to load tasker dashboard', dashboardError)
@@ -508,15 +514,20 @@ export default function TaskerDashboardPage() {
     }
     const handleTaskUpdate = (payload?: RealtimeTaskPayload) => {
       if (payload) {
-        const shouldShow =
+        const isPendingAvailable =
           payload.status === 'pending' &&
           !payload.taskerId &&
           (payload.status !== 'pending' ||
             !payload.requiresPremiumTasker ||
-            Boolean(taskerProfile?.isPremium)) &&
+            Boolean(taskerProfile?.isPremium))
+        const isBeingFulfilled =
+          payload.status === 'in_progress' &&
+          String(payload.taskerId || '') !== taskerProfile._id
+        const shouldShow =
+          (isPendingAvailable || isBeingFulfilled) &&
           matchesRealtimeFilters(payload, taskTypeFilter, locationFilter)
 
-        if (shouldShow) {
+        if (isPendingAvailable && shouldShow) {
           triggerNewTaskAlert()
         }
 
@@ -650,6 +661,14 @@ export default function TaskerDashboardPage() {
       }
     }
 
+    if (errand.status === 'in_progress') {
+      return {
+        label: 'Being fulfilled',
+        description: 'Errand is being fulfilled',
+        className: 'bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900/60',
+      }
+    }
+
     return {
       label: 'Waiting',
       description: 'Awaiting transfer confirmation',
@@ -659,6 +678,9 @@ export default function TaskerDashboardPage() {
 
   const paymentReadyCount = acceptedErrands.filter(
     (errand) => errand.status === 'paid' || errand.hasPaid
+  ).length
+  const fulfillingCount = acceptedErrands.filter(
+    (errand) => errand.status === 'in_progress' && !errand.hasPaid
   ).length
 
   if (loading) {
@@ -915,7 +937,7 @@ export default function TaskerDashboardPage() {
                   Active Tasks
                 </h2>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {paymentReadyCount} ready to complete, {acceptedErrands.length} total in progress.
+                  {fulfillingCount} being fulfilled, {paymentReadyCount} ready to complete.
                 </p>
               </div>
               <button
@@ -1000,7 +1022,7 @@ export default function TaskerDashboardPage() {
               Open Tasks
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400">
-              Accept more tasks when you have capacity.
+              Accept open tasks or see errands already being fulfilled.
             </p>
           </div>
         </div>
@@ -1053,7 +1075,7 @@ export default function TaskerDashboardPage() {
                     </span>
                     {errand.status !== 'pending' ? (
                       <span className="inline-flex items-center rounded-lg bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900/60">
-                        Accepted
+                        Being fulfilled
                       </span>
                     ) : null}
                     {errand.requiresPremiumTasker ? (

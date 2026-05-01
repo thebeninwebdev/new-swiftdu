@@ -19,7 +19,7 @@ export default function RootLayout({
       <CompleteProfileGate>
         <div className="flex min-h-screen bg-background">
           <TaskerSidebar />
-          <main className="min-w-0 flex-1 overflow-x-hidden px-3 pb-4 pt-4 sm:px-4 md:px-6 lg:px-8">
+          <main className="min-w-0 flex-1 overflow-x-hidden px-3 pb-24 pt-20 sm:px-4 md:px-6 lg:px-8 lg:pb-4 lg:pt-4">
             {children}
           </main>
         </div>

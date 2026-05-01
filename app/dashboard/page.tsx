@@ -808,11 +808,11 @@ if (stepNumber === 2) {
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Droplets className="h-4 w-4 text-cyan-500" />Number of Bags</label>
                       <input type="number" min="1" name="waterBags" value={formData.waterBags} onChange={handleInputChange} placeholder="How many bags?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-800" />
                       <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                        Each bag is {formatNaira(WATER_BAG_PRICE)} plus a {formatNaira(WATER_BAG_FEE)} errand fee. SwiftDU keeps 24% of the errand fee.
+                        Each bag is {formatNaira(WATER_BAG_PRICE)} plus a {formatNaira(WATER_BAG_FEE)} errand fee. 
                       </p>
                       {pricing.pricingModel === 'water' && waterBags > 0 ? (
                         <div className="mt-3 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900 dark:border-cyan-900/60 dark:bg-cyan-950/30 dark:text-cyan-100">
-                          Total is {formatNaira(pricing.totalAmount)}. Tasker errand fee is {formatNaira(pricing.taskerFee || 0)} and SwiftDU fee is {formatNaira(pricing.platformFee || 0)}.
+                          Total is {formatNaira(pricing.totalAmount)}.
                         </div>
                       ) : null}
                       {errors.waterBags ? <p className="mt-2 text-sm text-red-500">{errors.waterBags}</p> : null}

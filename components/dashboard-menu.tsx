@@ -150,7 +150,7 @@ export default function DashboardMenu() {
   return (
     <>
       {/* Desktop Sidebar Navigation */}
-      <aside className="hidden lg:flex sticky top-0 h-screen w-72 shrink-0 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-r border-slate-200 dark:border-slate-800 flex-col">
+      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-72 shrink-0 flex-col border-r border-slate-200 bg-white/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:flex">
         {/* Logo Area */}
         <div className="p-6 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">
@@ -250,6 +250,7 @@ export default function DashboardMenu() {
           </button>
         </div>
       </aside>
+      <div className="hidden w-72 shrink-0 lg:block" aria-hidden="true" />
     
           {/* Mobile Header */}
           <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 z-50 px-4 flex items-center justify-between">
