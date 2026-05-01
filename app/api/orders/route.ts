@@ -15,6 +15,8 @@ import {
 import { splitServiceFee } from '@/lib/order-finance';
 import { requiresPremiumTasker } from '@/lib/tasker-access';
 
+const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes']);
+
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
@@ -37,14 +39,13 @@ export async function POST(request: NextRequest) {
       store,
       packaging,
       waterBags,
+      copyNotesType,
+      copyNotesPages,
     } = body;
 
     // Validation
     if (
       !taskType ||
-      amount === undefined ||
-      amount === null ||
-      amount === '' ||
       !location
     ) {
       return NextResponse.json(
@@ -58,29 +59,50 @@ export async function POST(request: NextRequest) {
     const normalizedTaskType = String(taskType || '').trim();
     const parsedWaterBags =
       normalizedTaskType === WATER_TASK_TYPE ? Number(waterBags) : undefined;
+    const parsedCopyNotesPages =
+      normalizedTaskType === 'copy_notes' ? Number(copyNotesPages) : undefined;
+    const normalizedCopyNotesType = String(copyNotesType || '').trim();
 
-    if (!Number.isFinite(parsedAmount) || parsedAmount < 0) {
+    if (!ALLOWED_CUSTOMER_TASK_TYPES.has(normalizedTaskType)) {
+      return NextResponse.json(
+        { error: 'Select a valid task type.' },
+        { status: 400 }
+      );
+    }
+
+    if (
+      normalizedTaskType !== 'copy_notes' &&
+      normalizedTaskType !== WATER_TASK_TYPE &&
+      (amount === undefined ||
+        amount === null ||
+        amount === '' ||
+        !Number.isFinite(parsedAmount) ||
+        parsedAmount < 0)
+    ) {
       return NextResponse.json({ error: 'Enter a valid task amount' }, { status: 400 });
+    }
+
+    if (normalizedTaskType === 'copy_notes') {
+      if (normalizedCopyNotesType !== 'hardback' && normalizedCopyNotesType !== 'small') {
+        return NextResponse.json({ error: 'Choose the note type.' }, { status: 400 });
+      }
+
+      if (!Number.isInteger(parsedCopyNotesPages) || (parsedCopyNotesPages ?? 0) <= 0) {
+        return NextResponse.json({ error: 'Enter the number of pages.' }, { status: 400 });
+      }
     }
 
     if (descriptionMentionsWater(normalizedDescription) && normalizedTaskType !== WATER_TASK_TYPE) {
       return NextResponse.json(
         {
           error:
-            'Water deliveries must use the Buy Water option so the per-bag fee can be calculated correctly.',
+            'Choose the bag of water task for water delivery.',
         },
         { status: 400 }
       );
     }
 
     if (normalizedTaskType === WATER_TASK_TYPE) {
-      if (!store) {
-        return NextResponse.json(
-          { error: 'Select the store for the water order.' },
-          { status: 400 }
-        );
-      }
-
       if (!Number.isInteger(parsedWaterBags) || (parsedWaterBags ?? 0) <= 0) {
         return NextResponse.json(
           { error: 'Enter the number of water bags for this delivery.' },
@@ -90,12 +112,24 @@ export async function POST(request: NextRequest) {
     }
 
     const pricing = calculateOrderPricing({
-      amount: parsedAmount,
+      amount:
+        normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE
+          ? 0
+          : parsedAmount,
       taskType: normalizedTaskType,
       waterBags: parsedWaterBags,
+      copyNotesType: normalizedCopyNotesType,
+      copyNotesPages: parsedCopyNotesPages,
     });
 
-    const settlement = splitServiceFee(pricing.serviceFee);
+    const settlement =
+      pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'
+        ? {
+            serviceFee: pricing.serviceFee,
+            platformFee: pricing.platformFee || 0,
+            taskerFee: pricing.taskerFee || 0,
+          }
+        : splitServiceFee(pricing.serviceFee);
 
     const bookedAt = new Date();
 
@@ -112,10 +146,12 @@ export async function POST(request: NextRequest) {
       totalAmount: pricing.totalAmount,
       requiresPremiumTasker: requiresPremiumTasker(pricing.amount),
       location,
-      store: store || undefined,
+      store: normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE ? undefined : store || undefined,
       packaging: packaging || undefined,
       waterBags: pricing.waterBags || undefined,
       waterFee: pricing.waterFee,
+      copyNotesType: pricing.copyNotesType,
+      copyNotesPages: pricing.copyNotesPages,
       status: 'pending',
       bookedAt,
       paymentProvider: 'manual_transfer',
@@ -132,7 +168,7 @@ export async function POST(request: NextRequest) {
       notifyTaskersOfNewTask({
         taskType: normalizedTaskType,
         description: normalizedDescription,
-        amount: pricing.amount,
+        amount: pricing.totalAmount,
         location,
         userName: session.user.name || 'A customer',
       }),

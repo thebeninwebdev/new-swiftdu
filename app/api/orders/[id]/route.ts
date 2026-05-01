@@ -15,6 +15,8 @@ import {
 } from '@/lib/pricing';
 import { requiresPremiumTasker } from '@/lib/tasker-access';
 
+const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes']);
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -65,6 +67,8 @@ export async function PATCH(
       store,
       packaging,
       waterBags,
+      copyNotesType,
+      copyNotesPages,
       status,
       hasPaid,
     } = body;
@@ -77,7 +81,10 @@ export async function PATCH(
       deadlineUnit !== undefined ||
       location !== undefined ||
       store !== undefined ||
-      packaging !== undefined
+      packaging !== undefined ||
+      waterBags !== undefined ||
+      copyNotesType !== undefined ||
+      copyNotesPages !== undefined
     ) {
       if (!isUserOwner) {
         return NextResponse.json(
@@ -106,10 +113,29 @@ export async function PATCH(
           : order.taskType === WATER_TASK_TYPE
             ? Number(order.waterBags || 0)
             : undefined;
+      const nextCopyNotesType =
+        copyNotesType !== undefined ? String(copyNotesType) : order.copyNotesType;
+      const nextCopyNotesPages =
+        copyNotesPages !== undefined
+          ? Number(copyNotesPages)
+          : order.taskType === 'copy_notes'
+            ? Number(order.copyNotesPages || 0)
+            : undefined;
 
-      if (!Number.isFinite(nextAmount) || nextAmount < 0) {
+      if (
+        nextTaskType !== 'copy_notes' &&
+        nextTaskType !== WATER_TASK_TYPE &&
+        (!Number.isFinite(nextAmount) || nextAmount < 0)
+      ) {
         return NextResponse.json(
           { error: 'Enter a valid task amount' },
+          { status: 400 }
+        );
+      }
+
+      if (!ALLOWED_CUSTOMER_TASK_TYPES.has(nextTaskType)) {
+        return NextResponse.json(
+          { error: 'Select a valid task type.' },
           { status: 400 }
         );
       }
@@ -118,20 +144,13 @@ export async function PATCH(
         return NextResponse.json(
           {
             error:
-              'Water deliveries must use the Buy Water option so the per-bag fee can be calculated correctly.',
+              'Choose the bag of water task for water delivery.',
           },
           { status: 400 }
         );
       }
 
       if (nextTaskType === WATER_TASK_TYPE) {
-        if (!nextStore) {
-          return NextResponse.json(
-            { error: 'Select the store for the water order.' },
-            { status: 400 }
-          );
-        }
-
         if (!Number.isInteger(nextWaterBags) || Number(nextWaterBags) <= 0) {
           return NextResponse.json(
             { error: 'Enter the number of water bags for this delivery.' },
@@ -140,12 +159,34 @@ export async function PATCH(
         }
       }
 
+      if (nextTaskType === 'copy_notes') {
+        if (nextCopyNotesType !== 'hardback' && nextCopyNotesType !== 'small') {
+          return NextResponse.json({ error: 'Choose the note type.' }, { status: 400 });
+        }
+
+        if (!Number.isInteger(nextCopyNotesPages) || Number(nextCopyNotesPages) <= 0) {
+          return NextResponse.json({ error: 'Enter the number of pages.' }, { status: 400 });
+        }
+      }
+
       const pricing = calculateOrderPricing({
-        amount: nextAmount,
+        amount:
+          nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE
+            ? 0
+            : nextAmount,
         taskType: nextTaskType,
         waterBags: nextWaterBags,
+        copyNotesType: nextCopyNotesType,
+        copyNotesPages: nextCopyNotesPages,
       });
-      const settlement = splitServiceFee(pricing.serviceFee);
+      const settlement =
+        pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'
+          ? {
+              serviceFee: pricing.serviceFee,
+              platformFee: pricing.platformFee || 0,
+              taskerFee: pricing.taskerFee || 0,
+            }
+          : splitServiceFee(pricing.serviceFee);
 
       order.taskType = nextTaskType;
       order.description = nextDescription;
@@ -159,6 +200,8 @@ export async function PATCH(
       order.requiresPremiumTasker = requiresPremiumTasker(pricing.amount);
       order.waterBags = pricing.waterBags || undefined;
       order.waterFee = pricing.waterFee;
+      order.copyNotesType = pricing.copyNotesType;
+      order.copyNotesPages = pricing.copyNotesPages;
       order.hasPaid = false;
       order.paidAt = undefined;
       order.taskerHasPaid = false;
@@ -190,9 +233,10 @@ export async function PATCH(
       if (deadlineValue !== undefined) order.deadlineValue = parseInt(deadlineValue);
       if (deadlineUnit !== undefined) order.deadlineUnit = deadlineUnit;
       if (location !== undefined) order.location = location;
-      if (store !== undefined || nextTaskType !== WATER_TASK_TYPE) {
-        order.store = nextStore;
-      }
+      order.store =
+        nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE
+          ? undefined
+          : nextStore;
       order.packaging = nextTaskType === 'restaurant' ? nextPackaging : undefined;
     }
 

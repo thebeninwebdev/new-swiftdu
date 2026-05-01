@@ -9,7 +9,7 @@ export interface IOrder extends Document {
   platformFee: number;
   taskerFee: number;
   serviceFee: number;
-  pricingModel: 'tiered' | 'water';
+  pricingModel: 'tiered' | 'water' | 'copy_notes';
   totalAmount: number;
   requiresPremiumTasker: boolean;
   location: string;
@@ -17,6 +17,8 @@ export interface IOrder extends Document {
   packaging?: string;
   waterBags?: number;
   waterFee?: number;
+  copyNotesType?: 'hardback' | 'small';
+  copyNotesPages?: number;
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled';
   taskerId?: string;
   taskerName?: string;
@@ -66,7 +68,7 @@ const orderSchema = new Schema<IOrder>(
     taskType: {
       type: String,
       required: true,
-      enum: ['restaurant', 'printing', 'shopping', 'water', 'others'],
+      enum: ['restaurant', 'printing', 'shopping', 'water', 'others', 'copy_notes'],
     },
     description: {
       type: String,
@@ -99,7 +101,7 @@ const orderSchema = new Schema<IOrder>(
     },
     pricingModel: {
       type: String,
-      enum: ['tiered', 'water'],
+      enum: ['tiered', 'water', 'copy_notes'],
       required: true,
       default: 'tiered',
     },
@@ -130,6 +132,14 @@ const orderSchema = new Schema<IOrder>(
       type: Number,
       default: 0,
       min: 0,
+    },
+    copyNotesType: {
+      type: String,
+      enum: ['hardback', 'small'],
+    },
+    copyNotesPages: {
+      type: Number,
+      min: 1,
     },
     status: {
       type: String,

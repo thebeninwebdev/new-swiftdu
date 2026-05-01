@@ -310,8 +310,9 @@ export default function AdminOrdersPage() {
                   <SelectItem value="all">All Types</SelectItem>
                   <SelectItem value="restaurant">Restaurant</SelectItem>
                   <SelectItem value="printing">Printing</SelectItem>
+                  <SelectItem value="copy_notes">Copy Notes</SelectItem>
                   <SelectItem value="shopping">Shopping</SelectItem>
-                  <SelectItem value="water">Buy Water</SelectItem>
+                  <SelectItem value="water">Bag of Water</SelectItem>
                   <SelectItem value="others">Others</SelectItem>
                 </SelectContent>
               </Select>

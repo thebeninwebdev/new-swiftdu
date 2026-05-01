@@ -23,14 +23,18 @@ interface TaskCardProps {
 const taskTypeColors: Record<string, string> = {
   restaurant: 'bg-orange-100 text-orange-800 border-orange-300',
   printing: 'bg-blue-100 text-blue-800 border-blue-300',
+  copy_notes: 'bg-amber-100 text-amber-800 border-amber-300',
   shopping: 'bg-green-100 text-green-800 border-green-300',
+  water: 'bg-cyan-100 text-cyan-800 border-cyan-300',
   others: 'bg-purple-100 text-purple-800 border-purple-300',
 }
 
 const taskTypeLabels: Record<string, string> = {
   restaurant: 'Restaurant',
   printing: 'Printing',
+  copy_notes: 'Copy Notes',
   shopping: 'Shopping',
+  water: 'Bag of Water',
   others: 'Others',
 }
 
@@ -87,7 +91,7 @@ export function TaskCard({ id, taskType, description, amount, totalAmount, deadl
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
-            <CardTitle className="text-lg mb-2">{taskType === 'restaurant' ? `Order from ${store}` : taskType === 'shopping' ? `Buy from ${store}` : 'Task'}</CardTitle>
+            <CardTitle className="text-lg mb-2">{taskType === 'restaurant' ? `Order from ${store}` : taskType === 'shopping' ? `Buy from ${store}` : taskType === 'water' ? 'Bag of Water' : 'Task'}</CardTitle>
             <p className="text-sm text-muted-foreground">{timeAgo}</p>
           </div>
           <Badge className={taskTypeColors[taskType] || taskTypeColors.others}>

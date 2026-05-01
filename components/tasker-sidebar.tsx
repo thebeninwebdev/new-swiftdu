@@ -20,7 +20,7 @@ import {
 import { toast } from 'sonner'
 
 import { authClient } from '@/lib/auth-client'
-import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
+import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
 import { Button } from '@/components/ui/button'
 import {
   Tooltip,
@@ -119,7 +119,7 @@ export default function TaskerSidebar() {
 
   const fetchTaskerStats = useCallback(async (taskerId: string) => {
     try {
-      const statsRes = await fetch(`/api/taskers/stats?taskerId=${taskerId}`)
+      const statsRes = await fetchWithSocketPause(`/api/taskers/stats?taskerId=${taskerId}`)
       if (!statsRes.ok) {
         return
       }
@@ -136,7 +136,7 @@ export default function TaskerSidebar() {
 
   const fetchUnpaidOrders = useCallback(async () => {
     try {
-      const unpaidRes = await fetch('/api/taskers/unpaid-platform-fees')
+      const unpaidRes = await fetchWithSocketPause('/api/taskers/unpaid-platform-fees')
       if (!unpaidRes.ok) {
         return
       }
@@ -172,7 +172,7 @@ export default function TaskerSidebar() {
           return
         }
 
-        const taskerRes = await fetch(`/api/taskers?taskerId=${taskerId}`)
+        const taskerRes = await fetchWithSocketPause(`/api/taskers?taskerId=${taskerId}&basic=true`)
         if (!taskerRes.ok) {
           toast.error('Failed to load tasker profile')
           return

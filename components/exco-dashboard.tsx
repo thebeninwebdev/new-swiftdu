@@ -512,7 +512,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
     return (
       <div className="space-y-4">
         <TaskerManagementPanel />
-        <UserManagementPanel title="User Phone Management" allowSuspension={false} />
+        <UserManagementPanel title="User Management" allowSuspension={false} />
         <ReviewsPanel />
       </div>
     );
@@ -633,8 +633,8 @@ function UserManagementPanel({
   const [phoneEdits, setPhoneEdits] = useState<Record<string, string>>({});
   const [actionId, setActionId] = useState<string | null>(null);
 
-  const updateUser = async (user: ExcoUser, body: Record<string, unknown>) => {
-    setActionId(user.id);
+  const updateUser = async (user: ExcoUser, body: Record<string, unknown>, actionKey = "update") => {
+    setActionId(`${user.id}-${actionKey}`);
     try {
       await patchManagement("users", { id: user.id, ...body });
       await reload();
@@ -646,7 +646,7 @@ function UserManagementPanel({
   return (
     <ManagementShell
       title={title}
-      description="Search users, update phone numbers, and manage account access inside this dashboard."
+      description="Search users, review account status, update phone numbers, and verify unverified accounts."
       isLoading={isLoading}
       error={error}
       emptyLabel="No users found"
@@ -686,13 +686,31 @@ function UserManagementPanel({
       <div className="space-y-3">
         {paged.pageItems.map((user) => (
           <div key={user.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <p className="font-semibold text-slate-950 dark:text-white">{user.name}</p>
-                <p className="mt-1 text-xs text-slate-500">{user.email} - {user.role} - {user.orderCount} orders</p>
-                {user.isSuspended ? <Badge variant="destructive" className="mt-2">suspended</Badge> : null}
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-semibold text-slate-950 dark:text-white">{user.name}</p>
+                  <Badge variant="outline">{user.role}</Badge>
+                  <Badge
+                    variant={user.emailVerified ? "outline" : "secondary"}
+                    className={
+                      user.emailVerified
+                        ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                        : "border-amber-200 bg-amber-50 text-amber-700"
+                    }
+                  >
+                    {user.emailVerified ? "verified" : "unverified"}
+                  </Badge>
+                  {user.isSuspended ? <Badge variant="destructive">suspended</Badge> : null}
+                </div>
+                <p className="mt-2 text-xs text-slate-500">{user.email}</p>
+                <div className="mt-2 grid gap-1 text-xs text-slate-500 sm:grid-cols-3">
+                  <span>Joined {formatDate(user.createdAt)}</span>
+                  <span>{user.phone || "No phone number"}</span>
+                  <span>{user.orderCount} orders</span>
+                </div>
               </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:justify-end">
                 <input
                   value={phoneEdits[user.id] ?? user.phone ?? ""}
                   onChange={(event) =>
@@ -704,17 +722,32 @@ function UserManagementPanel({
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={actionId === user.id}
-                  onClick={() => updateUser(user, { phone: phoneEdits[user.id] ?? user.phone })}
+                  disabled={Boolean(actionId)}
+                  onClick={() => updateUser(user, { phone: phoneEdits[user.id] ?? user.phone }, "phone")}
                 >
                   Save Phone
                 </Button>
+                {!user.emailVerified ? (
+                  <Button
+                    size="sm"
+                    disabled={Boolean(actionId)}
+                    onClick={() => updateUser(user, { action: "verify" }, "verify")}
+                  >
+                    Verify User
+                  </Button>
+                ) : null}
                 {allowSuspension && user.role !== "admin" ? (
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={actionId === user.id}
-                    onClick={() => updateUser(user, { action: user.isSuspended ? "activate" : "suspend" })}
+                    disabled={Boolean(actionId)}
+                    onClick={() =>
+                      updateUser(
+                        user,
+                        { action: user.isSuspended ? "activate" : "suspend" },
+                        user.isSuspended ? "activate" : "suspend"
+                      )
+                    }
                   >
                     {user.isSuspended ? "Activate" : "Suspend"}
                   </Button>

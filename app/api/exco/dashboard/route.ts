@@ -810,6 +810,7 @@ function buildCards(role: ExcoRole, data: {
   paymentFailures: number;
   totalUsers: number;
   newUsers: number;
+  totalTaskers: number;
   activeTaskers: number;
   suspendedTaskers: number;
   reviews: number;
@@ -916,6 +917,18 @@ function buildCards(role: ExcoRole, data: {
   }
 
   return [
+    {
+      label: "Total users",
+      value: data.totalUsers,
+      format: "number",
+      description: "All registered user accounts.",
+    },
+    {
+      label: "Tasker count",
+      value: data.totalTaskers,
+      format: "number",
+      description: "All tasker profiles in the system.",
+    },
     {
       label: "Page views",
       value: data.analytics.totalPageViews,
@@ -1073,6 +1086,7 @@ export async function GET(request: NextRequest) {
     paymentFailures,
     totalUsers,
     newUsers,
+    totalTaskers,
     activeTaskers,
     suspendedTaskers,
     reviews,
@@ -1103,6 +1117,7 @@ export async function GET(request: NextRequest) {
     Order.countDocuments({ ...match, paymentStatus: "failed" }),
     User.countDocuments(),
     User.countDocuments({ createdAt: { $gte: since } }),
+    Tasker.countDocuments(),
     Tasker.countDocuments({ isVerified: true }),
     Tasker.countDocuments({ isSettlementSuspended: true }),
     Review.countDocuments({ createdAt: { $gte: since } }),
@@ -1211,6 +1226,7 @@ export async function GET(request: NextRequest) {
     paymentFailures,
     totalUsers,
     newUsers,
+    totalTaskers,
     activeTaskers,
     suspendedTaskers,
     reviews,

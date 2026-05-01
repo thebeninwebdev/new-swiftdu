@@ -2,8 +2,8 @@ import { connectDB } from '@/lib/db'
 import { Order } from '@/models/order'
 import Tasker from "@/models/tasker"
 import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@/lib/auth'
 import { emitOrderUpdated } from '@/lib/socket'
-import { ensureBookedAt } from '@/lib/order-response-time'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import { PREMIUM_TASKER_MIN_BUDGET, requiresPremiumTasker } from '@/lib/tasker-access'
 
@@ -89,18 +89,26 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB()
 
-    const body = await request.json()
-    const { orderId, taskerId, taskerName } = body
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    })
 
-    if (!orderId || !taskerId) {
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const body = await request.json()
+    const { orderId, taskerName } = body
+
+    if (!orderId) {
       return NextResponse.json(
-        { error: 'orderId and taskerId are required' },
+        { error: 'orderId is required' },
         { status: 400 }
       )
     }
 
     // Verify tasker exists and is verified
-    const tasker = await Tasker.findOne({ userId: taskerId })
+    const tasker = await Tasker.findOne({ userId: session.user.id })
 
     if (!tasker) {
       return NextResponse.json(
@@ -164,19 +172,31 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Update order with tasker info
-    // acceptedBy stays as the tasker's userId (for session-based matching)
-    ensureBookedAt(order)
-    order.acceptedBy = taskerId
-    order.acceptedAt = new Date()
-    order.status = 'in_progress'
-    order.paymentProvider = 'manual_transfer'
+    const acceptedAt = new Date()
 
-    // taskerId should be tasker._id from the Tasker collection (not the userId)
-    order.taskerId = tasker._id
-    order.taskerName = taskerName || "Anonymous"
+    const updatedOrder = await Order.findOneAndUpdate(
+      { _id: orderId, status: 'pending' },
+      {
+        $set: {
+          acceptedBy: session.user.id,
+          acceptedAt,
+          bookedAt: order.bookedAt || acceptedAt,
+          status: 'in_progress',
+          paymentProvider: 'manual_transfer',
+          taskerId: tasker._id.toString(),
+          taskerName: taskerName || session.user.name || 'Anonymous',
+        },
+      },
+      { new: true }
+    )
 
-    const updatedOrder = await order.save()
+    if (!updatedOrder) {
+      return NextResponse.json(
+        { error: 'This errand has already been accepted or completed' },
+        { status: 409 }
+      )
+    }
+
     emitOrderUpdated(updatedOrder)
 
     return NextResponse.json(updatedOrder, { status: 200 })

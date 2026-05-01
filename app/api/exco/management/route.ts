@@ -105,7 +105,6 @@ async function getUsers(excoRole: ExcoRole) {
 
   const users = await User.find(filters)
     .sort({ createdAt: -1 })
-    .limit(40)
     .select("_id name email phone role emailVerified isSuspended createdAt")
     .lean();
 
@@ -231,8 +230,14 @@ export async function PATCH(request: NextRequest) {
   if (resource === "users") {
     const { id, phone, action } = body as { id?: string; phone?: string; action?: string };
     if (!id) return NextResponse.json({ error: "User id is required" }, { status: 400 });
+    if (
+      action &&
+      !["verify", "suspend", "activate"].includes(action)
+    ) {
+      return NextResponse.json({ error: "Invalid user action" }, { status: 400 });
+    }
 
-    const user = await User.findById(id).select("role phone isSuspended");
+    const user = await User.findById(id).select("role phone emailVerified isSuspended");
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
     if (user.role === "admin") {
       return NextResponse.json({ error: "Admin accounts cannot be modified" }, { status: 403 });
@@ -241,6 +246,7 @@ export async function PATCH(request: NextRequest) {
     if (typeof phone === "string") {
       user.phone = phone.trim();
     }
+    if (action === "verify") user.emailVerified = true;
     if (action === "suspend") user.isSuspended = true;
     if (action === "activate") user.isSuspended = false;
 

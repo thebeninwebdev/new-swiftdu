@@ -17,7 +17,7 @@ import {
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
+import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
 import { canTaskerCancelOrder, isCustomerPaymentConfirmed } from '@/lib/order-status'
 import { convertToNaira } from '@/lib/utils'
 
@@ -63,8 +63,9 @@ interface UserInfo {
 const taskTypeLabels: Record<string, string> = {
   restaurant: 'Food delivery',
   printing: 'Printing task',
+  copy_notes: 'Copy notes',
   shopping: 'Shopping errand',
-  water: 'Water delivery',
+  water: 'Bag of Water',
   others: 'General errand',
 }
 
@@ -119,7 +120,7 @@ export default function ErrandDetailPage() {
       fetchingRef.current = true
 
       try {
-        const errandRes = await fetch(`/api/orders/${errandId}`, {
+        const errandRes = await fetchWithSocketPause(`/api/orders/${errandId}`, {
           cache: 'no-store',
         })
         if (errandRes.status === 401) {
@@ -133,7 +134,7 @@ export default function ErrandDetailPage() {
         const errandData: ErrandDetail = await errandRes.json()
         setErrand(errandData)
 
-        const userRes = await fetch(`/api/users/${errandData.userId}`)
+        const userRes = await fetchWithSocketPause(`/api/users/${errandData.userId}`)
         if (userRes.ok) {
           const userData = await userRes.json()
           setUserInfo(userData)
@@ -248,7 +249,7 @@ export default function ErrandDetailPage() {
       setShowConfirmModal(null)
 
       const nextStatus = action === 'complete' ? 'completed' : 'cancelled'
-      const response = await fetch(`/api/orders/${errandId}`, {
+      const response = await fetchWithSocketPause(`/api/orders/${errandId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: nextStatus }),
@@ -301,7 +302,7 @@ export default function ErrandDetailPage() {
       setActionLoading('report')
       setError(null)
 
-      const response = await fetch(`/api/orders/${errandId}/report-transfer-issue`, {
+      const response = await fetchWithSocketPause(`/api/orders/${errandId}/report-transfer-issue`, {
         method: 'POST',
       })
 
@@ -450,13 +451,22 @@ export default function ErrandDetailPage() {
                 </p>
               </div>
 
-              <span
-                className={`inline-flex shrink-0 rounded-full px-4 py-2 text-sm font-semibold capitalize ${
-                  statusStyles[errand.status]
-                }`}
-              >
-                {errand.status.replace('_', ' ')}
-              </span>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => router.push('/tasker-dashboard')}
+                  className="inline-flex h-10 items-center justify-center rounded-full border border-white/25 px-4 text-sm font-semibold text-white transition hover:bg-white/10"
+                >
+                  Check more tasks
+                </button>
+                <span
+                  className={`inline-flex rounded-full px-4 py-2 text-sm font-semibold capitalize ${
+                    statusStyles[errand.status]
+                  }`}
+                >
+                  {errand.status.replace('_', ' ')}
+                </span>
+              </div>
             </div>
           </div>
 

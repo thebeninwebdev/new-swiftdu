@@ -43,8 +43,9 @@ function formatTaskType(taskType: string) {
   const labels: Record<string, string> = {
     restaurant: 'food delivery',
     printing: 'printing',
+    copy_notes: 'copy notes',
     shopping: 'shopping',
-    water: 'water delivery',
+    water: 'bag of water',
     others: 'errand',
   }
 
@@ -89,15 +90,6 @@ export async function notifyTaskersOfNewTask(
     }
   }
 
-  if (girlsHostelOnly && !hasEmailConfig) {
-    return {
-      recipientCount: 0,
-      deliveredCount: 0,
-      skipped: true,
-      reason: 'Girls Hostel task notifications require email configuration.',
-    }
-  }
-
   const taskerFilter = girlsHostelOnly
     ? {
         isVerified: true,
@@ -119,7 +111,7 @@ export async function notifyTaskersOfNewTask(
     girlsHostelOnly,
   })
 
-  if (targetTaskers.length === 0) {
+  if (targetTaskers.length === 0 && !hasTelegramConfig) {
     return {
       recipientCount: 0,
       deliveredCount: 0,
@@ -151,7 +143,7 @@ export async function notifyTaskersOfNewTask(
     )
   }
 
-  const shouldSendTelegram = hasTelegramConfig && !girlsHostelOnly
+  const shouldSendTelegram = hasTelegramConfig
   const taskUrl = `${getAppBaseUrl()}/tasker-dashboard`
   const subject = `New ${formatTaskType(input.taskType)} task posted on SwiftDU`
 

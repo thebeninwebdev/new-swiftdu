@@ -21,7 +21,9 @@ export async function GET(
     }
 
     const { id } = await params;
-    const order = await Order.findById(id).lean();
+    const order = await Order.findById(id)
+      .select("userId taskerId taskerName")
+      .lean();
 
     if (!order) {
       return NextResponse.json({ error: "Order not found" }, { status: 404 });
@@ -41,7 +43,9 @@ export async function GET(
       );
     }
 
-    const tasker = await Tasker.findById(order.taskerId).lean();
+    const tasker = await Tasker.findById(order.taskerId)
+      .select("phone profileImage bankDetails")
+      .lean();
 
     if (!tasker) {
       return NextResponse.json({ error: "Tasker not found" }, { status: 404 });

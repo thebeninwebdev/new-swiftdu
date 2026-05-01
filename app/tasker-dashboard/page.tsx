@@ -24,7 +24,7 @@ import {
 import { toast } from 'sonner'
 
 import { authClient } from '@/lib/auth-client'
-import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
+import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
 import { PREMIUM_TASKER_MIN_BUDGET } from '@/lib/tasker-access'
 import { convertToNaira } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -49,6 +49,8 @@ interface Errand {
   status: string
   acceptedBy?: string
   acceptedAt?: string
+  hasPaid?: boolean
+  isDeclinedTask?: boolean
   createdAt: string
 }
 
@@ -76,6 +78,8 @@ interface RealtimeTaskPayload {
   status?: string
   taskerId?: string
   acceptedAt?: string
+  hasPaid?: boolean
+  isDeclinedTask?: boolean
   createdAt?: string
 }
 
@@ -83,14 +87,16 @@ const taskTypes = [
   { value: 'all', label: 'All Tasks', icon: Sparkles, color: 'bg-slate-500' },
   { value: 'restaurant', label: 'Food', icon: Package, color: 'bg-orange-500' },
   { value: 'printing', label: 'Print', icon: Package, color: 'bg-sky-500' },
+  { value: 'copy_notes', label: 'Copy', icon: Package, color: 'bg-amber-500' },
   { value: 'shopping', label: 'Shop', icon: Package, color: 'bg-emerald-500' },
-  { value: 'water', label: 'Water', icon: Package, color: 'bg-cyan-500' },
+  { value: 'water', label: 'Water Bags', icon: Package, color: 'bg-cyan-500' },
   { value: 'others', label: 'Other', icon: Package, color: 'bg-slate-500' },
 ]
 
 const taskTypeStyles: Record<string, string> = {
   restaurant: 'from-orange-500 to-amber-500',
   printing: 'from-sky-500 to-blue-500',
+  copy_notes: 'from-amber-500 to-yellow-500',
   shopping: 'from-emerald-500 to-teal-500',
   water: 'from-cyan-500 to-blue-500',
   others: 'from-slate-500 to-gray-500',
@@ -99,6 +105,7 @@ const taskTypeStyles: Record<string, string> = {
 const taskTypeBg: Record<string, string> = {
   restaurant: 'bg-orange-50 text-orange-700 border-orange-200',
   printing: 'bg-sky-50 text-sky-700 border-sky-200',
+  copy_notes: 'bg-amber-50 text-amber-700 border-amber-200',
   shopping: 'bg-emerald-50 text-emerald-700 border-emerald-200',
   water: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   others: 'bg-slate-50 text-slate-700 border-slate-200',
@@ -218,6 +225,8 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
     packaging: payload.packaging,
     status: payload.status || 'pending',
     acceptedAt: payload.acceptedAt,
+    hasPaid: payload.hasPaid,
+    isDeclinedTask: payload.isDeclinedTask,
     createdAt: payload.createdAt || new Date().toISOString(),
   }
 }
@@ -227,9 +236,9 @@ export default function TaskerDashboardPage() {
   const { data: session, isPending: sessionPending } = authClient.useSession()
 
   const [errands, setErrands] = useState<Errand[]>([])
+  const [acceptedErrands, setAcceptedErrands] = useState<Errand[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [redirectingOrderId, setRedirectingOrderId] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [taskTypeFilter, setTaskTypeFilter] = useState('all')
@@ -247,7 +256,6 @@ export default function TaskerDashboardPage() {
   const refreshTimeoutRef = useRef<number | null>(null)
   const loadDashboardRef = useRef<(initial?: boolean) => Promise<void>>(async () => {})
 
-  const taskerUserId = session?.user?.id ? String(session.user.id) : null
   const taskerId = session?.user?.taskerId ? String(session.user.taskerId) : null
   const taskerName = session?.user?.name || 'Anonymous'
 
@@ -278,6 +286,7 @@ export default function TaskerDashboardPage() {
       setTaskerProfile(null)
       setLoadingTaskerProfile(false)
       setErrands([])
+      setAcceptedErrands([])
       setError('Tasker profile not found for this account.')
       return
     }
@@ -287,7 +296,7 @@ export default function TaskerDashboardPage() {
     const loadTaskerProfile = async () => {
       try {
         setLoadingTaskerProfile(true)
-        const taskerRes = await fetch(`/api/taskers?taskerId=${taskerId}`, {
+        const taskerRes = await fetchWithSocketPause(`/api/taskers?taskerId=${taskerId}&basic=true`, {
           cache: 'no-store',
         })
 
@@ -312,6 +321,7 @@ export default function TaskerDashboardPage() {
         if (!cancelled) {
           setTaskerProfile(null)
           setErrands([])
+          setAcceptedErrands([])
           setError('Failed to load your tasker profile.')
         }
       } finally {
@@ -341,6 +351,7 @@ export default function TaskerDashboardPage() {
 
       if (!taskerId) {
         setErrands([])
+        setAcceptedErrands([])
         setError('Tasker profile not found for this account.')
         setLoading(false)
         setRefreshing(false)
@@ -355,6 +366,7 @@ export default function TaskerDashboardPage() {
 
       if (!taskerProfile.isVerified) {
         setErrands([])
+        setAcceptedErrands([])
         setError('Your account is awaiting verification.')
         setLoading(false)
         setRefreshing(false)
@@ -363,6 +375,7 @@ export default function TaskerDashboardPage() {
 
       if (taskerProfile.isSettlementSuspended) {
         setErrands([])
+        setAcceptedErrands([])
         setError(
           'Your tasker account is temporarily suspended until overdue platform settlements are paid.'
         )
@@ -389,14 +402,14 @@ export default function TaskerDashboardPage() {
         const params = new URLSearchParams()
         if (taskTypeFilter !== 'all') params.append('taskType', taskTypeFilter)
         if (locationFilter.trim()) params.append('location', locationFilter.trim())
-        params.append('status', 'pending,in_progress,paid')
+        params.append('status', 'pending')
         params.append('viewerTaskerId', taskerProfile._id)
 
         const [availableRes, acceptedRes] = await Promise.all([
-          fetch(`/api/errands?${params.toString()}`, {
+          fetchWithSocketPause(`/api/errands?${params.toString()}`, {
             cache: 'no-store',
           }),
-          fetch(`/api/errands?accepted=true&taskerId=${taskerProfile._id}`, {
+          fetchWithSocketPause(`/api/errands?accepted=true&taskerId=${taskerProfile._id}`, {
             cache: 'no-store',
           }),
         ])
@@ -415,14 +428,7 @@ export default function TaskerDashboardPage() {
         }
         prevErrandsCount.current = availableErrands.length
 
-        if (acceptedErrands.length > 0) {
-          const activeErrand = acceptedErrands[0]
-          setRedirectingOrderId(activeErrand._id)
-          router.replace(`/tasker-dashboard/${activeErrand._id}`)
-          return
-        }
-
-        setRedirectingOrderId(null)
+        setAcceptedErrands(sortErrands(acceptedErrands))
         setErrands(sortErrands(availableErrands))
         setError(null)
       } catch (dashboardError) {
@@ -501,17 +507,10 @@ export default function TaskerDashboardPage() {
       void loadDashboardRef.current(false)
     }
     const handleTaskUpdate = (payload?: RealtimeTaskPayload) => {
-      if (payload?.taskerId && payload.taskerId === taskerProfile._id && payload.status !== 'cancelled') {
-        setRedirectingOrderId(payload._id)
-        router.replace(`/tasker-dashboard/${payload._id}`)
-        return
-      }
-
       if (payload) {
         const shouldShow =
-          ((payload.status === 'pending' && !payload.taskerId) ||
-            ((payload.status === 'in_progress' || payload.status === 'paid') &&
-              payload.taskerId !== taskerProfile._id)) &&
+          payload.status === 'pending' &&
+          !payload.taskerId &&
           (payload.status !== 'pending' ||
             !payload.requiresPremiumTasker ||
             Boolean(taskerProfile?.isPremium)) &&
@@ -591,17 +590,16 @@ export default function TaskerDashboardPage() {
     try {
       setSubmitting(errandId)
 
-      if (!taskerUserId) {
+      if (!session?.user?.id) {
         setError('User not authenticated')
         return
       }
 
-      const response = await fetch('/api/errands', {
+      const response = await fetchWithSocketPause('/api/errands', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           orderId: errandId,
-          taskerId: taskerUserId,
           taskerName,
         }),
       })
@@ -613,8 +611,12 @@ export default function TaskerDashboardPage() {
         return
       }
 
-      toast.success('Task accepted! Redirecting...')
-      router.replace(`/tasker-dashboard/${payload._id}`)
+      toast.success('Task accepted. It is now in your active tasks.')
+      setAcceptedErrands((previous) =>
+        sortErrands([payload, ...previous.filter((errand) => errand._id !== payload._id)])
+      )
+      setErrands((previous) => previous.filter((errand) => errand._id !== payload._id))
+      router.push(`/tasker-dashboard/${payload._id}`)
     } catch (acceptError) {
       console.error('Error accepting errand:', acceptError)
       setError('Failed to accept errand')
@@ -631,7 +633,35 @@ export default function TaskerDashboardPage() {
     return `${Math.floor(hours / 24)}d ago`
   }
 
-  if (loading || redirectingOrderId) {
+  const getActiveTaskState = (errand: Errand) => {
+    if (errand.isDeclinedTask) {
+      return {
+        label: 'Review',
+        description: 'Transfer issue reported',
+        className: 'bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:ring-rose-900/60',
+      }
+    }
+
+    if (errand.status === 'paid' || errand.hasPaid) {
+      return {
+        label: 'Ready',
+        description: 'Payment confirmed',
+        className: 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900/60',
+      }
+    }
+
+    return {
+      label: 'Waiting',
+      description: 'Awaiting transfer confirmation',
+      className: 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-900/60',
+    }
+  }
+
+  const paymentReadyCount = acceptedErrands.filter(
+    (errand) => errand.status === 'paid' || errand.hasPaid
+  ).length
+
+  if (loading) {
     return (
       <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-sky-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 flex items-center justify-center p-4">
         <motion.div
@@ -647,11 +677,7 @@ export default function TaskerDashboardPage() {
                 className="relative mb-6"
               >
                 <div className="w-16 h-16 rounded-2xl bg-linear-to-br from-sky-500 to-indigo-600 flex items-center justify-center">
-                  {redirectingOrderId ? (
-                    <ArrowRight className="h-8 w-8 text-white" />
-                  ) : (
-                    <Loader2 className="h-8 w-8 text-white" />
-                  )}
+                  <Loader2 className="h-8 w-8 text-white" />
                 </div>
                 <motion.div
                   variants={pulseVariants}
@@ -661,12 +687,10 @@ export default function TaskerDashboardPage() {
               </motion.div>
               
               <h3 className="text-lg font-bold text-slate-900 dark:text-white mb-2">
-                {redirectingOrderId ? 'Active Task Found' : 'Loading Tasks'}
+                Loading Tasks
               </h3>
               <p className="text-sm text-slate-500 dark:text-slate-400">
-                {redirectingOrderId
-                  ? 'Taking you to your current task...'
-                  : 'Finding available errands near you'}
+                Finding available errands and your active tasks
               </p>
 
               {/* Progress dots */}
@@ -733,11 +757,13 @@ export default function TaskerDashboardPage() {
                 className="text-xl font-bold text-slate-900 dark:text-white"
                 layoutId="header-title"
               >
-                Available Tasks
+                Tasker Dashboard
               </motion.h1>
               <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-1">
                 <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-                <span>{errands.length} open {errands.length === 1 ? 'task' : 'tasks'}</span>
+                <span>
+                  {acceptedErrands.length} active, {errands.length} open
+                </span>
               </p>
               {!taskerProfile?.isPremium ? (
                 <p className="mt-1 text-xs text-slate-400 dark:text-slate-500">
@@ -880,6 +906,104 @@ export default function TaskerDashboardPage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {acceptedErrands.length > 0 ? (
+          <section className="mb-6">
+            <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                  Active Tasks
+                </h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {paymentReadyCount} ready to complete, {acceptedErrands.length} total in progress.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => void loadDashboard(false)}
+                className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Refresh
+              </button>
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              {acceptedErrands.map((errand) => {
+                const state = getActiveTaskState(errand)
+
+                return (
+                  <article
+                    key={errand._id}
+                    className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                  >
+                    <div className={`h-1.5 bg-linear-to-r ${taskTypeStyles[errand.taskType] || taskTypeStyles.others}`} />
+                    <div className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-semibold ring-1 ${state.className}`}>
+                              {state.label}
+                            </span>
+                            <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${taskTypeBg[errand.taskType] || taskTypeBg.others}`}>
+                              {errand.taskType}
+                            </span>
+                          </div>
+                          <h3 className="mt-3 line-clamp-2 text-base font-semibold leading-6 text-slate-900 dark:text-white">
+                            {errand.description}
+                          </h3>
+                          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                            {state.description}
+                          </p>
+                        </div>
+
+                        <div className="shrink-0 rounded-2xl bg-emerald-50 px-3 py-2 text-right dark:bg-emerald-950/40">
+                          <p className="text-[10px] font-semibold uppercase text-emerald-700 dark:text-emerald-300">
+                            Earn
+                          </p>
+                          <p className="text-sm font-bold text-emerald-800 dark:text-emerald-200">
+                            {convertToNaira(errand.taskerFee || 0)}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 grid gap-2 text-sm text-slate-600 dark:text-slate-400 sm:grid-cols-2">
+                        <div className="flex items-center gap-2">
+                          <MapPin className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
+                          <span className="truncate">{errand.location}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Clock3 className="h-4 w-4 shrink-0 text-slate-400" />
+                          <span>{errand.acceptedAt ? `Accepted ${formatTimeAgo(errand.acceptedAt)}` : formatTimeAgo(errand.createdAt)}</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => router.push(`/tasker-dashboard/${errand._id}`)}
+                        className="mt-4 flex h-11 w-full items-center justify-center gap-2 rounded-2xl bg-slate-900 text-sm font-semibold text-white shadow-lg shadow-slate-900/15 transition-colors hover:bg-slate-800 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-100"
+                      >
+                        Open task
+                        <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+              Open Tasks
+            </h2>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Accept more tasks when you have capacity.
+            </p>
+          </div>
+        </div>
 
         {/* Empty State */}
         {errands.length === 0 ? (

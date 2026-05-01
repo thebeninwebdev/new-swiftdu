@@ -54,14 +54,16 @@ interface TaskHistory {
 const taskTypeLabels: Record<string, string> = {
   restaurant: 'Food Delivery',
   printing: 'Printing',
+  copy_notes: 'Copy Notes',
   shopping: 'Shopping',
-  water: 'Buy Water',
+  water: 'Bag of Water',
   others: 'Other Errands',
 }
 
 const taskTypeIcons: Record<string, React.ReactNode> = {
   restaurant: <Package className="h-4 w-4" />,
   printing: <Package className="h-4 w-4" />,
+  copy_notes: <Package className="h-4 w-4" />,
   shopping: <Package className="h-4 w-4" />,
   water: <Package className="h-4 w-4" />,
   others: <Package className="h-4 w-4" />,

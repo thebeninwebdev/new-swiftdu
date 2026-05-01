@@ -272,10 +272,10 @@ export default function DashboardMenu() {
           {isMobileMenuOpen && (
             <div className="lg:hidden fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}>
               <div 
-                className="absolute right-0 top-16 bottom-0 w-64 bg-white dark:bg-slate-900 shadow-2xl animate-in slide-in-from-right duration-300"
+                className="absolute bottom-0 right-0 top-16 flex w-72 max-w-[85vw] flex-col bg-white shadow-2xl animate-in slide-in-from-right duration-300 dark:bg-slate-900"
                 onClick={e => e.stopPropagation()}
               >
-                <nav className="p-4 space-y-2">
+                <nav className="flex-1 space-y-2 overflow-y-auto p-4 pb-6">
                   {navigationItems.map((item) => {
                     const isActive = pathname === item.href
                     const Icon = item.icon

@@ -29,6 +29,7 @@ import { authClient } from '@/lib/auth-client'
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
+  WATER_BAG_PRICE,
   WATER_BAG_FEE,
   WATER_TASK_TYPE,
 } from '@/lib/pricing'
@@ -44,6 +45,8 @@ interface ErrandData {
   store?: string
   packaging?: string
   waterBags?: string
+  copyNotesType?: string
+  copyNotesPages?: string
 }
 
 interface ActiveOrder {
@@ -87,6 +90,13 @@ const taskTypes: TaskTypeConfig[] = [
     accent: 'from-sky-500 to-indigo-500',
   },
   {
+    value: 'copy_notes',
+    label: 'Copy Notes',
+    description: 'Copy hardback or small notes by page count.',
+    icon: FileText,
+    accent: 'from-amber-500 to-yellow-500',
+  },
+  {
     value: 'shopping',
     label: 'Store Shopping',
     description: 'Groceries, toiletries, and small campus-store items.',
@@ -95,17 +105,10 @@ const taskTypes: TaskTypeConfig[] = [
   },
   {
     value: WATER_TASK_TYPE,
-    label: 'Buy Water',
-    description: 'Water orders are charged separately at N200 per bag.',
+    label: 'Bag of Water',
+    description: 'Order bags of water at a fixed per-bag price.',
     icon: Droplets,
     accent: 'from-cyan-500 to-blue-500',
-  },
-  {
-    value: 'others',
-    label: 'General Errands',
-    description: 'Any other campus errand that needs a runner.',
-    icon: Package,
-    accent: 'from-violet-500 to-fuchsia-500',
   },
 ]
 
@@ -127,13 +130,6 @@ const storeOptions: Record<string, Array<{ value: string; label: string }>> = {
     { value: 'mama', label: "Mama's Kitchen" },
     { value: 'golley', label: 'Golley Shop' },
     { value: 'indomie', label: 'Indomie Spot' },
-  ],
-  [WATER_TASK_TYPE]: [
-    { value: '', label: 'Select a store...' },
-    { value: 'rita', label: 'Rita Store' },
-    { value: 'sarah', label: 'Sarah Store' },
-    { value: 'muuy V', label: 'Mummy V' },
-    { value: 'campus-mart', label: 'Campus Mart' },
   ],
 }
 
@@ -174,6 +170,8 @@ export default function ErrandWizardPage() {
     store: '',
     packaging: '',
     waterBags: '',
+    copyNotesType: '',
+    copyNotesPages: '',
   })
   const sessionUserId = session?.user?.id
 
@@ -322,12 +320,15 @@ export default function ErrandWizardPage() {
 
   const amount = Number(formData.amount || 0)
   const waterBags = Number(formData.waterBags || 0)
+  const copyNotesPages = Number(formData.copyNotesPages || 0)
   const description = formData.description.trim()
-  const taskType = formData.taskType || 'others'
+  const taskType = formData.taskType || 'restaurant'
   const pricing = calculateOrderPricing({
     amount: Number.isFinite(amount) ? amount : 0,
     taskType,
     waterBags: Number.isFinite(waterBags) ? waterBags : 0,
+    copyNotesType: formData.copyNotesType,
+    copyNotesPages: Number.isFinite(copyNotesPages) ? copyNotesPages : 0,
   })
   const selectedStores = storeOptions[formData.taskType] || []
   const selectedStoreLabel = selectedStores.find((item) => item.value === formData.store)?.label || ''
@@ -361,8 +362,11 @@ export default function ErrandWizardPage() {
       store: '',
       packaging: value === 'restaurant' ? previous.packaging : '',
       waterBags: value === WATER_TASK_TYPE ? previous.waterBags : '',
+      copyNotesType: value === 'copy_notes' ? previous.copyNotesType : '',
+      copyNotesPages: value === 'copy_notes' ? previous.copyNotesPages : '',
+      amount: value === 'copy_notes' || value === WATER_TASK_TYPE ? '0' : previous.amount,
     }))
-    ;['taskType', 'store', 'packaging', 'waterBags', 'description'].forEach(clearError)
+    ;['taskType', 'store', 'packaging', 'waterBags', 'copyNotesType', 'copyNotesPages', 'description'].forEach(clearError)
   }
 
   const handlePackagingSelect = (value: string) => {
@@ -388,7 +392,13 @@ export default function ErrandWizardPage() {
     if (stepNumber === 1 && !formData.taskType) nextErrors.taskType = 'Select a task type to continue.'
 
 if (stepNumber === 2) {
-  if (formData.taskType && formData.taskType !== 'others' && !formData.store) {
+  if (
+    formData.taskType &&
+    formData.taskType !== 'others' &&
+    formData.taskType !== 'copy_notes' &&
+    formData.taskType !== WATER_TASK_TYPE &&
+    !formData.store
+  ) {
     nextErrors.store = 'Select the store for this task.'
   }
 
@@ -403,6 +413,16 @@ if (stepNumber === 2) {
     nextErrors.waterBags = 'Enter the number of water bags.'
   }
 
+  if (formData.taskType === 'copy_notes') {
+    if (formData.copyNotesType !== 'hardback' && formData.copyNotesType !== 'small') {
+      nextErrors.copyNotesType = 'Choose the note type.'
+    }
+
+    if (!Number.isInteger(copyNotesPages) || copyNotesPages <= 0) {
+      nextErrors.copyNotesPages = 'Enter the number of pages.'
+    }
+  }
+
   // ✅ ONLY validate description if NOT water
   if (formData.taskType !== WATER_TASK_TYPE) {
     if (!description) {
@@ -411,11 +431,15 @@ if (stepNumber === 2) {
       nextErrors.description = 'Use at least 10 characters.'
     } else if (waterWarning) {
       nextErrors.description =
-        'Use the Buy Water option so water fees are calculated correctly.'
+        'Choose the bag of water task for water delivery.'
     }
   }
 
-  if (formData.amount === '' || !Number.isFinite(amount) || amount < 0) {
+  if (
+    formData.taskType !== 'copy_notes' &&
+    formData.taskType !== WATER_TASK_TYPE &&
+    (formData.amount === '' || !Number.isFinite(amount) || amount < 0)
+  ) {
     nextErrors.amount = 'Enter a valid item amount.'
   }
 }
@@ -474,6 +498,8 @@ if (stepNumber === 2) {
         store: '',
         packaging: '',
         waterBags: '',
+        copyNotesType: '',
+        copyNotesPages: '',
       })
       setStep(1)
       router.push('/dashboard/tasks')
@@ -660,7 +686,7 @@ if (stepNumber === 2) {
                     </div>
                   ))}
                   <div className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-cyan-900 dark:border-cyan-900/70 dark:bg-cyan-950/30 dark:text-cyan-100">
-                    Bag(s) of water cost {formatNaira(WATER_BAG_FEE)} per bag.
+                    Bag(s) of water cost {formatNaira(WATER_BAG_PRICE)} plus {formatNaira(WATER_BAG_FEE)} errand fee per bag.
                   </div>
                 </div>
               ) : null}
@@ -676,7 +702,7 @@ if (stepNumber === 2) {
                   </div>
                 ))}
                 <div className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-cyan-900 dark:border-cyan-900/70 dark:bg-cyan-950/30 dark:text-cyan-100">
-                  Bag(s) of water cost {formatNaira(WATER_BAG_FEE)} per bag.
+                  Bag(s) of water cost {formatNaira(WATER_BAG_PRICE)} plus {formatNaira(WATER_BAG_FEE)} errand fee per bag.
                 </div>
               </div>
             </div> */}
@@ -725,13 +751,40 @@ if (stepNumber === 2) {
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Errand Details</h2>
                     <p className="mt-2 text-slate-500 dark:text-slate-400">Add the store, item notes, and budget.</p>
                   </div>
-                  {formData.taskType && formData.taskType !== 'others' ? (
+                  {formData.taskType &&
+                  formData.taskType !== 'others' &&
+                  formData.taskType !== 'copy_notes' &&
+                  formData.taskType !== WATER_TASK_TYPE ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Store className="h-4 w-4 text-indigo-500" />Select Store</label>
                       <select name="store" value={formData.store} onChange={handleInputChange} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
                         {selectedStores.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                       </select>
                       {errors.store ? <p className="mt-2 text-sm text-red-500">{errors.store}</p> : null}
+                    </div>
+                  ) : null}
+                  {formData.taskType === 'copy_notes' ? (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><FileText className="h-4 w-4 text-amber-500" />Note Type</label>
+                        <select name="copyNotesType" value={formData.copyNotesType} onChange={handleInputChange} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-700 dark:bg-slate-800">
+                          <option value="">Select note type...</option>
+                          <option value="hardback">Hardback Note - {formatNaira(450)} per page</option>
+                          <option value="small">Small Note - {formatNaira(250)} per page</option>
+                        </select>
+                        {errors.copyNotesType ? <p className="mt-2 text-sm text-red-500">{errors.copyNotesType}</p> : null}
+                      </div>
+                      <div>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><FileText className="h-4 w-4 text-amber-500" />Number of Pages</label>
+                        <input type="number" min="1" name="copyNotesPages" value={formData.copyNotesPages} onChange={handleInputChange} placeholder="How many pages?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-700 dark:bg-slate-800" />
+                        {errors.copyNotesPages ? <p className="mt-2 text-sm text-red-500">{errors.copyNotesPages}</p> : null}
+                      </div>
+                      {pricing.pricingModel === 'copy_notes' && copyNotesPages > 0 ? (
+                        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 sm:col-span-2">
+                          Total is {formatNaira(pricing.totalAmount)}. Tasker earns {formatNaira(pricing.taskerFee || 0)}
+                          {pricing.platformFee ? ` and SwiftDU fee is ${formatNaira(pricing.platformFee)}.` : '.'}
+                        </div>
+                      ) : null}
                     </div>
                   ) : null}
                   {formData.taskType === 'restaurant' ? (
@@ -754,7 +807,14 @@ if (stepNumber === 2) {
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Droplets className="h-4 w-4 text-cyan-500" />Number of Bags</label>
                       <input type="number" min="1" name="waterBags" value={formData.waterBags} onChange={handleInputChange} placeholder="How many bags?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-800" />
-                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Water delivery is charged at {formatNaira(WATER_BAG_FEE)} per bag.</p>
+                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                        Each bag is {formatNaira(WATER_BAG_PRICE)} plus a {formatNaira(WATER_BAG_FEE)} errand fee. SwiftDU keeps 24% of the errand fee.
+                      </p>
+                      {pricing.pricingModel === 'water' && waterBags > 0 ? (
+                        <div className="mt-3 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900 dark:border-cyan-900/60 dark:bg-cyan-950/30 dark:text-cyan-100">
+                          Total is {formatNaira(pricing.totalAmount)}. Tasker errand fee is {formatNaira(pricing.taskerFee || 0)} and SwiftDU fee is {formatNaira(pricing.platformFee || 0)}.
+                        </div>
+                      ) : null}
                       {errors.waterBags ? <p className="mt-2 text-sm text-red-500">{errors.waterBags}</p> : null}
                     </div>
                   ) : null}
@@ -776,7 +836,7 @@ if (stepNumber === 2) {
 
     {waterWarning && (
       <div className="mt-2 rounded-2xl border border-amber-200 ...">
-        You mentioned bag(s) of water. Switch to Buy Water...
+        Choose the bag of water task for water delivery.
       </div>
     )}
 
@@ -785,12 +845,14 @@ if (stepNumber === 2) {
     )}
   </div>
 )}
+                  {formData.taskType !== 'copy_notes' && formData.taskType !== WATER_TASK_TYPE ? (
                   <div>
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Wallet className="h-4 w-4 text-indigo-500" />Item Budget (NGN)</label>
                     <input type="number" name="amount" value={formData.amount} onChange={handleInputChange} placeholder="How much will it cost?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 font-mono text-lg outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />
                     <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">SwiftDU adds the delivery fee to the total you will later transfer to the tasker.</p>
                     {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
                   </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -830,14 +892,20 @@ if (stepNumber === 2) {
                       <button type="button" onClick={() => handleEditStep(1)} className="text-sm font-medium text-indigo-500 hover:text-indigo-600">Edit</button>
                     </div>
                     <div className="space-y-3 text-sm">
-                      <div className="flex justify-between gap-6"><span className="text-slate-500">Description</span><span className="max-w-[18rem] text-right text-slate-900 dark:text-slate-100">{formData.description}</span></div>
+                      {formData.description ? <div className="flex justify-between gap-6"><span className="text-slate-500">Description</span><span className="max-w-[18rem] text-right text-slate-900 dark:text-slate-100">{formData.description}</span></div> : null}
                       <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Location</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.location}</span></div>
                       {formData.packaging ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Packaging</span><span className="text-right text-slate-900 dark:text-slate-100">{packagingOptions.find((item) => item.value === formData.packaging)?.label}</span></div> : null}
                       {formData.taskType === WATER_TASK_TYPE ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Water bags</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.waterBags}</span></div> : null}
+                      {formData.taskType === 'copy_notes' ? (
+                        <>
+                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Note type</span><span className="text-right capitalize text-slate-900 dark:text-slate-100">{formData.copyNotesType}</span></div>
+                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Pages</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.copyNotesPages}</span></div>
+                        </>
+                      ) : null}
                     </div>
                     <div className="space-y-3 border-t-2 border-slate-200 pt-6 dark:border-slate-700">
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">Item budget</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? `Water delivery fee (${pricing.waterBags || 0} x ${formatNaira(WATER_BAG_FEE)})` : 'Service fee'}</span><span className="font-medium">{formatNaira(pricing.serviceFee)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Tasker payout' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : 'Item budget'}</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span><span className="font-medium">{formatNaira(pricing.serviceFee)}</span></div>
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(pricing.totalAmount)}</span></div>
                     </div>
                   </div>

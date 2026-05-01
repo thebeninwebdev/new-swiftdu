@@ -23,6 +23,7 @@ interface ReviewableOrder {
 const taskTypeLabels: Record<string, string> = {
   restaurant: 'Restaurant order',
   printing: 'Printing job',
+  copy_notes: 'Copy notes task',
   shopping: 'Shopping task',
   others: 'General errand',
 }

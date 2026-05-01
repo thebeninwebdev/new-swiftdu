@@ -37,6 +37,7 @@ interface UserAccessSnapshot {
   role?: string;
   taskerId?: string;
   excoRole?: string | null;
+  " excoRole"?: string | null;
 }
 
 async function findUserAccessSnapshot({
@@ -67,7 +68,7 @@ async function findUserAccessSnapshot({
 
   return User.collection.findOne<UserAccessSnapshot>(
     { $or: lookup },
-    { projection: { role: 1, taskerId: 1, excoRole: 1 } }
+    { projection: { role: 1, taskerId: 1, excoRole: 1, " excoRole": 1 } }
   );
 }
 
@@ -100,7 +101,9 @@ export async function getExcoAccess(headers: Headers): Promise<ExcoAccess> {
     email: sessionUser.email ?? undefined,
     userRole: dbUser?.role ?? sessionUser.role,
     taskerId: dbUser?.taskerId ?? sessionUser.taskerId,
-    excoRole: normalizeExcoRole(dbUser?.excoRole ?? sessionUser.excoRole),
+    excoRole: normalizeExcoRole(
+      dbUser?.excoRole ?? dbUser?.[" excoRole"] ?? sessionUser.excoRole
+    ),
   };
 }
 

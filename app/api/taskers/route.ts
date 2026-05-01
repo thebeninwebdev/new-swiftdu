@@ -155,6 +155,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url)
     const taskerId = searchParams.get('taskerId')
+    const basic = searchParams.get('basic') === 'true'
 
     if (!taskerId) {
       return NextResponse.json(
@@ -162,8 +163,6 @@ export async function GET(req: NextRequest) {
         { status: 400 }
       )
     }
-
-    await syncTaskerSettlementStatus(taskerId)
 
     const tasker = await Tasker.findById(taskerId).lean()
 
@@ -173,6 +172,21 @@ export async function GET(req: NextRequest) {
         { status: 404 }
       )
     }
+
+    if (basic) {
+      return NextResponse.json(
+        {
+          tasker: {
+            ...tasker,
+            completedTasks: tasker.completedTasks || 0,
+            rating: tasker.rating || 0,
+          },
+        },
+        { status: 200 }
+      )
+    }
+
+    await syncTaskerSettlementStatus(taskerId)
 
     const stats = await calculateTaskerStats(taskerId)
 

@@ -72,14 +72,16 @@ interface TaskerDetails {
 const taskTypeLabels: Record<string, string> = {
   restaurant: 'Food Delivery',
   printing: 'Printing',
+  copy_notes: 'Copy Notes',
   shopping: 'Shopping',
-  water: 'Buy Water',
+  water: 'Bag of Water',
   others: 'General Errand',
 }
 
 const taskTypeIcons: Record<string, React.ReactNode> = {
   restaurant: <Store className="h-4 w-4" />,
   printing: <Package className="h-4 w-4" />,
+  copy_notes: <Package className="h-4 w-4" />,
   shopping: <Package className="h-4 w-4" />,
   water: <Package className="h-4 w-4" />,
   others: <Package className="h-4 w-4" />,
@@ -197,13 +199,51 @@ export default function OrdersPage() {
   const queuedReloadRef = useRef(false)
   const queuedInitialReloadRef = useRef(false)
   const socketRef = useRef<Socket | null>(null)
+  const realtimeResumeTimeoutRef = useRef<number | null>(null)
   const redirectedToReviewRef = useRef<string | null>(null)
   const requestedOrderId = searchParams.get('orderId')
 
   const disconnectSocket = useCallback(() => {
+    if (realtimeResumeTimeoutRef.current) {
+      window.clearTimeout(realtimeResumeTimeoutRef.current)
+      realtimeResumeTimeoutRef.current = null
+    }
     socketRef.current?.disconnect()
     socketRef.current = null
   }, [])
+
+  const pauseRealtimeForApi = useCallback((duration = 1200) => {
+    const socket = socketRef.current
+    if (!socket) return
+
+    if (realtimeResumeTimeoutRef.current) {
+      window.clearTimeout(realtimeResumeTimeoutRef.current)
+    }
+
+    if (socket.connected) {
+      socket.disconnect()
+    }
+
+    realtimeResumeTimeoutRef.current = window.setTimeout(() => {
+      realtimeResumeTimeoutRef.current = null
+      if (socketRef.current === socket && !socket.connected) {
+        socket.connect()
+      }
+    }, duration)
+  }, [])
+
+  const fetchWithRealtimePause = useCallback(
+    async (input: RequestInfo | URL, init?: RequestInit) => {
+      pauseRealtimeForApi()
+
+      try {
+        return await fetch(input, init)
+      } finally {
+        pauseRealtimeForApi()
+      }
+    },
+    [pauseRealtimeForApi]
+  )
 
   const loadOrders = useCallback(
     async (initial = false) => {
@@ -225,7 +265,7 @@ export default function OrdersPage() {
         let nextCurrentOrder: Order | null = null
 
         if (trackedOrderIdRef.current) {
-          const trackedResponse = await fetch(`/api/orders/${trackedOrderIdRef.current}`, {
+          const trackedResponse = await fetchWithRealtimePause(`/api/orders/${trackedOrderIdRef.current}`, {
             cache: 'no-store',
           })
 
@@ -249,7 +289,7 @@ export default function OrdersPage() {
         }
 
         if (!nextCurrentOrder) {
-          const currentResponse = await fetch('/api/orders?current=true', {
+          const currentResponse = await fetchWithRealtimePause('/api/orders?current=true', {
             cache: 'no-store',
           })
 
@@ -260,7 +300,7 @@ export default function OrdersPage() {
           nextCurrentOrder = await currentResponse.json()
         }
 
-        const recentResponse = await fetch('/api/orders?limit=8', {
+        const recentResponse = await fetchWithRealtimePause('/api/orders?limit=8', {
           cache: 'no-store',
         })
 
@@ -328,7 +368,7 @@ export default function OrdersPage() {
         }
       }
     },
-    [router]
+    [fetchWithRealtimePause, router]
   )
 
   useEffect(() => {
@@ -420,7 +460,7 @@ export default function OrdersPage() {
     const fetchTasker = async () => {
       try {
         setLoadingTasker(true)
-        const response = await fetch(`/api/orders/${currentOrder._id}/tasker`, {
+        const response = await fetchWithRealtimePause(`/api/orders/${currentOrder._id}/tasker`, {
           cache: 'no-store',
         })
 
@@ -450,7 +490,7 @@ export default function OrdersPage() {
     return () => {
       cancelled = true
     }
-  }, [currentOrder?._id, currentOrder?.taskerId])
+  }, [currentOrder?._id, currentOrder?.taskerId, fetchWithRealtimePause])
 
   useEffect(() => {
     return () => {
@@ -492,7 +532,7 @@ export default function OrdersPage() {
     try {
       setConfirmingTransfer(true)
 
-      const response = await fetch(`/api/orders/${currentOrder._id}/confirm-transfer`, {
+      const response = await fetchWithRealtimePause(`/api/orders/${currentOrder._id}/confirm-transfer`, {
         method: 'POST',
       })
       const payload = await response.json()
@@ -528,7 +568,7 @@ export default function OrdersPage() {
 
     try {
       setUpdatingAction('cancel')
-      const response = await fetch(`/api/orders/${currentOrder._id}`, {
+      const response = await fetchWithRealtimePause(`/api/orders/${currentOrder._id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'cancelled' }),

@@ -49,8 +49,9 @@ function formatTaskType(taskType?: string) {
   const labels: Record<string, string> = {
     restaurant: 'Food delivery',
     printing: 'Printing',
+    copy_notes: 'Copy notes',
     shopping: 'Shopping',
-    water: 'Water delivery',
+    water: 'Bag of Water',
     others: 'General errand',
   }
 
