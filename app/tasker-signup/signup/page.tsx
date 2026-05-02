@@ -405,6 +405,7 @@ export default function TaskerSignupPage() {
                   value={formData.phoneNumber}
                   onChange={handleInputChange}
                   error={errors.phoneNumber}
+                  hint="Use a number that is active on WhatsApp so customers and support can reach you quickly."
                 />
               </div>
             )}
@@ -509,7 +510,7 @@ export default function TaskerSignupPage() {
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function Field({
-  label, name, placeholder, value, onChange, error, maxLength,
+  label, name, placeholder, value, onChange, error, maxLength, hint,
 }: {
   label: string
   name: string
@@ -518,6 +519,7 @@ function Field({
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void
   error?: string
   maxLength?: number
+  hint?: string
 }) {
   return (
     <div style={styles.fieldWrap}>
@@ -534,6 +536,7 @@ function Field({
         }}
       />
       {error && <p style={styles.errorText}>{error}</p>}
+      {hint && <p style={styles.hintText}>{hint}</p>}
     </div>
   )
 }
@@ -867,6 +870,12 @@ const styles: Record<string, React.CSSProperties> = {
     fontSize: 12,
     color: COLOR.error,
     margin: 0,
+  },
+  hintText: {
+    fontSize: 12,
+    color: COLOR.muted,
+    margin: 0,
+    lineHeight: 1.5,
   },
   // Info box
   infoBox: {

@@ -378,6 +378,9 @@ export default function SignUpPage() {
               {errors.phone && (
                 <p className="text-[10px] sm:text-xs text-red-600">{errors.phone}</p>
               )}
+              <p className="text-[10px] sm:text-xs text-gray-500">
+                Use a number that is active on WhatsApp so taskers and support can reach you quickly.
+              </p>
             </div>
 
             {/* Location */}

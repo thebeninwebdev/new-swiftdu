@@ -408,7 +408,7 @@ function CompleteProfilePageContent() {
                     </div>
                   </div>
                   <p className="text-xs text-slate-500">
-                    Use the number you want riders and support to reach.
+                    Use a number that is active on WhatsApp so taskers and support can reach you quickly.
                   </p>
                   {errors.phone && (
                     <p className="text-xs text-red-600">{errors.phone}</p>
