@@ -259,8 +259,17 @@ export default function SignUpPage() {
 
       {/* Main Card - No Header/Footer */}
       <div className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-white/60 bg-white/92 backdrop-blur-xl shadow-[0_24px_80px_rgba(79,70,229,0.18)] sm:rounded-3xl">
+        <div className="px-6 pt-5 sm:px-8 sm:pt-6">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-2 text-sm font-bold text-indigo-600 transition-colors hover:text-indigo-700"
+          >
+            <span aria-hidden="true">←</span>
+            Back to home
+          </Link>
+        </div>
         {/* Logo Only - No Header Section */}
-        <div className="px-6 sm:px-8 pt-6 sm:pt-8 pb-2 flex justify-center">
+        <div className="px-6 sm:px-8 pt-3 sm:pt-4 pb-2 flex justify-center">
           <Link href="/" className="inline-block hover:opacity-80 transition-opacity">
             <Image 
               src="/logo.png" 

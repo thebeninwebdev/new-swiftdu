@@ -3,6 +3,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getExcoAccess, normalizeExcoRole, type ExcoRole } from "@/lib/exco";
 import { connectDB } from "@/lib/db";
 import { AnalyticsEventModel } from "@/models/analytics";
+import { calculateNetPlatformProfit, calculatePaystackSettlementFee } from "@/lib/order-finance";
 import { Order } from "@/models/order";
 import { Review } from "@/models/review";
 import Tasker from "@/models/tasker";
@@ -72,6 +73,8 @@ type MoneySummary = {
   amount: number;
   serviceFee: number;
   platformFee: number;
+  paystackSettlementFee: number;
+  netPlatformProfit: number;
   taskerFee: number;
   waterFee: number;
 };
@@ -278,6 +281,8 @@ async function getMoneySummary(match: Record<string, unknown>) {
     amount: summary?.amount || 0,
     serviceFee: summary?.serviceFee || 0,
     platformFee: summary?.platformFee || 0,
+    paystackSettlementFee: calculatePaystackSettlementFee(summary?.platformFee || 0),
+    netPlatformProfit: calculateNetPlatformProfit(summary?.platformFee || 0),
     taskerFee: summary?.taskerFee || 0,
     waterFee: summary?.waterFee || 0,
   };
@@ -833,9 +838,15 @@ function buildCards(role: ExcoRole, data: {
       },
       {
         label: "Profit made",
-        value: data.completedMoney.platformFee,
+        value: data.completedMoney.netPlatformProfit,
         format: "currency",
-        description: "SwiftDU platform fees from completed orders.",
+        description: "SwiftDU platform fees after Paystack settlement charges.",
+      },
+      {
+        label: "Paystack fees",
+        value: data.completedMoney.paystackSettlementFee,
+        format: "currency",
+        description: "1.5% charge on platform-fee settlements.",
       },
       {
         label: "Paid to taskers",

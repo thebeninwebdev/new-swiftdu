@@ -129,3 +129,150 @@
     @apply font-sans;
   }
 }
+
+@keyframes landingReveal {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 20px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+@keyframes landingPop {
+  from {
+    opacity: 0;
+    transform: scale(0.88);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes landingFloat {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -10px, 0);
+  }
+}
+
+@keyframes landingFloatCardA {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(0, -15px, 0) rotate(5deg);
+  }
+}
+
+@keyframes landingFloatCardB {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+  }
+  50% {
+    transform: translate3d(0, 15px, 0) rotate(-5deg);
+  }
+}
+
+@keyframes landingSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.landing-reveal,
+.landing-pop,
+.landing-scroll-reveal,
+.landing-scroll-pop {
+  animation-fill-mode: both;
+  will-change: opacity, transform;
+}
+
+.landing-reveal {
+  animation: landingReveal 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.landing-pop {
+  animation: landingPop 800ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.landing-scroll-reveal {
+  animation: landingReveal 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-timeline: view();
+  animation-range: entry 0% cover 28%;
+}
+
+.landing-scroll-pop {
+  animation: landingPop 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-timeline: view();
+  animation-range: entry 0% cover 28%;
+}
+
+.landing-delay-1 {
+  animation-delay: 80ms;
+}
+
+.landing-delay-2 {
+  animation-delay: 160ms;
+}
+
+.landing-delay-3 {
+  animation-delay: 240ms;
+}
+
+.landing-delay-4 {
+  animation-delay: 320ms;
+}
+
+.landing-delay-5 {
+  animation-delay: 400ms;
+}
+
+.landing-delay-6 {
+  animation-delay: 480ms;
+}
+
+.landing-float {
+  animation: landingFloat 4s ease-in-out infinite;
+  will-change: transform;
+}
+
+.landing-float-card {
+  will-change: transform;
+}
+
+.landing-float-card-a {
+  animation: landingFloatCardA 5s ease-in-out 1s infinite;
+}
+
+.landing-float-card-b {
+  animation: landingFloatCardB 6s ease-in-out 500ms infinite;
+}
+
+.landing-spin-slow {
+  animation: landingSpin 20s linear infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-reveal,
+  .landing-pop,
+  .landing-scroll-reveal,
+  .landing-scroll-pop,
+  .landing-float,
+  .landing-float-card,
+  .landing-spin-slow {
+    animation: none;
+    opacity: 1;
+    transform: none;
+    will-change: auto;
+  }
+}

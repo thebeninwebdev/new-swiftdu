@@ -30,8 +30,9 @@ interface Order {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
-  deadlineValue: number
-  deadlineUnit: 'mins' | 'hours' | 'days'
+  deadlineDate?: string
+  deadlineValue?: number
+  deadlineUnit?: 'mins' | 'hours' | 'days'
   location: string
   store?: string
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
@@ -58,6 +59,20 @@ interface Order {
 interface AdminUser {
   id: string
   role?: string | null
+}
+
+function formatDeadline(deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
+  if (deadlineDate) {
+    return new Intl.DateTimeFormat('en-NG', {
+      dateStyle: 'medium',
+    }).format(new Date(deadlineDate))
+  }
+
+  if (deadlineValue && deadlineUnit) {
+    return `${deadlineValue} ${deadlineUnit}`
+  }
+
+  return 'Not set'
 }
 
 const formatDateTime = (value?: string | null) => {
@@ -367,7 +382,7 @@ export default function AdminOrdersPage() {
                           </div>
                           <div className="flex items-center">
                             <Clock className="w-4 h-4 mr-1" />
-                            {order.deadlineValue} {order.deadlineUnit}
+                            {formatDeadline(order.deadlineDate, order.deadlineValue, order.deadlineUnit)}
                           </div>
                         </div>
                       </div>
@@ -479,7 +494,7 @@ export default function AdminOrdersPage() {
 
                         <div>
                           <p className="text-sm font-medium text-muted-foreground mb-1">Deadline</p>
-                          <p className="text-sm">{order.deadlineValue} {order.deadlineUnit}</p>
+                          <p className="text-sm">{formatDeadline(order.deadlineDate, order.deadlineValue, order.deadlineUnit)}</p>
                         </div>
 
                         <div>

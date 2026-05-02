@@ -3,6 +3,10 @@ import { connectDB } from '@/lib/db';
 import { Order } from '@/models/order';
 import { User } from '@/models/user';
 import Tasker from '@/models/tasker';
+import {
+  calculateNetPlatformProfit,
+  calculatePaystackSettlementFee,
+} from '@/lib/order-finance';
 
 export async function GET(request: NextRequest) {
   try {
@@ -53,6 +57,8 @@ export async function GET(request: NextRequest) {
           amount: order.totalAmount,
           commission: order.commission,
           platformFee: order.platformFee,
+          paystackSettlementFee: calculatePaystackSettlementFee(order.platformFee || 0),
+          netPlatformProfit: calculateNetPlatformProfit(order.platformFee || 0),
           taskerFee: order.taskerFee,
           description: order.description,
           taskType: order.taskType,
@@ -74,8 +80,12 @@ export async function GET(request: NextRequest) {
     const totalVolume = allOrders.reduce((sum, order: any) => sum + order.totalAmount, 0);
     const totalTransactions = allOrders.length;
     const totalPlatformFees = allOrders.reduce((sum, order: any) => sum + (order.platformFee || 0), 0);
+    const totalPaystackSettlementFees = Math.round(allOrders.reduce(
+      (sum, order: any) => sum + calculatePaystackSettlementFee(order.platformFee || 0),
+      0
+    ) * 100) / 100;
     const totalTaskerFees = allOrders.reduce((sum, order: any) => sum + (order.taskerFee || 0), 0);
-    const netRevenue = totalPlatformFees;
+    const netRevenue = Math.round((totalPlatformFees - totalPaystackSettlementFees) * 100) / 100;
 
     const totalPages = Math.ceil(allOrders.length / limit);
 
@@ -85,6 +95,7 @@ export async function GET(request: NextRequest) {
         totalVolume,
         totalTransactions,
         totalPlatformFees,
+        totalPaystackSettlementFees,
         totalTaskerFees,
         netRevenue,
       },

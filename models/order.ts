@@ -19,6 +19,9 @@ export interface IOrder extends Document {
   waterFee?: number;
   copyNotesType?: 'hardback' | 'small';
   copyNotesPages?: number;
+  deadlineDate?: Date;
+  deadlineValue?: number;
+  deadlineUnit?: 'mins' | 'hours' | 'days';
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled';
   taskerId?: string;
   taskerName?: string;
@@ -140,6 +143,15 @@ const orderSchema = new Schema<IOrder>(
     copyNotesPages: {
       type: Number,
       min: 1,
+    },
+    deadlineDate: Date,
+    deadlineValue: {
+      type: Number,
+      min: 1,
+    },
+    deadlineUnit: {
+      type: String,
+      enum: ['mins', 'hours', 'days'],
     },
     status: {
       type: String,

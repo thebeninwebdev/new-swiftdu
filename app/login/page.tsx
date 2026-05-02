@@ -157,9 +157,26 @@ export default function LoginPage() {
           boxShadow: CARD_SHADOW,
           backdropFilter: "blur(18px)",
         }}>
+          <div style={{ marginBottom: 18 }}>
+            <Link
+              href="/"
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                color: BRAND_PRIMARY,
+                fontSize: 14,
+                fontWeight: 700,
+                textDecoration: "none",
+              }}
+            >
+              <span aria-hidden="true">←</span>
+              Back to home
+            </Link>
+          </div>
 
           {/* Logo */}
-          <div style={{ textAlign: "center", marginBottom: "32px" }}>
+          <div style={{ textAlign: "center", marginBottom: "28px" }}>
             <div className="flex-center gap-x-3 relative">
             <Link href="/">
             <Image src={"/logo.png"} alt="logo" width={342} height={63} className="object-contain w-28"/>

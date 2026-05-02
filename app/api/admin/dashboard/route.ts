@@ -4,6 +4,7 @@ import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
 import { Order } from '@/models/order'
 import {Review} from '@/models/review'
+import { calculateNetPlatformProfit, calculatePaystackSettlementFee } from '@/lib/order-finance'
 
 // ─── GET /api/admin/dashboard ────────────────────────────────────────────────
 // Returns dashboard statistics and recent activity.
@@ -48,24 +49,23 @@ export async function GET(req: NextRequest) {
       Order.countDocuments({ isDeclinedTask: true })
     ])
 
-    // Calculate gross revenue, profit, and total compensation (only for completed orders)
-    const [grossRevenueAgg, profitAgg, compensationAgg] = await Promise.all([
+    // Calculate gross revenue, profit, Paystack settlement fees, and total compensation.
+    const [grossRevenueAgg, platformFeeAgg, compensationAgg] = await Promise.all([
       Order.aggregate([
-        { $match: { status: 'completed' } },
         { $group: { _id: null, total: { $sum: { $add: ["$amount", "$commission"] } } } }
       ]),
       Order.aggregate([
-        { $match: { status: 'completed' } },
         { $group: { _id: null, total: { $sum: "$platformFee" } } }
       ]),
       Order.aggregate([
-        { $match: { status: 'completed' } },
         { $group: { _id: null, total: { $sum: "$taskerFee" } } }
       ])
     ])
 
     const grossRevenue = grossRevenueAgg[0]?.total || 0
-    const profit = profitAgg[0]?.total || 0
+    const totalPlatformFees = platformFeeAgg[0]?.total || 0
+    const paystackSettlementFees = calculatePaystackSettlementFee(totalPlatformFees)
+    const profit = calculateNetPlatformProfit(totalPlatformFees)
     const totalCompensation = compensationAgg[0]?.total || 0
 
     // Get recent activity (last 10 items)
@@ -131,6 +131,8 @@ export async function GET(req: NextRequest) {
       totalOrders,
       grossRevenue,
       profit,
+      totalPlatformFees,
+      paystackSettlementFees,
       totalCompensation,
       totalRevenue: totalRevenue[0]?.total || 0, // legacy
       pendingOrders,

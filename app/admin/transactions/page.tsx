@@ -26,6 +26,8 @@ interface Transaction {
   amount: number
   commission?: number
   platformFee?: number
+  paystackSettlementFee?: number
+  netPlatformProfit?: number
   taskerFee?: number
   description: string
   taskType?: string
@@ -60,6 +62,7 @@ export default function AdminTransactionsPage() {
     totalVolume: 0,
     totalTransactions: 0,
     totalPlatformFees: 0,
+    totalPaystackSettlementFees: 0,
     totalTaskerFees: 0,
     netRevenue: 0
   })
@@ -188,7 +191,7 @@ export default function AdminTransactionsPage() {
 
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2 xl:grid-cols-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Volume</CardTitle>
@@ -235,12 +238,23 @@ export default function AdminTransactionsPage() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Paystack Fees</CardTitle>
+              <TrendingDown className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">â‚¦{stats?.totalPaystackSettlementFees?.toLocaleString() || "0"}</div>
+              <p className="text-xs text-muted-foreground">1.5% of platform fees</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Net Revenue</CardTitle>
               <TrendingUp className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">₦{stats?.netRevenue?.toLocaleString() || "0"}</div>
-              <p className="text-xs text-muted-foreground">After payouts</p>
+              <p className="text-xs text-muted-foreground">After Paystack fees</p>
             </CardContent>
           </Card>
         </div>
@@ -325,6 +339,9 @@ export default function AdminTransactionsPage() {
                           )}
                           {transaction.taskerName && (
                             <span>Tasker: {transaction.taskerName}</span>
+                          )}
+                          {typeof transaction.paystackSettlementFee === 'number' && (
+                            <span>Paystack: â‚¦{transaction.paystackSettlementFee.toLocaleString()}</span>
                           )}
                         </div>
                       </div>

@@ -39,8 +39,9 @@ interface Order {
   amount: number
   platformFee?: number
   totalAmount?: number
-  deadlineValue: number
-  deadlineUnit: 'mins' | 'hours' | 'days'
+  deadlineDate?: string
+  deadlineValue?: number
+  deadlineUnit?: 'mins' | 'hours' | 'days'
   location: string
   store?: string
   packaging?: string
@@ -85,6 +86,20 @@ const taskTypeIcons: Record<string, React.ReactNode> = {
   shopping: <Package className="h-4 w-4" />,
   water: <Package className="h-4 w-4" />,
   others: <Package className="h-4 w-4" />,
+}
+
+function formatDeadline(deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
+  if (deadlineDate) {
+    return new Intl.DateTimeFormat('en-NG', {
+      dateStyle: 'medium',
+    }).format(new Date(deadlineDate))
+  }
+
+  if (deadlineValue && deadlineUnit) {
+    return `${deadlineValue} ${deadlineUnit}`
+  }
+
+  return 'Not set'
 }
 
 const statusConfig: Record<
@@ -757,7 +772,11 @@ export default function OrdersPage() {
                       ) : null}
                       <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                         <Clock className="h-3 w-3" />
-                        {currentOrder.deadlineValue} {currentOrder.deadlineUnit}
+                        {formatDeadline(
+                          currentOrder.deadlineDate,
+                          currentOrder.deadlineValue,
+                          currentOrder.deadlineUnit
+                        )}
                       </span>
                     </div>
                   </div>

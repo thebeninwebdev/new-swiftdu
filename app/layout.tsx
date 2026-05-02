@@ -5,7 +5,8 @@ import {Toaster} from "sonner"
 import NavbarClientWrapper from "@/components/NavbarClientWrapper";
 import Wrapper from "@/components/wrapper";
 import { Footer } from "@/components/Footer";
-import { adsenseAccount, adsenseScriptSrc, siteUrl } from "@/lib/site";
+import { AdsenseLoader } from "@/components/AdsenseLoader";
+import { adsenseAccount, siteUrl } from "@/lib/site";
 import { Analytics } from "@vercel/analytics/next"
 import { GoogleAnalytics } from "@/components/google-analytics";
 import { AnalyticsTracker } from "@/components/analytics-tracker";
@@ -81,7 +82,6 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <meta name="google-adsense-account" content={adsenseAccount} />
-        <script async src={adsenseScriptSrc} crossOrigin="anonymous"></script>
       </head>
       <body
         className="antialiased tracking-wide"
@@ -110,6 +110,7 @@ export default function RootLayout({
         <Analytics />
         <GoogleAnalytics />
         <AnalyticsTracker />
+        <AdsenseLoader />
         {children}
         <Wrapper path="/dashboard">
         <Wrapper path="/tasker-signup">

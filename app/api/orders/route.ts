@@ -41,6 +41,7 @@ export async function POST(request: NextRequest) {
       waterBags,
       copyNotesType,
       copyNotesPages,
+      deadlineDate,
     } = body;
 
     // Validation
@@ -62,6 +63,10 @@ export async function POST(request: NextRequest) {
     const parsedCopyNotesPages =
       normalizedTaskType === 'copy_notes' ? Number(copyNotesPages) : undefined;
     const normalizedCopyNotesType = String(copyNotesType || '').trim();
+    const parsedDeadlineDate =
+      normalizedTaskType === 'copy_notes' && deadlineDate
+        ? new Date(`${String(deadlineDate).trim()}T00:00:00`)
+        : undefined;
 
     if (!ALLOWED_CUSTOMER_TASK_TYPES.has(normalizedTaskType)) {
       return NextResponse.json(
@@ -89,6 +94,20 @@ export async function POST(request: NextRequest) {
 
       if (!Number.isInteger(parsedCopyNotesPages) || (parsedCopyNotesPages ?? 0) <= 0) {
         return NextResponse.json({ error: 'Enter the number of pages.' }, { status: 400 });
+      }
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (
+        !parsedDeadlineDate ||
+        Number.isNaN(parsedDeadlineDate.getTime()) ||
+        parsedDeadlineDate < today
+      ) {
+        return NextResponse.json(
+          { error: 'Choose the date the copied notes should be ready.' },
+          { status: 400 }
+        );
       }
     }
 
@@ -152,6 +171,9 @@ export async function POST(request: NextRequest) {
       waterFee: pricing.waterFee,
       copyNotesType: pricing.copyNotesType,
       copyNotesPages: pricing.copyNotesPages,
+      deadlineDate: normalizedTaskType === 'copy_notes' ? parsedDeadlineDate : undefined,
+      deadlineValue: undefined,
+      deadlineUnit: undefined,
       status: 'pending',
       bookedAt,
       paymentProvider: 'manual_transfer',

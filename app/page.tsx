@@ -1,9 +1,4 @@
-"use client"
-
-import Head from 'next/head';
 import Link from 'next/link';
-import { motion } from 'framer-motion';
-import { useRouter } from 'next/navigation';
 import { 
   CheckCircle2, 
   MapPin, 
@@ -18,42 +13,7 @@ import {
   ShoppingBag,
   Bike
 } from 'lucide-react';
-import { useEffect } from 'react';
-import {authClient} from "@/lib/auth-client";
-import { getPostAuthRedirect } from "@/lib/profile-completion";
 import InstallPwaButton from "@/components/InstallPwaButton";
-
-// --- Animation Variants ---
-const containerVariants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.1,
-      delayChildren: 0.2
-    }
-  }
-};
-
-const itemVariants = {
-  hidden: { y: 20, opacity: 0 },
-  visible: {
-    y: 0,
-    opacity: 1,
-    transition: { type: "spring" as const, stiffness: 100 }
-  }
-};
-
-const floatVariants = {
-  animate: {
-    y: [0, -10, 0],
-    transition: {
-      duration: 4,
-      repeat: Infinity,
-      ease: "easeInOut" as const
-    }
-  }
-};
 
 // --- Components ---
 
@@ -70,33 +30,28 @@ const Hero = () => {
         <div className="grid lg:grid-cols-2 gap-12 items-center">
 
           {/* Left Content */}
-          <motion.div 
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-            className="text-center lg:text-left"
-          >
-            <motion.div variants={itemVariants} className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 font-semibold text-sm mb-6">
+          <div className="text-center lg:text-left">
+            <div className="landing-reveal landing-delay-1 inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-700 font-semibold text-sm mb-6">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
               </span>
               Now live on 5 campuses
-            </motion.div>
+            </div>
 
-            <motion.h1 variants={itemVariants} className="text-5xl lg:text-7xl font-extrabold text-gray-900 tracking-tight leading-[1.1] mb-6">
+            <h1 className="landing-reveal landing-delay-2 text-5xl lg:text-7xl font-extrabold text-gray-900 tracking-tight leading-[1.1] mb-6">
               Campus life, <br/>
               <span className="text-transparent bg-clip-text bg-linear-to-r from-indigo-600 to-purple-600">
                 simplified.
               </span>
-            </motion.h1>
+            </h1>
 
-            <motion.p variants={itemVariants} className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
+            <p className="landing-reveal landing-delay-3 text-xl text-gray-600 mb-8 max-w-2xl mx-auto lg:mx-0 leading-relaxed">
               Need a coffee run? A textbook delivered? Or your laundry picked up? 
               Swiftdu connects busy students with reliable campus runners in minutes.
-            </motion.p>
+            </p>
 
-            <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
+            <div className="landing-reveal landing-delay-4 flex flex-col sm:flex-row gap-4 justify-center lg:justify-start">
               <Link 
                 href="/signup"
                 className="px-8 py-4 bg-indigo-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-indigo-200 hover:bg-indigo-700 hover:shadow-xl transition-all transform hover:-translate-y-1 flex items-center justify-center gap-2"
@@ -109,13 +64,13 @@ const Hero = () => {
               >
                 Become a Runner
               </Link>
-            </motion.div>
+            </div>
 
-            <motion.div variants={itemVariants} className="mt-5 flex justify-center lg:justify-start">
+            <div className="landing-reveal landing-delay-5 mt-5 flex justify-center lg:justify-start">
               <InstallPwaButton />
-            </motion.div>
+            </div>
 
-            <motion.div variants={itemVariants} className="mt-8 flex items-center justify-center lg:justify-start gap-4 text-sm text-gray-500">
+            <div className="landing-reveal landing-delay-6 mt-8 flex items-center justify-center lg:justify-start gap-4 text-sm text-gray-500">
               <div className="flex -space-x-2">
                 {[1,2,3,4].map((i) => (
                   <div key={i} className="w-8 h-8 rounded-full bg-gray-200 border-2 border-white flex items-center justify-center text-xs font-bold text-gray-600">
@@ -124,16 +79,11 @@ const Hero = () => {
                 ))}
               </div>
               <p>Trusted by 1,000+ students</p>
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
 
           {/* Right Content: Interactive Visual */}
-          <motion.div 
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            transition={{ duration: 0.8 }}
-            className="relative hidden lg:block"
-          >
+          <div className="landing-pop relative hidden lg:block">
             {/* Mock Phone/App Interface */}
             <div className="relative mx-auto w-80 bg-gray-900 rounded-[3rem] border-8 border-gray-900 shadow-2xl overflow-hidden h-150">
               <div className="absolute top-0 inset-x-0 h-6 bg-gray-900 z-20 flex justify-center">
@@ -163,11 +113,7 @@ const Hero = () => {
                  </div>
 
                  {/* Active Task Card */}
-                 <motion.div 
-                   variants={floatVariants}
-                   animate="animate"
-                   className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100"
-                 >
+                 <div className="landing-float bg-white p-4 rounded-2xl shadow-sm border border-gray-100">
                    <div className="flex justify-between items-start mb-3">
                      <div className="bg-orange-100 p-2 rounded-lg text-orange-600">
                        <Coffee size={20} />
@@ -180,7 +126,7 @@ const Hero = () => {
                      <div className="bg-indigo-500 h-full w-2/3 rounded-full"></div>
                    </div>
                    <p className="text-xs text-right mt-1 text-indigo-600 font-medium">Runner nearby</p>
-                 </motion.div>
+                 </div>
 
                  {/* Categories */}
                  <div className="grid grid-cols-4 gap-2 mt-2">
@@ -221,11 +167,7 @@ const Hero = () => {
             </div>
 
             {/* Decorative Elements around phone */}
-            <motion.div 
-              animate={{ y: [0, -15, 0], rotate: [0, 5, 0] }}
-              transition={{ duration: 5, repeat: Infinity, delay: 1 }}
-              className="absolute -top-10 -right-10 bg-white p-4 rounded-2xl shadow-xl border border-gray-100 z-20"
-            >
+            <div className="landing-float-card landing-float-card-a absolute -top-10 -right-10 bg-white p-4 rounded-2xl shadow-xl border border-gray-100 z-20">
               <div className="flex items-center gap-3">
                 <div className="bg-green-100 p-2 rounded-full text-green-600">
                   <CheckCircle2 size={20} />
@@ -235,13 +177,9 @@ const Hero = () => {
                   <p className="font-bold text-gray-900">+₦800</p>
                 </div>
               </div>
-            </motion.div>
+            </div>
 
-            <motion.div 
-              animate={{ y: [0, 15, 0], rotate: [0, -5, 0] }}
-              transition={{ duration: 6, repeat: Infinity, delay: 0.5 }}
-              className="absolute -bottom-5 -left-10 bg-white p-4 rounded-2xl shadow-xl border border-gray-100 z-20"
-            >
+            <div className="landing-float-card landing-float-card-b absolute -bottom-5 -left-10 bg-white p-4 rounded-2xl shadow-xl border border-gray-100 z-20">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-indigo-100 rounded-full flex items-center justify-center text-indigo-600 font-bold text-xs">
                   JD
@@ -251,8 +189,8 @@ const Hero = () => {
                   <p className="font-bold text-gray-900">John D.</p>
                 </div>
               </div>
-            </motion.div>
-          </motion.div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -294,20 +232,17 @@ const Features = () => {
 
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
           {features.map((feature, index) => (
-            <motion.div 
+            <div 
               key={index}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: index * 0.1 }}
-              className="p-6 bg-gray-50 rounded-2xl hover:bg-white hover:shadow-xl transition-all duration-300 border border-transparent hover:border-gray-100 group"
+              className="landing-scroll-reveal p-6 bg-gray-50 rounded-2xl hover:bg-white hover:shadow-xl transition-all duration-300 border border-transparent hover:border-gray-100 group"
+              style={{ animationDelay: `${index * 90}ms` }}
             >
               <div className="w-12 h-12 bg-white rounded-xl shadow-sm flex items-center justify-center text-indigo-600 mb-4 group-hover:scale-110 transition-transform">
                 <feature.icon size={24} />
               </div>
               <h4 className="text-xl font-bold text-gray-900 mb-2">{feature.title}</h4>
               <p className="text-gray-600 leading-relaxed">{feature.desc}</p>
-            </motion.div>
+            </div>
           ))}
         </div>
       </div>
@@ -339,20 +274,165 @@ const HowItWorks = () => {
           <div className="hidden md:block absolute top-12 left-0 w-full h-0.5 bg-indigo-700 -z-10"></div>
 
           {steps.map((step, index) => (
-            <motion.div 
+            <div 
               key={index}
-              initial={{ opacity: 0, scale: 0.5 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              viewport={{ once: true }}
-              transition={{ delay: index * 0.2, type: "spring" }}
-              className="text-center"
+              className="landing-scroll-pop text-center"
+              style={{ animationDelay: `${index * 120}ms` }}
             >
               <div className="w-24 h-24 mx-auto bg-indigo-800 rounded-full border-4 border-indigo-600 flex items-center justify-center mb-6 relative z-10 shadow-lg shadow-indigo-900/50">
                 <span className="text-3xl font-bold text-white">{index + 1}</span>
               </div>
               <h3 className="text-xl font-bold mb-2">{step.title}</h3>
               <p className="text-indigo-200 text-sm px-4">{step.desc}</p>
-            </motion.div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const CampusUseCases = () => {
+  const useCases = [
+    {
+      title: "Food and cafeteria pickups",
+      desc: "Students can list each meal item and price before posting, so the runner knows exactly what to buy and the customer sees the full budget before confirming.",
+      icon: Coffee,
+    },
+    {
+      title: "Store shopping",
+      desc: "For toiletries, snacks, groceries, and small campus-store items, Swiftdu lets students add item-by-item shopping lists with prices instead of sending vague instructions.",
+      icon: ShoppingBag,
+    },
+    {
+      title: "Printing and copy notes",
+      desc: "Students can request printing or note-copying with page counts, note type, and a ready date, giving runners the details they need before accepting the job.",
+      icon: BookOpen,
+    },
+    {
+      title: "Water and daily errands",
+      desc: "Routine campus needs like bags of water and quick deliveries are structured into simple task types so pricing and tasker expectations stay clear.",
+      icon: Bike,
+    },
+  ];
+
+  return (
+    <section className="bg-slate-50 py-20">
+      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="text-sm font-bold uppercase tracking-wide text-indigo-600">Campus errand guide</p>
+          <h2 className="mt-3 text-3xl font-bold text-gray-900 md:text-4xl">
+            Practical help for everyday student life
+          </h2>
+          <p className="mt-4 text-lg leading-8 text-gray-600">
+            Swiftdu is built around the jobs students actually need on campus: meals, shopping,
+            printing, copied notes, and small deliveries. Each task type collects the details a
+            runner needs so fewer calls, corrections, and payment disputes happen after posting.
+          </p>
+        </div>
+
+        <div className="mt-12 grid gap-6 md:grid-cols-2">
+          {useCases.map((item) => (
+            <article
+              key={item.title}
+              className="landing-scroll-reveal rounded-2xl border border-slate-200 bg-white p-6 shadow-sm"
+            >
+              <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600">
+                <item.icon size={24} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900">{item.title}</h3>
+              <p className="mt-3 leading-7 text-gray-600">{item.desc}</p>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const TrustAndPricing = () => {
+  const details = [
+    "Task details are collected before posting, including location, item budgets, quantities, packaging, note pages, and ready dates where needed.",
+    "Customers review the total before submitting, including the item budget and Swiftdu service fee.",
+    "Taskers see the task type, location, budget, and requirements before accepting, which helps reduce abandoned or misunderstood errands.",
+    "Completed tasks can be reviewed, helping the platform identify reliable runners and improve future customer decisions.",
+  ];
+
+  return (
+    <section className="bg-white py-20">
+      <div className="mx-auto grid max-w-7xl gap-10 px-4 sm:px-6 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
+        <div>
+          <p className="text-sm font-bold uppercase tracking-wide text-indigo-600">Quality and safety</p>
+          <h2 className="mt-3 text-3xl font-bold text-gray-900 md:text-4xl">
+            Clear instructions, visible pricing, and student-focused safeguards
+          </h2>
+          <p className="mt-5 text-lg leading-8 text-gray-600">
+            A campus errand app only works when both sides understand the job. Swiftdu keeps
+            requests structured, shows payment expectations clearly, and keeps the workflow focused
+            on verified campus activity rather than anonymous open-market delivery.
+          </p>
+        </div>
+        <div className="grid gap-4">
+          {details.map((detail, index) => (
+            <div
+              key={detail}
+              className="landing-scroll-reveal flex gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-5"
+              style={{ animationDelay: `${index * 90}ms` }}
+            >
+              <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+                <CheckCircle2 size={16} />
+              </div>
+              <p className="leading-7 text-gray-700">{detail}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const FAQSection = () => {
+  const faqs = [
+    {
+      question: "Who is Swiftdu for?",
+      answer:
+        "Swiftdu is for students who need help with campus errands and students who want to earn by completing those errands responsibly.",
+    },
+    {
+      question: "What kind of tasks can be posted?",
+      answer:
+        "Common tasks include restaurant food pickup, store shopping, printing, copied notes, bags of water, and other small campus errands.",
+    },
+    {
+      question: "Why does Swiftdu ask for item prices?",
+      answer:
+        "Item prices help customers and taskers agree on the expected budget before a task is accepted. This reduces confusion after the runner starts the errand.",
+    },
+    {
+      question: "How does Swiftdu improve task quality?",
+      answer:
+        "The app uses structured forms, task status tracking, direct payment confirmation, and reviews so each errand has a clear record from posting to completion.",
+    },
+  ];
+
+  return (
+    <section className="bg-slate-50 py-20">
+      <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
+        <div className="text-center">
+          <p className="text-sm font-bold uppercase tracking-wide text-indigo-600">Questions students ask</p>
+          <h2 className="mt-3 text-3xl font-bold text-gray-900 md:text-4xl">
+            More than a sign-up page
+          </h2>
+          <p className="mt-4 text-lg leading-8 text-gray-600">
+            These answers explain how the service works before a student creates an account.
+          </p>
+        </div>
+        <div className="mt-10 divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
+          {faqs.map((faq) => (
+            <article key={faq.question} className="p-6">
+              <h3 className="text-lg font-bold text-gray-900">{faq.question}</h3>
+              <p className="mt-3 leading-7 text-gray-600">{faq.answer}</p>
+            </article>
           ))}
         </div>
       </div>
@@ -364,12 +444,7 @@ const CTASection = () => {
   return (
     <section className="py-24 bg-gray-50">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
-        <motion.div 
-          initial={{ opacity: 0, y: 30 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          className="bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row"
-        >
+        <div className="landing-scroll-reveal bg-white rounded-3xl shadow-2xl overflow-hidden flex flex-col md:flex-row">
           <div className="p-10 md:p-16 md:w-2/3 flex flex-col justify-center">
             <h2 className="text-3xl md:text-4xl font-bold text-gray-900 mb-4">Ready to get your time back?</h2>
             <p className="text-gray-600 text-lg mb-8">
@@ -392,48 +467,31 @@ const CTASection = () => {
             <p className="text-xs text-gray-400 mt-4">Available on 5 campuses. Sign up takes less than 2 minutes.</p>
           </div>
           <div className="md:w-1/3 bg-indigo-600 relative overflow-hidden flex items-center justify-center p-10">
-            <div className="absolute inset-0 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
-            <motion.div 
-              animate={{ rotate: 360 }}
-              transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-              className="text-white/20"
-            >
+            <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'linear-gradient(135deg, #ffffff 10%, transparent 10%, transparent 50%, #ffffff 50%, #ffffff 60%, transparent 60%, transparent 100%)', backgroundSize: '18px 18px' }}></div>
+            <div className="landing-spin-slow text-white/20">
               <Zap size={200} />
-            </motion.div>
+            </div>
             <div className="relative z-10 text-center text-white">
               <p className="font-bold text-2xl mb-2">₦50k+</p>
               <p className="text-indigo-200 text-sm">Earned by runners this semester</p>
             </div>
           </div>
-        </motion.div>
+        </div>
       </div>
     </section>
   );
 };
 
 export default function LandingPage() {
-  
-  const router = useRouter();
-  const { data: session } = authClient.useSession();
-  useEffect(() => {
-    if (session?.user) {
-      router.replace(getPostAuthRedirect(session.user))
-    }
-  }, [session?.user, router]);
-
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-indigo-100 selection:text-indigo-900">
-      <Head>
-        <title>Swiftdu | Campus Errands Made Easy</title>
-        <meta name="description" content="Swiftdu connects students for fast, safe campus errands." />
-      </Head>
-
- 
-
       <main>
         <Hero />
         <Features />
         <HowItWorks />
+        <CampusUseCases />
+        <TrustAndPricing />
+        <FAQSection />
         <CTASection />
       </main>
     </div>

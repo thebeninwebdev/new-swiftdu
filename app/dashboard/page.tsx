@@ -8,6 +8,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Clock,
   CreditCard,
   Droplets,
   FileText,
@@ -48,9 +49,13 @@ interface ErrandData {
   waterBags?: string
   copyNotesType?: string
   copyNotesPages?: string
+  deadlineDate?: string
   restaurantItems: RestaurantItem[]
   restaurantItemName: string
   restaurantItemPrice: string
+  shoppingItems: RestaurantItem[]
+  shoppingItemName: string
+  shoppingItemPrice: string
 }
 
 interface RestaurantItem {
@@ -156,6 +161,21 @@ function formatNaira(value: number) {
   }).format(value)
 }
 
+function getDateInputValue(date = new Date()) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function formatReadyDate(value?: string) {
+  if (!value) return ''
+
+  return new Intl.DateTimeFormat('en-NG', {
+    dateStyle: 'medium',
+  }).format(new Date(`${value}T00:00:00`))
+}
+
 export default function ErrandWizardPage() {
   const router = useRouter()
   const { data: session } = authClient.useSession()
@@ -166,7 +186,6 @@ export default function ErrandWizardPage() {
   const [mounted, setMounted] = useState(false)
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
-  const [showRestaurantGuide, setShowRestaurantGuide] = useState(false)
   const socketRef = useRef<Socket | null>(null)
   const fetchingActiveOrderRef = useRef(false)
   const isRealtimePausedRef = useRef(false)
@@ -183,9 +202,13 @@ export default function ErrandWizardPage() {
     waterBags: '',
     copyNotesType: '',
     copyNotesPages: '',
+    deadlineDate: '',
     restaurantItems: [],
     restaurantItemName: '',
     restaurantItemPrice: '',
+    shoppingItems: [],
+    shoppingItemName: '',
+    shoppingItemPrice: '',
   })
   const sessionUserId = session?.user?.id
 
@@ -339,9 +362,22 @@ export default function ErrandWizardPage() {
   const restaurantDescription = formData.restaurantItems
     .map((item) => `${item.name} - ${formatNaira(item.price)}`)
     .join(', ')
+  const shoppingBudget = formData.shoppingItems.reduce((total, item) => total + item.price, 0)
+  const shoppingDescription = formData.shoppingItems
+    .map((item) => `${item.name} - ${formatNaira(item.price)}`)
+    .join(', ')
   const effectiveDescription =
-    formData.taskType === 'restaurant' ? restaurantDescription : formData.description.trim()
-  const amount = formData.taskType === 'restaurant' ? restaurantBudget : Number(formData.amount || 0)
+    formData.taskType === 'restaurant'
+      ? restaurantDescription
+      : formData.taskType === 'shopping'
+        ? shoppingDescription
+        : formData.description.trim()
+  const amount =
+    formData.taskType === 'restaurant'
+      ? restaurantBudget
+      : formData.taskType === 'shopping'
+        ? shoppingBudget
+        : Number(formData.amount || 0)
   const waterBags = Number(formData.waterBags || 0)
   const copyNotesPages = Number(formData.copyNotesPages || 0)
   const description = effectiveDescription
@@ -375,8 +411,14 @@ export default function ErrandWizardPage() {
     const { name, value } = event.target
     setFormData((previous) => ({ ...previous, [name]: value }))
     clearError(name)
-    if (name === 'restaurantItemName' || name === 'restaurantItemPrice') {
+    if (
+      name === 'restaurantItemName' ||
+      name === 'restaurantItemPrice' ||
+      name === 'shoppingItemName' ||
+      name === 'shoppingItemPrice'
+    ) {
       clearError('restaurantItems')
+      clearError('shoppingItems')
     }
   }
 
@@ -390,9 +432,19 @@ export default function ErrandWizardPage() {
       waterBags: value === WATER_TASK_TYPE ? previous.waterBags : '',
       copyNotesType: value === 'copy_notes' ? previous.copyNotesType : '',
       copyNotesPages: value === 'copy_notes' ? previous.copyNotesPages : '',
+      deadlineDate: value === 'copy_notes' ? previous.deadlineDate : '',
       amount: value === 'copy_notes' || value === WATER_TASK_TYPE ? '0' : previous.amount,
     }))
-    ;['taskType', 'store', 'packaging', 'waterBags', 'copyNotesType', 'copyNotesPages', 'description'].forEach(clearError)
+    ;[
+      'taskType',
+      'store',
+      'packaging',
+      'waterBags',
+      'copyNotesType',
+      'copyNotesPages',
+      'deadlineDate',
+      'description',
+    ].forEach(clearError)
   }
 
   const handlePackagingSelect = (value: string) => {
@@ -440,6 +492,45 @@ export default function ErrandWizardPage() {
     }))
   }
 
+  const addShoppingItem = () => {
+    pauseRealtime()
+    const name = formData.shoppingItemName.trim()
+    const price = Number(formData.shoppingItemPrice)
+
+    if (!name || !Number.isFinite(price) || price <= 0) {
+      setErrors((previous) => ({
+        ...previous,
+        shoppingItems: 'Enter the item name and a valid price.',
+      }))
+      return
+    }
+
+    setFormData((previous) => ({
+      ...previous,
+      shoppingItems: [
+        ...previous.shoppingItems,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          name,
+          price: Math.round(price),
+        },
+      ],
+      shoppingItemName: '',
+      shoppingItemPrice: '',
+    }))
+    clearError('shoppingItems')
+    clearError('description')
+    clearError('amount')
+  }
+
+  const removeShoppingItem = (id: string) => {
+    pauseRealtime()
+    setFormData((previous) => ({
+      ...previous,
+      shoppingItems: previous.shoppingItems.filter((item) => item.id !== id),
+    }))
+  }
+
   const handleLocationSelect = (value: string) => {
     pauseRealtime()
     setFormData((previous) => ({ ...previous, location: value }))
@@ -475,6 +566,10 @@ if (stepNumber === 2) {
     nextErrors.restaurantItems = 'Add at least one food and price.'
   }
 
+  if (formData.taskType === 'shopping' && formData.shoppingItems.length === 0) {
+    nextErrors.shoppingItems = 'Add at least one item and price.'
+  }
+
   if (formData.taskType === 'restaurant' && waterWarning) {
     nextErrors.restaurantItems = 'Choose the bag of water task for water delivery.'
   }
@@ -487,6 +582,9 @@ if (stepNumber === 2) {
   }
 
   if (formData.taskType === 'copy_notes') {
+    const readyDate = formData.deadlineDate ? new Date(`${formData.deadlineDate}T00:00:00`) : null
+    const today = new Date(`${getDateInputValue()}T00:00:00`)
+
     if (formData.copyNotesType !== 'hardback' && formData.copyNotesType !== 'small') {
       nextErrors.copyNotesType = 'Choose the note type.'
     }
@@ -494,10 +592,18 @@ if (stepNumber === 2) {
     if (!Number.isInteger(copyNotesPages) || copyNotesPages <= 0) {
       nextErrors.copyNotesPages = 'Enter the number of pages.'
     }
+
+    if (!readyDate || Number.isNaN(readyDate.getTime()) || readyDate < today) {
+      nextErrors.deadlineDate = 'Choose the date the copied notes should be ready.'
+    }
   }
 
   // ✅ ONLY validate description if NOT water
-  if (formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant') {
+  if (
+    formData.taskType !== WATER_TASK_TYPE &&
+    formData.taskType !== 'restaurant' &&
+    formData.taskType !== 'shopping'
+  ) {
     if (!description) {
       nextErrors.description = 'Description is required.'
     } else if (description.length < 10) {
@@ -511,6 +617,7 @@ if (stepNumber === 2) {
   if (
     formData.taskType !== 'copy_notes' &&
     formData.taskType !== 'restaurant' &&
+    formData.taskType !== 'shopping' &&
     formData.taskType !== WATER_TASK_TYPE &&
     (formData.amount === '' || !Number.isFinite(amount) || amount < 0)
   ) {
@@ -552,7 +659,7 @@ if (stepNumber === 2) {
         body: JSON.stringify({
   ...formData,
   description: formData.taskType === WATER_TASK_TYPE ? '' : description,
-  amount: formData.taskType === 'restaurant' ? String(amount) : formData.amount,
+  amount: formData.taskType === 'restaurant' || formData.taskType === 'shopping' ? String(amount) : formData.amount,
 }),
       })
 
@@ -575,9 +682,13 @@ if (stepNumber === 2) {
         waterBags: '',
         copyNotesType: '',
         copyNotesPages: '',
+        deadlineDate: '',
         restaurantItems: [],
         restaurantItemName: '',
         restaurantItemPrice: '',
+        shoppingItems: [],
+        shoppingItemName: '',
+        shoppingItemPrice: '',
       })
       setStep(1)
       router.push('/dashboard/tasks')
@@ -857,6 +968,21 @@ if (stepNumber === 2) {
                         <input type="number" min="1" name="copyNotesPages" value={formData.copyNotesPages} onChange={handleInputChange} placeholder="How many pages?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-700 dark:bg-slate-800" />
                         {errors.copyNotesPages ? <p className="mt-2 text-sm text-red-500">{errors.copyNotesPages}</p> : null}
                       </div>
+                      <div className="sm:col-span-2">
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <Clock className="h-4 w-4 text-amber-500" />
+                          Ready Date
+                        </label>
+                        <input
+                          type="date"
+                          min={getDateInputValue()}
+                          name="deadlineDate"
+                          value={formData.deadlineDate}
+                          onChange={handleInputChange}
+                          className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-700 dark:bg-slate-800"
+                        />
+                        {errors.deadlineDate ? <p className="mt-2 text-sm text-red-500">{errors.deadlineDate}</p> : null}
+                      </div>
                       {pricing.pricingModel === 'copy_notes' && copyNotesPages > 0 ? (
                         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 sm:col-span-2">
                           Total is {formatNaira(pricing.totalAmount)}. Tasker earns {formatNaira(pricing.taskerFee || 0)}
@@ -903,62 +1029,16 @@ if (stepNumber === 2) {
                           <ShoppingBag className="h-4 w-4 text-orange-500" />
                           Food and Price
                         </label>
-                        <button
-                          type="button"
-                          onClick={() => setShowRestaurantGuide((previous) => !previous)}
-                          aria-expanded={showRestaurantGuide}
+                        <a
+                          href="https://youtube.com/shorts/H7UjjjNGYUw?si=LdCMocKCpT-9Xpow"
+                          target="_blank"
+                          rel="noopener noreferrer"
                           className="inline-flex h-8 items-center gap-1.5 rounded-full border border-orange-200 bg-orange-50 px-3 text-xs font-semibold text-orange-700 transition hover:border-orange-300 hover:bg-orange-100 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-200 dark:hover:bg-orange-950/50"
                         >
                           <Info className="h-3.5 w-3.5" />
                           How to use
-                          <ChevronRight
-                            className={`h-3.5 w-3.5 transition-transform ${showRestaurantGuide ? 'rotate-90' : ''}`}
-                          />
-                        </button>
-                      </div>
-                      <div
-                        className={`grid transition-all duration-300 ease-out ${
-                          showRestaurantGuide
-                            ? 'grid-rows-[1fr] opacity-100'
-                            : 'grid-rows-[0fr] opacity-0'
-                        }`}
-                      >
-                        <div className="overflow-hidden">
-                          <div className="rounded-2xl border border-orange-200 bg-orange-50/80 p-3 text-sm text-orange-950 dark:border-orange-900/60 dark:bg-orange-950/25 dark:text-orange-100">
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="rounded-full bg-white px-3 py-1.5 font-medium shadow-sm motion-safe:animate-pulse dark:bg-slate-900">
-                                  Rice + Chicken
-                                </span>
-                                <span className="rounded-full bg-white px-3 py-1.5 font-mono font-semibold text-orange-700 shadow-sm motion-safe:animate-pulse dark:bg-slate-900 dark:text-orange-200">
-                                  {formatNaira(1500)}
-                                </span>
-                                <ArrowRight className="h-4 w-4 text-orange-500 motion-safe:animate-pulse" />
-                                <span className="rounded-full bg-orange-600 px-3 py-1.5 font-semibold text-white shadow-sm motion-safe:animate-bounce">
-                                  Add
-                                </span>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-2">
-                                <span className="inline-flex items-center gap-2 rounded-full border border-orange-200 bg-white px-3 py-1.5 font-medium shadow-sm motion-safe:animate-pulse dark:border-orange-800 dark:bg-slate-900">
-                                  Rice + Chicken
-                                  <span className="font-mono text-orange-700 dark:text-orange-200">
-                                    {formatNaira(1500)}
-                                  </span>
-                                </span>
-                                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
-                                  <span className="relative flex h-2 w-2">
-                                    <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 motion-safe:animate-ping" />
-                                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-                                  </span>
-                                  Budget updates
-                                </span>
-                              </div>
-                            </div>
-                            <p className="mt-3 text-xs leading-5 text-orange-800/80 dark:text-orange-100/75">
-                              Add each food separately. Use the X on a pill if you need to remove it.
-                            </p>
-                          </div>
-                        </div>
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </a>
                       </div>
                       <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto]">
                         <input
@@ -1028,7 +1108,91 @@ if (stepNumber === 2) {
                       {errors.restaurantItems ? <p className="mt-2 text-sm text-red-500">{errors.restaurantItems}</p> : null}
                     </div>
                   ) : null}
-                  {formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant' ? (
+                  {formData.taskType === 'shopping' ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <Store className="h-4 w-4 text-emerald-500" />
+                          Store Items and Price
+                        </label>
+                        <a
+                          href="https://youtube.com/shorts/H7UjjjNGYUw?si=LdCMocKCpT-9Xpow"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex h-8 items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200 dark:hover:bg-emerald-950/50"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                          How to use
+                          <ArrowRight className="h-3.5 w-3.5" />
+                        </a>
+                      </div>
+                      <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto]">
+                        <input
+                          type="text"
+                          name="shoppingItemName"
+                          value={formData.shoppingItemName}
+                          onChange={handleInputChange}
+                          placeholder="Store item"
+                          className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800"
+                        />
+                        <input
+                          type="number"
+                          min="1"
+                          name="shoppingItemPrice"
+                          value={formData.shoppingItemPrice}
+                          onChange={handleInputChange}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              addShoppingItem()
+                            }
+                          }}
+                          placeholder="Price"
+                          className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 font-mono outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800"
+                        />
+                        <Button
+                          type="button"
+                          onClick={addShoppingItem}
+                          className="h-12 rounded-xl bg-emerald-600 px-5 text-white hover:bg-emerald-700"
+                        >
+                          Add
+                        </Button>
+                      </div>
+                      {formData.shoppingItems.length > 0 ? (
+                        <div className="flex flex-wrap gap-2">
+                          {formData.shoppingItems.map((item) => (
+                            <span
+                              key={item.id}
+                              className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100"
+                            >
+                              <span className="truncate">{item.name}</span>
+                              <span className="font-mono text-emerald-700 dark:text-emerald-200">
+                                {formatNaira(item.price)}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => removeShoppingItem(item.id)}
+                                className="rounded-full p-0.5 text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700 dark:hover:bg-emerald-900/50"
+                                aria-label={`Remove ${item.name}`}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+                        Item budget is {formatNaira(shoppingBudget)} before SwiftDU service fee.
+                      </div>
+                      {waterWarning ? (
+                        <div className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                          Choose the bag of water task for water delivery.
+                        </div>
+                      ) : null}
+                      {errors.shoppingItems ? <p className="mt-2 text-sm text-red-500">{errors.shoppingItems}</p> : null}
+                    </div>
+                  ) : null}
+                  {formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                         <FileText className="h-4 w-4 text-indigo-500" />
@@ -1055,7 +1219,7 @@ if (stepNumber === 2) {
                       ) : null}
                     </div>
                   ) : null}
-                  {formData.taskType !== 'copy_notes' && formData.taskType !== 'restaurant' && formData.taskType !== WATER_TASK_TYPE ? (
+                  {formData.taskType !== 'copy_notes' && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== WATER_TASK_TYPE ? (
                   <div>
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Wallet className="h-4 w-4 text-indigo-500" />Item Budget (NGN)</label>
                     <input type="number" name="amount" value={formData.amount} onChange={handleInputChange} placeholder="How much will it cost?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 font-mono text-lg outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />
@@ -1120,7 +1284,25 @@ if (stepNumber === 2) {
                           </span>
                         </div>
                       ) : null}
-                      {formData.taskType !== 'restaurant' && formData.description ? <div className="flex justify-between gap-6"><span className="text-slate-500">Description</span><span className="max-w-[18rem] text-right text-slate-900 dark:text-slate-100">{formData.description}</span></div> : null}
+                      {formData.taskType === 'shopping' && formData.shoppingItems.length > 0 ? (
+                        <div className="flex justify-between gap-6">
+                          <span className="text-slate-500">Store items</span>
+                          <span className="flex max-w-[22rem] flex-wrap justify-end gap-2 text-right">
+                            {formData.shoppingItems.map((item) => (
+                              <span
+                                key={item.id}
+                                className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-100"
+                              >
+                                <span>{item.name}</span>
+                                <span className="font-mono text-emerald-600 dark:text-emerald-300">
+                                  {formatNaira(item.price)}
+                                </span>
+                              </span>
+                            ))}
+                          </span>
+                        </div>
+                      ) : null}
+                      {formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.description ? <div className="flex justify-between gap-6"><span className="text-slate-500">Description</span><span className="max-w-[18rem] text-right text-slate-900 dark:text-slate-100">{formData.description}</span></div> : null}
                       <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Location</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.location}</span></div>
                       {formData.packaging ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Packaging</span><span className="text-right text-slate-900 dark:text-slate-100">{selectedPackaging?.label} ({formatNaira(restaurantPackagingFee)})</span></div> : null}
                       {formData.taskType === WATER_TASK_TYPE ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Water bags</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.waterBags}</span></div> : null}
@@ -1128,11 +1310,12 @@ if (stepNumber === 2) {
                         <>
                           <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Note type</span><span className="text-right capitalize text-slate-900 dark:text-slate-100">{formData.copyNotesType}</span></div>
                           <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Pages</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.copyNotesPages}</span></div>
+                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Ready date</span><span className="text-right text-slate-900 dark:text-slate-100">{formatReadyDate(formData.deadlineDate)}</span></div>
                         </>
                       ) : null}
                     </div>
                     <div className="space-y-3 border-t-2 border-slate-200 pt-6 dark:border-slate-700">
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Tasker payout' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === 'restaurant' ? 'Food + packaging budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Tasker payout' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === 'restaurant' ? 'Food + packaging budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
                       <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span><span className="font-medium">{formatNaira(pricing.serviceFee)}</span></div>
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(pricing.totalAmount)}</span></div>
                     </div>
@@ -1165,9 +1348,7 @@ if (stepNumber === 2) {
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-500 dark:text-slate-400 sm:mt-8 sm:gap-6 sm:text-sm">
-            <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-sky-500" /><span>Direct Tasker Transfer</span></div>
             <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-emerald-500" /><span>Verified Taskers</span></div>
-            <div className="flex items-center gap-2"><div className="h-2 w-2 rounded-full bg-amber-500" /><span>Tasker Settles Platform Fee</span></div>
             <div className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-indigo-500" /><span>Secure Order Tracking</span></div>
           </div>
         </div>

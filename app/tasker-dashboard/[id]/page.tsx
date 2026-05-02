@@ -33,8 +33,9 @@ interface ErrandDetail {
   platformFee: number
   taskerFee: number
   totalAmount: number
-  deadlineValue: number
-  deadlineUnit: string
+  deadlineDate?: string
+  deadlineValue?: number
+  deadlineUnit?: string
   location: string
   store?: string
   packaging?: string
@@ -85,6 +86,20 @@ const formatDate = (date: string) =>
     hour: '2-digit',
     minute: '2-digit',
   })
+
+function formatDeadline(deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
+  if (deadlineDate) {
+    return new Intl.DateTimeFormat('en-NG', {
+      dateStyle: 'medium',
+    }).format(new Date(deadlineDate))
+  }
+
+  if (deadlineValue && deadlineUnit) {
+    return `${deadlineValue} ${deadlineUnit}`
+  }
+
+  return 'Not set'
+}
 
 export default function ErrandDetailPage() {
   const router = useRouter()
@@ -612,7 +627,7 @@ export default function ErrandDetailPage() {
                       Deadline
                     </p>
                     <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
-                      {errand.deadlineValue} {errand.deadlineUnit}
+                      {formatDeadline(errand.deadlineDate, errand.deadlineValue, errand.deadlineUnit)}
                     </p>
                   </div>
 

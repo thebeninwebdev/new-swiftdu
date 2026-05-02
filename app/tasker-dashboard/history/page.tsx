@@ -27,8 +27,9 @@ interface Order {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
-  deadlineValue: number
-  deadlineUnit: string
+  deadlineDate?: string
+  deadlineValue?: number
+  deadlineUnit?: string
   location: string
   status: string
   acceptedAt: string
@@ -67,6 +68,20 @@ const taskTypeIcons: Record<string, React.ReactNode> = {
   shopping: <Package className="h-4 w-4" />,
   water: <Package className="h-4 w-4" />,
   others: <Package className="h-4 w-4" />,
+}
+
+function formatDeadline(deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
+  if (deadlineDate) {
+    return new Intl.DateTimeFormat('en-NG', {
+      dateStyle: 'medium',
+    }).format(new Date(deadlineDate))
+  }
+
+  if (deadlineValue && deadlineUnit) {
+    return `${deadlineValue} ${deadlineUnit}`
+  }
+
+  return 'Not set'
 }
 
 const statusStyles: Record<string, { bg: string; text: string; darkBg: string; darkText: string }> = {
@@ -312,7 +327,7 @@ export default function HistoryPage() {
                       <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950/50">
                         <Clock className="h-3.5 w-3.5 text-slate-400" />
                         <span className="text-xs text-slate-600 dark:text-slate-300">
-                          {order.deadlineValue} {order.deadlineUnit}
+                          {formatDeadline(order.deadlineDate, order.deadlineValue, order.deadlineUnit)}
                         </span>
                       </div>
                       

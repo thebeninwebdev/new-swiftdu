@@ -29,6 +29,8 @@ interface DashboardStats {
   totalReviews: number
   pendingTaskerApprovals: number
   grossRevenue:number
+  totalPlatformFees: number
+  paystackSettlementFees: number
   profit: number
   totalCompensation: number
   declinedTasks: number
@@ -125,7 +127,7 @@ export default function AdminDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Income Breakdown */}
-        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-3 md:gap-6">
+        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 md:gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Gross Revenue</CardTitle>
@@ -140,6 +142,18 @@ export default function AdminDashboard() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Paystack Fees</CardTitle>
+              <TrendingUp className="h-4 w-4 rotate-180 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                â‚¦{isStatsLoading ? '...' : (stats?.paystackSettlementFees || 0).toLocaleString()}
+              </div>
+              <p className="text-xs text-muted-foreground">1.5% settlement charge</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Profit</CardTitle>
               <DollarSign className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -147,7 +161,7 @@ export default function AdminDashboard() {
               <div className="text-2xl font-bold">
                 ₦{isStatsLoading ? '...' : (stats?.profit || 0).toLocaleString()}
               </div>
-              <p className="text-xs text-muted-foreground">Total Platform Fees</p>
+              <p className="text-xs text-muted-foreground">Platform fees after Paystack</p>
             </CardContent>
           </Card>
           <Card>

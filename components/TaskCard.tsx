@@ -13,8 +13,9 @@ interface TaskCardProps {
   description: string
   amount: number
   totalAmount?: number
-  deadlineValue: number
-  deadlineUnit: 'mins' | 'hours' | 'days'
+  deadlineDate?: string
+  deadlineValue?: number
+  deadlineUnit?: 'mins' | 'hours' | 'days'
   location: string
   store?: string
   createdAt: string
@@ -38,10 +39,25 @@ const taskTypeLabels: Record<string, string> = {
   others: 'Others',
 }
 
-export function TaskCard({ id, taskType, description, amount, totalAmount, deadlineValue, deadlineUnit, location, store, createdAt }: TaskCardProps) {
+function formatDeadline(deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
+  if (deadlineDate) {
+    return new Intl.DateTimeFormat('en-NG', {
+      dateStyle: 'medium',
+    }).format(new Date(deadlineDate))
+  }
+
+  if (deadlineValue && deadlineUnit) {
+    return `${deadlineValue} ${deadlineUnit}`
+  }
+
+  return 'Not set'
+}
+
+export function TaskCard({ id, taskType, description, amount, totalAmount, deadlineDate, deadlineValue, deadlineUnit, location, store, createdAt }: TaskCardProps) {
   const router = useRouter()
   const [isAccepting, setIsAccepting] = useState(false)
   const displayAmount = totalAmount || amount
+  const deadlineLabel = formatDeadline(deadlineDate, deadlineValue, deadlineUnit)
 
   const handleAcceptTask = async () => {
     try {
@@ -117,7 +133,7 @@ export function TaskCard({ id, taskType, description, amount, totalAmount, deadl
           {/* Deadline */}
           <div>
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Deadline</p>
-            <p className="text-lg font-semibold text-foreground">{deadlineValue} {deadlineUnit}</p>
+            <p className="text-lg font-semibold text-foreground">{deadlineLabel}</p>
           </div>
 
           {/* Location */}

@@ -74,6 +74,8 @@ type DashboardData = {
       amount: number;
       serviceFee: number;
       platformFee: number;
+      paystackSettlementFee: number;
+      netPlatformProfit: number;
       taskerFee: number;
       waterFee: number;
     };
@@ -82,12 +84,16 @@ type DashboardData = {
       amount: number;
       serviceFee: number;
       platformFee: number;
+      paystackSettlementFee: number;
+      netPlatformProfit: number;
       taskerFee: number;
       waterFee: number;
     };
     previousMoney: {
       totalAmount: number;
       platformFee: number;
+      paystackSettlementFee?: number;
+      netPlatformProfit?: number;
     };
     outstandingPlatformFees: number;
     unsettledTaskers: Array<{
@@ -1233,6 +1239,8 @@ function FinanceSections({ data }: { data: DashboardData }) {
             ["Item value", data.finance.completedMoney.amount],
             ["Service fees", data.finance.completedMoney.serviceFee],
             ["Platform fees", data.finance.completedMoney.platformFee],
+            ["Paystack fees", data.finance.completedMoney.paystackSettlementFee],
+            ["Net platform profit", data.finance.completedMoney.netPlatformProfit],
             ["Tasker fees", data.finance.completedMoney.taskerFee],
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 dark:bg-slate-900">
@@ -1959,7 +1967,7 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           {data.cards.map((item) => (
             <MetricCard key={item.label} item={item} />
           ))}

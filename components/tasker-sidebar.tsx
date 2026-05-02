@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   AlertTriangle,
+  ArrowLeft,
   Bell,
   ChevronRight,
   LayoutDashboard,
@@ -575,6 +576,16 @@ export default function TaskerSidebar() {
         </div>
 
         <div className="absolute bottom-0 left-0 right-0 border-t border-border bg-card p-4">
+          <Link
+            href="/dashboard"
+            onClick={() => setIsMobileMenuOpen(false)}
+            className={`mb-2 inline-flex h-10 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground ${
+              isCollapsed ? 'px-2' : 'gap-3'
+            }`}
+          >
+            <ArrowLeft className="h-5 w-5" />
+            {!isCollapsed ? <span>User Dashboard</span> : null}
+          </Link>
           <Button
             variant="ghost"
             onClick={handleLogout}

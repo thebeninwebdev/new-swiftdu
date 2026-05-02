@@ -61,8 +61,7 @@ export async function PATCH(
       taskType,
       description,
       amount,
-      deadlineValue,
-      deadlineUnit,
+      deadlineDate,
       location,
       store,
       packaging,
@@ -77,8 +76,7 @@ export async function PATCH(
       taskType !== undefined ||
       description !== undefined ||
       amount !== undefined ||
-      deadlineValue !== undefined ||
-      deadlineUnit !== undefined ||
+      deadlineDate !== undefined ||
       location !== undefined ||
       store !== undefined ||
       packaging !== undefined ||
@@ -120,6 +118,12 @@ export async function PATCH(
           ? Number(copyNotesPages)
           : order.taskType === 'copy_notes'
             ? Number(order.copyNotesPages || 0)
+            : undefined;
+      const nextDeadlineDate =
+        deadlineDate !== undefined
+          ? new Date(`${String(deadlineDate).trim()}T00:00:00`)
+          : order.taskType === 'copy_notes' && order.deadlineDate
+            ? new Date(order.deadlineDate)
             : undefined;
 
       if (
@@ -166,6 +170,20 @@ export async function PATCH(
 
         if (!Number.isInteger(nextCopyNotesPages) || Number(nextCopyNotesPages) <= 0) {
           return NextResponse.json({ error: 'Enter the number of pages.' }, { status: 400 });
+        }
+
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        if (
+          !nextDeadlineDate ||
+          Number.isNaN(nextDeadlineDate.getTime()) ||
+          nextDeadlineDate < today
+        ) {
+          return NextResponse.json(
+            { error: 'Choose the date the copied notes should be ready.' },
+            { status: 400 }
+          );
         }
       }
 
@@ -230,8 +248,9 @@ export async function PATCH(
       order.settlementDueAt = undefined;
       order.settlementFailureReason = undefined;
 
-      if (deadlineValue !== undefined) order.deadlineValue = parseInt(deadlineValue);
-      if (deadlineUnit !== undefined) order.deadlineUnit = deadlineUnit;
+      order.deadlineDate = nextTaskType === 'copy_notes' ? nextDeadlineDate : undefined;
+      order.deadlineValue = undefined;
+      order.deadlineUnit = undefined;
       if (location !== undefined) order.location = location;
       order.store =
         nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE

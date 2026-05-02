@@ -17,15 +17,15 @@ export const WATER_DESCRIPTION_PATTERN = /\bbag(?:s)?\s+of\s+water\b/i
 export const TIERED_SERVICE_FEE_RULES = [
   {
     min: 0,
-    max: 9999,
+    max: 6999,
     fee: 450,
-    label: 'N0 - N9,999',
+    label: 'N0 - N6,999',
   },
   {
-    min: 10000,
+    min: 7000,
     max: 19999,
     fee: 1000,
-    label: 'N10,000 - N19,999',
+    label: 'N7,000 - N19,999',
   },
   {
     min: 20000,

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import { EXCO_DASHBOARD_PATHS, getExcoDashboardPath } from '@/lib/exco-constants';
+import { COMPLETE_PROFILE_PATH, isProfileComplete } from '@/lib/profile-completion';
 
 const PUBLIC_ROUTES = [
   '/',
@@ -16,6 +17,7 @@ const PUBLIC_ROUTES = [
 ];
 
 const EXCO_DASHBOARD_ROUTES = Object.values(EXCO_DASHBOARD_PATHS);
+const AUTH_ROUTES = ['/login', '/signup'];
 
 function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) {
   const excoDashboardPath = getExcoDashboardPath(excoRole);
@@ -50,9 +52,11 @@ export async function proxy(request: NextRequest) {
   const isPublicRoute = PUBLIC_ROUTES.some((route) =>
     route === '/' ? pathname === '/' : pathname.startsWith(route)
   );
+  const isAuthRoute = AUTH_ROUTES.includes(pathname);
 
-  if (pathname === '/' && user) {
-    return NextResponse.redirect(new URL(defaultRoute, request.url));
+  if (user && (pathname === '/' || isAuthRoute)) {
+    const nextRoute = isProfileComplete(user) ? defaultRoute : COMPLETE_PROFILE_PATH;
+    return NextResponse.redirect(new URL(nextRoute, request.url));
   }
 
   if (isPublicRoute) {
@@ -88,12 +92,13 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
+    '/',
     // '/about-us',
     // '/contact-us',
-    // '/login',
+    '/login',
     // '/password/:path*',
     // '/reset-password',
-    // '/signup',
+    '/signup',
     // '/terms',
     '/dashboard/:path*',
     '/tasker-dashboard/:path*',
