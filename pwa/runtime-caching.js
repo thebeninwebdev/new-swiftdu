@@ -42,7 +42,7 @@ const publicPageCaching = {
       maxEntries: 32,
       maxAgeSeconds: 24 * 60 * 60,
     },
-    networkTimeoutSeconds: 10,
+    networkTimeoutSeconds: 2,
   },
 }
 

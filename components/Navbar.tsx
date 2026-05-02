@@ -1,17 +1,13 @@
-"use client";
-
-import { Menu, X } from "lucide-react";
+import { Menu } from "lucide-react";
 
 import Image from "next/image";
 import Link from "next/link";
-import React from "react"
 
 
 export const Navbar = () => {
-  const [isOpen, setIsOpen] = React.useState(false);
-
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 md:py-2 backdrop-blur-md border-b border-gray-100">
+      <input id="mobile-nav-toggle" type="checkbox" className="peer sr-only" aria-hidden="true" />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
@@ -47,19 +43,16 @@ export const Navbar = () => {
 
           {/* Mobile Menu Button */}
           <div className="md:hidden flex items-center">
-            <button onClick={() => setIsOpen(!isOpen)} className="text-gray-600 hover:text-gray-900">
-              {isOpen ? <X /> : <Menu />}
-            </button>
+            <label htmlFor="mobile-nav-toggle" className="cursor-pointer text-gray-600 hover:text-gray-900">
+              <Menu className="h-6 w-6" />
+              <span className="sr-only">Toggle navigation</span>
+            </label>
           </div>
         </div>
       </div>
 
       {/* Mobile Menu */}
-      <div
-        className={`md:hidden overflow-hidden bg-white border-b border-gray-100 transition-[max-height,opacity] duration-200 ease-out ${
-          isOpen ? 'max-h-96 opacity-100' : 'max-h-0 opacity-0'
-        }`}
-      >
+      <div className="max-h-0 overflow-hidden border-b border-gray-100 bg-white opacity-0 transition-[max-height,opacity] duration-200 ease-out peer-checked:max-h-96 peer-checked:opacity-100 md:hidden">
         <div className="px-4 pt-2 pb-6 space-y-2">
           <Link href="/" className="block px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md">Home</Link>
           <Link href="/about-us" className="block px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md">About us</Link>

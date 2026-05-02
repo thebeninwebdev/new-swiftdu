@@ -1,15 +1,10 @@
 import type { Metadata, Viewport } from "next";
-import NextTopLoader from "nextjs-toploader";
 import "./globals.css";
-import {Toaster} from "sonner"
-import NavbarClientWrapper from "@/components/NavbarClientWrapper";
-import Wrapper from "@/components/wrapper";
+import { ChromeVisibility } from "@/components/ChromeVisibility";
+import { DeferredAppScripts } from "@/components/DeferredAppScripts";
 import { Footer } from "@/components/Footer";
-import { AdsenseLoader } from "@/components/AdsenseLoader";
+import { Navbar } from "@/components/Navbar";
 import { adsenseAccount, siteUrl } from "@/lib/site";
-import { Analytics } from "@vercel/analytics/next"
-import { GoogleAnalytics } from "@/components/google-analytics";
-import { AnalyticsTracker } from "@/components/analytics-tracker";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -86,52 +81,14 @@ export default function RootLayout({
       <body
         className="antialiased tracking-wide"
       >
-        <NextTopLoader color="#2563eb" height={2} showSpinner={false} />
-        <Wrapper path="/dashboard">
-        <Wrapper path="/tasker-signup">
-        <Wrapper path="/signup">
-        <Wrapper path="/login">
-        <Wrapper path="/admin">
-        <Wrapper path="/tasker-dashboard">
-        <Wrapper path="/cfo-dashboard">
-        <Wrapper path="/cmo-dashboard">
-        <Wrapper path="/coo-dashboard">
-        <Wrapper path="/cto-dashboard">
-          <NavbarClientWrapper />
-        </Wrapper>
-        </Wrapper>
-        </Wrapper>
-        </Wrapper>
-        </Wrapper></Wrapper>
-        </Wrapper>
-        </Wrapper>
-        </Wrapper>
-        </Wrapper>
-        <Analytics />
-        <GoogleAnalytics />
-        <AnalyticsTracker />
-        <AdsenseLoader />
+        <ChromeVisibility>
+          <Navbar />
+        </ChromeVisibility>
         {children}
-        <Wrapper path="/dashboard">
-        <Wrapper path="/tasker-signup">
-        <Wrapper path="/signup">
-        <Wrapper path="/admin">
-        <Wrapper path="/tasker-dashboard">
-        <Wrapper path="/cfo-dashboard">
-        <Wrapper path="/cmo-dashboard">
-        <Wrapper path="/coo-dashboard">
-        <Wrapper path="/cto-dashboard">
+        <ChromeVisibility>
           <Footer />
-        </Wrapper>
-        </Wrapper>
-        </Wrapper>
-        </Wrapper>
-        </Wrapper></Wrapper>
-        </Wrapper>
-        </Wrapper>
-        </Wrapper>
-           
-        <Toaster richColors position="bottom-right" />
+        </ChromeVisibility>
+        <DeferredAppScripts />
       </body>
     </html>
   );
