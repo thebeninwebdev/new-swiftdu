@@ -147,7 +147,7 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                â‚¦{isStatsLoading ? '...' : (stats?.paystackSettlementFees || 0).toLocaleString()}
+                ₦{isStatsLoading ? '...' : (stats?.paystackSettlementFees || 0).toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground">1.5% settlement charge</p>
             </CardContent>

@@ -1113,7 +1113,7 @@ export default function OrdersPage() {
                     Bank
                   </p>
                   <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                    {taskerDetails.bankDetails.bankName || 'Not available'}
+                    {taskerDetails.bankDetails.bankName?.toUpperCase() || 'Not available'}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
@@ -1121,7 +1121,7 @@ export default function OrdersPage() {
                     Account Name
                   </p>
                   <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                    {taskerDetails.bankDetails.accountName || 'Not available'}
+                    {taskerDetails.bankDetails.accountName?.toUpperCase() || 'Not available'}
                   </p>
                 </div>
                 <div className="rounded-2xl border border-slate-200 bg-sky-50/70 px-4 py-4 dark:border-slate-800 dark:bg-sky-950/20">

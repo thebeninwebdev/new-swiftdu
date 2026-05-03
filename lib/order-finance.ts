@@ -1,6 +1,7 @@
 export const PLATFORM_SETTLEMENT_SHARE = 0.24
 export const SETTLEMENT_WINDOW_HOURS = 24
 export const PAYSTACK_SETTLEMENT_FEE_RATE = 0.015
+export const CANCELLED_ORDER_STATUS = 'cancelled'
 
 function normalizeCurrency(value: number) {
   return Number.isFinite(value) ? Math.max(value, 0) : 0
@@ -34,4 +35,17 @@ export function calculateNetPlatformProfit(platformFee: number) {
   const normalizedPlatformFee = normalizeCurrency(platformFee)
 
   return roundCurrency(normalizedPlatformFee - calculatePaystackSettlementFee(normalizedPlatformFee))
+}
+
+export function excludeCancelledOrders(match: Record<string, unknown> = {}) {
+  const { $and, ...rest } = match
+  const existingAnd = Array.isArray($and) ? $and : $and ? [$and] : []
+
+  return {
+    ...rest,
+    $and: [
+      ...existingAnd,
+      { status: { $ne: CANCELLED_ORDER_STATUS } },
+    ],
+  }
 }

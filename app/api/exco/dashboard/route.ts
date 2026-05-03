@@ -3,7 +3,11 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getExcoAccess, normalizeExcoRole, type ExcoRole } from "@/lib/exco";
 import { connectDB } from "@/lib/db";
 import { AnalyticsEventModel } from "@/models/analytics";
-import { calculateNetPlatformProfit, calculatePaystackSettlementFee } from "@/lib/order-finance";
+import {
+  calculateNetPlatformProfit,
+  calculatePaystackSettlementFee,
+  excludeCancelledOrders,
+} from "@/lib/order-finance";
 import { Order } from "@/models/order";
 import { Review } from "@/models/review";
 import Tasker from "@/models/tasker";
@@ -261,8 +265,9 @@ function buildAnalyticsBuckets(rangeKey: AnalyticsRangeKey, since: Date, dateFor
 }
 
 async function getMoneySummary(match: Record<string, unknown>) {
+  const financeMatch = excludeCancelledOrders(match);
   const [summary] = await Order.aggregate<MoneySummary>([
-    { $match: match },
+    { $match: financeMatch },
     {
       $group: {
         _id: null,

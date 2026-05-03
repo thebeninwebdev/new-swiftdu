@@ -6,6 +6,7 @@ import Tasker from '@/models/tasker';
 import {
   calculateNetPlatformProfit,
   calculatePaystackSettlementFee,
+  excludeCancelledOrders,
 } from '@/lib/order-finance';
 
 export async function GET(request: NextRequest) {
@@ -76,18 +77,21 @@ export async function GET(request: NextRequest) {
     );
 
     // Calculate stats
-    const allOrders = await Order.find({}).lean();
-    const totalVolume = allOrders.reduce((sum, order: any) => sum + order.totalAmount, 0);
-    const totalTransactions = allOrders.length;
-    const totalPlatformFees = allOrders.reduce((sum, order: any) => sum + (order.platformFee || 0), 0);
-    const totalPaystackSettlementFees = Math.round(allOrders.reduce(
+    const [financeOrders, totalOrdersForQuery] = await Promise.all([
+      Order.find(excludeCancelledOrders()).lean(),
+      Order.countDocuments(query),
+    ]);
+    const totalVolume = financeOrders.reduce((sum, order: any) => sum + (order.totalAmount || 0), 0);
+    const totalTransactions = financeOrders.length;
+    const totalPlatformFees = financeOrders.reduce((sum, order: any) => sum + (order.platformFee || 0), 0);
+    const totalPaystackSettlementFees = Math.round(financeOrders.reduce(
       (sum, order: any) => sum + calculatePaystackSettlementFee(order.platformFee || 0),
       0
     ) * 100) / 100;
-    const totalTaskerFees = allOrders.reduce((sum, order: any) => sum + (order.taskerFee || 0), 0);
+    const totalTaskerFees = financeOrders.reduce((sum, order: any) => sum + (order.taskerFee || 0), 0);
     const netRevenue = Math.round((totalPlatformFees - totalPaystackSettlementFees) * 100) / 100;
 
-    const totalPages = Math.ceil(allOrders.length / limit);
+    const totalPages = Math.ceil(totalOrdersForQuery / limit);
 
     return NextResponse.json({
       transactions,

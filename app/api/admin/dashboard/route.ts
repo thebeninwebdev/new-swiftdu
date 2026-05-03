@@ -4,7 +4,11 @@ import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
 import { Order } from '@/models/order'
 import {Review} from '@/models/review'
-import { calculateNetPlatformProfit, calculatePaystackSettlementFee } from '@/lib/order-finance'
+import {
+  calculateNetPlatformProfit,
+  calculatePaystackSettlementFee,
+  excludeCancelledOrders,
+} from '@/lib/order-finance'
 
 // ─── GET /api/admin/dashboard ────────────────────────────────────────────────
 // Returns dashboard statistics and recent activity.
@@ -20,6 +24,7 @@ export async function GET(req: NextRequest) {
     // }
 
     await connectDB()
+    const financeMatch = excludeCancelledOrders()
 
     // Get stats
     const [
@@ -52,12 +57,15 @@ export async function GET(req: NextRequest) {
     // Calculate gross revenue, profit, Paystack settlement fees, and total compensation.
     const [grossRevenueAgg, platformFeeAgg, compensationAgg] = await Promise.all([
       Order.aggregate([
+        { $match: financeMatch },
         { $group: { _id: null, total: { $sum: { $add: ["$amount", "$commission"] } } } }
       ]),
       Order.aggregate([
+        { $match: financeMatch },
         { $group: { _id: null, total: { $sum: "$platformFee" } } }
       ]),
       Order.aggregate([
+        { $match: financeMatch },
         { $group: { _id: null, total: { $sum: "$taskerFee" } } }
       ])
     ])
