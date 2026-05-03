@@ -490,7 +490,7 @@ export default function ErrandDetailPage() {
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-300">
                 Task summary
               </p>
-              <p className="mt-3 text-lg font-semibold leading-7">{errand.description}</p>
+              <p className="mt-3 text-lg font-semibold leading-7">{errand.description} in {errand.packaging}</p>
 
               <div className="mt-5 grid gap-3 text-sm text-slate-200 sm:grid-cols-2">
                 <div className="flex items-start gap-2">
