@@ -46,10 +46,10 @@ export async function PATCH(
       )
     }
 
-    const updateData: { isVerified?: boolean; isSuspended?: boolean; phone?: string } = {}
+    const updateData: { emailVerified?: boolean; isSuspended?: boolean; phone?: string } = {}
 
     if (action === 'verify') {
-      updateData.isVerified = true
+      updateData.emailVerified = true
     } else if (action === 'suspend') {
       updateData.isSuspended = true
     } else if (action === 'activate') {

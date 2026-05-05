@@ -383,6 +383,11 @@ type ExcoTasker = {
   email: string;
   phone: string;
   location: string;
+  bankDetails: {
+    bankName: string;
+    accountNumber: string;
+    accountName: string;
+  };
   isVerified: boolean;
   isRejected: boolean;
   isPremium: boolean;
@@ -517,9 +522,17 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
   if (role === "COO") {
     return (
       <div className="space-y-4">
-        <TaskerManagementPanel />
+        <TaskerManagementPanel canModerate />
         <UserManagementPanel title="User Management" allowSuspension={false} />
         <ReviewsPanel />
+      </div>
+    );
+  }
+
+  if (role === "CFO") {
+    return (
+      <div className="space-y-4">
+        <TaskerManagementPanel canModerate={false} />
       </div>
     );
   }
@@ -527,6 +540,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
   if (role === "CTO") {
     return (
       <div className="space-y-4">
+        <TaskerManagementPanel canModerate={false} />
         <UserManagementPanel title="User Management" allowSuspension />
         <SupportTicketsPanel />
       </div>
@@ -536,10 +550,11 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
   return null;
 }
 
-function TaskerManagementPanel() {
+function TaskerManagementPanel({ canModerate }: { canModerate: boolean }) {
   const { items, isLoading, error, reload } = useManagementResource<ExcoTasker>("taskers", true);
   const paged = usePagedItems(items);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [bankEdits, setBankEdits] = useState<Record<string, ExcoTasker["bankDetails"]>>({});
 
   const runAction = async (id: string, action: "approve" | "reject" | "suspend" | "activate") => {
     setActionId(`${id}-${action}`);
@@ -551,10 +566,27 @@ function TaskerManagementPanel() {
     }
   };
 
+  const saveBankDetails = async (tasker: ExcoTasker) => {
+    setActionId(`${tasker.id}-bank`);
+    try {
+      await patchManagement("taskers", {
+        id: tasker.id,
+        bankDetails: bankEdits[tasker.id] ?? tasker.bankDetails,
+      });
+      await reload();
+    } finally {
+      setActionId(null);
+    }
+  };
+
   return (
     <ManagementShell
       title="Tasker Management"
-      description="Approve, reject, suspend, or restore taskers directly from the COO dashboard."
+      description={
+        canModerate
+          ? "Approve, reject, suspend, restore, or update tasker bank details."
+          : "Review taskers and update their bank details."
+      }
       isLoading={isLoading}
       error={error}
       emptyLabel="No taskers found"
@@ -568,6 +600,58 @@ function TaskerManagementPanel() {
                 <p className="font-semibold text-slate-950 dark:text-white">{tasker.name}</p>
                 <p className="mt-1 text-xs text-slate-500">{tasker.email} - {tasker.phone}</p>
                 <p className="mt-1 text-xs text-slate-500">{tasker.location}</p>
+                <div className="mt-3 grid gap-2 md:grid-cols-4">
+                  <input
+                    value={(bankEdits[tasker.id] ?? tasker.bankDetails).bankName}
+                    onChange={(event) =>
+                      setBankEdits((previous) => ({
+                        ...previous,
+                        [tasker.id]: {
+                          ...(previous[tasker.id] ?? tasker.bankDetails),
+                          bankName: event.target.value,
+                        },
+                      }))
+                    }
+                    className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+                    placeholder="Bank name"
+                  />
+                  <input
+                    value={(bankEdits[tasker.id] ?? tasker.bankDetails).accountNumber}
+                    onChange={(event) =>
+                      setBankEdits((previous) => ({
+                        ...previous,
+                        [tasker.id]: {
+                          ...(previous[tasker.id] ?? tasker.bankDetails),
+                          accountNumber: event.target.value.replace(/\D/g, "").slice(0, 10),
+                        },
+                      }))
+                    }
+                    className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+                    placeholder="Account number"
+                  />
+                  <input
+                    value={(bankEdits[tasker.id] ?? tasker.bankDetails).accountName}
+                    onChange={(event) =>
+                      setBankEdits((previous) => ({
+                        ...previous,
+                        [tasker.id]: {
+                          ...(previous[tasker.id] ?? tasker.bankDetails),
+                          accountName: event.target.value,
+                        },
+                      }))
+                    }
+                    className="h-9 rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+                    placeholder="Account name"
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={Boolean(actionId)}
+                    onClick={() => saveBankDetails(tasker)}
+                  >
+                    {actionId === `${tasker.id}-bank` ? "Saving..." : "Save Bank"}
+                  </Button>
+                </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Badge variant="outline">{tasker.isVerified ? "approved" : tasker.isRejected ? "rejected" : "pending"}</Badge>
                   {tasker.isPremium ? <Badge variant="outline">premium</Badge> : null}
@@ -575,17 +659,17 @@ function TaskerManagementPanel() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
-                {!tasker.isVerified ? (
+                {canModerate && !tasker.isVerified ? (
                   <Button size="sm" onClick={() => runAction(tasker.id, "approve")} disabled={Boolean(actionId)}>
                     Approve
                   </Button>
                 ) : null}
-                {!tasker.isRejected ? (
+                {canModerate && !tasker.isRejected ? (
                   <Button size="sm" variant="outline" onClick={() => runAction(tasker.id, "reject")} disabled={Boolean(actionId)}>
                     Reject
                   </Button>
                 ) : null}
-                {tasker.isVerified ? (
+                {canModerate && tasker.isVerified ? (
                   <Button
                     size="sm"
                     variant="outline"

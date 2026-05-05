@@ -67,7 +67,15 @@ export function isProfileComplete(user?: AuthProfileUser | null) {
 }
 
 export function getSignedInDestination(user?: AuthProfileUser | null) {
-  return user?.role === "admin" ? "/admin" : "/dashboard";
+  if (user?.role === "admin") {
+    return "/admin";
+  }
+
+  if (user?.role === "tasker") {
+    return "/tasker-dashboard";
+  }
+
+  return "/dashboard";
 }
 
 export function getSafeNextPath(nextPath?: string | null) {

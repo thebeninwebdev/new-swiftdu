@@ -12,7 +12,7 @@ import { User } from "@/models/user";
 type Resource = "taskers" | "reviews" | "users" | "support";
 
 const RESOURCE_ACCESS: Record<Resource, ExcoRole[]> = {
-  taskers: ["COO"],
+  taskers: ["COO", "CFO", "CTO"],
   reviews: ["COO"],
   users: ["COO", "CTO"],
   support: ["CTO"],
@@ -58,6 +58,11 @@ async function getTaskers() {
     isRejected: Boolean(tasker.isRejected),
     isPremium: tasker.isPremium,
     isSettlementSuspended: Boolean(tasker.isSettlementSuspended),
+    bankDetails: {
+      bankName: tasker.bankDetails?.bankName || "",
+      accountNumber: tasker.bankDetails?.accountNumber || "",
+      accountName: tasker.bankDetails?.accountName || "",
+    },
     completedTasks: tasker.completedTasks,
     rating: tasker.rating,
     createdAt: tasker.createdAt,
@@ -200,9 +205,23 @@ export async function PATCH(request: NextRequest) {
   await connectDB();
 
   if (resource === "taskers") {
-    const { id, action } = body as { id?: string; action?: string };
-    if (!id || !["approve", "reject", "suspend", "activate"].includes(action || "")) {
+    const { id, action, bankDetails } = body as {
+      id?: string;
+      action?: string;
+      bankDetails?: { bankName?: string; accountNumber?: string; accountName?: string };
+    };
+    const hasBankDetails = bankDetails !== undefined;
+
+    if (
+      !id ||
+      (action && !["approve", "reject", "suspend", "activate"].includes(action)) ||
+      (!action && !hasBankDetails)
+    ) {
       return NextResponse.json({ error: "Invalid tasker action" }, { status: 400 });
+    }
+
+    if (action && access.excoRole !== "COO") {
+      return NextResponse.json({ error: "Only COO can change tasker approval status" }, { status: 403 });
     }
 
     const tasker = await Tasker.findById(id);
@@ -221,6 +240,27 @@ export async function PATCH(request: NextRequest) {
     } else if (action === "activate") {
       tasker.isSettlementSuspended = false;
       tasker.settlementSuspendedAt = null;
+    }
+
+    if (hasBankDetails) {
+      const nextBankDetails = {
+        bankName: String(bankDetails?.bankName || "").trim(),
+        accountNumber: String(bankDetails?.accountNumber || "").trim(),
+        accountName: String(bankDetails?.accountName || "").trim(),
+      };
+
+      if (
+        !nextBankDetails.bankName ||
+        !/^\d{10}$/.test(nextBankDetails.accountNumber) ||
+        !nextBankDetails.accountName
+      ) {
+        return NextResponse.json(
+          { error: "Provide a bank name, 10-digit account number, and account name." },
+          { status: 400 }
+        );
+      }
+
+      tasker.bankDetails = nextBankDetails;
     }
 
     await tasker.save();

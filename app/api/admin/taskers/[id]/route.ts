@@ -18,14 +18,20 @@ export async function PATCH(
       (session?.user as { excoRole?: string | null } | undefined)?.excoRole
     )
 
-    if (!session?.user || (session.user.role !== 'admin' && excoRole !== 'COO')) {
+    if (
+      !session?.user ||
+      (session.user.role !== 'admin' &&
+        excoRole !== 'COO' &&
+        excoRole !== 'CFO' &&
+        excoRole !== 'CTO')
+    ) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 
     await connectDB()
 
     const { id } = await params
-    const { action, isPremium } = await req.json()
+    const { action, isPremium, bankDetails } = await req.json()
 
     if (action !== undefined && !['approve', 'reject', 'suspend', 'activate'].includes(action)) {
       return NextResponse.json(
@@ -34,11 +40,43 @@ export async function PATCH(
       )
     }
 
-    if (action === undefined && typeof isPremium !== 'boolean') {
+    if (
+      (action !== undefined || typeof isPremium === 'boolean') &&
+      session.user.role !== 'admin' &&
+      excoRole !== 'COO'
+    ) {
+      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+    }
+
+    const hasBankDetails = bankDetails !== undefined
+    let nextBankDetails:
+      | { bankName: string; accountNumber: string; accountName: string }
+      | null = null
+
+    if (action === undefined && typeof isPremium !== 'boolean' && !hasBankDetails) {
       return NextResponse.json(
-        { error: 'Provide either an approval action or an isPremium boolean.' },
+        { error: 'Provide an approval action, an isPremium boolean, or bank details.' },
         { status: 400 }
       )
+    }
+
+    if (hasBankDetails) {
+      nextBankDetails = {
+        bankName: String(bankDetails?.bankName || '').trim(),
+        accountNumber: String(bankDetails?.accountNumber || '').trim(),
+        accountName: String(bankDetails?.accountName || '').trim(),
+      }
+
+      if (
+        !nextBankDetails.bankName ||
+        !/^\d{10}$/.test(nextBankDetails.accountNumber) ||
+        !nextBankDetails.accountName
+      ) {
+        return NextResponse.json(
+          { error: 'Provide a bank name, 10-digit account number, and account name.' },
+          { status: 400 }
+        )
+      }
     }
 
     const tasker = await Tasker.findById(id)
@@ -66,6 +104,10 @@ export async function PATCH(
       tasker.isPremium = isPremium
     }
 
+    if (nextBankDetails) {
+      tasker.bankDetails = nextBankDetails
+    }
+
     await tasker.save()
 
     return NextResponse.json(
@@ -75,13 +117,16 @@ export async function PATCH(
             ? 'Tasker approved successfully.'
             : action === 'reject'
               ? 'Tasker rejected successfully.'
-              : `Premium access ${tasker.isPremium ? 'enabled' : 'disabled'} for this tasker.`,
+              : nextBankDetails
+                ? 'Tasker bank details updated successfully.'
+                : `Premium access ${tasker.isPremium ? 'enabled' : 'disabled'} for this tasker.`,
         tasker: {
           id: tasker._id,
           isVerified: tasker.isVerified,
           isRejected: tasker.isRejected,
           isPremium: tasker.isPremium,
           isSettlementSuspended: tasker.isSettlementSuspended,
+          bankDetails: tasker.bankDetails,
         },
       },
       { status: 200 }

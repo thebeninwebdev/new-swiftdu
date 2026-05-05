@@ -27,7 +27,7 @@ function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) 
     case 'admin':
       return '/admin';
     case 'tasker':
-      return '/dashboard';
+      return '/tasker-dashboard';
     case 'user':
     default:
       return '/dashboard';

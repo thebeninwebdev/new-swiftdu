@@ -75,7 +75,7 @@ export default function AvailableTasksPage() {
 
   return (
     <main className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8">
+      <div className="container mx-auto px-4 pb-8 pt-3 md:pt-4">
         {/* Header */}
         <div className="flex flex-col gap-2 mb-8">
           <h1 className="text-4xl font-bold text-foreground">Available Tasks</h1>

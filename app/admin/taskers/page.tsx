@@ -49,6 +49,7 @@ export default function AdminTaskersPage() {
   const [activeFilter, setActiveFilter] = useState<StatusFilter>('pending')
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [bankEdits, setBankEdits] = useState<Record<string, Tasker['bankDetails']>>({})
 
   // ── Auth check ─────────────────────────────────────────────────────────────
 
@@ -144,6 +145,32 @@ export default function AdminTaskersPage() {
       setTaskers((prev) =>
         prev.map((tasker) =>
           tasker._id === taskerId ? { ...tasker, isPremium: nextPremium } : tasker
+        )
+      )
+    } catch {
+      toast.error('Something went wrong')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleBankDetailsUpdate = async (tasker: Tasker) => {
+    const nextBankDetails = bankEdits[tasker._id] ?? tasker.bankDetails
+
+    setActionLoading(`${tasker._id}-bank`)
+    try {
+      const res = await fetch(`/api/admin/taskers/${tasker._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bankDetails: nextBankDetails }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Could not update bank details'); return }
+
+      toast.success('Bank details updated')
+      setTaskers((prev) =>
+        prev.map((item) =>
+          item._id === tasker._id ? { ...item, bankDetails: nextBankDetails } : item
         )
       )
     } catch {
@@ -334,6 +361,60 @@ export default function AdminTaskersPage() {
                         <DetailRow label="Rating" value={tasker.rating > 0 ? `${tasker.rating}/5` : 'Not yet rated'} />
                         <DetailRow label="Premium Email Alerts" value={tasker.isPremium ? 'Enabled' : 'Disabled'} />
                         <DetailRow label="Tasker Suspension" value={tasker.isSettlementSuspended ? 'Suspended' : 'Active'} />
+                      </div>
+                      <div style={s.bankEditor}>
+                        <input
+                          style={s.input}
+                          value={(bankEdits[tasker._id] ?? tasker.bankDetails).bankName}
+                          onChange={(event) =>
+                            setBankEdits((previous) => ({
+                              ...previous,
+                              [tasker._id]: {
+                                ...(previous[tasker._id] ?? tasker.bankDetails),
+                                bankName: event.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Bank name"
+                        />
+                        <input
+                          style={s.input}
+                          value={(bankEdits[tasker._id] ?? tasker.bankDetails).accountNumber}
+                          onChange={(event) =>
+                            setBankEdits((previous) => ({
+                              ...previous,
+                              [tasker._id]: {
+                                ...(previous[tasker._id] ?? tasker.bankDetails),
+                                accountNumber: event.target.value.replace(/\D/g, '').slice(0, 10),
+                              },
+                            }))
+                          }
+                          placeholder="Account number"
+                        />
+                        <input
+                          style={s.input}
+                          value={(bankEdits[tasker._id] ?? tasker.bankDetails).accountName}
+                          onChange={(event) =>
+                            setBankEdits((previous) => ({
+                              ...previous,
+                              [tasker._id]: {
+                                ...(previous[tasker._id] ?? tasker.bankDetails),
+                                accountName: event.target.value,
+                              },
+                            }))
+                          }
+                          placeholder="Account name"
+                        />
+                        <button
+                          style={{
+                            ...s.saveBankBtn,
+                            ...(actionLoading === `${tasker._id}-bank` ? s.btnDisabled : {}),
+                          }}
+                          disabled={actionLoading === `${tasker._id}-bank`}
+                          onClick={() => handleBankDetailsUpdate(tasker)}
+                        >
+                          {actionLoading === `${tasker._id}-bank` ? 'Saving...' : 'Save Bank Details'}
+                        </button>
                       </div>
                     </div>
                   )}
@@ -800,6 +881,23 @@ const s: Record<string, React.CSSProperties> = {
     gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
     gap: 10,
   },
+  bankEditor: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: 8,
+    marginTop: 14,
+  },
+  input: {
+    minWidth: 0,
+    height: 38,
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderColor: COLOR.border,
+    borderRadius: 8,
+    padding: '0 10px',
+    fontSize: 13,
+    fontFamily: 'inherit',
+  },
   detailRow: {
     display: 'flex',
     flexDirection: 'column' as const,
@@ -888,6 +986,20 @@ const s: Record<string, React.CSSProperties> = {
     background: '#16a34a',
     color: '#ffffff',
     borderColor: '#16a34a',
+  },
+  saveBankBtn: {
+    minHeight: 38,
+    padding: '8px 14px',
+    fontSize: 13,
+    fontWeight: 700,
+    background: COLOR.accent,
+    borderWidth: 0,
+    borderStyle: 'solid',
+    borderColor: 'transparent',
+    borderRadius: 8,
+    color: '#ffffff',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
   },
   btnDisabled: {
     opacity: 0.5,
