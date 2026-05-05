@@ -1,4 +1,4 @@
-export const PREMIUM_TASKER_MIN_BUDGET = 7_000
+export const PREMIUM_TASKER_MIN_BUDGET = 10_000
 
 export const DECLINED_TRANSFER_MESSAGE =
   'The transaction was not found and we will be in contact within 24 hours.'

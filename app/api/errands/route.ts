@@ -166,7 +166,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           error:
-            'Only premium taskers can accept orders with a budget of N7,000 and above.',
+            'Only premium taskers can accept orders with a budget of N10,000 and above.',
         },
         { status: 403 }
       )

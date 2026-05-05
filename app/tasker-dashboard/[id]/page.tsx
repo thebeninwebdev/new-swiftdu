@@ -9,6 +9,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  MessageCircle,
   Phone,
   Store,
   Wallet,
@@ -99,6 +100,28 @@ function formatDeadline(deadlineDate?: string, deadlineValue?: number, deadlineU
   }
 
   return 'Not set'
+}
+
+function formatWhatsappPhone(phone: string) {
+  const digits = phone.replace(/\D/g, '')
+
+  if (!digits) return ''
+  if (digits.startsWith('234')) return digits
+  if (digits.startsWith('0')) return `234${digits.slice(1)}`
+  if (digits.length === 10) return `234${digits}`
+
+  return digits
+}
+
+function getWhatsappLink(phone: string, errand: ErrandDetail, userName?: string) {
+  const whatsappPhone = formatWhatsappPhone(phone)
+
+  if (!whatsappPhone) return ''
+
+  const taskLabel = taskTypeLabels[errand.taskType] || errand.taskType
+  const message = `Hi ${userName || 'there'}, I'm your SwiftDU tasker for the ${taskLabel} task.`
+
+  return `https://wa.me/${whatsappPhone}?text=${encodeURIComponent(message)}`
 }
 
 export default function ErrandDetailPage() {
@@ -392,6 +415,7 @@ export default function ErrandDetailPage() {
     errand.status === 'completed' &&
     !errand.taskerHasPaid &&
     errand.settlementStatus !== 'paid'
+  const whatsappLink = userInfo ? getWhatsappLink(userInfo.phone, errand, userInfo.name) : ''
 
   return (
     <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] px-1 py-2 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 sm:px-2 md:px-3">
@@ -565,6 +589,23 @@ export default function ErrandDetailPage() {
                   </div>
 
                   <div className="grid gap-3 sm:grid-cols-2">
+                    {whatsappLink ? (
+                      <a
+                        href={whatsappLink}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 transition hover:bg-emerald-100 dark:border-emerald-900 dark:bg-emerald-950/30 dark:hover:bg-emerald-950/50"
+                      >
+                        <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-600 dark:text-emerald-300">
+                          WhatsApp
+                        </p>
+                        <p className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-emerald-700 dark:text-emerald-200">
+                          <MessageCircle className="h-4 w-4" />
+                          Chat customer
+                        </p>
+                      </a>
+                    ) : null}
+
                     <a
                       href={`tel:${userInfo.phone}`}
                       className="rounded-2xl border border-slate-200 px-4 py-3 transition hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-950/70"
