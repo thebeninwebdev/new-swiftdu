@@ -6,6 +6,10 @@ import { auth } from '@/lib/auth'
 import { emitOrderUpdated } from '@/lib/socket'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import { PREMIUM_TASKER_MIN_BUDGET, requiresPremiumTasker } from '@/lib/tasker-access'
+import {
+  formatPushTaskType,
+  sendPushNotification,
+} from '@/lib/push-notifications'
 
 export const dynamic = 'force-dynamic'
 
@@ -198,6 +202,20 @@ export async function POST(request: NextRequest) {
     }
 
     emitOrderUpdated(updatedOrder)
+
+    const pushResult = await sendPushNotification({
+      audience: { userIds: [String(updatedOrder.userId)] },
+      title: 'Your task has been accepted',
+      body: `${updatedOrder.taskerName || 'A tasker'} accepted your ${formatPushTaskType(
+        updatedOrder.taskType
+      ).toLowerCase()} task.`,
+      url: '/dashboard/tasks',
+      tag: `order-accepted-${updatedOrder._id.toString()}`,
+    })
+
+    if (pushResult.skipped || pushResult.deliveredCount < pushResult.recipientCount) {
+      console.warn('[Errands Accept Push Notification]:', pushResult)
+    }
 
     return NextResponse.json(updatedOrder, { status: 200 })
   } catch (error) {

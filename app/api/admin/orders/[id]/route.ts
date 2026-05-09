@@ -3,6 +3,10 @@ import { connectDB } from '@/lib/db'
 import { ensureBookedAt } from '@/lib/order-response-time'
 import { Order } from '@/models/order'
 import { emitOrderUpdated } from '@/lib/socket'
+import {
+  formatPushTaskType,
+  sendPushNotification,
+} from '@/lib/push-notifications'
 
 // ─── PATCH /api/admin/orders/[id] ───────────────────────────────────────────
 // Update order status (cancel, complete).
@@ -41,6 +45,8 @@ export async function PATCH(
       )
     }
 
+    const previousStatus = order.status
+
     ensureBookedAt(order)
 
     if (action === 'cancel') {
@@ -66,6 +72,22 @@ export async function PATCH(
     await order.save()
 
     emitOrderUpdated(order)
+
+    if (previousStatus !== 'completed' && order.status === 'completed') {
+      const pushResult = await sendPushNotification({
+        audience: { userIds: [String(order.userId)] },
+        title: 'Task completed',
+        body: `Your ${formatPushTaskType(
+          order.taskType
+        ).toLowerCase()} task is complete. Add a quick review.`,
+        url: `/dashboard/reviews/${order._id.toString()}`,
+        tag: `order-completed-${order._id.toString()}`,
+      })
+
+      if (pushResult.skipped || pushResult.deliveredCount < pushResult.recipientCount) {
+        console.warn('[Admin Order Complete Push Notification]:', pushResult)
+      }
+    }
 
     return NextResponse.json(order)
 

@@ -14,6 +14,10 @@ import {
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
 import { requiresPremiumTasker } from '@/lib/tasker-access';
+import {
+  formatPushTaskType,
+  sendPushNotification,
+} from '@/lib/push-notifications';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes']);
 
@@ -388,6 +392,22 @@ export async function PATCH(
     }
 
     emitOrderUpdated(order);
+
+    if (previousStatus !== 'completed' && order.status === 'completed') {
+      const pushResult = await sendPushNotification({
+        audience: { userIds: [String(order.userId)] },
+        title: 'Task completed',
+        body: `Your ${formatPushTaskType(
+          order.taskType
+        ).toLowerCase()} task is complete. Add a quick review.`,
+        url: `/dashboard/reviews/${order._id.toString()}`,
+        tag: `order-completed-${order._id.toString()}`,
+      });
+
+      if (pushResult.skipped || pushResult.deliveredCount < pushResult.recipientCount) {
+        console.warn('[Orders Complete Push Notification]:', pushResult);
+      }
+    }
 
     return NextResponse.json(order);
   } catch (error) {

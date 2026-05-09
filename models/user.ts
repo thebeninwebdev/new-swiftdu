@@ -10,6 +10,7 @@ export interface IUser extends Document {
   role: "user" | "admin" | "tasker";
   phone?: string;
   location?: string;
+  dateOfBirth?: Date;
   twoFactorEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -54,6 +55,10 @@ const UserSchema = new Schema<IUser>(
     },
     location: {
       type: String,
+      required: false,
+    },
+    dateOfBirth: {
+      type: Date,
       required: false,
     },
     twoFactorEnabled: {

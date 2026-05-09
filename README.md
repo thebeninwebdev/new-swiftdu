@@ -16,6 +16,22 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Web Push Notifications
+
+The PWA uses Web Push for order updates. Generate VAPID keys with:
+
+```bash
+npx web-push generate-vapid-keys
+```
+
+Then add these variables locally and in production:
+
+```bash
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=your_public_key
+VAPID_PRIVATE_KEY=your_private_key
+VAPID_SUBJECT=mailto:support@your-domain.com
+```
+
 ## Twilio WhatsApp Alerts
 
 Order admin alerts support email plus WhatsApp notifications through Twilio. New bookings and booking cancellations will send a WhatsApp alert to the configured admin number directly from the app server.

@@ -125,6 +125,10 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      dateOfBirth: {
+        type: "date",
+        required: false,
+      },
       taskerId: {
         type: "string",
         required: false,

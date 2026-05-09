@@ -1,5 +1,9 @@
 import NewTaskEmail from '@/emails/newTaskEmail'
 import { getResendApiKey, sendTransactionalEmail } from '@/lib/email'
+import {
+  formatPushTaskType,
+  sendPushNotification,
+} from '@/lib/push-notifications'
 import { sendTelegramMessage } from '@/lib/telegram'
 import Tasker from '@/models/tasker'
 import { User } from '@/models/user'
@@ -28,6 +32,12 @@ interface TaskerNotificationTarget {
 interface EmailRecipient {
   name?: string
   email: string
+}
+
+interface PushNotificationSummary {
+  recipientCount: number
+  deliveredCount: number
+  skipped: boolean
 }
 
 function getAppBaseUrl() {
@@ -61,18 +71,38 @@ function isGirlsHostelLocation(value: string) {
   return normalized.includes('girlshostel') || normalized.includes('girlshotel')
 }
 
+function isPushNotificationSummary(value: unknown): value is PushNotificationSummary {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'recipientCount' in value &&
+      typeof value.recipientCount === 'number' &&
+      'deliveredCount' in value &&
+      typeof value.deliveredCount === 'number' &&
+      'skipped' in value &&
+      typeof value.skipped === 'boolean'
+  )
+}
+
 export async function notifyTaskersOfNewTask(
   input: NotifyTaskersOfNewTaskInput
 ): Promise<NotifyTaskersOfNewTaskResult> {
-  // Check if either email or Telegram channel is configured
+  // Check if either email, Telegram, or Web Push channel is configured
   const hasEmailConfig = Boolean(getResendApiKey());
   const hasTelegramConfig = Boolean(
     process.env.TELEGRAM_BOT_TOKEN &&
     (process.env.TELEGRAM_CHANNEL_ID || process.env.TELEGRAM_CHAT_ID)
   );
+  const hasPushConfig = Boolean(
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY
+  )
   const girlsHostelOnly = isGirlsHostelLocation(input.location)
 
-  console.log('[Tasker Notifications] Config check:', { hasEmailConfig, hasTelegramConfig });
+  console.log('[Tasker Notifications] Config check:', {
+    hasEmailConfig,
+    hasTelegramConfig,
+    hasPushConfig,
+  });
 
   // Test bot connection if Telegram channel is configured
   if (hasTelegramConfig) {
@@ -81,12 +111,12 @@ export async function notifyTaskersOfNewTask(
     console.log('[Tasker Notifications] Bot connection test:', botWorking);
   }
 
-  if (!hasEmailConfig && !hasTelegramConfig) {
+  if (!hasEmailConfig && !hasTelegramConfig && !hasPushConfig) {
     return {
       recipientCount: 0,
       deliveredCount: 0,
       skipped: true,
-      reason: 'No notification configuration found (email or Telegram channel).',
+      reason: 'No notification configuration found (email, Telegram, or Web Push).',
     }
   }
 
@@ -111,7 +141,7 @@ export async function notifyTaskersOfNewTask(
     girlsHostelOnly,
   })
 
-  if (targetTaskers.length === 0 && !hasTelegramConfig) {
+  if (targetTaskers.length === 0 && !hasTelegramConfig && !hasPushConfig) {
     return {
       recipientCount: 0,
       deliveredCount: 0,
@@ -190,13 +220,37 @@ export async function notifyTaskersOfNewTask(
     notificationPromises.push(sendTelegramMessage(telegramMessage))
   }
 
+  if (hasPushConfig) {
+    notificationPromises.push(
+      sendPushNotification({
+        audience: { roles: ['tasker'] },
+        title: `New ${formatPushTaskType(input.taskType)} task`,
+        body: `${input.location} - ₦${input.amount.toLocaleString()}`,
+        url: '/tasker-dashboard',
+        tag: 'new-task',
+      })
+    )
+  }
+
   const results = await Promise.allSettled(notificationPromises)
 
-  const totalRecipients = (hasEmailConfig ? emailRecipients.length : 0) + (shouldSendTelegram ? 1 : 0)
+  const pushResult = results
+    .map((result) => (result.status === 'fulfilled' ? result.value : null))
+    .find(isPushNotificationSummary)
+
+  const totalRecipients =
+    (hasEmailConfig ? emailRecipients.length : 0) +
+    (shouldSendTelegram ? 1 : 0) +
+    (pushResult?.recipientCount || 0)
   const deliveredCount = results.filter((result) => {
     if (result.status === 'fulfilled') {
       // For email, result.value is undefined on success
       // For Telegram, result.value is boolean
+      // For Web Push, result.value is a delivery summary
+      if (isPushNotificationSummary(result.value)) {
+        return result.value.deliveredCount > 0
+      }
+
       return result.value === undefined || result.value === true
     }
     return false
@@ -207,6 +261,7 @@ export async function notifyTaskersOfNewTask(
     deliveredCount,
     emailRecipients: emailRecipients.length,
     telegramChannel: Boolean(shouldSendTelegram),
+    pushRecipients: pushResult?.recipientCount || 0,
     girlsHostelOnly,
   });
 
