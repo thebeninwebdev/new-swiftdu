@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
 import { PushSubscription } from '@/models/push-subscription'
+import { User } from '@/models/user'
 
 interface PushSubscriptionBody {
   endpoint?: string
@@ -38,12 +39,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const user = await User.findById(session.user.id).select('role').lean()
+    const role = getSessionRole(user?.role || session.user.role)
+
     await PushSubscription.findOneAndUpdate(
       { endpoint: body.endpoint },
       {
         $set: {
           userId: session.user.id,
-          role: getSessionRole(session.user.role),
+          role,
           endpoint: body.endpoint,
           expirationTime: body.expirationTime ?? null,
           keys: {

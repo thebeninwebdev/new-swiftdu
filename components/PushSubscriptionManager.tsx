@@ -18,6 +18,22 @@ function urlBase64ToUint8Array(base64String: string) {
   return outputArray
 }
 
+function arrayBufferEquals(left: ArrayBuffer | null, right: Uint8Array) {
+  if (!left || left.byteLength !== right.byteLength) {
+    return false
+  }
+
+  const leftView = new Uint8Array(left)
+
+  for (let index = 0; index < leftView.length; index += 1) {
+    if (leftView[index] !== right[index]) {
+      return false
+    }
+  }
+
+  return true
+}
+
 async function getVapidPublicKey() {
   const response = await fetch('/api/push/public-key', {
     cache: 'no-store',
@@ -32,7 +48,21 @@ async function getVapidPublicKey() {
 }
 
 async function getReadyServiceWorkerRegistration() {
-  const existingRegistration = await navigator.serviceWorker.getRegistration()
+  let existingRegistration = await navigator.serviceWorker.getRegistration()
+
+  if (!existingRegistration) {
+    try {
+      existingRegistration = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/',
+      })
+    } catch (error) {
+      throw new Error(
+        `Service worker registration failed: ${
+          error instanceof Error ? error.message : 'unknown error'
+        }`
+      )
+    }
+  }
 
   if (existingRegistration?.active) {
     return existingRegistration
@@ -87,13 +117,31 @@ export function PushSubscriptionManager() {
       }
 
       const registration = await getReadyServiceWorkerRegistration()
+      const applicationServerKey = urlBase64ToUint8Array(publicKey)
       const existingSubscription =
         await registration.pushManager.getSubscription()
+
+      if (
+        existingSubscription &&
+        !arrayBufferEquals(
+          existingSubscription.options.applicationServerKey,
+          applicationServerKey
+        )
+      ) {
+        await existingSubscription.unsubscribe()
+      }
+
       const subscription =
-        existingSubscription ||
+        existingSubscription &&
+        arrayBufferEquals(
+          existingSubscription.options.applicationServerKey,
+          applicationServerKey
+        )
+          ? existingSubscription
+          :
         (await registration.pushManager.subscribe({
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(publicKey),
+          applicationServerKey,
         }))
 
       const response = await fetch('/api/push/subscriptions', {

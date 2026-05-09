@@ -174,6 +174,13 @@ export async function notifyTaskersOfNewTask(
   }
 
   const shouldSendTelegram = hasTelegramConfig
+  const pushRecipientUserIds = Array.from(
+    new Set(
+      targetTaskers
+        .map((tasker) => String(tasker.userId || ''))
+        .filter(Boolean)
+    )
+  )
   const taskUrl = `${getAppBaseUrl()}/tasker-dashboard`
   const subject = `New ${formatTaskType(input.taskType)} task posted on SwiftDU`
 
@@ -220,10 +227,10 @@ export async function notifyTaskersOfNewTask(
     notificationPromises.push(sendTelegramMessage(telegramMessage))
   }
 
-  if (hasPushConfig) {
+  if (hasPushConfig && pushRecipientUserIds.length > 0) {
     notificationPromises.push(
       sendPushNotification({
-        audience: { roles: ['tasker'] },
+        audience: { userIds: pushRecipientUserIds },
         title: `New ${formatPushTaskType(input.taskType)} task`,
         body: `${input.location} - ₦${input.amount.toLocaleString()}`,
         url: '/tasker-dashboard',
