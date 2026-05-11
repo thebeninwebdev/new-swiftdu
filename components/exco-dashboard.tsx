@@ -413,8 +413,26 @@ type ExcoUser = {
   role: string;
   emailVerified: boolean;
   isSuspended: boolean;
+  dateOfBirth: string | null;
   orderCount: number;
   createdAt: string;
+};
+
+type ExcoOrder = {
+  id: string;
+  taskType: string;
+  description: string;
+  location: string;
+  status: string;
+  totalAmount: number;
+  taskerId: string;
+  taskerName: string;
+  taskerEmail: string;
+  taskerPhone: string;
+  userName: string;
+  userEmail: string;
+  acceptedAt: string | null;
+  createdAt: string | null;
 };
 
 type ExcoSupportTicket = {
@@ -521,6 +539,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
   if (role === "COO") {
     return (
       <div className="space-y-4">
+        <AssignedTasksPanel canCancel />
         <TaskerManagementPanel canModerate />
         <UserManagementPanel title="User Management" allowSuspension={false} />
         <ReviewsPanel />
@@ -539,9 +558,18 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
   if (role === "CTO") {
     return (
       <div className="space-y-4">
+        <AssignedTasksPanel canCancel={false} />
         <TaskerManagementPanel canModerate={false} />
         <UserManagementPanel title="User Management" allowSuspension />
         <SupportTicketsPanel />
+      </div>
+    );
+  }
+
+  if (role === "CMO") {
+    return (
+      <div className="space-y-4">
+        <UserManagementPanel title="Audience Birthdays & Ages" allowSuspension={false} />
       </div>
     );
   }
@@ -687,6 +715,125 @@ function TaskerManagementPanel({ canModerate }: { canModerate: boolean }) {
   );
 }
 
+function AssignedTasksPanel({ canCancel }: { canCancel: boolean }) {
+  const { items, isLoading, error, reload } = useManagementResource<ExcoOrder>("orders", true);
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [actionId, setActionId] = useState<string | null>(null);
+  const filteredItems = useMemo(
+    () =>
+      items.filter((order) => statusFilter === "all" || order.status === statusFilter),
+    [items, statusFilter]
+  );
+  const paged = usePagedItems(filteredItems);
+
+  const cancelOrder = async (order: ExcoOrder) => {
+    setActionId(order.id);
+    try {
+      await patchManagement("orders", { id: order.id, action: "cancel" });
+      await reload();
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  return (
+    <ManagementShell
+      title="Assigned Tasks"
+      description={
+        canCancel
+          ? "See each task's assigned tasker and cancel in-progress tasks when needed."
+          : "See each task and the tasker currently assigned to it."
+      }
+      isLoading={isLoading}
+      error={error}
+      emptyLabel="No tasks found"
+      hasItems={items.length > 0}
+    >
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <select
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.target.value)}
+          className="h-10 rounded-md border border-slate-200 bg-white px-3 text-sm dark:border-slate-800 dark:bg-slate-950"
+        >
+          <option value="all">All statuses</option>
+          <option value="pending">Pending</option>
+          <option value="in_progress">In progress</option>
+          <option value="paid">Paid</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      {filteredItems.length === 0 ? <EmptyState label="No tasks match this filter" /> : null}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[900px] text-left text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              <th className="pb-3 pr-4 font-semibold">Task</th>
+              <th className="pb-3 pr-4 font-semibold">Customer</th>
+              <th className="pb-3 pr-4 font-semibold">Assigned Tasker</th>
+              <th className="pb-3 pr-4 font-semibold">Status</th>
+              <th className="pb-3 pr-4 font-semibold">Value</th>
+              {canCancel ? <th className="pb-3 pr-4 font-semibold">Action</th> : null}
+            </tr>
+          </thead>
+          <tbody>
+            {paged.pageItems.map((order) => (
+              <tr key={order.id} className="border-b border-slate-100 align-top dark:border-slate-900">
+                <td className="py-4 pr-4">
+                  <div className="font-semibold text-slate-950 dark:text-white">
+                    {order.description}
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {order.taskType} - {order.location}
+                  </p>
+                </td>
+                <td className="py-4 pr-4">
+                  <div className="font-medium text-slate-900 dark:text-white">{order.userName}</div>
+                  <p className="mt-1 text-xs text-slate-500">{order.userEmail}</p>
+                </td>
+                <td className="py-4 pr-4">
+                  <div className="font-medium text-slate-900 dark:text-white">{order.taskerName}</div>
+                  <div className="mt-1 space-y-0.5 text-xs text-slate-500">
+                    {order.taskerEmail ? <p>{order.taskerEmail}</p> : null}
+                    {order.taskerPhone ? <p>{order.taskerPhone}</p> : null}
+                    {!order.taskerId ? <p>No tasker assigned yet</p> : null}
+                  </div>
+                </td>
+                <td className="py-4 pr-4">
+                  <Badge variant="outline">{order.status.replace("_", " ")}</Badge>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {formatDate(order.acceptedAt || order.createdAt)}
+                  </p>
+                </td>
+                <td className="py-4 pr-4 font-semibold">
+                  {formatValue(order.totalAmount, "currency")}
+                </td>
+                {canCancel ? (
+                  <td className="py-4 pr-4">
+                    {order.status === "in_progress" ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={Boolean(actionId)}
+                        onClick={() => cancelOrder(order)}
+                      >
+                        {actionId === order.id ? "Cancelling..." : "Cancel task"}
+                      </Button>
+                    ) : (
+                      <span className="text-xs text-slate-500">No action</span>
+                    )}
+                  </td>
+                ) : null}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <PaginationControls {...paged} onPageChange={paged.setPage} />
+    </ManagementShell>
+  );
+}
+
 function UserManagementPanel({
   title,
   allowSuspension,
@@ -796,6 +943,12 @@ function UserManagementPanel({
                   <span>Joined {formatDate(user.createdAt)}</span>
                   <span>{user.phone || "No phone number"}</span>
                   <span>{user.orderCount} orders</span>
+                  <span>
+                    DOB {user.dateOfBirth ? formatDateOnly(user.dateOfBirth) : "Not set"}
+                  </span>
+                  <span>
+                    Age {user.dateOfBirth ? `${calculateAge(user.dateOfBirth)} years` : "Not set"}
+                  </span>
                 </div>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:justify-end">
@@ -1343,6 +1496,26 @@ function formatDate(value: string | null) {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));
+}
+
+function formatDateOnly(value: string | null) {
+  if (!value) return "Not set";
+  return new Intl.DateTimeFormat("en-NG", {
+    dateStyle: "medium",
+  }).format(new Date(value));
+}
+
+function calculateAge(value: string) {
+  const birthDate = new Date(value);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const monthDelta = today.getMonth() - birthDate.getMonth();
+
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) {
+    age -= 1;
+  }
+
+  return Math.max(age, 0);
 }
 
 function statusTone(status: string) {

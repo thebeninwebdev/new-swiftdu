@@ -3,19 +3,21 @@ import { Types } from "mongoose";
 
 import { getExcoAccess, type ExcoRole } from "@/lib/exco";
 import { connectDB } from "@/lib/db";
+import { emitOrderUpdated } from "@/lib/socket";
 import { Order } from "@/models/order";
 import { Review } from "@/models/review";
 import Support from "@/models/support";
 import Tasker from "@/models/tasker";
 import { User } from "@/models/user";
 
-type Resource = "taskers" | "reviews" | "users" | "support";
+type Resource = "taskers" | "reviews" | "users" | "support" | "orders";
 
 const RESOURCE_ACCESS: Record<Resource, ExcoRole[]> = {
   taskers: ["COO", "CFO", "CTO"],
   reviews: ["COO"],
-  users: ["COO", "CTO"],
+  users: ["COO", "CMO", "CTO"],
   support: ["CTO"],
+  orders: ["COO", "CTO"],
 };
 
 function canAccess(resource: Resource, role: ExcoRole | null) {
@@ -23,7 +25,13 @@ function canAccess(resource: Resource, role: ExcoRole | null) {
 }
 
 function normalizeResource(value: string | null): Resource | null {
-  if (value === "taskers" || value === "reviews" || value === "users" || value === "support") {
+  if (
+    value === "taskers" ||
+    value === "reviews" ||
+    value === "users" ||
+    value === "support" ||
+    value === "orders"
+  ) {
     return value;
   }
 
@@ -109,7 +117,7 @@ async function getUsers(excoRole: ExcoRole) {
 
   const users = await User.find(filters)
     .sort({ createdAt: -1 })
-    .select("_id name email phone role emailVerified isSuspended createdAt")
+    .select("_id name email phone role emailVerified isSuspended dateOfBirth createdAt")
     .lean();
 
   const userIds = users.map((user) => user._id.toString());
@@ -127,8 +135,116 @@ async function getUsers(excoRole: ExcoRole) {
     role: user.role,
     emailVerified: user.emailVerified,
     isSuspended: Boolean(user.isSuspended),
+    dateOfBirth: user.dateOfBirth ? user.dateOfBirth.toISOString() : null,
     orderCount: orderCountMap[user._id.toString()] || 0,
     createdAt: user.createdAt,
+  }));
+}
+
+async function getOrders() {
+  const rows = await Order.aggregate<{
+    id: string;
+    taskType?: string;
+    description?: string;
+    location?: string;
+    status?: string;
+    totalAmount?: number;
+    taskerId?: string;
+    taskerName?: string;
+    taskerEmail?: string;
+    taskerPhone?: string;
+    userName?: string;
+    userEmail?: string;
+    acceptedAt?: Date | null;
+    createdAt?: Date | null;
+  }>([
+    { $sort: { createdAt: -1 } },
+    { $limit: 50 },
+    {
+      $addFields: {
+        userObjectId: {
+          $convert: {
+            input: "$userId",
+            to: "objectId",
+            onError: null,
+            onNull: null,
+          },
+        },
+        taskerObjectId: {
+          $convert: {
+            input: "$taskerId",
+            to: "objectId",
+            onError: null,
+            onNull: null,
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "user",
+        localField: "userObjectId",
+        foreignField: "_id",
+        as: "customer",
+      },
+    },
+    { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "taskers",
+        localField: "taskerObjectId",
+        foreignField: "_id",
+        as: "tasker",
+      },
+    },
+    { $unwind: { path: "$tasker", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "user",
+        localField: "tasker.userId",
+        foreignField: "_id",
+        as: "taskerUser",
+      },
+    },
+    { $unwind: { path: "$taskerUser", preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        _id: 0,
+        id: { $toString: "$_id" },
+        taskType: "$taskType",
+        description: { $ifNull: ["$description", "$taskType"] },
+        location: "$location",
+        status: "$status",
+        totalAmount: "$totalAmount",
+        taskerId: { $ifNull: ["$taskerId", ""] },
+        taskerName: {
+          $ifNull: ["$taskerUser.name", { $ifNull: ["$taskerName", "Unassigned"] }],
+        },
+        taskerEmail: { $ifNull: ["$taskerUser.email", ""] },
+        taskerPhone: { $ifNull: ["$tasker.phone", ""] },
+        userName: { $ifNull: ["$customer.name", "Unknown customer"] },
+        userEmail: { $ifNull: ["$customer.email", ""] },
+        acceptedAt: "$acceptedAt",
+        createdAt: "$createdAt",
+      },
+    },
+  ]);
+
+  return rows.map((row) => ({
+    id: row.id,
+    taskType: row.taskType || "others",
+    description: row.description || row.taskType || "Task",
+    location: row.location || "Unknown location",
+    status: row.status || "pending",
+    totalAmount: row.totalAmount || 0,
+    taskerId: row.taskerId || "",
+    taskerName: row.taskerName || "Unassigned",
+    taskerEmail: row.taskerEmail || "",
+    taskerPhone: row.taskerPhone || "",
+    userName: row.userName || "Unknown customer",
+    userEmail: row.userEmail || "",
+    acceptedAt: row.acceptedAt ? row.acceptedAt.toISOString() : null,
+    createdAt: row.createdAt ? row.createdAt.toISOString() : null,
   }));
 }
 
@@ -182,9 +298,11 @@ export async function GET(request: NextRequest) {
 
   if (resource === "taskers") return NextResponse.json({ items: await getTaskers() });
   if (resource === "reviews") return NextResponse.json({ items: await getReviews() });
+  if (resource === "orders") return NextResponse.json({ items: await getOrders() });
   if (resource === "users") {
     return NextResponse.json({ items: await getUsers(access.excoRole as ExcoRole) });
   }
+
   return NextResponse.json({ items: await getSupportTickets() });
 }
 
@@ -262,6 +380,44 @@ export async function PATCH(request: NextRequest) {
     }
 
     await tasker.save();
+    return NextResponse.json({ ok: true });
+  }
+
+  if (resource === "orders") {
+    const { id, action } = body as { id?: string; action?: string };
+
+    if (!id || action !== "cancel") {
+      return NextResponse.json({ error: "Invalid order action" }, { status: 400 });
+    }
+
+    if (access.excoRole !== "COO") {
+      return NextResponse.json({ error: "Only COO can cancel tasks" }, { status: 403 });
+    }
+
+    const order = await Order.findById(id);
+    if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+
+    if (order.status !== "in_progress") {
+      return NextResponse.json({ error: "Only in-progress tasks can be cancelled here." }, { status: 400 });
+    }
+
+    order.status = "cancelled";
+    order.cancelledAt = new Date();
+    if (!order.hasPaid) {
+      order.paymentStatus = "cancelled";
+    }
+    order.settlementStatus = "not_due";
+    order.settlementReference = undefined;
+    order.settlementAccessCode = undefined;
+    order.settlementCheckoutUrl = undefined;
+    order.settlementTransactionId = undefined;
+    order.settlementInitializedAt = undefined;
+    order.settlementPaidAt = undefined;
+    order.settlementDueAt = undefined;
+    order.settlementFailureReason = undefined;
+
+    await order.save();
+    emitOrderUpdated(order);
     return NextResponse.json({ ok: true });
   }
 

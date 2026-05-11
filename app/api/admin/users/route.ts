@@ -69,6 +69,7 @@ export async function GET(req: NextRequest) {
     // Attach order counts
     const usersWithCounts = users.map(user => ({
       ...user,
+      dateOfBirth: user.dateOfBirth ? user.dateOfBirth.toISOString() : null,
       orderCount: orderCountMap[user._id.toString()] || 0
     }))
 

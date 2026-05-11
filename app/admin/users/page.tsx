@@ -45,10 +45,35 @@ interface User {
   location?: string
   emailVerified: boolean
   role: string
+  dateOfBirth?: string | null
   createdAt: string
   lastLogin?: string
   orderCount?: number
   isSuspended?: boolean
+}
+
+const formatDateOnly = (date?: string | null) =>
+  date
+    ? new Date(date).toLocaleDateString('en-NG', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : 'Not set'
+
+const calculateAge = (date?: string | null) => {
+  if (!date) return null
+
+  const birthDate = new Date(date)
+  const today = new Date()
+  let age = today.getFullYear() - birthDate.getFullYear()
+  const monthDelta = today.getMonth() - birthDate.getMonth()
+
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birthDate.getDate())) {
+    age -= 1
+  }
+
+  return Math.max(age, 0)
 }
 
 // Animation variants
@@ -701,6 +726,33 @@ export default function AdminUsersPage() {
                                   initial={{ opacity: 0, x: -10 }}
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ delay: 0.4 }}
+                                >
+                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                    <Calendar className="w-3 h-3" />
+                                    Date of Birth
+                                  </p>
+                                  <p className="text-sm font-medium">
+                                    {formatDateOnly(user.dateOfBirth)}
+                                  </p>
+                                </motion.div>
+
+                                <motion.div 
+                                  className="space-y-1"
+                                  initial={{ opacity: 0, x: -10 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: 0.42 }}
+                                >
+                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Age</p>
+                                  <p className="text-sm font-medium">
+                                    {user.dateOfBirth ? `${calculateAge(user.dateOfBirth)} years` : 'Not set'}
+                                  </p>
+                                </motion.div>
+
+                                <motion.div 
+                                  className="space-y-1"
+                                  initial={{ opacity: 0, x: -10 }}
+                                  animate={{ opacity: 1, x: 0 }}
+                                  transition={{ delay: 0.44 }}
                                 >
                                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
                                     <Calendar className="w-3 h-3" />

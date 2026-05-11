@@ -416,11 +416,12 @@ export default function AdminOrdersPage() {
                           <Eye className="w-4 h-4" />
                         </Button>
 
-                        {order.status === 'pending' && (
+                        {(order.status === 'pending' || order.status === 'in_progress') && (
                           <Button
                             variant="outline"
                             size="sm"
                             onClick={() => handleOrderAction(order._id, 'cancel')}
+                            title="Cancel task"
                           >
                             <XCircle className="w-4 h-4" />
                           </Button>
