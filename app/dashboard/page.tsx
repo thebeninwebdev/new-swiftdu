@@ -176,6 +176,19 @@ function formatReadyDate(value?: string) {
   }).format(new Date(`${value}T00:00:00`))
 }
 
+function isLowTaskerAvailabilityWindow(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Africa/Lagos',
+    weekday: 'short',
+    hour: 'numeric',
+    hourCycle: 'h23',
+  }).formatToParts(date)
+  const weekday = parts.find((part) => part.type === 'weekday')?.value
+  const hour = Number(parts.find((part) => part.type === 'hour')?.value)
+
+  return ['Mon', 'Tue', 'Wed'].includes(weekday || '') && hour >= 0 && hour < 15
+}
+
 export default function ErrandWizardPage() {
   const router = useRouter()
   const { data: session } = authClient.useSession()
@@ -184,6 +197,7 @@ export default function ErrandWizardPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isRealtimePaused, setIsRealtimePaused] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [currentTime, setCurrentTime] = useState(() => new Date())
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
   const socketRef = useRef<Socket | null>(null)
@@ -258,6 +272,16 @@ export default function ErrandWizardPage() {
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+
+    const interval = window.setInterval(() => {
+      setCurrentTime(new Date())
+    }, 60_000)
+
+    return () => window.clearInterval(interval)
+  }, [mounted])
 
   useEffect(() => {
     if (!mounted) return
@@ -734,6 +758,7 @@ if (stepNumber === 2) {
           ? 'Your payment has been confirmed and the task is moving. You can still book another errand below.'
           : 'This order is waiting for payment confirmation. You can open the tracker anytime and still post another task now.'
     : null
+  const showLowTaskerAvailabilityNotice = isLowTaskerAvailabilityWindow(currentTime)
 
   if (!mounted) return null
 
@@ -746,6 +771,20 @@ if (stepNumber === 2) {
               Fixed fees for regular errands. Water is charged per bag.
             </div>
           </div>
+
+          {showLowTaskerAvailabilityNotice ? (
+            <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 md:mb-8">
+              <div className="flex items-start gap-3">
+                <Clock className="mt-0.5 h-5 w-5 shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold">Taskers may be in class right now</p>
+                  <p className="mt-1 text-sm text-amber-900 dark:text-amber-100">
+                    It may be unlikely to get a tasker quickly at this time because many taskers are in ongoing classes. Please try again by 3:00 PM for quicker attention.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           {activeOrder ? (
             <div className="mb-5 rounded-3xl border border-indigo-200/80 bg-linear-to-r from-indigo-50 via-white to-cyan-50 p-4 shadow-sm dark:border-indigo-900/60 dark:from-indigo-950/40 dark:via-slate-900 dark:to-cyan-950/40 md:mb-8 md:p-5">
