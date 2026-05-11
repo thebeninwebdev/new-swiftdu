@@ -2,6 +2,7 @@ import OrderAlertEmail from '@/emails/orderAlertEmail'
 import { sendTransactionalEmail } from '@/lib/email'
 import { getSupportEmailAddress } from '@/lib/email-config'
 import { getSiteUrl } from '@/lib/site'
+import { sendTelegramMessage } from '@/lib/telegram'
 import { User } from '@/models/user'
 
 type OrderLike = {
@@ -34,6 +35,7 @@ interface NotifyAdminsOfOrderEventResult {
   skipped: boolean
   reason?: string
   email: AlertChannelResult
+  telegram: AlertChannelResult
 }
 
 const EMAIL_ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -138,6 +140,51 @@ function createSkippedChannelResult(reason: string): AlertChannelResult {
   }
 }
 
+function escapeTelegramHtml(value?: string | null) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function buildTelegramOrderAlertMessage(input: {
+  event: OrderAlertEvent
+  orderId: string
+  taskType?: string
+  description?: string
+  amount: number
+  totalAmount: number
+  location: string
+  customerName?: string | null
+  customerEmail?: string | null
+  actorLabel: string
+  dashboardUrl: string
+}) {
+  const heading =
+    input.event === 'cancelled' ? 'Booking cancelled' : 'New booking received'
+  const lines = [
+    `<b>${escapeTelegramHtml(heading)}</b>`,
+    `<b>Task:</b> ${escapeTelegramHtml(formatTaskType(input.taskType))}`,
+    `<b>Location:</b> ${escapeTelegramHtml(input.location)}`,
+    `<b>Amount:</b> NGN ${input.amount.toLocaleString()}`,
+    `<b>Total:</b> NGN ${input.totalAmount.toLocaleString()}`,
+    `<b>Customer:</b> ${escapeTelegramHtml(
+      input.customerName || input.customerEmail || 'Unknown'
+    )}`,
+    `<b>Actor:</b> ${escapeTelegramHtml(input.actorLabel)}`,
+    `<b>Order:</b> ${escapeTelegramHtml(input.orderId)}`,
+    `<a href="${escapeTelegramHtml(input.dashboardUrl)}">Open admin dashboard</a>`,
+  ]
+
+  const description = input.description?.trim()
+
+  if (description) {
+    lines.splice(3, 0, `<b>Description:</b> ${escapeTelegramHtml(description)}`)
+  }
+
+  return lines.join('\n')
+}
+
 export async function notifyAdminsOfOrderEvent(
   input: NotifyAdminsOfOrderEventInput
 ): Promise<NotifyAdminsOfOrderEventResult> {
@@ -151,6 +198,7 @@ export async function notifyAdminsOfOrderEvent(
       skipped: true,
       reason: 'Order identifiers are missing.',
       email: createSkippedChannelResult('Order identifiers are missing.'),
+      telegram: createSkippedChannelResult('Order identifiers are missing.'),
     }
   }
 
@@ -167,6 +215,34 @@ export async function notifyAdminsOfOrderEvent(
   const location = input.order.location || 'Location not provided'
   const createdAt = serializeDate(input.order.createdAt)
   const cancelledAt = serializeDate(input.order.cancelledAt)
+
+  const telegramResult =
+    process.env.TELEGRAM_BOT_TOKEN?.trim() || process.env.TELEGRAM_BOT_API_TOKEN?.trim()
+      ? await (async () => {
+          const delivered = await sendTelegramMessage(
+            buildTelegramOrderAlertMessage({
+              event: input.event,
+              orderId,
+              taskType: input.order.taskType,
+              description: input.order.description,
+              amount,
+              totalAmount,
+              location,
+              customerName: customer?.name,
+              customerEmail: customer?.email,
+              actorLabel,
+              dashboardUrl,
+            })
+          )
+
+          return {
+            recipientCount: 1,
+            deliveredCount: delivered ? 1 : 0,
+            skipped: false,
+            reason: delivered ? undefined : 'Telegram send failed.',
+          }
+        })()
+      : createSkippedChannelResult('Telegram configuration is missing.')
 
   const emailResult = process.env.RESEND_API_KEY?.trim()
     ? await (async () => {
@@ -218,11 +294,12 @@ export async function notifyAdminsOfOrderEvent(
       })()
     : createSkippedChannelResult('Email configuration is missing.')
 
- return {
-  recipientCount: emailResult.recipientCount,
-  deliveredCount: emailResult.deliveredCount,
-  skipped: emailResult.skipped,
-  reason: emailResult.reason,
-  email: emailResult
-}
+  return {
+    recipientCount: emailResult.recipientCount + telegramResult.recipientCount,
+    deliveredCount: emailResult.deliveredCount + telegramResult.deliveredCount,
+    skipped: emailResult.skipped && telegramResult.skipped,
+    reason: emailResult.reason || telegramResult.reason,
+    email: emailResult,
+    telegram: telegramResult,
+  }
 }
