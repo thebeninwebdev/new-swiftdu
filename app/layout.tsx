@@ -77,6 +77,33 @@ export default function RootLayout({
     <html lang="en">
       <head>
         <meta name="google-adsense-account" content={adsenseAccount} />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+(function(w, d) {
+  w.PushEngage = w.PushEngage || [];
+  w._peq = w._peq || [];
+  if (!w.__swiftduPushEngageInitialized) {
+    w.__swiftduPushEngageInitialized = true;
+    PushEngage.push(['init', {
+        appId: 'f2aeb4c8-3643-4a2e-a58e-41e09f5ab63a'
+    }]);
+  }
+
+  if (d.querySelector('script[src="https://clientcdn.pushengage.com/sdks/pushengage-web-sdk.js"]')) {
+    return;
+  }
+
+  var e = d.createElement('script');
+
+  e.src = 'https://clientcdn.pushengage.com/sdks/pushengage-web-sdk.js';
+  e.async = true;
+  e.type = 'text/javascript';
+  d.head.appendChild(e);
+})(window, document);
+`,
+          }}
+        />
       </head>
       <body
         className="antialiased tracking-wide"

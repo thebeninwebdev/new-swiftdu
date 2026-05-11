@@ -14,6 +14,7 @@ declare global {
   interface Window {
     PushEngage?: unknown[]
     _peq?: unknown[]
+    __swiftduPushEngageInitialized?: boolean
   }
 }
 
@@ -25,14 +26,21 @@ function loadPushEngageSdk() {
   window.PushEngage = window.PushEngage || []
   window._peq = window._peq || []
 
-  window.PushEngage.push([
-    'init',
-    {
-      appId: PUSHENGAGE_APP_ID,
-    },
-  ])
+  if (!window.__swiftduPushEngageInitialized) {
+    window.__swiftduPushEngageInitialized = true
+    window.PushEngage.push([
+      'init',
+      {
+        appId: PUSHENGAGE_APP_ID,
+      },
+    ])
+  }
 
-  if (document.querySelector('script[data-swiftdu-pushengage="true"]')) {
+  if (
+    document.querySelector(
+      'script[src="https://clientcdn.pushengage.com/sdks/pushengage-web-sdk.js"]'
+    )
+  ) {
     return
   }
 
