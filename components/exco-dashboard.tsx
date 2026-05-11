@@ -390,7 +390,6 @@ type ExcoTasker = {
   };
   isVerified: boolean;
   isRejected: boolean;
-  isPremium: boolean;
   isSettlementSuspended: boolean;
   completedTasks: number;
   rating: number;
@@ -654,7 +653,6 @@ function TaskerManagementPanel({ canModerate }: { canModerate: boolean }) {
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Badge variant="outline">{tasker.isVerified ? "approved" : tasker.isRejected ? "rejected" : "pending"}</Badge>
-                  {tasker.isPremium ? <Badge variant="outline">premium</Badge> : null}
                   {tasker.isSettlementSuspended ? <Badge variant="destructive">suspended</Badge> : null}
                 </div>
               </div>

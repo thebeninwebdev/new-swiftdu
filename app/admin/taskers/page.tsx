@@ -21,7 +21,6 @@ interface Tasker {
   profileImage?: string
   isVerified: boolean
   isRejected: boolean
-  isPremium: boolean
   isSettlementSuspended?: boolean
   rating: number
   completedTasks: number
@@ -130,30 +129,6 @@ export default function AdminTaskersPage() {
     }
   }
 
-  const handlePremiumToggle = async (taskerId: string, nextPremium: boolean) => {
-    setActionLoading(`${taskerId}-${nextPremium ? 'premium-on' : 'premium-off'}`)
-    try {
-      const res = await fetch(`/api/admin/taskers/${taskerId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isPremium: nextPremium }),
-      })
-      const data = await res.json()
-      if (!res.ok) { toast.error(data.error || 'Could not update premium access'); return }
-
-      toast.success(nextPremium ? 'Premium access enabled' : 'Premium access removed')
-      setTaskers((prev) =>
-        prev.map((tasker) =>
-          tasker._id === taskerId ? { ...tasker, isPremium: nextPremium } : tasker
-        )
-      )
-    } catch {
-      toast.error('Something went wrong')
-    } finally {
-      setActionLoading(null)
-    }
-  }
-
   const handleBankDetailsUpdate = async (tasker: Tasker) => {
     const nextBankDetails = bankEdits[tasker._id] ?? tasker.bankDetails
 
@@ -229,7 +204,7 @@ export default function AdminTaskersPage() {
             <span style={s.badge}>Admin Panel</span>
             <h1 style={s.title}>Tasker Applications</h1>
             <p style={s.subtitle}>
-              Review applications and control which verified taskers receive new-task email alerts.
+              Review applications, update bank details, and manage tasker access.
             </p>
           </div>
           <div style={s.adminChip}>
@@ -328,11 +303,6 @@ export default function AdminTaskersPage() {
                       }}>
                         {tasker.isVerified ? 'Approved' : tasker.isRejected ? 'Rejected' : 'Pending'}
                       </div>
-                      {tasker.isPremium ? (
-                        <div style={{ ...s.statusPill, ...s.pillPremium }}>
-                          Premium
-                        </div>
-                      ) : null}
                       {tasker.isSettlementSuspended ? (
                         <div style={{ ...s.statusPill, ...s.pillRejected }}>
                           Suspended
@@ -359,7 +329,6 @@ export default function AdminTaskersPage() {
                         <DetailRow label="Account Name" value={tasker.bankDetails.accountName} />
                         <DetailRow label="Completed Tasks" value={String(tasker.completedTasks)} />
                         <DetailRow label="Rating" value={tasker.rating > 0 ? `${tasker.rating}/5` : 'Not yet rated'} />
-                        <DetailRow label="Premium Email Alerts" value={tasker.isPremium ? 'Enabled' : 'Disabled'} />
                         <DetailRow label="Tasker Suspension" value={tasker.isSettlementSuspended ? 'Suspended' : 'Active'} />
                       </div>
                       <div style={s.bankEditor}>
@@ -420,28 +389,6 @@ export default function AdminTaskersPage() {
                   )}
 
                   {/* Actions — only show for pending */}
-                  {tasker.isVerified && (
-                    <div style={s.actions}>
-                      <button
-                        style={{
-                          ...s.trustBtn,
-                          ...(tasker.isPremium ? s.trustBtnActive : {}),
-                          ...(isActing ? s.btnDisabled : {}),
-                        }}
-                        disabled={!!isActing}
-                        onClick={() => handlePremiumToggle(tasker._id, !tasker.isPremium)}
-                      >
-                        {actionLoading === `${tasker._id}-${tasker.isPremium ? 'premium-off' : 'premium-on'}`
-                          ? tasker.isPremium
-                            ? 'Removing...'
-                            : 'Saving...'
-                          : tasker.isPremium
-                            ? 'Remove Premium Access'
-                            : 'Make Premium'}
-                      </button>
-                    </div>
-                  )}
-
                   {!tasker.isVerified && !tasker.isRejected && (
                     <div style={s.actions}>
                       <button
@@ -849,11 +796,6 @@ const s: Record<string, React.CSSProperties> = {
     borderColor: COLOR.errorBorder,
     color: COLOR.error,
   },
-  pillPremium: {
-    background: COLOR.accentDim,
-    borderColor: 'rgba(37,99,235,0.22)',
-    color: COLOR.accentText,
-  },
   // Expand button
   expandBtn: {
     marginTop: 14,
@@ -965,27 +907,6 @@ const s: Record<string, React.CSSProperties> = {
     background: COLOR.successDim,
     borderColor: COLOR.successBorder,
     color: COLOR.success,
-  },
-  trustBtn: {
-    flex: '1 1 220px',
-    padding: '8px 20px',
-    fontSize: 13,
-    fontWeight: 700,
-    background: 'rgba(22,163,74,0.08)',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: 'rgba(22,163,74,0.2)',
-    borderRadius: 8,
-    color: COLOR.success,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    transition: 'opacity 0.15s',
-    textAlign: 'center' as const,
-  },
-  trustBtnActive: {
-    background: '#16a34a',
-    color: '#ffffff',
-    borderColor: '#16a34a',
   },
   saveBankBtn: {
     minHeight: 38,

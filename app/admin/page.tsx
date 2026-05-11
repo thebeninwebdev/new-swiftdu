@@ -15,13 +15,11 @@ import {
   TrendingUp,
   Activity,
   AlertCircle,
-  ShieldCheck,
 } from 'lucide-react'
 
 interface DashboardStats {
   totalUsers: number
   totalTaskers: number
-  premiumTaskers: number
   totalOrders: number
   totalRevenue: number
   pendingOrders: number
@@ -179,7 +177,7 @@ export default function AdminDashboard() {
         </div>
 
         {/* Stats Cards */}
-        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5 md:gap-6">
+        <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 md:gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Users</CardTitle>
@@ -203,19 +201,6 @@ export default function AdminDashboard() {
                 {isStatsLoading ? '...' : stats?.totalTaskers || 0}
               </div>
               <p className="text-xs text-muted-foreground">Verified taskers</p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Premium Taskers</CardTitle>
-              <ShieldCheck className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">
-                {isStatsLoading ? '...' : stats?.premiumTaskers || 0}
-              </div>
-              <p className="text-xs text-muted-foreground">Receive new task emails</p>
             </CardContent>
           </Card>
 
@@ -294,20 +279,6 @@ export default function AdminDashboard() {
                     {stats.declinedTasks}
                   </Badge>
                 ) : null}
-              </Button>
-
-              <Button
-                variant="outline"
-                className="w-full justify-between text-left"
-                onClick={() => router.push('/admin/taskers?status=verified')}
-              >
-                <span className="flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 mr-0" />
-                  Manage Premium Access
-                </span>
-                <Badge variant="secondary" className="ml-auto">
-                  {stats?.premiumTaskers || 0}
-                </Badge>
               </Button>
 
               <Button

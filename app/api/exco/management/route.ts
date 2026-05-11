@@ -56,7 +56,6 @@ async function getTaskers() {
     studentId: tasker.studentId,
     isVerified: tasker.isVerified,
     isRejected: Boolean(tasker.isRejected),
-    isPremium: tasker.isPremium,
     isSettlementSuspended: Boolean(tasker.isSettlementSuspended),
     bankDetails: {
       bankName: tasker.bankDetails?.bankName || "",
@@ -233,7 +232,6 @@ export async function PATCH(request: NextRequest) {
     } else if (action === "reject") {
       tasker.isVerified = false;
       tasker.isRejected = true;
-      tasker.isPremium = false;
     } else if (action === "suspend") {
       tasker.isSettlementSuspended = true;
       tasker.settlementSuspendedAt = new Date();

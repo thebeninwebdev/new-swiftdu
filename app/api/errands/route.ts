@@ -5,7 +5,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { emitOrderUpdated } from '@/lib/socket'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
-import { PREMIUM_TASKER_MIN_BUDGET, requiresPremiumTasker } from '@/lib/tasker-access'
 import {
   formatPushTaskType,
   sendPushNotification,
@@ -22,7 +21,6 @@ export async function GET(request: NextRequest) {
     const location = request.nextUrl.searchParams.get('location')
     const status = request.nextUrl.searchParams.get('status')
     const taskerId = request.nextUrl.searchParams.get('taskerId')
-    const viewerTaskerId = request.nextUrl.searchParams.get('viewerTaskerId')
     const sortBy = request.nextUrl.searchParams.get('sortBy') || 'createdAt'
     const accepted = request.nextUrl.searchParams.get('accepted')
 
@@ -54,19 +52,6 @@ export async function GET(request: NextRequest) {
 
     if (location && location !== 'all') {
       filter.location = { $regex: location, $options: 'i' } // Case-insensitive search
-    }
-
-    if (accepted !== 'true' && viewerTaskerId) {
-      const viewerTasker = await Tasker.findById(viewerTaskerId)
-        .select('isPremium')
-        .lean()
-
-      if (viewerTasker && !viewerTasker.isPremium) {
-        filter.$or = [
-          { status: { $ne: 'pending' } },
-          { amount: { $lt: PREMIUM_TASKER_MIN_BUDGET } },
-        ]
-      }
     }
 
     // Fetch pending orders with sorting
@@ -163,16 +148,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: 'This errand has already been accepted or completed' },
         { status: 409 }
-      )
-    }
-
-    if (requiresPremiumTasker(order.amount) && !tasker.isPremium) {
-      return NextResponse.json(
-        {
-          error:
-            'Only premium taskers can accept orders with a budget of N10,000 and above.',
-        },
-        { status: 403 }
       )
     }
 

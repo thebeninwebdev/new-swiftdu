@@ -25,7 +25,6 @@ import { toast } from 'sonner'
 
 import { authClient } from '@/lib/auth-client'
 import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
-import { PREMIUM_TASKER_MIN_BUDGET } from '@/lib/tasker-access'
 import { convertToNaira } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 
@@ -42,7 +41,6 @@ interface Errand {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
-  requiresPremiumTasker?: boolean
   location: string
   store?: string
   packaging?: string
@@ -58,7 +56,6 @@ interface Errand {
 interface TaskerData {
   _id: string
   isVerified: boolean
-  isPremium: boolean
   isSettlementSuspended?: boolean
 }
 
@@ -72,7 +69,6 @@ interface RealtimeTaskPayload {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
-  requiresPremiumTasker?: boolean
   location?: string
   store?: string
   packaging?: string
@@ -220,7 +216,6 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
     platformFee: payload.platformFee,
     taskerFee: payload.taskerFee,
     totalAmount: payload.totalAmount,
-    requiresPremiumTasker: payload.requiresPremiumTasker,
     location: payload.location || '',
     store: payload.store,
     packaging: payload.packaging,
@@ -405,8 +400,6 @@ export default function TaskerDashboardPage() {
         if (taskTypeFilter !== 'all') params.append('taskType', taskTypeFilter)
         if (locationFilter.trim()) params.append('location', locationFilter.trim())
         params.append('status', 'pending,in_progress')
-        params.append('viewerTaskerId', taskerProfile._id)
-
         const [availableRes, acceptedRes] = await Promise.all([
           fetch(`/api/errands?${params.toString()}`, {
             cache: 'no-store',
@@ -516,10 +509,7 @@ export default function TaskerDashboardPage() {
       if (payload) {
         const isPendingAvailable =
           payload.status === 'pending' &&
-          !payload.taskerId &&
-          (payload.status !== 'pending' ||
-            !payload.requiresPremiumTasker ||
-            Boolean(taskerProfile?.isPremium))
+          !payload.taskerId
         const isBeingFulfilled =
           payload.status === 'in_progress' &&
           String(payload.taskerId || '') !== taskerProfile._id
@@ -581,7 +571,6 @@ export default function TaskerDashboardPage() {
     sessionPending,
     taskTypeFilter,
     taskerProfile?._id,
-    taskerProfile?.isPremium,
     triggerNewTaskAlert,
   ])
 
@@ -787,11 +776,6 @@ export default function TaskerDashboardPage() {
                   {acceptedErrands.length} active, {errands.length} open
                 </span>
               </p>
-              {!taskerProfile?.isPremium ? (
-                <p className="hidden text-xs text-slate-400 dark:text-slate-500 sm:mt-1 sm:block">
-                  Orders from {convertToNaira(PREMIUM_TASKER_MIN_BUDGET)} are reserved for premium taskers.
-                </p>
-              ) : null}
             </div>
 
             <div className="flex items-center gap-2">
@@ -1078,11 +1062,6 @@ export default function TaskerDashboardPage() {
                         Being fulfilled
                       </span>
                     ) : null}
-                    {errand.requiresPremiumTasker ? (
-                      <span className="inline-flex items-center rounded-lg bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:ring-emerald-900/60">
-                        Premium only
-                      </span>
-                    ) : null}
                     <span className="text-xs text-slate-400 flex items-center gap-1">
                       <Clock3 className="h-3 w-3" />
                       {formatTimeAgo(errand.createdAt)}
@@ -1211,9 +1190,7 @@ export default function TaskerDashboardPage() {
             <ShieldCheck className="h-3.5 w-3.5" />
             {taskerProfile?.isSettlementSuspended
               ? 'Settlement Hold'
-              : taskerProfile?.isPremium
-                ? 'Premium Tasker'
-                : 'Verified Tasker'}
+              : 'Verified Tasker'}
           </div>
         </div>
       </motion.div>

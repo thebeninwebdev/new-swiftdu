@@ -48,7 +48,6 @@ interface Order {
   declinedMessage?: string
   declinedAt?: string
   paymentFailureReason?: string
-  requiresPremiumTasker?: boolean
   userId: string
   userName: string
   userEmail: string
@@ -480,9 +479,6 @@ export default function AdminOrdersPage() {
                               (+₦{order.platformFee || order.commission || 0} service fee = ₦{order.totalAmount.toLocaleString()} total)
                             </p>
                           )}
-                          {order.requiresPremiumTasker ? (
-                            <p className="text-xs text-emerald-600 mt-1">Premium taskers only</p>
-                          ) : null}
                         </div>
 
                         {order.store && (

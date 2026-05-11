@@ -30,7 +30,6 @@ export async function GET(req: NextRequest) {
     const [
       totalUsers,
       totalTaskers,
-      premiumTaskers,
       totalOrders,
       totalRevenue,
       pendingOrders,
@@ -41,7 +40,6 @@ export async function GET(req: NextRequest) {
     ] = await Promise.all([
       User.countDocuments(),
       Tasker.countDocuments({ isVerified: true }),
-      Tasker.countDocuments({ isVerified: true, isPremium: true }),
       Order.countDocuments(),
       Order.aggregate([
         { $match: { status: 'completed' } },
@@ -135,7 +133,6 @@ export async function GET(req: NextRequest) {
     const stats = {
       totalUsers,
       totalTaskers,
-      premiumTaskers,
       totalOrders,
       grossRevenue,
       profit,

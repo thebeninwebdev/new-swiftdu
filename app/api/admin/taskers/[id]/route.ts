@@ -31,7 +31,7 @@ export async function PATCH(
     await connectDB()
 
     const { id } = await params
-    const { action, isPremium, bankDetails } = await req.json()
+    const { action, bankDetails } = await req.json()
 
     if (action !== undefined && !['approve', 'reject', 'suspend', 'activate'].includes(action)) {
       return NextResponse.json(
@@ -41,7 +41,7 @@ export async function PATCH(
     }
 
     if (
-      (action !== undefined || typeof isPremium === 'boolean') &&
+      action !== undefined &&
       session.user.role !== 'admin' &&
       excoRole !== 'COO'
     ) {
@@ -53,9 +53,9 @@ export async function PATCH(
       | { bankName: string; accountNumber: string; accountName: string }
       | null = null
 
-    if (action === undefined && typeof isPremium !== 'boolean' && !hasBankDetails) {
+    if (action === undefined && !hasBankDetails) {
       return NextResponse.json(
-        { error: 'Provide an approval action, an isPremium boolean, or bank details.' },
+        { error: 'Provide an approval action or bank details.' },
         { status: 400 }
       )
     }
@@ -91,17 +91,12 @@ export async function PATCH(
     } else if (action === 'reject') {
       tasker.isVerified = false
       tasker.isRejected = true
-      tasker.isPremium = false
     } else if (action === 'suspend') {
       tasker.isSettlementSuspended = true
       tasker.settlementSuspendedAt = new Date()
     } else if (action === 'activate') {
       tasker.isSettlementSuspended = false
       tasker.settlementSuspendedAt = null
-    }
-
-    if (typeof isPremium === 'boolean' && action !== 'reject') {
-      tasker.isPremium = isPremium
     }
 
     if (nextBankDetails) {
@@ -119,12 +114,11 @@ export async function PATCH(
               ? 'Tasker rejected successfully.'
               : nextBankDetails
                 ? 'Tasker bank details updated successfully.'
-                : `Premium access ${tasker.isPremium ? 'enabled' : 'disabled'} for this tasker.`,
+                : 'Tasker status updated successfully.',
         tasker: {
           id: tasker._id,
           isVerified: tasker.isVerified,
           isRejected: tasker.isRejected,
-          isPremium: tasker.isPremium,
           isSettlementSuspended: tasker.isSettlementSuspended,
           bankDetails: tasker.bankDetails,
         },

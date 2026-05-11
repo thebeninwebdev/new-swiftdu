@@ -11,7 +11,6 @@ export interface IOrder extends Document {
   serviceFee: number;
   pricingModel: 'tiered' | 'water' | 'copy_notes';
   totalAmount: number;
-  requiresPremiumTasker: boolean;
   location: string;
   store?: string;
   packaging?: string;
@@ -112,10 +111,6 @@ const orderSchema = new Schema<IOrder>(
       type: Number,
       required: true,
       min: 0,
-    },
-    requiresPremiumTasker: {
-      type: Boolean,
-      default: false,
     },
     location: {
       type: String,

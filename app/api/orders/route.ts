@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
-import { notifyTaskersOfNewTask } from '@/lib/tasker-notifications';
 import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
 import { Order } from '@/models/order';
 import { auth } from '@/lib/auth';
@@ -13,7 +12,6 @@ import {
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
-import { requiresPremiumTasker } from '@/lib/tasker-access';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes']);
 
@@ -163,7 +161,6 @@ export async function POST(request: NextRequest) {
       serviceFee: settlement.serviceFee,
       pricingModel: pricing.pricingModel,
       totalAmount: pricing.totalAmount,
-      requiresPremiumTasker: requiresPremiumTasker(pricing.amount),
       location,
       store: normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE ? undefined : store || undefined,
       packaging: packaging || undefined,
@@ -186,47 +183,23 @@ export async function POST(request: NextRequest) {
 
     emitOrderUpdated(order);
 
-    const [taskerNotificationResult, adminAlertResult] = await Promise.allSettled([
-      notifyTaskersOfNewTask({
-        taskType: normalizedTaskType,
-        description: normalizedDescription,
-        amount: pricing.totalAmount,
-        location,
-        userName: session.user.name || 'A customer',
-      }),
-      notifyAdminsOfOrderEvent({
+    try {
+      const adminAlertResult = await notifyAdminsOfOrderEvent({
         event: 'created',
         order,
         actorName: session.user.name || null,
         actorEmail: session.user.email || null,
         actorRole: 'customer',
-      }),
-    ]);
+      });
 
-    if (taskerNotificationResult.status === 'fulfilled') {
       if (
-        taskerNotificationResult.value.skipped ||
-        taskerNotificationResult.value.deliveredCount <
-          taskerNotificationResult.value.recipientCount
+        adminAlertResult.skipped ||
+        adminAlertResult.deliveredCount < adminAlertResult.recipientCount
       ) {
-        console.warn('[Orders POST Tasker Notification]:', taskerNotificationResult.value);
+        console.warn('[Orders POST Admin Notification]:', adminAlertResult);
       }
-    } else {
-      console.error(
-        '[Orders POST Tasker Notification Error]:',
-        taskerNotificationResult.reason
-      );
-    }
-
-    if (adminAlertResult.status === 'fulfilled') {
-      if (
-        adminAlertResult.value.skipped ||
-        adminAlertResult.value.deliveredCount < adminAlertResult.value.recipientCount
-      ) {
-        console.warn('[Orders POST Admin Notification]:', adminAlertResult.value);
-      }
-    } else {
-      console.error('[Orders POST Admin Notification Error]:', adminAlertResult.reason);
+    } catch (notificationError) {
+      console.error('[Orders POST Admin Notification Error]:', notificationError);
     }
 
     return NextResponse.json(order, { status: 201 });

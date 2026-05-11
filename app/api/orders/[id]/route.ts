@@ -13,7 +13,6 @@ import {
   descriptionMentionsWater,
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
-import { requiresPremiumTasker } from '@/lib/tasker-access';
 import {
   formatPushTaskType,
   sendPushNotification,
@@ -219,7 +218,6 @@ export async function PATCH(
       order.serviceFee = settlement.serviceFee;
       order.pricingModel = pricing.pricingModel;
       order.totalAmount = pricing.totalAmount;
-      order.requiresPremiumTasker = requiresPremiumTasker(pricing.amount);
       order.waterBags = pricing.waterBags || undefined;
       order.waterFee = pricing.waterFee;
       order.copyNotesType = pricing.copyNotesType;

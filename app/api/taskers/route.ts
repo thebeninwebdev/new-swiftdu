@@ -99,7 +99,6 @@ export async function POST(req: NextRequest) {
         accountName: bankDetails.accountName.trim(),
       },
       isVerified: false,
-      isPremium: false,
       rating: 0,
       completedTasks: 0,
     })
