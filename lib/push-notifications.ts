@@ -1,7 +1,4 @@
-import webpush, { type PushSubscription as WebPushSubscription } from 'web-push'
-
 import { getSiteUrl } from '@/lib/site'
-import { PushSubscription } from '@/models/push-subscription'
 
 type PushAudience =
   | { userIds: string[] }
@@ -22,39 +19,16 @@ interface SendPushNotificationResult {
   reason?: string
 }
 
-let webPushConfigured = false
-
-export function getVapidPublicKey() {
-  return process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY?.trim() || ''
+function getPushEngageApiKey() {
+  return process.env.PUSHENGAGE_API_KEY?.trim() || ''
 }
 
-function getVapidPrivateKey() {
-  return process.env.VAPID_PRIVATE_KEY?.trim() || ''
+function getTaskerSegmentName() {
+  return process.env.PUSHENGAGE_TASKER_SEGMENT?.trim() || 'Taskers'
 }
 
-function getVapidSubject() {
-  return (
-    process.env.VAPID_SUBJECT?.trim() ||
-    process.env.WEB_PUSH_SUBJECT?.trim() ||
-    `mailto:support@${new URL(getSiteUrl()).hostname}`
-  )
-}
-
-function configureWebPush() {
-  if (webPushConfigured) {
-    return true
-  }
-
-  const publicKey = getVapidPublicKey()
-  const privateKey = getVapidPrivateKey()
-
-  if (!publicKey || !privateKey) {
-    return false
-  }
-
-  webpush.setVapidDetails(getVapidSubject(), publicKey, privateKey)
-  webPushConfigured = true
-  return true
+function getTaskerSegmentParamName() {
+  return process.env.PUSHENGAGE_TASKER_SEGMENT_PARAM?.trim() || 'segment_name'
 }
 
 function normalizeUrl(url: string) {
@@ -65,86 +39,85 @@ function normalizeUrl(url: string) {
   return `${getSiteUrl()}${url.startsWith('/') ? url : `/${url}`}`
 }
 
-function toWebPushSubscription(subscription: {
-  endpoint: string
-  expirationTime?: number | null
-  keys: {
-    p256dh: string
-    auth: string
+function shouldSendToTaskers(audience: PushAudience) {
+  return 'roles' in audience && audience.roles.includes('tasker')
+}
+
+async function sendPushEngageNotification(input: SendPushNotificationInput) {
+  const apiKey = getPushEngageApiKey()
+
+  if (!apiKey) {
+    return {
+      recipientCount: 0,
+      deliveredCount: 0,
+      skipped: true,
+      reason: 'PUSHENGAGE_API_KEY is not configured.',
+    }
   }
-}): WebPushSubscription {
+
+  if (!shouldSendToTaskers(input.audience)) {
+    return {
+      recipientCount: 0,
+      deliveredCount: 0,
+      skipped: true,
+      reason: 'PushEngage is currently configured only for tasker-wide notifications.',
+    }
+  }
+
+  const body = new URLSearchParams({
+    notification_title: input.title,
+    notification_message: input.body,
+    notification_url: normalizeUrl(input.url),
+  })
+
+  body.set(getTaskerSegmentParamName(), getTaskerSegmentName())
+
+  const response = await fetch('https://api.pushengage.com/apiv1/notifications', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      api_key: apiKey,
+    },
+    body,
+  })
+
+  const responseText = await response.text()
+
+  if (!response.ok) {
+    console.error('[PushEngage Send Error]:', {
+      status: response.status,
+      response: responseText,
+    })
+
+    return {
+      recipientCount: 1,
+      deliveredCount: 0,
+      skipped: false,
+      reason: `PushEngage returned ${response.status}.`,
+    }
+  }
+
   return {
-    endpoint: subscription.endpoint,
-    expirationTime: subscription.expirationTime ?? null,
-    keys: subscription.keys,
+    recipientCount: 1,
+    deliveredCount: 1,
+    skipped: false,
   }
 }
 
 export async function sendPushNotification(
   input: SendPushNotificationInput
 ): Promise<SendPushNotificationResult> {
-  if (!configureWebPush()) {
+  try {
+    return await sendPushEngageNotification(input)
+  } catch (error) {
+    console.error('[PushEngage Send Exception]:', error)
+
     return {
-      recipientCount: 0,
+      recipientCount: 1,
       deliveredCount: 0,
-      skipped: true,
-      reason: 'Web Push VAPID keys are not configured.',
+      skipped: false,
+      reason: error instanceof Error ? error.message : 'PushEngage send failed.',
     }
-  }
-
-  const query =
-    'userIds' in input.audience
-      ? { userId: { $in: input.audience.userIds } }
-      : { role: { $in: input.audience.roles } }
-
-  const subscriptions = await PushSubscription.find(query).lean()
-
-  if (subscriptions.length === 0) {
-    return {
-      recipientCount: 0,
-      deliveredCount: 0,
-      skipped: true,
-      reason: 'No push subscriptions found for this audience.',
-    }
-  }
-
-  const payload = JSON.stringify({
-    title: input.title,
-    body: input.body,
-    url: normalizeUrl(input.url),
-    tag: input.tag,
-    icon: '/pwa-192x192.png',
-    badge: '/pwa-192x192.png',
-  })
-
-  const results = await Promise.allSettled(
-    subscriptions.map(async (subscription) => {
-      try {
-        await webpush.sendNotification(toWebPushSubscription(subscription), payload)
-        return true
-      } catch (error) {
-        const statusCode =
-          typeof error === 'object' && error && 'statusCode' in error
-            ? Number(error.statusCode)
-            : 0
-
-        if (statusCode === 404 || statusCode === 410) {
-          await PushSubscription.deleteOne({ endpoint: subscription.endpoint })
-        } else {
-          console.error('[Web Push Send Error]:', error)
-        }
-
-        return false
-      }
-    })
-  )
-
-  return {
-    recipientCount: subscriptions.length,
-    deliveredCount: results.filter(
-      (result) => result.status === 'fulfilled' && result.value
-    ).length,
-    skipped: false,
   }
 }
 

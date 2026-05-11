@@ -1,16 +1,8 @@
 import { NextResponse } from 'next/server'
 
-import { getVapidPublicKey } from '@/lib/push-notifications'
-
 export async function GET() {
-  const publicKey = getVapidPublicKey()
-
-  if (!publicKey) {
-    return NextResponse.json(
-      { error: 'Web Push is not configured.' },
-      { status: 503 }
-    )
-  }
-
-  return NextResponse.json({ publicKey })
+  return NextResponse.json(
+    { error: 'PushEngage now manages push subscriptions.' },
+    { status: 410 }
+  )
 }

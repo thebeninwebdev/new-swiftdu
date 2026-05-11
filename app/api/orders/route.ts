@@ -12,6 +12,10 @@ import {
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
+import {
+  formatPushTaskType,
+  sendPushNotification,
+} from '@/lib/push-notifications';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes']);
 
@@ -182,6 +186,21 @@ export async function POST(request: NextRequest) {
     await order.save();
 
     emitOrderUpdated(order);
+
+    const taskerPushResult = await sendPushNotification({
+      audience: { roles: ['tasker'] },
+      title: `New ${formatPushTaskType(normalizedTaskType)} task`,
+      body: `${location} - NGN ${pricing.totalAmount.toLocaleString()}`,
+      url: '/tasker-dashboard',
+      tag: `new-task-${order._id.toString()}`,
+    });
+
+    if (
+      taskerPushResult.skipped ||
+      taskerPushResult.deliveredCount < taskerPushResult.recipientCount
+    ) {
+      console.warn('[Orders POST Tasker Push Notification]:', taskerPushResult);
+    }
 
     try {
       const adminAlertResult = await notifyAdminsOfOrderEvent({

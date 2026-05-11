@@ -5,6 +5,10 @@ import { connectDB } from '@/lib/db'
 import { emitOrderUpdated } from '@/lib/socket'
 import { Order } from '@/models/order'
 import { DECLINED_TRANSFER_MESSAGE } from '@/lib/tasker-access'
+import {
+  formatPushTaskType,
+  sendPushNotification,
+} from '@/lib/push-notifications'
 
 export async function POST(
   request: NextRequest,
@@ -75,6 +79,21 @@ export async function POST(
     await order.save()
 
     emitOrderUpdated(order)
+
+    const taskerPushResult = await sendPushNotification({
+      audience: { roles: ['tasker'] },
+      title: 'Customer marked transfer as paid',
+      body: `${formatPushTaskType(order.taskType)} task in ${order.location} is ready to verify.`,
+      url: `/tasker-dashboard/${order._id.toString()}`,
+      tag: `order-paid-${order._id.toString()}`,
+    })
+
+    if (
+      taskerPushResult.skipped ||
+      taskerPushResult.deliveredCount < taskerPushResult.recipientCount
+    ) {
+      console.warn('[Confirm Transfer Tasker Push Notification]:', taskerPushResult)
+    }
 
     return NextResponse.json({ order })
   } catch (error) {
