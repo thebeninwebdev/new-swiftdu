@@ -173,9 +173,7 @@ function buildTelegramOrderAlertMessage(input: {
     `<b>Customer:</b> ${escapeTelegramHtml(
       input.customerName || input.customerEmail || 'Unknown'
     )}`,
-    `<b>Actor:</b> ${escapeTelegramHtml(input.actorLabel)}`,
-    `<b>Order:</b> ${escapeTelegramHtml(input.orderId)}`,
-    `<a href="${escapeTelegramHtml(input.dashboardUrl)}">Open admin dashboard</a>`,
+    `<a href="${escapeTelegramHtml(input.dashboardUrl)}">View dashboard</a>`,
   ]
 
   const description = input.description?.trim()
@@ -337,7 +335,7 @@ export async function notifyAdminsOfOrderEvent(
   }
 
   const customer = await User.findById(userId).select('name email').lean()
-  const dashboardUrl = `${getSiteUrl()}/admin/orders`
+  const dashboardUrl = `${getSiteUrl()}/tasker-dashboard`
   const subjectPrefix =
     input.event === 'cancelled' ? 'Booking cancelled' : 'New booking received'
   const subject = `${subjectPrefix}: ${formatTaskType(input.order.taskType)} in ${

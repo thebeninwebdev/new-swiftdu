@@ -191,7 +191,7 @@ export async function POST(request: NextRequest) {
       audience: { roles: ['tasker'] },
       title: 'New Task Available',
       body: `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${pricing.totalAmount.toLocaleString()}`,
-      url: '/tasker-dashboard',
+      url: '/available-tasks',
       tag: `new-task-${order._id.toString()}`,
     });
 

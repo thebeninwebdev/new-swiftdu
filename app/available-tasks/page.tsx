@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useCallback, useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { TaskCard } from '@/components/TaskCard'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { Spinner } from '@/components/ui/spinner'
+import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
 
 interface Task {
   _id: string
@@ -22,6 +23,8 @@ interface Task {
   location: string
   store?: string
   createdAt: string
+  taskerId?: string
+  status?: string
 }
 
 export default function AvailableTasksPage() {
@@ -30,36 +33,87 @@ export default function AvailableTasksPage() {
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => {
-    const fetchAvailableTasks = async () => {
-      try {
+  const fetchAvailableTasks = useCallback(async (showLoading = false) => {
+    try {
+      if (showLoading) {
         setIsLoading(true)
-        setError(null)
-        
-        const response = await fetch('/api/orders/available')
-        
-        if (!response.ok) {
-          if (response.status === 401) {
-            toast.error('Please log in to view available tasks')
-            router.push('/login')
-            return
-          }
-          throw new Error('Failed to fetch tasks')
-        }
+      }
+      setError(null)
 
-        const data = await response.json()
-        setTasks(data)
-      } catch (err) {
-        console.error('[Available Tasks Error]:', err)
-        setError('Failed to load available tasks. Please try again.')
-        toast.error('Failed to load tasks')
-      } finally {
+      const response = await fetch('/api/orders/available', {
+        cache: 'no-store',
+      })
+
+      if (!response.ok) {
+        if (response.status === 401) {
+          toast.error('Please log in to view available tasks')
+          router.push('/login')
+          return
+        }
+        throw new Error('Failed to fetch tasks')
+      }
+
+      const data = await response.json()
+      setTasks(data)
+    } catch (err) {
+      console.error('[Available Tasks Error]:', err)
+      setError('Failed to load available tasks. Please try again.')
+      toast.error('Failed to load tasks')
+    } finally {
+      if (showLoading) {
         setIsLoading(false)
       }
     }
-
-    fetchAvailableTasks()
   }, [router])
+
+  useEffect(() => {
+    void fetchAvailableTasks(true)
+  }, [fetchAvailableTasks])
+
+  useEffect(() => {
+    const socket = acquireSharedSocket()
+
+    const handleTaskUpdate = (payload?: Task) => {
+      if (!payload?._id) {
+        void fetchAvailableTasks(false)
+        return
+      }
+
+      const shouldShow = payload.status === 'pending' && !payload.taskerId
+
+      setTasks((previous) => {
+        const currentIndex = previous.findIndex((task) => task._id === payload._id)
+
+        if (!shouldShow) {
+          return currentIndex === -1
+            ? previous
+            : previous.filter((task) => task._id !== payload._id)
+        }
+
+        if (currentIndex === -1) {
+          return [payload, ...previous]
+        }
+
+        const next = [...previous]
+        next[currentIndex] = { ...next[currentIndex], ...payload }
+        return next
+      })
+    }
+
+    const handleConnect = () => {
+      void fetchAvailableTasks(false)
+    }
+
+    socket.on('connect', handleConnect)
+    socket.on('tasks:updated', handleTaskUpdate)
+    handleConnect()
+
+    return () => {
+      socket.off('connect', handleConnect)
+      socket.off('tasks:updated', handleTaskUpdate)
+      releaseSharedSocket(socket)
+    }
+  }, [fetchAvailableTasks])
 
   if (isLoading) {
     return (

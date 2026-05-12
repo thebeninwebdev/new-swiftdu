@@ -1,9 +1,18 @@
+const SWIFTDU_NOTIFICATION_ICON = '/pwa-512x512.png'
+const SWIFTDU_NOTIFICATION_BADGE = '/pwa-192x192.png'
+const SWIFTDU_NOTIFICATION_IMAGE = '/logo.png'
+
+function getNotificationAssetUrl(path) {
+  return new URL(path, self.location.origin).href
+}
+
 function showSwiftDUNotification(payload) {
   const title = payload.title || 'SwiftDU'
   const options = {
     body: payload.body || 'You have a new update.',
-    icon: '/pwa-192x192.png',
-    badge: '/pwa-192x192.png',
+    icon: getNotificationAssetUrl(payload.icon || SWIFTDU_NOTIFICATION_ICON),
+    badge: getNotificationAssetUrl(payload.badge || SWIFTDU_NOTIFICATION_BADGE),
+    image: getNotificationAssetUrl(payload.image || SWIFTDU_NOTIFICATION_IMAGE),
     tag: payload.tag || 'swiftdu-update',
     data: {
       url: payload.url || '/tasker-dashboard',
