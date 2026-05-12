@@ -189,15 +189,16 @@ export async function POST(request: NextRequest) {
 
     const taskerPushResult = await sendPushNotification({
       audience: { roles: ['tasker'] },
-      title: `New ${formatPushTaskType(normalizedTaskType)} task`,
-      body: `${location} - NGN ${pricing.totalAmount.toLocaleString()}`,
+      title: 'New Task Available',
+      body: `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${pricing.totalAmount.toLocaleString()}`,
       url: '/tasker-dashboard',
       tag: `new-task-${order._id.toString()}`,
     });
 
     if (
       taskerPushResult.skipped ||
-      taskerPushResult.deliveredCount < taskerPushResult.recipientCount
+      taskerPushResult.deliveredCount + (taskerPushResult.expiredCount || 0) <
+        taskerPushResult.recipientCount
     ) {
       console.warn('[Orders POST Tasker Push Notification]:', taskerPushResult);
     }

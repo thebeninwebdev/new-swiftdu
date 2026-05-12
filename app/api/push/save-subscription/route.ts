@@ -30,10 +30,3 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({ ok: true })
 }
-
-export async function DELETE() {
-  return NextResponse.json(
-    { error: 'Subscription deletion is not implemented yet.' },
-    { status: 501 }
-  )
-}

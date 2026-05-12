@@ -2,6 +2,7 @@ import { Suspense } from "react"
 // app/tasker-dashboard/layout.tsx
 import TaskerSidebar from "@/components/tasker-sidebar"
 import { CompleteProfileGate } from "@/components/complete-profile-gate"
+import { PushSubscriptionManager } from "@/components/PushSubscriptionManager"
 
 export default function RootLayout({
   children,
@@ -22,6 +23,7 @@ export default function RootLayout({
           <main className="min-w-0 flex-1 overflow-x-hidden px-3 pb-24 pt-20 sm:px-4 md:px-6 lg:px-8 lg:pb-4 lg:pt-4">
             {children}
           </main>
+          <PushSubscriptionManager />
         </div>
       </CompleteProfileGate>
     </Suspense>

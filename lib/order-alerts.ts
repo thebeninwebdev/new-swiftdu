@@ -45,6 +45,8 @@ interface AlertChannelResult {
   deliveredCount: number
   skipped: boolean
   reason?: string
+  providerIds?: string[]
+  failures?: string[]
 }
 
 function serializeId(value?: { toString(): string } | string | null) {
@@ -185,6 +187,138 @@ function buildTelegramOrderAlertMessage(input: {
   return lines.join('\n')
 }
 
+async function sendTelegramOrderAlert(input: {
+  event: OrderAlertEvent
+  orderId: string
+  taskType?: string
+  description?: string
+  amount: number
+  totalAmount: number
+  location: string
+  customerName?: string | null
+  customerEmail?: string | null
+  actorLabel: string
+  dashboardUrl: string
+}) {
+  if (process.env.TELEGRAM_ALERTS_ENABLED === 'false') {
+    return createSkippedChannelResult('Telegram alerts are disabled.')
+  }
+
+  if (
+    !process.env.TELEGRAM_BOT_TOKEN?.trim() &&
+    !process.env.TELEGRAM_BOT_API_TOKEN?.trim()
+  ) {
+    return createSkippedChannelResult('Telegram configuration is missing.')
+  }
+
+  try {
+    const delivered = await sendTelegramMessage(buildTelegramOrderAlertMessage(input))
+
+    return {
+      recipientCount: 1,
+      deliveredCount: delivered ? 1 : 0,
+      skipped: false,
+      reason: delivered ? undefined : 'Telegram send failed.',
+    }
+  } catch (error) {
+    return {
+      recipientCount: 1,
+      deliveredCount: 0,
+      skipped: false,
+      reason: 'Telegram send failed.',
+      failures: [error instanceof Error ? error.message : 'Unknown Telegram error'],
+    }
+  }
+}
+
+async function sendEmailOrderAlerts(input: {
+  recipients: string[]
+  subject: string
+  event: OrderAlertEvent
+  orderId: string
+  taskType?: string
+  description?: string
+  amount: number
+  totalAmount: number
+  location: string
+  customerName?: string | null
+  customerEmail?: string | null
+  actorLabel: string
+  taskerName?: string
+  createdAt?: string
+  cancelledAt?: string
+  dashboardUrl: string
+}) {
+  if (!process.env.RESEND_API_KEY?.trim()) {
+    return createSkippedChannelResult('Email configuration is missing.')
+  }
+
+  if (input.recipients.length === 0) {
+    return createSkippedChannelResult('No admin alert recipients are configured.')
+  }
+
+  const results = await Promise.allSettled(
+    input.recipients.map(async (recipient) => {
+      const providerId = await sendTransactionalEmail({
+        to: recipient,
+        subject: input.subject,
+        react: OrderAlertEmail({
+          event: input.event,
+          orderId: input.orderId,
+          taskType: input.taskType,
+          description: input.description,
+          amount: input.amount,
+          totalAmount: input.totalAmount,
+          location: input.location,
+          customerName: input.customerName ?? undefined,
+          customerEmail: input.customerEmail ?? undefined,
+          actorLabel: input.actorLabel,
+          taskerName: input.taskerName,
+          createdAt: input.createdAt,
+          cancelledAt: input.cancelledAt,
+          dashboardUrl: input.dashboardUrl,
+        }),
+        tags: [
+          { name: 'email_type', value: 'order_alert' },
+          { name: 'order_event', value: input.event },
+          { name: 'order_id', value: input.orderId },
+        ],
+        headers: {
+          'X-SwiftDU-Order-Id': input.orderId,
+          'X-SwiftDU-Order-Event': input.event,
+        },
+      })
+
+      return { recipient, providerId }
+    })
+  )
+
+  const delivered = results.filter((result) => result.status === 'fulfilled')
+  const failures = results
+    .map((result, index) => {
+      if (result.status === 'fulfilled') {
+        return null
+      }
+
+      const reason =
+        result.reason instanceof Error ? result.reason.message : String(result.reason)
+
+      return `${input.recipients[index]}: ${reason}`
+    })
+    .filter((failure): failure is string => Boolean(failure))
+
+  return {
+    recipientCount: input.recipients.length,
+    deliveredCount: delivered.length,
+    skipped: false,
+    reason: failures.length ? 'Some email sends failed.' : undefined,
+    providerIds: delivered
+      .map((result) => result.value.providerId)
+      .filter((providerId): providerId is string => Boolean(providerId)),
+    failures: failures.length ? failures : undefined,
+  }
+}
+
 export async function notifyAdminsOfOrderEvent(
   input: NotifyAdminsOfOrderEventInput
 ): Promise<NotifyAdminsOfOrderEventResult> {
@@ -215,90 +349,80 @@ export async function notifyAdminsOfOrderEvent(
   const location = input.order.location || 'Location not provided'
   const createdAt = serializeDate(input.order.createdAt)
   const cancelledAt = serializeDate(input.order.cancelledAt)
+  const recipients = await getOrderAlertRecipients()
+
+  const [emailSettled, telegramSettled] = await Promise.allSettled([
+    sendEmailOrderAlerts({
+      recipients,
+      subject,
+      event: input.event,
+      orderId,
+      taskType: input.order.taskType,
+      description: input.order.description,
+      amount,
+      totalAmount,
+      location,
+      customerName: customer?.name,
+      customerEmail: customer?.email,
+      actorLabel,
+      taskerName: input.order.taskerName,
+      createdAt,
+      cancelledAt,
+      dashboardUrl,
+    }),
+    sendTelegramOrderAlert({
+      event: input.event,
+      orderId,
+      taskType: input.order.taskType,
+      description: input.order.description,
+      amount,
+      totalAmount,
+      location,
+      customerName: customer?.name,
+      customerEmail: customer?.email,
+      actorLabel,
+      dashboardUrl,
+    }),
+  ])
+
+  const emailResult =
+    emailSettled.status === 'fulfilled'
+      ? emailSettled.value
+      : {
+          recipientCount: recipients.length,
+          deliveredCount: 0,
+          skipped: false,
+          reason: 'Email send failed.',
+          failures: [
+            emailSettled.reason instanceof Error
+              ? emailSettled.reason.message
+              : String(emailSettled.reason),
+          ],
+        }
 
   const telegramResult =
-    process.env.TELEGRAM_BOT_TOKEN?.trim() || process.env.TELEGRAM_BOT_API_TOKEN?.trim()
-      ? await (async () => {
-          const delivered = await sendTelegramMessage(
-            buildTelegramOrderAlertMessage({
-              event: input.event,
-              orderId,
-              taskType: input.order.taskType,
-              description: input.order.description,
-              amount,
-              totalAmount,
-              location,
-              customerName: customer?.name,
-              customerEmail: customer?.email,
-              actorLabel,
-              dashboardUrl,
-            })
-          )
-
-          return {
-            recipientCount: 1,
-            deliveredCount: delivered ? 1 : 0,
-            skipped: false,
-            reason: delivered ? undefined : 'Telegram send failed.',
-          }
-        })()
-      : createSkippedChannelResult('Telegram configuration is missing.')
-
-  const emailResult = process.env.RESEND_API_KEY?.trim()
-    ? await (async () => {
-        const recipients = await getOrderAlertRecipients()
-
-        if (recipients.length === 0) {
-          return createSkippedChannelResult('No admin alert recipients are configured.')
-        }
-
-        const results = await Promise.allSettled(
-          recipients.map((recipient) =>
-            sendTransactionalEmail({
-              to: recipient,
-              subject,
-              react: OrderAlertEmail({
-                event: input.event,
-                orderId,
-                taskType: input.order.taskType,
-                description: input.order.description,
-                amount,
-                totalAmount,
-                location,
-                customerName: customer?.name,
-                customerEmail: customer?.email,
-                actorLabel,
-                taskerName: input.order.taskerName,
-                createdAt,
-                cancelledAt,
-                dashboardUrl,
-              }),
-              tags: [
-                { name: 'email_type', value: 'order_alert' },
-                { name: 'order_event', value: input.event },
-                { name: 'order_id', value: orderId },
-              ],
-              headers: {
-                'X-SwiftDU-Order-Id': orderId,
-                'X-SwiftDU-Order-Event': input.event,
-              },
-            })
-          )
-        )
-
-        return {
-          recipientCount: recipients.length,
-          deliveredCount: results.filter((result) => result.status === 'fulfilled').length,
+    telegramSettled.status === 'fulfilled'
+      ? telegramSettled.value
+      : {
+          recipientCount: 1,
+          deliveredCount: 0,
           skipped: false,
+          reason: 'Telegram send failed.',
+          failures: [
+            telegramSettled.reason instanceof Error
+              ? telegramSettled.reason.message
+              : String(telegramSettled.reason),
+          ],
         }
-      })()
-    : createSkippedChannelResult('Email configuration is missing.')
 
   return {
     recipientCount: emailResult.recipientCount + telegramResult.recipientCount,
     deliveredCount: emailResult.deliveredCount + telegramResult.deliveredCount,
     skipped: emailResult.skipped && telegramResult.skipped,
-    reason: emailResult.reason || telegramResult.reason,
+    reason:
+      emailResult.reason && telegramResult.reason
+        ? `${emailResult.reason} ${telegramResult.reason}`
+        : emailResult.reason || telegramResult.reason,
     email: emailResult,
     telegram: telegramResult,
   }

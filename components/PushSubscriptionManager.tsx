@@ -48,12 +48,27 @@ async function getVapidPublicKey() {
 }
 
 async function getReadyServiceWorkerRegistration() {
+  const expectedWorkerPath = '/sw.js'
+  const expectedWorkerUrl = new URL(expectedWorkerPath, window.location.origin).href
   let existingRegistration = await navigator.serviceWorker.getRegistration()
+
+  if (
+    existingRegistration &&
+    existingRegistration.active?.scriptURL !== expectedWorkerUrl
+  ) {
+    // Replace stale next-pwa/PushEngage-era workers so push events use our Web Push handler.
+    await existingRegistration.unregister()
+    existingRegistration = undefined
+  }
 
   if (!existingRegistration) {
     try {
-      existingRegistration = await navigator.serviceWorker.register('/sw.js', {
+      existingRegistration = await navigator.serviceWorker.register(expectedWorkerPath, {
         scope: '/',
+        updateViaCache: 'none',
+      })
+      console.info('[SwiftDU Push] service worker registered', {
+        scriptURL: existingRegistration.active?.scriptURL,
       })
     } catch (error) {
       throw new Error(
@@ -62,13 +77,18 @@ async function getReadyServiceWorkerRegistration() {
         }`
       )
     }
+  } else {
+    console.info('[SwiftDU Push] service worker registered', {
+      scriptURL: existingRegistration.active?.scriptURL,
+      reused: true,
+    })
   }
 
-  if (existingRegistration?.active) {
-    return existingRegistration
+  if (existingRegistration) {
+    await existingRegistration.update()
   }
 
-  return Promise.race([
+  const readyRegistration = await Promise.race([
     navigator.serviceWorker.ready,
     new Promise<never>((_, reject) => {
       window.setTimeout(
@@ -77,6 +97,12 @@ async function getReadyServiceWorkerRegistration() {
       )
     }),
   ])
+
+  console.info('[SwiftDU Push] service worker ready', {
+    scriptURL: readyRegistration.active?.scriptURL,
+  })
+
+  return readyRegistration
 }
 
 export function PushSubscriptionManager() {
@@ -97,6 +123,7 @@ export function PushSubscriptionManager() {
       const publicKey = await getVapidPublicKey()
 
       if (!publicKey) {
+        console.warn('[SwiftDU Push] VAPID public key unavailable')
         return
       }
 
@@ -105,6 +132,8 @@ export function PushSubscriptionManager() {
       if (permission === 'default' && requestPermission) {
         permission = await Notification.requestPermission()
       }
+
+      console.info('[SwiftDU Push] notification permission', { permission })
 
       if (permission === 'default') {
         setShowPrompt(true)
@@ -115,6 +144,8 @@ export function PushSubscriptionManager() {
         setShowPrompt(false)
         return
       }
+
+      console.info('[SwiftDU Push] notification permission granted')
 
       const registration = await getReadyServiceWorkerRegistration()
       const applicationServerKey = urlBase64ToUint8Array(publicKey)
@@ -144,7 +175,7 @@ export function PushSubscriptionManager() {
           applicationServerKey,
         }))
 
-      const response = await fetch('/api/push/subscriptions', {
+      const response = await fetch('/api/push/save-subscription', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(subscription),
@@ -153,6 +184,10 @@ export function PushSubscriptionManager() {
       if (!response.ok) {
         throw new Error('Failed to save push subscription.')
       }
+
+      console.info('[SwiftDU Push] subscription saved', {
+        endpointHost: new URL(subscription.endpoint).host,
+      })
 
       setShowPrompt(false)
     } catch (error) {
@@ -212,7 +247,7 @@ export function PushSubscriptionManager() {
             <div>
               <h2 className="text-sm font-semibold">Turn on notifications</h2>
               <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
-                Get order updates instantly, including new tasks, accepted tasks, and completed orders.
+                Get new SwiftDU task alerts instantly on this device.
               </p>
             </div>
             <button

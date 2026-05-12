@@ -9,18 +9,21 @@ export function isActiveOrderStatus(status: string | null | undefined) {
 export function isCustomerPaymentConfirmed(order: {
   status: string;
   hasPaid?: boolean;
+  paymentStatus?: string;
 }) {
-  return order.status === "paid" || !!order.hasPaid;
+  return order.paymentStatus === "paid" || !!order.hasPaid;
 }
 
 export function canCustomerCancelOrder(order: {
   status: string;
   hasPaid?: boolean;
+  paymentStatus?: string;
   isDeclinedTask?: boolean;
 }) {
   return (
     !order.isDeclinedTask &&
-    (order.status === "pending" || order.status === "in_progress") &&
+    order.status !== "completed" &&
+    order.status !== "cancelled" &&
     !isCustomerPaymentConfirmed(order)
   );
 }
@@ -28,11 +31,13 @@ export function canCustomerCancelOrder(order: {
 export function canTaskerCancelOrder(order: {
   status: string;
   hasPaid?: boolean;
+  paymentStatus?: string;
   isDeclinedTask?: boolean;
 }) {
   return (
     !order.isDeclinedTask &&
-    (order.status === "pending" || order.status === "in_progress") &&
+    order.status !== "completed" &&
+    order.status !== "cancelled" &&
     !isCustomerPaymentConfirmed(order)
   );
 }

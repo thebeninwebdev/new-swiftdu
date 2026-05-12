@@ -32,14 +32,6 @@ const DeferredAdsenseLoader = dynamic(
   { ssr: false }
 );
 
-const DeferredPushEngageManager = dynamic(
-  () =>
-    import("@/components/PushEngageManager").then(
-      (module) => module.PushEngageManager
-    ),
-  { ssr: false }
-);
-
 const DeferredAppInstallPromptManager = dynamic(
   () =>
     import("@/components/AppInstallPromptManager").then(
@@ -102,7 +94,6 @@ export function DeferredAppScripts() {
       <DeferredAdsenseLoader />
       <DeferredAppInstallPromptManager />
       <DeferredDateOfBirthPromptManager />
-      <DeferredPushEngageManager />
       <DeferredToaster richColors position="bottom-right" />
     </>
   );
