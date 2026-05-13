@@ -24,12 +24,25 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState("");
   const { data: session } = authClient.useSession();
+
+  const getAuthErrorMessage = (
+    err: unknown,
+    fallback: string
+  ) => (err instanceof Error ? err.message : fallback);
+
+  const hasErrorCode = (error: unknown, code: string) =>
+    Boolean(
+      error &&
+        typeof error === "object" &&
+        "code" in error &&
+        error.code === code
+    );
   
-    useEffect(() => {
-      if (session?.user) {
-        router.replace(getPostAuthRedirect(session.user))
-      }
-    }, [router, session?.user]);
+  useEffect(() => {
+    if (session?.user && !passkeyLoading) {
+      router.replace(getPostAuthRedirect(session.user));
+    }
+  }, [passkeyLoading, router, session?.user]);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -111,6 +124,54 @@ export default function LoginPage() {
     }
   };
 
+  const enablePasskeyForCurrentLogin = async () => {
+    const validationErrors = validate();
+    if (Object.keys(validationErrors).length) {
+      setErrors(validationErrors);
+      throw new Error(
+        "Enter your email and password first, then tap the fingerprint button to enable Face ID or fingerprint sign-in."
+      );
+    }
+
+    const { data: signInData, error: signInError } =
+      await authClient.signIn.email({
+        email: form.email,
+        password: form.password,
+      });
+
+    if (signInError) {
+      throw new Error(signInError.message || "Invalid email or password.");
+    }
+
+    if (signInData && "twoFactorRedirect" in signInData) {
+      router.push("/verify-2fa");
+      throw new Error(
+        "Complete two-factor verification before enabling Face ID or fingerprint sign-in."
+      );
+    }
+
+    const { error: passkeyError } = await authClient.passkey.addPasskey({
+      name: "Fingerprint / Face ID",
+      authenticatorAttachment: "platform",
+    });
+
+    if (passkeyError) {
+      const alreadyRegistered = hasErrorCode(
+        passkeyError,
+        "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED"
+      );
+
+      throw new Error(
+        alreadyRegistered
+          ? "This device is already enabled for Face ID or fingerprint sign-in."
+          : passkeyError.message || "Could not enable biometric sign-in."
+      );
+    }
+
+    toast.success("Fingerprint / Face ID sign-in enabled");
+    router.push(getPostAuthRedirect(signInData?.user));
+  };
+
   const handlePasskeySignIn = async () => {
     setServerError("");
 
@@ -127,22 +188,22 @@ export default function LoginPage() {
       const { data, error } = await authClient.signIn.passkey();
 
       if (error) {
-        const wasCancelled =
-          "code" in error && error.code === "AUTH_CANCELLED";
+        const wasCancelled = hasErrorCode(error, "AUTH_CANCELLED");
 
-        throw new Error(
-          wasCancelled
-            ? "Authentication was cancelled."
-            : error.message || "Fingerprint / Face ID sign-in failed."
-        );
+        if (wasCancelled) {
+          await enablePasskeyForCurrentLogin();
+          return;
+        }
+
+        throw new Error(error.message || "Fingerprint / Face ID sign-in failed.");
       }
 
       router.push(getPostAuthRedirect(data?.user));
     } catch (err: unknown) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Fingerprint / Face ID sign-in failed. Please try again.";
+      const message = getAuthErrorMessage(
+        err,
+        "Fingerprint / Face ID sign-in failed. Please try again."
+      );
 
       setServerError(message);
       toast.error(message);
