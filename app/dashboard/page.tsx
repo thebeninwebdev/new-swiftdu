@@ -473,6 +473,8 @@ export default function ErrandWizardPage() {
       'deadline',
       'description',
     ].forEach(clearError)
+    setStep(2)
+    setErrors({})
   }
 
   const handlePackagingSelect = (value: string) => {
@@ -769,8 +771,6 @@ if (stepNumber === 2) {
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <div className="px-4 py-3 md:px-8 lg:py-8">
         <div className="mx-auto w-full max-w-4xl">
-          <ProfileCompletionCard />
-
           {showLowTaskerAvailabilityNotice ? (
             <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 md:mb-8">
               <div className="flex items-start gap-3">
@@ -1370,18 +1370,22 @@ if (stepNumber === 2) {
             <div className="border-t border-slate-100 bg-slate-50/50 px-4 pb-4 pt-2 dark:border-slate-800 dark:bg-slate-900/50 sm:px-5 sm:pb-5 md:px-8 md:pb-8">
               <div className="flex gap-3">
                 {step > 1 ? <Button variant="outline" onClick={handleBack} disabled={isSubmitting} className="h-12 flex-1 rounded-xl border-2 hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button> : null}
-                {step < 4 ? (
+                {step > 1 && step < 4 ? (
                   <Button onClick={handleNext} className="h-12 flex-1 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-cyan-600">
                     Continue
                     <ChevronRight className="ml-2 h-4 w-4" />
                   </Button>
-                ) : (
+                ) : step === 4 ? (
                   <Button onClick={handleSubmit} disabled={isSubmitting} className="h-12 flex-1 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-cyan-600">
                     {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Posting...</> : <>Post Task<ArrowRight className="ml-2 h-4 w-4" /></>}
                   </Button>
-                )}
+                ) : null}
               </div>
             </div>
+          </div>
+
+          <div className="mt-6">
+            <ProfileCompletionCard />
           </div>
 
           <div className="mt-6 flex flex-wrap items-center justify-center gap-3 text-xs text-slate-500 dark:text-slate-400 sm:mt-8 sm:gap-6 sm:text-sm">

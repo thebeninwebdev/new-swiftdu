@@ -8,6 +8,16 @@ import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
 import { Fingerprint } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 const BRAND_PRIMARY = "#4f46e5";
 const BRAND_PRIMARY_DARK = "#4338ca";
@@ -21,6 +31,16 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [passkeySetupOpen, setPasskeySetupOpen] = useState(false);
+  const [passkeySetupLoading, setPasskeySetupLoading] = useState(false);
+  const [passkeySetupForm, setPasskeySetupForm] = useState({
+    email: "",
+    password: "",
+  });
+  const [passkeySetupErrors, setPasskeySetupErrors] = useState<
+    Record<string, string>
+  >({});
+  const [showSetupPassword, setShowSetupPassword] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState("");
   const { data: session } = authClient.useSession();
@@ -37,12 +57,78 @@ export default function LoginPage() {
         "code" in error &&
         error.code === code
     );
+
+  const getPasskeySupportMessage = async () => {
+    if (!window.isSecureContext) {
+      return "Face ID or fingerprint sign-in needs a secure HTTPS connection on iPhone and most mobile browsers.";
+    }
+
+    if (!window.PublicKeyCredential) {
+      return "This device does not support fingerprint or Face ID sign-in.";
+    }
+
+    if (
+      typeof PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable ===
+      "function"
+    ) {
+      try {
+        const isAvailable =
+          await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+
+        if (!isAvailable) {
+          return "Face ID, Touch ID, or fingerprint unlock is not available on this device. Check your device lock settings and try again.";
+        }
+      } catch {
+        return "Could not check this device's Face ID or fingerprint support. Please try again.";
+      }
+    }
+
+    return "";
+  };
+
+  const isPasskeyNotAvailableError = (error: unknown) => {
+    if (hasErrorCode(error, "AUTH_CANCELLED")) return true;
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : error && typeof error === "object" && "message" in error
+          ? String(error.message)
+          : "";
+
+    return /not\s*allowed|cancel|no credential|not registered|authenticator|passkey/i.test(
+      message
+    );
+  };
+
+  const getPasskeySetupErrorMessage = (error: unknown) => {
+    if (hasErrorCode(error, "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED")) {
+      return "This device is already enabled for Face ID or fingerprint sign-in.";
+    }
+
+    const message =
+      error instanceof Error
+        ? error.message
+        : error && typeof error === "object" && "message" in error
+          ? String(error.message)
+          : "";
+
+    if (/secure|https|origin|rp id|domain/i.test(message)) {
+      return "Face ID or fingerprint setup needs the app to be opened on its secure HTTPS domain.";
+    }
+
+    if (/not\s*allowed|cancel|timeout|gesture|authenticator/i.test(message)) {
+      return "Face ID or fingerprint setup was not completed. Unlock with Face ID, Touch ID, or your device passcode when your browser asks.";
+    }
+
+    return message || "Could not enable biometric sign-in.";
+  };
   
   useEffect(() => {
-    if (session?.user && !passkeyLoading) {
+    if (session?.user && !passkeyLoading && !passkeySetupLoading) {
       router.replace(getPostAuthRedirect(session.user));
     }
-  }, [passkeyLoading, router, session?.user]);
+  }, [passkeyLoading, passkeySetupLoading, router, session?.user]);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -56,6 +142,26 @@ export default function LoginPage() {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
     setErrors((prev) => ({ ...prev, [e.target.name]: "" }));
     setServerError("");
+  };
+
+  const handlePasskeySetupChange = (
+    e: React.ChangeEvent<HTMLInputElement>
+  ) => {
+    setPasskeySetupForm((prev) => ({
+      ...prev,
+      [e.target.name]: e.target.value,
+    }));
+    setPasskeySetupErrors((prev) => ({ ...prev, [e.target.name]: "" }));
+    setServerError("");
+  };
+
+  const openPasskeySetup = () => {
+    setPasskeySetupForm({
+      email: form.email,
+      password: "",
+    });
+    setPasskeySetupErrors({});
+    setPasskeySetupOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -124,19 +230,38 @@ export default function LoginPage() {
     }
   };
 
-  const enablePasskeyForCurrentLogin = async () => {
-    const validationErrors = validate();
-    if (Object.keys(validationErrors).length) {
-      setErrors(validationErrors);
-      throw new Error(
-        "Enter your email and password first, then tap the fingerprint button to enable Face ID or fingerprint sign-in."
-      );
+  const validatePasskeySetup = () => {
+    const validationErrors: Record<string, string> = {};
+
+    if (
+      !passkeySetupForm.email ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(passkeySetupForm.email)
+    ) {
+      validationErrors.email = "Must be a valid email address.";
+    }
+
+    if (!passkeySetupForm.password) {
+      validationErrors.password = "Must enter your password.";
+    }
+
+    setPasskeySetupErrors(validationErrors);
+    return validationErrors;
+  };
+
+  const enablePasskeyForLogin = async (credentials: {
+    email: string;
+    password: string;
+  }) => {
+    const supportMessage = await getPasskeySupportMessage();
+
+    if (supportMessage) {
+      throw new Error(supportMessage);
     }
 
     const { data: signInData, error: signInError } =
       await authClient.signIn.email({
-        email: form.email,
-        password: form.password,
+        email: credentials.email,
+        password: credentials.password,
       });
 
     if (signInError) {
@@ -156,27 +281,48 @@ export default function LoginPage() {
     });
 
     if (passkeyError) {
-      const alreadyRegistered = hasErrorCode(
-        passkeyError,
-        "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED"
-      );
-
-      throw new Error(
-        alreadyRegistered
-          ? "This device is already enabled for Face ID or fingerprint sign-in."
-          : passkeyError.message || "Could not enable biometric sign-in."
-      );
+      throw new Error(getPasskeySetupErrorMessage(passkeyError));
     }
 
     toast.success("Fingerprint / Face ID sign-in enabled");
     router.push(getPostAuthRedirect(signInData?.user));
   };
 
+  const handlePasskeySetupSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const validationErrors = validatePasskeySetup();
+    if (Object.keys(validationErrors).length) {
+      return;
+    }
+
+    setPasskeySetupLoading(true);
+
+    try {
+      await enablePasskeyForLogin({
+        email: passkeySetupForm.email,
+        password: passkeySetupForm.password,
+      });
+      setPasskeySetupOpen(false);
+    } catch (err: unknown) {
+      const message = getAuthErrorMessage(
+        err,
+        "Could not enable biometric sign-in."
+      );
+      setServerError(message);
+      toast.error(message);
+    } finally {
+      setPasskeySetupLoading(false);
+    }
+  };
+
   const handlePasskeySignIn = async () => {
     setServerError("");
 
-    if (!window.PublicKeyCredential) {
-      const message = "This device does not support fingerprint or Face ID sign-in.";
+    const supportMessage = await getPasskeySupportMessage();
+
+    if (supportMessage) {
+      const message = supportMessage;
       setServerError(message);
       toast.error(message);
       return;
@@ -188,10 +334,8 @@ export default function LoginPage() {
       const { data, error } = await authClient.signIn.passkey();
 
       if (error) {
-        const wasCancelled = hasErrorCode(error, "AUTH_CANCELLED");
-
-        if (wasCancelled) {
-          await enablePasskeyForCurrentLogin();
+        if (isPasskeyNotAvailableError(error)) {
+          openPasskeySetup();
           return;
         }
 
@@ -468,7 +612,7 @@ export default function LoginPage() {
               onClick={handlePasskeySignIn}
               aria-label="Continue with fingerprint or Face ID"
               title="Continue with fingerprint or Face ID"
-              disabled={loading || googleLoading || passkeyLoading}
+              disabled={loading || googleLoading || passkeyLoading || passkeySetupLoading}
               style={{
                 width: 52,
                 height: 52,
@@ -480,8 +624,8 @@ export default function LoginPage() {
                 background: "#111827",
                 color: "#fff",
                 padding: 0,
-                cursor: loading || googleLoading || passkeyLoading ? "not-allowed" : "pointer",
-                opacity: loading || googleLoading || passkeyLoading ? 0.65 : 1,
+                cursor: loading || googleLoading || passkeyLoading || passkeySetupLoading ? "not-allowed" : "pointer",
+                opacity: loading || googleLoading || passkeyLoading || passkeySetupLoading ? 0.65 : 1,
                 transition: "background 0.15s, transform 0.1s, box-shadow 0.15s",
                 boxShadow: "0 8px 24px rgba(15,23,42,0.12)",
                 display: "flex",
@@ -489,7 +633,7 @@ export default function LoginPage() {
                 justifyContent: "center",
               }}
               onMouseEnter={e => {
-                if (!loading && !googleLoading && !passkeyLoading) e.currentTarget.style.background = "#0f172a";
+                if (!loading && !googleLoading && !passkeyLoading && !passkeySetupLoading) e.currentTarget.style.background = "#0f172a";
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.background = "#111827";
@@ -508,6 +652,95 @@ export default function LoginPage() {
           </p>
         </div>
       </div>
+
+      <Dialog open={passkeySetupOpen} onOpenChange={setPasskeySetupOpen}>
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={handlePasskeySetupSubmit} className="space-y-5">
+            <DialogHeader>
+              <DialogTitle>Set up biometric sign-in</DialogTitle>
+              <DialogDescription>
+                Enter your SwiftDU login details once, then approve Face ID,
+                Touch ID, or fingerprint when your device asks.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <label
+                  htmlFor="passkey-email"
+                  className="text-sm font-medium text-foreground"
+                >
+                  Email Address
+                </label>
+                <Input
+                  id="passkey-email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
+                  value={passkeySetupForm.email}
+                  onChange={handlePasskeySetupChange}
+                  disabled={passkeySetupLoading}
+                  aria-invalid={Boolean(passkeySetupErrors.email)}
+                />
+                {passkeySetupErrors.email && (
+                  <p className="text-sm font-medium text-destructive">
+                    {passkeySetupErrors.email}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="passkey-password"
+                  className="text-sm font-medium text-foreground"
+                >
+                  Password
+                </label>
+                <div className="relative">
+                  <Input
+                    id="passkey-password"
+                    name="password"
+                    type={showSetupPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    value={passkeySetupForm.password}
+                    onChange={handlePasskeySetupChange}
+                    disabled={passkeySetupLoading}
+                    aria-invalid={Boolean(passkeySetupErrors.password)}
+                    className="pr-16"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowSetupPassword((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-indigo-600"
+                    disabled={passkeySetupLoading}
+                  >
+                    {showSetupPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+                {passkeySetupErrors.password && (
+                  <p className="text-sm font-medium text-destructive">
+                    {passkeySetupErrors.password}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <DialogFooter className="gap-3 sm:gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setPasskeySetupOpen(false)}
+                disabled={passkeySetupLoading}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={passkeySetupLoading}>
+                {passkeySetupLoading ? "Setting up..." : "Set up"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );

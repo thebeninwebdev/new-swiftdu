@@ -6,7 +6,7 @@ import Image from 'next/image'
 import { createAvatar } from '@dicebear/core'
 import * as adventurerNeutral from '@dicebear/adventurer-neutral'
 import { authClient } from '@/lib/auth-client'
-import {LogOut, Menu, X, PlusCircle, ListTodo, User, Bell, UserPlus, Star, BriefcaseBusiness} from 'lucide-react'
+import {LogOut, PlusCircle, ListTodo, User, Bell, UserPlus, Star, BriefcaseBusiness} from 'lucide-react'
 
 
 // Navigation items configuration
@@ -340,7 +340,13 @@ export default function DashboardMenu() {
           {/* Mobile Header */}
           <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-slate-200/70 bg-linear-to-br from-slate-50 via-white to-slate-100 px-4 backdrop-blur-xl dark:border-slate-800/70 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 lg:hidden">
             <div className="flex items-center gap-3">
-              <div className="h-9 w-9 overflow-hidden rounded-full border-2 border-white bg-slate-100 shadow-md dark:border-slate-800 dark:bg-slate-900">
+              <button
+                type="button"
+                onClick={() => setIsMobileMenuOpen((open) => !open)}
+                className="h-9 w-9 overflow-hidden rounded-full border-2 border-white bg-slate-100 shadow-md outline-none transition hover:ring-2 hover:ring-indigo-400 focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-800 dark:bg-slate-900"
+                aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+                aria-expanded={isMobileMenuOpen}
+              >
                 <Image
                   src={userAvatar}
                   alt={`${userName} avatar`}
@@ -349,7 +355,7 @@ export default function DashboardMenu() {
                   unoptimized
                   className="h-full w-full object-cover"
                 />
-              </div>
+              </button>
             </div>
 
             <div className="flex items-center gap-2">
@@ -365,13 +371,6 @@ export default function DashboardMenu() {
                     <span className="relative inline-flex h-2 w-2 rounded-full bg-red-600"></span>
                   </span>
                 ) : null}
-              </button>
-              <button
-                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-                className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
-                aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
-              >
-                {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
               </button>
             </div>
           </header>
