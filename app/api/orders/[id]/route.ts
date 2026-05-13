@@ -11,6 +11,7 @@ import { ensureBookedAt } from '@/lib/order-response-time';
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
+  normalizeNoteSize,
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
 import {
@@ -69,6 +70,9 @@ export async function PATCH(
       store,
       packaging,
       waterBags,
+      noteSize,
+      numberOfPages,
+      deadline,
       copyNotesType,
       copyNotesPages,
       status,
@@ -84,6 +88,9 @@ export async function PATCH(
       store !== undefined ||
       packaging !== undefined ||
       waterBags !== undefined ||
+      noteSize !== undefined ||
+      numberOfPages !== undefined ||
+      deadline !== undefined ||
       copyNotesType !== undefined ||
       copyNotesPages !== undefined
     ) {
@@ -114,19 +121,28 @@ export async function PATCH(
           : order.taskType === WATER_TASK_TYPE
             ? Number(order.waterBags || 0)
             : undefined;
-      const nextCopyNotesType =
-        copyNotesType !== undefined ? String(copyNotesType) : order.copyNotesType;
-      const nextCopyNotesPages =
-        copyNotesPages !== undefined
-          ? Number(copyNotesPages)
+      const nextNoteSize = normalizeNoteSize(
+        noteSize !== undefined
+          ? String(noteSize)
+          : copyNotesType !== undefined
+            ? String(copyNotesType)
+            : order.noteSize || order.copyNotesType
+      );
+      const nextNumberOfPages =
+        numberOfPages !== undefined
+          ? Number(numberOfPages)
+          : copyNotesPages !== undefined
+            ? Number(copyNotesPages)
           : order.taskType === 'copy_notes'
-            ? Number(order.copyNotesPages || 0)
+            ? Number(order.numberOfPages || order.copyNotesPages || 0)
             : undefined;
       const nextDeadlineDate =
-        deadlineDate !== undefined
-          ? new Date(`${String(deadlineDate).trim()}T00:00:00`)
-          : order.taskType === 'copy_notes' && order.deadlineDate
-            ? new Date(order.deadlineDate)
+        deadline !== undefined
+          ? new Date(String(deadline).trim())
+          : deadlineDate !== undefined
+            ? new Date(String(deadlineDate).trim())
+            : order.taskType === 'copy_notes' && (order.dueDate || order.deadline || order.deadlineDate)
+            ? new Date(order.dueDate || order.deadline || order.deadlineDate)
             : undefined;
 
       if (
@@ -167,24 +183,21 @@ export async function PATCH(
       }
 
       if (nextTaskType === 'copy_notes') {
-        if (nextCopyNotesType !== 'hardback' && nextCopyNotesType !== 'small') {
-          return NextResponse.json({ error: 'Choose the note type.' }, { status: 400 });
+        if (!nextNoteSize) {
+          return NextResponse.json({ error: 'Choose the note size.' }, { status: 400 });
         }
 
-        if (!Number.isInteger(nextCopyNotesPages) || Number(nextCopyNotesPages) <= 0) {
+        if (!Number.isInteger(nextNumberOfPages) || Number(nextNumberOfPages) < 1) {
           return NextResponse.json({ error: 'Enter the number of pages.' }, { status: 400 });
         }
-
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
 
         if (
           !nextDeadlineDate ||
           Number.isNaN(nextDeadlineDate.getTime()) ||
-          nextDeadlineDate < today
+          nextDeadlineDate.getTime() <= Date.now()
         ) {
           return NextResponse.json(
-            { error: 'Choose the date the copied notes should be ready.' },
+            { error: 'Choose a future deadline for the copied notes.' },
             { status: 400 }
           );
         }
@@ -197,8 +210,8 @@ export async function PATCH(
             : nextAmount,
         taskType: nextTaskType,
         waterBags: nextWaterBags,
-        copyNotesType: nextCopyNotesType,
-        copyNotesPages: nextCopyNotesPages,
+        noteSize: nextNoteSize,
+        numberOfPages: nextNumberOfPages,
       });
       const settlement =
         pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'
@@ -220,6 +233,9 @@ export async function PATCH(
       order.totalAmount = pricing.totalAmount;
       order.waterBags = pricing.waterBags || undefined;
       order.waterFee = pricing.waterFee;
+      order.noteSize = pricing.noteSize;
+      order.numberOfPages = pricing.numberOfPages;
+      order.drawingPages = 0;
       order.copyNotesType = pricing.copyNotesType;
       order.copyNotesPages = pricing.copyNotesPages;
       order.hasPaid = false;
@@ -250,6 +266,8 @@ export async function PATCH(
       order.settlementDueAt = undefined;
       order.settlementFailureReason = undefined;
 
+      order.deadline = nextTaskType === 'copy_notes' ? nextDeadlineDate : undefined;
+      order.dueDate = nextTaskType === 'copy_notes' ? nextDeadlineDate : undefined;
       order.deadlineDate = nextTaskType === 'copy_notes' ? nextDeadlineDate : undefined;
       order.deadlineValue = undefined;
       order.deadlineUnit = undefined;

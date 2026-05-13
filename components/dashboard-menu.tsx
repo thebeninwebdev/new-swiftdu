@@ -1,7 +1,10 @@
 'use client'
 
-import {useState, useEffect} from 'react'
+import {useMemo, useState, useEffect} from 'react'
 import {useRouter, usePathname} from 'next/navigation'
+import Image from 'next/image'
+import { createAvatar } from '@dicebear/core'
+import * as adventurerNeutral from '@dicebear/adventurer-neutral'
 import { authClient } from '@/lib/auth-client'
 import {LogOut, Menu, X, PlusCircle, ListTodo, User, Bell, UserPlus, Star, BriefcaseBusiness} from 'lucide-react'
 
@@ -54,15 +57,45 @@ interface ExcoDashboardAccess {
   dashboardPath: string
 }
 
+interface HeaderProfile {
+  name: string
+  email: string
+  profileImage: string
+}
+
 export default function DashboardMenu() {
   const { data: session } = authClient.useSession()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [hasNotification, setHasNotification] = useState(false)
   const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
+  const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null)
 
   const router = useRouter()
   const pathname = usePathname()
   const sessionUserId = session?.user?.id
+  const userName = headerProfile?.name || session?.user?.name || 'SwiftDU user'
+  const userEmail = headerProfile?.email || session?.user?.email || ''
+  const userEmailName = userEmail.split('@')[0] || ''
+  const savedProfileImage = headerProfile?.profileImage || session?.user?.profileImage || ''
+  const avatarSeed = [
+    session?.user?.id,
+    session?.user?.email,
+    session?.user?.name,
+  ]
+    .filter(Boolean)
+    .join(':') || 'swiftdu-user'
+  const generatedAvatar = useMemo(
+    () =>
+      createAvatar(adventurerNeutral, {
+        seed: avatarSeed,
+        size: 96,
+        radius: 50,
+        backgroundColor: ['e0f2fe', 'eef2ff', 'ecfeff'],
+        backgroundType: ['gradientLinear'],
+      }).toDataUri(),
+    [avatarSeed]
+  )
+  const userAvatar = savedProfileImage || generatedAvatar
   const isTasker = session?.user.role === 'tasker'
   const taskerAction = isTasker
     ? {
@@ -111,6 +144,40 @@ export default function DashboardMenu() {
   useEffect(() => {
     if (!sessionUserId) return
 
+    let isMounted = true
+
+    async function fetchHeaderProfile() {
+      try {
+        const response = await fetch('/api/users/me/profile', { cache: 'no-store' })
+        if (!response.ok) return
+
+        const payload = await response.json()
+        if (isMounted) {
+          setHeaderProfile({
+            name: payload.user?.name || '',
+            email: payload.user?.email || '',
+            profileImage: payload.user?.profileImage || '',
+          })
+        }
+      } catch {
+        if (isMounted) {
+          setHeaderProfile(null)
+        }
+      }
+    }
+
+    void fetchHeaderProfile()
+    window.addEventListener('swiftdu-profile-updated', fetchHeaderProfile)
+
+    return () => {
+      isMounted = false
+      window.removeEventListener('swiftdu-profile-updated', fetchHeaderProfile)
+    }
+  }, [sessionUserId])
+
+  useEffect(() => {
+    if (!sessionUserId) return
+
     async function fetchExcoDashboard() {
       try {
         const response = await fetch('/api/exco/me', { cache: 'no-store' })
@@ -134,6 +201,17 @@ export default function DashboardMenu() {
     void fetchExcoDashboard()
   }, [sessionUserId])
 
+  useEffect(() => {
+    if (!isMobileMenuOpen) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isMobileMenuOpen])
+
   const signOut = async () => {
     await authClient.signOut({
       fetchOptions: { onSuccess: () => router.push('/login') }
@@ -154,12 +232,19 @@ export default function DashboardMenu() {
         {/* Logo Area */}
         <div className="p-6 border-b border-slate-200 dark:border-slate-800">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-linear-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-indigo-500/30">
-              E
+            <div className="h-11 w-11 overflow-hidden rounded-full border-2 border-white bg-slate-100 shadow-lg shadow-indigo-500/20 dark:border-slate-800 dark:bg-slate-900">
+              <Image
+                src={userAvatar}
+                alt={`${userName} avatar`}
+                width={44}
+                height={44}
+                unoptimized
+                className="h-full w-full object-cover"
+              />
             </div>
-            <div>
-              <h1 className="font-bold text-slate-900 dark:text-white text-lg">ErrandHub</h1>
-              <p className="text-xs text-slate-500">Campus Delivery</p>
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold text-slate-900 dark:text-white">{userName}</h1>
+              <p className="truncate text-xs text-slate-500">User Dashboard</p>
             </div>
           </div>
         </div>
@@ -253,30 +338,72 @@ export default function DashboardMenu() {
       <div className="hidden w-72 shrink-0 lg:block" aria-hidden="true" />
     
           {/* Mobile Header */}
-          <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-b border-slate-200 dark:border-slate-800 z-50 px-4 flex items-center justify-between">
+          <header className="sticky top-0 z-50 flex h-16 items-center justify-between border-b border-slate-200/70 bg-linear-to-br from-slate-50 via-white to-slate-100 px-4 backdrop-blur-xl dark:border-slate-800/70 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 lg:hidden">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-linear-to-br from-indigo-600 to-purple-600 flex items-center justify-center text-white font-bold shadow-lg">
-                E
+              <div className="h-9 w-9 overflow-hidden rounded-full border-2 border-white bg-slate-100 shadow-md dark:border-slate-800 dark:bg-slate-900">
+                <Image
+                  src={userAvatar}
+                  alt={`${userName} avatar`}
+                  width={36}
+                  height={36}
+                  unoptimized
+                  className="h-full w-full object-cover"
+                />
               </div>
-              <span className="font-bold text-slate-900 dark:text-white">ErrandHub</span>
             </div>
-            
-            <button 
-              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-              className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            >
-              {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-            </button>
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => handleNavigation('/dashboard/notifications')}
+                className="relative rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                aria-label="Open notifications"
+              >
+                <Bell className="h-5 w-5" />
+                {hasNotification ? (
+                  <span className="absolute right-1.5 top-1.5 flex h-2 w-2">
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75"></span>
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-red-600"></span>
+                  </span>
+                ) : null}
+              </button>
+              <button
+                onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+                className="rounded-lg p-2 transition-colors hover:bg-slate-100 dark:hover:bg-slate-800"
+                aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+              >
+                {isMobileMenuOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+              </button>
+            </div>
           </header>
     
           {/* Mobile Menu Overlay */}
           {isMobileMenuOpen && (
-            <div className="lg:hidden fixed inset-0 z-40 bg-slate-950/50 backdrop-blur-sm" onClick={() => setIsMobileMenuOpen(false)}>
+            <div className="fixed inset-0 z-70 bg-slate-950/50 backdrop-blur-sm lg:hidden" onClick={() => setIsMobileMenuOpen(false)}>
               <div 
-                className="absolute bottom-0 right-0 top-16 flex w-72 max-w-[85vw] flex-col bg-white shadow-2xl animate-in slide-in-from-right duration-300 dark:bg-slate-900"
+                className="absolute bottom-0 left-0 top-0 flex w-72 max-w-[85vw] flex-col bg-white shadow-2xl animate-in slide-in-from-left duration-300 dark:bg-slate-900 overflow-y-auto"
                 onClick={e => e.stopPropagation()}
               >
-                <nav className="flex-1 space-y-2 overflow-y-auto p-4 pb-6">
+                <div className="p-5 mt-5">
+                  <div className="flex flex-col items-left gap-3">
+                    <div className="h-20 w-20 overflow-hidden rounded-full border-2 border-white bg-slate-100 shadow-md dark:border-slate-800 dark:bg-slate-900 ml-1">
+                      <Image
+                        src={userAvatar}
+                        alt={`${userName} avatar`}
+                        width={80}
+                        height={80}
+                        unoptimized
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate font-bold text-slate-900 dark:text-white text-3xl">{userName}</p>
+                      {userEmailName ? (
+                        <p className="truncate text-slate-500 dark:text-slate-400">@{userEmailName}</p>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+                <nav className="flex-1 space-y-2 p-4 pb-6">
                   {navigationItems.map((item) => {
                     const isActive = pathname === item.href
                     const Icon = item.icon

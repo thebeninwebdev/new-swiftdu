@@ -24,7 +24,7 @@ export default function RootLayout({
       <CompleteProfileGate>
         <div className="min-h-screen overflow-x-hidden lg:flex">
           <DashboardMenu />
-          <main className="min-w-0 flex-1 pt-20 lg:pt-0">
+          <main className="min-w-0 flex-1">
             {children}
           </main>
         </div>

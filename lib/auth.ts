@@ -4,9 +4,15 @@ import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import clientPromise, { connectDB } from "./db";
 import { User } from "@/models/user";
 import { twoFactor } from "better-auth/plugins";
+import { passkey } from "@better-auth/passkey";
 
 const client = await clientPromise;
 const db = client.db();
+const appBaseURL =
+  process.env.NEXT_PUBLIC_BASE_URL?.trim() ||
+  process.env.BETTER_AUTH_URL?.trim() ||
+  "http://localhost:3000";
+const appURL = new URL(appBaseURL);
 const googleClientId =
   process.env.GOOGLE_CLIENT_ID?.trim() ||
   process.env.AUTH_GOOGLE_ID?.trim() ||
@@ -125,6 +131,18 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      profileImage: {
+        type: "string",
+        required: false,
+      },
+      profileImagePublicId: {
+        type: "string",
+        required: false,
+      },
+      gender: {
+        type: "string",
+        required: false,
+      },
       dateOfBirth: {
         type: "date",
         required: false,
@@ -162,6 +180,11 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    passkey({
+      rpID: appURL.hostname,
+      rpName: "SwiftDU",
+      origin: appURL.origin,
+    }),
     twoFactor(),
     suspendedUserGuard(),
   ],

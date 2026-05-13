@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
+import { Fingerprint } from "lucide-react";
 
 const BRAND_PRIMARY = "#4f46e5";
 const BRAND_PRIMARY_DARK = "#4338ca";
@@ -19,6 +20,7 @@ export default function LoginPage() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState("");
   const { data: session } = authClient.useSession();
@@ -106,6 +108,46 @@ export default function LoginPage() {
       });
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handlePasskeySignIn = async () => {
+    setServerError("");
+
+    if (!window.PublicKeyCredential) {
+      const message = "This device does not support fingerprint or Face ID sign-in.";
+      setServerError(message);
+      toast.error(message);
+      return;
+    }
+
+    setPasskeyLoading(true);
+
+    try {
+      const { data, error } = await authClient.signIn.passkey();
+
+      if (error) {
+        const wasCancelled =
+          "code" in error && error.code === "AUTH_CANCELLED";
+
+        throw new Error(
+          wasCancelled
+            ? "Authentication was cancelled."
+            : error.message || "Fingerprint / Face ID sign-in failed."
+        );
+      }
+
+      router.push(getPostAuthRedirect(data?.user));
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Fingerprint / Face ID sign-in failed. Please try again.";
+
+      setServerError(message);
+      toast.error(message);
+    } finally {
+      setPasskeyLoading(false);
     }
   };
 
@@ -271,18 +313,18 @@ export default function LoginPage() {
             {/* Log in button */}
             <button
               type="submit"
-              disabled={loading || googleLoading}
+              disabled={loading || googleLoading || passkeyLoading}
               style={{
                 width: "100%", borderRadius: "999px",
                 background: BRAND_PRIMARY, color: "#fff", border: "none",
                 padding: "15px", fontSize: "16px", fontWeight: 700,
-                cursor: loading || googleLoading ? "not-allowed" : "pointer",
-                opacity: loading || googleLoading ? 0.65 : 1,
+                cursor: loading || googleLoading || passkeyLoading ? "not-allowed" : "pointer",
+                opacity: loading || googleLoading || passkeyLoading ? 0.65 : 1,
                 transition: "background 0.15s, transform 0.1s, box-shadow 0.15s",
                 letterSpacing: "0.01em",
                 boxShadow: "0 16px 32px rgba(99,102,241,0.22)",
               }}
-              onMouseEnter={e => { if (!loading && !googleLoading) e.currentTarget.style.background = BRAND_PRIMARY_DARK; }}
+              onMouseEnter={e => { if (!loading && !googleLoading && !passkeyLoading) e.currentTarget.style.background = BRAND_PRIMARY_DARK; }}
               onMouseLeave={e => { e.currentTarget.style.background = BRAND_PRIMARY; }}
               onMouseDown={e => { e.currentTarget.style.transform = "scale(0.98)"; }}
               onMouseUp={e => { e.currentTarget.style.transform = "scale(1)"; }}
@@ -312,7 +354,7 @@ export default function LoginPage() {
             <button
               type="button"
               onClick={handleGoogleSignIn}
-              disabled={loading || googleLoading}
+              disabled={loading || googleLoading || passkeyLoading}
               style={{
                 width: "100%",
                 marginTop: 18,
@@ -323,8 +365,8 @@ export default function LoginPage() {
                 padding: "14px 16px",
                 fontSize: "15px",
                 fontWeight: 700,
-                cursor: loading || googleLoading ? "not-allowed" : "pointer",
-                opacity: loading || googleLoading ? 0.65 : 1,
+                cursor: loading || googleLoading || passkeyLoading ? "not-allowed" : "pointer",
+                opacity: loading || googleLoading || passkeyLoading ? 0.65 : 1,
                 transition: "background 0.15s, transform 0.1s, box-shadow 0.15s",
                 boxShadow: "0 8px 24px rgba(15,23,42,0.06)",
                 display: "flex",
@@ -333,7 +375,7 @@ export default function LoginPage() {
                 gap: 10,
               }}
               onMouseEnter={e => {
-                if (!loading && !googleLoading) e.currentTarget.style.background = "#f9fafb";
+                if (!loading && !googleLoading && !passkeyLoading) e.currentTarget.style.background = "#f9fafb";
               }}
               onMouseLeave={e => {
                 e.currentTarget.style.background = "#fff";
@@ -357,7 +399,42 @@ export default function LoginPage() {
                   d="M3.4 16.4 6.5 14c-.2-.6-.4-1.3-.4-2s.1-1.4.4-2L3.4 7.4A9.8 9.8 0 0 0 2.2 12c0 1.6.4 3.1 1.2 4.4Z"
                 />
               </svg>
-              <span>{googleLoading ? "Connecting to Google..." : "Continue with Google"}</span>
+              <span>{googleLoading ? "Connecting to Google..." : "Login with Google"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handlePasskeySignIn}
+              aria-label="Continue with fingerprint or Face ID"
+              title="Continue with fingerprint or Face ID"
+              disabled={loading || googleLoading || passkeyLoading}
+              style={{
+                width: 52,
+                height: 52,
+                marginTop: 18,
+                marginLeft: "auto",
+                marginRight: "auto",
+                borderRadius: "999px",
+                border: "1px solid #e5e7eb",
+                background: "#111827",
+                color: "#fff",
+                padding: 0,
+                cursor: loading || googleLoading || passkeyLoading ? "not-allowed" : "pointer",
+                opacity: loading || googleLoading || passkeyLoading ? 0.65 : 1,
+                transition: "background 0.15s, transform 0.1s, box-shadow 0.15s",
+                boxShadow: "0 8px 24px rgba(15,23,42,0.12)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+              onMouseEnter={e => {
+                if (!loading && !googleLoading && !passkeyLoading) e.currentTarget.style.background = "#0f172a";
+              }}
+              onMouseLeave={e => {
+                e.currentTarget.style.background = "#111827";
+              }}
+            >
+              <Fingerprint size={24} aria-hidden="true" />
             </button>
           </form>
 
@@ -371,24 +448,6 @@ export default function LoginPage() {
         </div>
       </div>
 
-      {/* Help pill */}
-      <button
-        style={{
-          position: "fixed", bottom: 24, left: 24, zIndex: 50,
-          display: "flex", alignItems: "center", gap: 6,
-          background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
-          color: "#fff", border: "none", borderRadius: "999px",
-          padding: "10px 18px", fontSize: 14, fontWeight: 600,
-          cursor: "pointer", boxShadow: "0 12px 30px rgba(79,70,229,0.28)",
-        }}
-      >
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
-          <line x1="12" y1="17" x2="12.01" y2="17" />
-        </svg>
-        Help
-      </button>
     </div>
   );
 }

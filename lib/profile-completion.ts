@@ -1,12 +1,37 @@
 export type RequiredProfileField = "name" | "phone" | "location";
+export type ProfileCompletionField =
+  | "profileImage"
+  | "name"
+  | "email"
+  | "phone"
+  | "location"
+  | "gender"
+  | "dateOfBirth";
 
 export type AuthProfileUser = {
   role?: string | null;
   name?: string | null;
+  email?: string | null;
   phone?: string | null;
   location?: string | null;
+  profileImage?: string | null;
+  gender?: string | null;
+  dateOfBirth?: string | Date | null;
   taskerId?: string | null;
 };
+
+export const PROFILE_COMPLETION_FIELDS: Array<{
+  field: ProfileCompletionField;
+  label: string;
+}> = [
+  { field: "profileImage", label: "Profile photo" },
+  { field: "name", label: "Full name" },
+  { field: "email", label: "Email address" },
+  { field: "phone", label: "Phone number" },
+  { field: "location", label: "Location" },
+  { field: "gender", label: "Gender" },
+  { field: "dateOfBirth", label: "Date of birth" },
+];
 
 export const COUNTRY_CODES = [
   { code: "NG", dial: "+234", flag: "🇳🇬" },
@@ -33,6 +58,47 @@ export const DEFAULT_COUNTRY_CODE: CountryCodeOption = COUNTRY_CODES[0];
 export const COMPLETE_PROFILE_PATH = "/signup/complete-profile";
 
 const hasText = (value?: string | null) => Boolean(value?.trim());
+
+function hasProfileCompletionValue(
+  user: AuthProfileUser,
+  field: ProfileCompletionField
+) {
+  const value = user[field];
+
+  if (value instanceof Date) {
+    return !Number.isNaN(value.getTime());
+  }
+
+  if (typeof value === "string") {
+    return hasText(value);
+  }
+
+  return Boolean(value);
+}
+
+export function getProfileCompletion(user?: AuthProfileUser | null) {
+  if (!user) {
+    return {
+      completedFields: 0,
+      totalFields: PROFILE_COMPLETION_FIELDS.length,
+      percentage: 0,
+      missingFields: PROFILE_COMPLETION_FIELDS,
+    };
+  }
+
+  const missingFields = PROFILE_COMPLETION_FIELDS.filter(
+    ({ field }) => !hasProfileCompletionValue(user, field)
+  );
+  const totalFields = PROFILE_COMPLETION_FIELDS.length;
+  const completedFields = totalFields - missingFields.length;
+
+  return {
+    completedFields,
+    totalFields,
+    percentage: Math.round((completedFields / totalFields) * 100),
+    missingFields,
+  };
+}
 
 export function getMissingRequiredProfileFields(
   user?: AuthProfileUser | null

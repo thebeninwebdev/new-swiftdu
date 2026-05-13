@@ -41,6 +41,9 @@ interface Errand {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
+  dueDate?: string
+  deadline?: string
+  deadlineDate?: string
   location: string
   store?: string
   packaging?: string
@@ -69,6 +72,9 @@ interface RealtimeTaskPayload {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
+  dueDate?: string
+  deadline?: string
+  deadlineDate?: string
   location?: string
   store?: string
   packaging?: string
@@ -216,6 +222,9 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
     platformFee: payload.platformFee,
     taskerFee: payload.taskerFee,
     totalAmount: payload.totalAmount,
+    dueDate: payload.dueDate,
+    deadline: payload.deadline,
+    deadlineDate: payload.deadlineDate,
     location: payload.location || '',
     store: payload.store,
     packaging: payload.packaging,
@@ -633,6 +642,16 @@ export default function TaskerDashboardPage() {
     return `${Math.floor(hours / 24)}d ago`
   }
 
+  const formatDueDate = (errand: Errand) => {
+    const value = errand.dueDate || errand.deadline || errand.deadlineDate
+    if (!value) return null
+
+    return new Intl.DateTimeFormat('en-NG', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(new Date(value))
+  }
+
   const getActiveTaskState = (errand: Errand) => {
     if (errand.isDeclinedTask) {
       return {
@@ -982,6 +1001,12 @@ export default function TaskerDashboardPage() {
                           <Clock3 className="h-4 w-4 shrink-0 text-slate-400" />
                           <span>{errand.acceptedAt ? `Accepted ${formatTimeAgo(errand.acceptedAt)}` : formatTimeAgo(errand.createdAt)}</span>
                         </div>
+                        {formatDueDate(errand) ? (
+                          <div className="flex items-center gap-2">
+                            <Clock3 className="h-4 w-4 shrink-0 text-amber-500" />
+                            <span>Due {formatDueDate(errand)}</span>
+                          </div>
+                        ) : null}
                       </div>
 
                       <button
@@ -1131,6 +1156,15 @@ export default function TaskerDashboardPage() {
                         <span className="capitalize">{errand.packaging}</span>
                       </motion.div>
                     )}
+
+                    {formatDueDate(errand) ? (
+                      <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">
+                        <div className="w-8 h-8 rounded-xl bg-amber-50 dark:bg-amber-950/30 flex items-center justify-center shrink-0">
+                          <Clock3 className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <span>Due {formatDueDate(errand)}</span>
+                      </div>
+                    ) : null}
                   </div>
 
                   {/* Accept Button */}

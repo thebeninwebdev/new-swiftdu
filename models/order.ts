@@ -16,7 +16,12 @@ export interface IOrder extends Document {
   packaging?: string;
   waterBags?: number;
   waterFee?: number;
-  copyNotesType?: 'hardback' | 'small';
+  noteSize?: 'small' | 'big';
+  numberOfPages?: number;
+  drawingPages?: number;
+  deadline?: Date;
+  dueDate?: Date;
+  copyNotesType?: 'big' | 'small' | 'hardback';
   copyNotesPages?: number;
   deadlineDate?: Date;
   deadlineValue?: number;
@@ -133,11 +138,44 @@ const orderSchema = new Schema<IOrder>(
     },
     copyNotesType: {
       type: String,
-      enum: ['hardback', 'small'],
+      enum: ['big', 'small', 'hardback'],
     },
     copyNotesPages: {
       type: Number,
       min: 1,
+    },
+    noteSize: {
+      type: String,
+      enum: ['small', 'big'],
+      required: function (this: IOrder) {
+        return this.taskType === 'copy_notes';
+      },
+    },
+    numberOfPages: {
+      type: Number,
+      min: 1,
+      required: function (this: IOrder) {
+        return this.taskType === 'copy_notes';
+      },
+    },
+    drawingPages: {
+      type: Number,
+      min: 0,
+      required: function (this: IOrder) {
+        return this.taskType === 'copy_notes';
+      },
+    },
+    deadline: {
+      type: Date,
+      required: function (this: IOrder) {
+        return this.taskType === 'copy_notes';
+      },
+    },
+    dueDate: {
+      type: Date,
+      required: function (this: IOrder) {
+        return this.taskType === 'copy_notes';
+      },
     },
     deadlineDate: Date,
     deadlineValue: {

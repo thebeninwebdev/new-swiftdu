@@ -1,6 +1,7 @@
 import { Schema, Document, models, model } from "mongoose";
 
 export type ExcoRole = "CFO" | "CMO" | "COO" | "CTO";
+export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
 
 export interface IUser extends Document {
   name: string;
@@ -10,6 +11,9 @@ export interface IUser extends Document {
   role: "user" | "admin" | "tasker";
   phone?: string;
   location?: string;
+  profileImage?: string;
+  profileImagePublicId?: string;
+  gender?: Gender;
   dateOfBirth?: Date;
   twoFactorEnabled: boolean;
   createdAt: Date;
@@ -55,6 +59,19 @@ const UserSchema = new Schema<IUser>(
     },
     location: {
       type: String,
+      required: false,
+    },
+    profileImage: {
+      type: String,
+      required: false,
+    },
+    profileImagePublicId: {
+      type: String,
+      required: false,
+    },
+    gender: {
+      type: String,
+      enum: ["male", "female", "other", "prefer_not_to_say"],
       required: false,
     },
     dateOfBirth: {

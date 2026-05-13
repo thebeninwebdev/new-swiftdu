@@ -27,6 +27,7 @@ import { io, type Socket } from 'socket.io-client'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { ProfileCompletionCard } from '@/components/profile-completion-card'
 import { authClient } from '@/lib/auth-client'
 import {
   calculateOrderPricing,
@@ -47,9 +48,9 @@ interface ErrandData {
   store?: string
   packaging?: string
   waterBags?: string
-  copyNotesType?: string
-  copyNotesPages?: string
-  deadlineDate?: string
+  noteSize?: string
+  numberOfPages?: string
+  deadline?: string
   restaurantItems: RestaurantItem[]
   restaurantItemName: string
   restaurantItemPrice: string
@@ -107,7 +108,7 @@ const taskTypes: TaskTypeConfig[] = [
   {
     value: 'copy_notes',
     label: 'Copy Notes',
-    description: 'Copy hardback or small notes by page count.',
+    description: 'Copy small or big notes by page count.',
     icon: FileText,
     accent: 'from-amber-500 to-yellow-500',
   },
@@ -161,11 +162,13 @@ function formatNaira(value: number) {
   }).format(value)
 }
 
-function getDateInputValue(date = new Date()) {
+function getDateTimeInputValue(date = new Date()) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
+  const hour = String(date.getHours()).padStart(2, '0')
+  const minute = String(date.getMinutes()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hour}:${minute}`
 }
 
 function formatReadyDate(value?: string) {
@@ -173,7 +176,8 @@ function formatReadyDate(value?: string) {
 
   return new Intl.DateTimeFormat('en-NG', {
     dateStyle: 'medium',
-  }).format(new Date(`${value}T00:00:00`))
+    timeStyle: 'short',
+  }).format(new Date(value))
 }
 
 function isLowTaskerAvailabilityWindow(date: Date) {
@@ -186,7 +190,7 @@ function isLowTaskerAvailabilityWindow(date: Date) {
   const weekday = parts.find((part) => part.type === 'weekday')?.value
   const hour = Number(parts.find((part) => part.type === 'hour')?.value)
 
-  return ['Mon', 'Tue', 'Wed'].includes(weekday || '') && hour >= 0 && hour < 15
+  return ['Mon', 'Wed'].includes(weekday || '') && hour >= 0 && hour < 14
 }
 
 export default function ErrandWizardPage() {
@@ -214,9 +218,9 @@ export default function ErrandWizardPage() {
     store: '',
     packaging: '',
     waterBags: '',
-    copyNotesType: '',
-    copyNotesPages: '',
-    deadlineDate: '',
+    noteSize: '',
+    numberOfPages: '',
+    deadline: '',
     restaurantItems: [],
     restaurantItemName: '',
     restaurantItemPrice: '',
@@ -403,15 +407,15 @@ export default function ErrandWizardPage() {
         ? shoppingBudget
         : Number(formData.amount || 0)
   const waterBags = Number(formData.waterBags || 0)
-  const copyNotesPages = Number(formData.copyNotesPages || 0)
+  const numberOfPages = Number(formData.numberOfPages || 0)
   const description = effectiveDescription
   const taskType = formData.taskType || 'restaurant'
   const pricing = calculateOrderPricing({
     amount: Number.isFinite(amount) ? amount : 0,
     taskType,
     waterBags: Number.isFinite(waterBags) ? waterBags : 0,
-    copyNotesType: formData.copyNotesType,
-    copyNotesPages: Number.isFinite(copyNotesPages) ? copyNotesPages : 0,
+    noteSize: formData.noteSize,
+    numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
   })
   const selectedStores = storeOptions[formData.taskType] || []
   const selectedStoreLabel = selectedStores.find((item) => item.value === formData.store)?.label || ''
@@ -454,9 +458,9 @@ export default function ErrandWizardPage() {
       store: '',
       packaging: value === 'restaurant' ? previous.packaging : '',
       waterBags: value === WATER_TASK_TYPE ? previous.waterBags : '',
-      copyNotesType: value === 'copy_notes' ? previous.copyNotesType : '',
-      copyNotesPages: value === 'copy_notes' ? previous.copyNotesPages : '',
-      deadlineDate: value === 'copy_notes' ? previous.deadlineDate : '',
+      noteSize: value === 'copy_notes' ? previous.noteSize : '',
+      numberOfPages: value === 'copy_notes' ? previous.numberOfPages : '',
+      deadline: value === 'copy_notes' ? previous.deadline : '',
       amount: value === 'copy_notes' || value === WATER_TASK_TYPE ? '0' : previous.amount,
     }))
     ;[
@@ -464,9 +468,9 @@ export default function ErrandWizardPage() {
       'store',
       'packaging',
       'waterBags',
-      'copyNotesType',
-      'copyNotesPages',
-      'deadlineDate',
+      'noteSize',
+      'numberOfPages',
+      'deadline',
       'description',
     ].forEach(clearError)
   }
@@ -606,19 +610,18 @@ if (stepNumber === 2) {
   }
 
   if (formData.taskType === 'copy_notes') {
-    const readyDate = formData.deadlineDate ? new Date(`${formData.deadlineDate}T00:00:00`) : null
-    const today = new Date(`${getDateInputValue()}T00:00:00`)
+    const readyDate = formData.deadline ? new Date(formData.deadline) : null
 
-    if (formData.copyNotesType !== 'hardback' && formData.copyNotesType !== 'small') {
-      nextErrors.copyNotesType = 'Choose the note type.'
+    if (formData.noteSize !== 'big' && formData.noteSize !== 'small') {
+      nextErrors.noteSize = 'Choose the note size.'
     }
 
-    if (!Number.isInteger(copyNotesPages) || copyNotesPages <= 0) {
-      nextErrors.copyNotesPages = 'Enter the number of pages.'
+    if (!Number.isInteger(numberOfPages) || numberOfPages < 1) {
+      nextErrors.numberOfPages = 'Enter the number of pages.'
     }
 
-    if (!readyDate || Number.isNaN(readyDate.getTime()) || readyDate < today) {
-      nextErrors.deadlineDate = 'Choose the date the copied notes should be ready.'
+    if (!readyDate || Number.isNaN(readyDate.getTime()) || readyDate.getTime() <= Date.now()) {
+      nextErrors.deadline = 'Choose a future deadline.'
     }
   }
 
@@ -704,9 +707,9 @@ if (stepNumber === 2) {
         store: '',
         packaging: '',
         waterBags: '',
-        copyNotesType: '',
-        copyNotesPages: '',
-        deadlineDate: '',
+        noteSize: '',
+        numberOfPages: '',
+        deadline: '',
         restaurantItems: [],
         restaurantItemName: '',
         restaurantItemPrice: '',
@@ -766,11 +769,7 @@ if (stepNumber === 2) {
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
       <div className="px-4 py-3 md:px-8 lg:py-8">
         <div className="mx-auto w-full max-w-4xl">
-          <div className="mb-5 flex flex-col gap-3 md:mb-8 md:flex-row md:items-end md:justify-between">
-            <div className="rounded-2xl border border-sky-200 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm dark:border-sky-900/60 dark:bg-slate-900/80 dark:text-slate-300">
-              Fixed fees for regular errands. Water is charged per bag.
-            </div>
-          </div>
+          <ProfileCompletionCard />
 
           {showLowTaskerAvailabilityNotice ? (
             <div className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 md:mb-8">
@@ -779,7 +778,7 @@ if (stepNumber === 2) {
                 <div>
                   <p className="text-sm font-semibold">Taskers may be in class right now</p>
                   <p className="mt-1 text-sm text-amber-900 dark:text-amber-100">
-                    It may be unlikely to get a tasker quickly at this time because many taskers are in ongoing classes. Please try again by 3:00 PM for quicker attention.
+                    It may be unlikely to get a tasker quickly at this time because many taskers are in ongoing classes. Please try again by 2:00 PM for quicker attention.
                   </p>
                 </div>
               </div>
@@ -994,38 +993,37 @@ if (stepNumber === 2) {
                   {formData.taskType === 'copy_notes' ? (
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div>
-                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><FileText className="h-4 w-4 text-amber-500" />Note Type</label>
-                        <select name="copyNotesType" value={formData.copyNotesType} onChange={handleInputChange} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-700 dark:bg-slate-800">
-                          <option value="">Select note type...</option>
-                          <option value="hardback">Hardback Note - {formatNaira(450)} per page</option>
-                          <option value="small">Small Note - {formatNaira(250)} per page</option>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><FileText className="h-4 w-4 text-amber-500" />Note Size</label>
+                        <select name="noteSize" value={formData.noteSize} onChange={handleInputChange} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-700 dark:bg-slate-800">
+                          <option value="">Select note size...</option>
+                          <option value="small">Small - {formatNaira(250)} every 2 pages</option>
+                          <option value="big">Big - {formatNaira(450)} every 2 pages</option>
                         </select>
-                        {errors.copyNotesType ? <p className="mt-2 text-sm text-red-500">{errors.copyNotesType}</p> : null}
+                        {errors.noteSize ? <p className="mt-2 text-sm text-red-500">{errors.noteSize}</p> : null}
                       </div>
                       <div>
                         <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><FileText className="h-4 w-4 text-amber-500" />Number of Pages</label>
-                        <input type="number" min="1" name="copyNotesPages" value={formData.copyNotesPages} onChange={handleInputChange} placeholder="How many pages?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-700 dark:bg-slate-800" />
-                        {errors.copyNotesPages ? <p className="mt-2 text-sm text-red-500">{errors.copyNotesPages}</p> : null}
+                        <input type="number" min="1" name="numberOfPages" value={formData.numberOfPages} onChange={handleInputChange} placeholder="How many pages?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-700 dark:bg-slate-800" />
+                        {errors.numberOfPages ? <p className="mt-2 text-sm text-red-500">{errors.numberOfPages}</p> : null}
                       </div>
-                      <div className="sm:col-span-2">
+                      <div>
                         <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                           <Clock className="h-4 w-4 text-amber-500" />
-                          Ready Date
+                          Deadline
                         </label>
                         <input
-                          type="date"
-                          min={getDateInputValue()}
-                          name="deadlineDate"
-                          value={formData.deadlineDate}
+                          type="datetime-local"
+                          min={getDateTimeInputValue()}
+                          name="deadline"
+                          value={formData.deadline}
                           onChange={handleInputChange}
                           className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 dark:border-slate-700 dark:bg-slate-800"
                         />
-                        {errors.deadlineDate ? <p className="mt-2 text-sm text-red-500">{errors.deadlineDate}</p> : null}
+                        {errors.deadline ? <p className="mt-2 text-sm text-red-500">{errors.deadline}</p> : null}
                       </div>
-                      {pricing.pricingModel === 'copy_notes' && copyNotesPages > 0 ? (
+                      {pricing.pricingModel === 'copy_notes' && numberOfPages > 0 ? (
                         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 sm:col-span-2">
-                          Total is {formatNaira(pricing.totalAmount)}. Tasker earns {formatNaira(pricing.taskerFee || 0)}
-                          {pricing.platformFee ? ` and SwiftDU fee is ${formatNaira(pricing.platformFee)}.` : '.'}
+                          Total is {formatNaira(pricing.totalAmount)}.
                         </div>
                       ) : null}
                     </div>
@@ -1347,14 +1345,14 @@ if (stepNumber === 2) {
                       {formData.taskType === WATER_TASK_TYPE ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Water bags</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.waterBags}</span></div> : null}
                       {formData.taskType === 'copy_notes' ? (
                         <>
-                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Note type</span><span className="text-right capitalize text-slate-900 dark:text-slate-100">{formData.copyNotesType}</span></div>
-                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Pages</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.copyNotesPages}</span></div>
-                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Ready date</span><span className="text-right text-slate-900 dark:text-slate-100">{formatReadyDate(formData.deadlineDate)}</span></div>
+                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Note size</span><span className="text-right capitalize text-slate-900 dark:text-slate-100">{formData.noteSize}</span></div>
+                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Pages</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.numberOfPages}</span></div>
+                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Deadline</span><span className="text-right text-slate-900 dark:text-slate-100">{formatReadyDate(formData.deadline)}</span></div>
                         </>
                       ) : null}
                     </div>
                     <div className="space-y-3 border-t-2 border-slate-200 pt-6 dark:border-slate-700">
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Tasker payout' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === 'restaurant' ? 'Food + packaging budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === 'restaurant' ? 'Food + packaging budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
                       <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span><span className="font-medium">{formatNaira(pricing.serviceFee)}</span></div>
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(pricing.totalAmount)}</span></div>
                     </div>

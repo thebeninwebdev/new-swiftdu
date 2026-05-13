@@ -17,6 +17,8 @@ interface Task {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
+  deadline?: string
+  dueDate?: string
   deadlineDate?: string
   deadlineValue?: number
   deadlineUnit?: 'mins' | 'hours' | 'days'
@@ -177,6 +179,8 @@ export default function AvailableTasksPage() {
                 description={task.description}
                 amount={task.amount}
                 totalAmount={task.totalAmount}
+                dueDate={task.dueDate}
+                deadline={task.deadline}
                 deadlineDate={task.deadlineDate}
                 deadlineValue={task.deadlineValue}
                 deadlineUnit={task.deadlineUnit}

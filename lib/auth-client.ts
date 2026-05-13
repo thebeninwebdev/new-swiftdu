@@ -1,5 +1,6 @@
 import { createAuthClient } from "better-auth/react";
 import {inferAdditionalFields, twoFactorClient} from "better-auth/client/plugins"
+import { passkeyClient } from "@better-auth/passkey/client";
 
 export const authClient = createAuthClient({
   baseURL: process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000",
@@ -20,6 +21,18 @@ export const authClient = createAuthClient({
             type: "string",
             required: false,
         },
+        profileImage: {
+          type: "string",
+          required: false,
+        },
+        profileImagePublicId: {
+          type: "string",
+          required: false,
+        },
+        gender: {
+          type: "string",
+          required: false,
+        },
         dateOfBirth: {
           type: "date",
           required: false,
@@ -35,6 +48,7 @@ export const authClient = createAuthClient({
         },
 }
     }),
+    passkeyClient(),
     twoFactorClient(),
   ]
 });

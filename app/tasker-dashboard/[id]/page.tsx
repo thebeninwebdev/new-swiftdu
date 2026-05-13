@@ -6,6 +6,7 @@ import {
   AlertCircle,
   ArrowLeft,
   CheckCircle2,
+  Clock,
   Loader2,
   Mail,
   MapPin,
@@ -34,6 +35,13 @@ interface ErrandDetail {
   platformFee: number
   taskerFee: number
   totalAmount: number
+  noteSize?: 'small' | 'big'
+  numberOfPages?: number
+  drawingPages?: number
+  copyNotesType?: string
+  copyNotesPages?: number
+  deadline?: string
+  dueDate?: string
   deadlineDate?: string
   deadlineValue?: number
   deadlineUnit?: string
@@ -88,11 +96,14 @@ const formatDate = (date: string) =>
     minute: '2-digit',
   })
 
-function formatDeadline(deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
-  if (deadlineDate) {
+function formatDeadline(dueDate?: string, deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
+  const exactDeadline = dueDate || deadlineDate
+
+  if (exactDeadline) {
     return new Intl.DateTimeFormat('en-NG', {
       dateStyle: 'medium',
-    }).format(new Date(deadlineDate))
+      timeStyle: 'short',
+    }).format(new Date(exactDeadline))
   }
 
   if (deadlineValue && deadlineUnit) {
@@ -531,6 +542,16 @@ export default function ErrandDetailPage() {
                   <Wallet className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
                   <span>{convertToNaira(errand.amount)}</span>
                 </div>
+                <div className="flex items-start gap-2">
+                  <Clock className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+                  <span>{formatDeadline(errand.dueDate || errand.deadline, errand.deadlineDate, errand.deadlineValue, errand.deadlineUnit)}</span>
+                </div>
+                {errand.taskType === 'copy_notes' ? (
+                  <div className="sm:col-span-2 rounded-2xl bg-white/10 p-3 text-sm">
+                    <span className="font-semibold">Copy Notes:</span>{' '}
+                    {errand.numberOfPages || errand.copyNotesPages || 0} pages, {errand.noteSize || (errand.copyNotesType === 'hardback' ? 'big' : errand.copyNotesType) || 'unknown'} size
+                  </div>
+                ) : null}
               </div>
             </div>
 
@@ -668,7 +689,7 @@ export default function ErrandDetailPage() {
                       Deadline
                     </p>
                     <p className="mt-2 text-sm text-slate-700 dark:text-slate-200">
-                      {formatDeadline(errand.deadlineDate, errand.deadlineValue, errand.deadlineUnit)}
+                      {formatDeadline(errand.dueDate || errand.deadline, errand.deadlineDate, errand.deadlineValue, errand.deadlineUnit)}
                     </p>
                   </div>
 

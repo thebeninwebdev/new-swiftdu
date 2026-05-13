@@ -20,6 +20,12 @@ export type OrderSocketPayload = {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
+  dueDate?: string
+  deadline?: string
+  deadlineDate?: string
+  noteSize?: string
+  numberOfPages?: number
+  drawingPages?: number
   location?: string
   store?: string
   packaging?: string
@@ -44,6 +50,12 @@ type SocketOrderLike = {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
+  dueDate?: Date | string
+  deadline?: Date | string
+  deadlineDate?: Date | string
+  noteSize?: string
+  numberOfPages?: number
+  drawingPages?: number
   location?: string
   store?: string
   packaging?: string
@@ -93,6 +105,12 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     platformFee: order.platformFee,
     taskerFee: order.taskerFee,
     totalAmount: order.totalAmount,
+    dueDate: serializeDate(order.dueDate),
+    deadline: serializeDate(order.deadline),
+    deadlineDate: serializeDate(order.deadlineDate),
+    noteSize: order.noteSize,
+    numberOfPages: order.numberOfPages,
+    drawingPages: order.drawingPages,
     location: order.location,
     store: order.store,
     packaging: order.packaging,

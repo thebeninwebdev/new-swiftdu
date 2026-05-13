@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit
 
     // Build filters
-    const filters: any = {}
+    const filters: Record<string, unknown> = {}
 
     const search = searchParams.get('search')
     if (search) {
@@ -82,7 +82,10 @@ export async function GET(req: NextRequest) {
       .lean()
 
     const taskerMap = Object.fromEntries(
-      taskers.map(t => [t._id.toString(), (t as any).userId?.name || 'Unknown'])
+      taskers.map((tasker) => {
+        const populatedUser = tasker.userId as { name?: string } | undefined
+        return [tasker._id.toString(), populatedUser?.name || 'Unknown']
+      })
     )
 
     // Attach user and tasker details

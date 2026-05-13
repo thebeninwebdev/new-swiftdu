@@ -39,6 +39,8 @@ interface Order {
   amount: number
   platformFee?: number
   totalAmount?: number
+  deadline?: string
+  dueDate?: string
   deadlineDate?: string
   deadlineValue?: number
   deadlineUnit?: 'mins' | 'hours' | 'days'
@@ -88,11 +90,14 @@ const taskTypeIcons: Record<string, React.ReactNode> = {
   others: <Package className="h-4 w-4" />,
 }
 
-function formatDeadline(deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
-  if (deadlineDate) {
+function formatDeadline(dueDate?: string, deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
+  const exactDeadline = dueDate || deadlineDate
+
+  if (exactDeadline) {
     return new Intl.DateTimeFormat('en-NG', {
       dateStyle: 'medium',
-    }).format(new Date(deadlineDate))
+      timeStyle: 'short',
+    }).format(new Date(exactDeadline))
   }
 
   if (deadlineValue && deadlineUnit) {
@@ -773,6 +778,7 @@ export default function OrdersPage() {
                       <span className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-2.5 py-1 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
                         <Clock className="h-3 w-3" />
                         {formatDeadline(
+                          currentOrder.dueDate || currentOrder.deadline,
                           currentOrder.deadlineDate,
                           currentOrder.deadlineValue,
                           currentOrder.deadlineUnit

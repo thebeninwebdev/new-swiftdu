@@ -9,6 +9,7 @@ import { emitOrderUpdated } from '@/lib/socket';
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
+  normalizeNoteSize,
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
@@ -41,6 +42,9 @@ export async function POST(request: NextRequest) {
       store,
       packaging,
       waterBags,
+      noteSize,
+      numberOfPages,
+      deadline,
       copyNotesType,
       copyNotesPages,
       deadlineDate,
@@ -62,12 +66,16 @@ export async function POST(request: NextRequest) {
     const normalizedTaskType = String(taskType || '').trim();
     const parsedWaterBags =
       normalizedTaskType === WATER_TASK_TYPE ? Number(waterBags) : undefined;
-    const parsedCopyNotesPages =
-      normalizedTaskType === 'copy_notes' ? Number(copyNotesPages) : undefined;
-    const normalizedCopyNotesType = String(copyNotesType || '').trim();
-    const parsedDeadlineDate =
-      normalizedTaskType === 'copy_notes' && deadlineDate
-        ? new Date(`${String(deadlineDate).trim()}T00:00:00`)
+    const normalizedNoteSize = normalizeNoteSize(
+      String(noteSize || copyNotesType || '').trim()
+    );
+    const parsedNumberOfPages =
+      normalizedTaskType === 'copy_notes'
+        ? Number(numberOfPages ?? copyNotesPages)
+        : undefined;
+    const parsedDeadline =
+      normalizedTaskType === 'copy_notes' && (deadline || deadlineDate)
+        ? new Date(String(deadline || deadlineDate).trim())
         : undefined;
 
     if (!ALLOWED_CUSTOMER_TASK_TYPES.has(normalizedTaskType)) {
@@ -90,24 +98,21 @@ export async function POST(request: NextRequest) {
     }
 
     if (normalizedTaskType === 'copy_notes') {
-      if (normalizedCopyNotesType !== 'hardback' && normalizedCopyNotesType !== 'small') {
-        return NextResponse.json({ error: 'Choose the note type.' }, { status: 400 });
+      if (!normalizedNoteSize) {
+        return NextResponse.json({ error: 'Choose the note size.' }, { status: 400 });
       }
 
-      if (!Number.isInteger(parsedCopyNotesPages) || (parsedCopyNotesPages ?? 0) <= 0) {
+      if (!Number.isInteger(parsedNumberOfPages) || (parsedNumberOfPages ?? 0) < 1) {
         return NextResponse.json({ error: 'Enter the number of pages.' }, { status: 400 });
       }
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
       if (
-        !parsedDeadlineDate ||
-        Number.isNaN(parsedDeadlineDate.getTime()) ||
-        parsedDeadlineDate < today
+        !parsedDeadline ||
+        Number.isNaN(parsedDeadline.getTime()) ||
+        parsedDeadline.getTime() <= Date.now()
       ) {
         return NextResponse.json(
-          { error: 'Choose the date the copied notes should be ready.' },
+          { error: 'Choose a future deadline for the copied notes.' },
           { status: 400 }
         );
       }
@@ -139,8 +144,8 @@ export async function POST(request: NextRequest) {
           : parsedAmount,
       taskType: normalizedTaskType,
       waterBags: parsedWaterBags,
-      copyNotesType: normalizedCopyNotesType,
-      copyNotesPages: parsedCopyNotesPages,
+      noteSize: normalizedNoteSize,
+      numberOfPages: parsedNumberOfPages,
     });
 
     const settlement =
@@ -170,9 +175,14 @@ export async function POST(request: NextRequest) {
       packaging: packaging || undefined,
       waterBags: pricing.waterBags || undefined,
       waterFee: pricing.waterFee,
+      noteSize: pricing.noteSize,
+      numberOfPages: pricing.numberOfPages,
+      drawingPages: 0,
+      deadline: normalizedTaskType === 'copy_notes' ? parsedDeadline : undefined,
+      dueDate: normalizedTaskType === 'copy_notes' ? parsedDeadline : undefined,
       copyNotesType: pricing.copyNotesType,
       copyNotesPages: pricing.copyNotesPages,
-      deadlineDate: normalizedTaskType === 'copy_notes' ? parsedDeadlineDate : undefined,
+      deadlineDate: normalizedTaskType === 'copy_notes' ? parsedDeadline : undefined,
       deadlineValue: undefined,
       deadlineUnit: undefined,
       status: 'pending',

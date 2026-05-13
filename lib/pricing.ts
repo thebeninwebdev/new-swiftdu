@@ -5,12 +5,8 @@ export const WATER_PLATFORM_FEE_RATE = 0.24
 export const PRINTING_TASK_TYPE = 'printing'
 export const PRINTING_SERVICE_FEE = 500
 export const COPY_NOTES_TASK_TYPE = 'copy_notes'
-export const COPY_NOTES_HARDBACK_PRICE_PER_PAGE = 450
-export const COPY_NOTES_HARDBACK_TASKER_FEE_PER_PAGE = 400
-export const COPY_NOTES_HARDBACK_PLATFORM_FEE_PER_PAGE = 50
-export const COPY_NOTES_SMALL_PRICE_PER_PAGE = 250
-export const COPY_NOTES_SMALL_TASKER_FEE_PER_PAGE = 250
-export const COPY_NOTES_SMALL_PLATFORM_FEE_PER_PAGE = 0
+export const COPY_NOTES_SMALL_PRICE_PER_TWO_PAGES = 250
+export const COPY_NOTES_BIG_PRICE_PER_TWO_PAGES = 450
 
 export const WATER_DESCRIPTION_PATTERN = /\bbag(?:s)?\s+of\s+water\b/i
 
@@ -35,7 +31,8 @@ export const TIERED_SERVICE_FEE_RULES = [
   },
 ] as const
 
-export type CopyNotesType = 'hardback' | 'small'
+export type NoteSize = 'small' | 'big'
+export type CopyNotesType = NoteSize
 export type PricingModel = 'tiered' | 'water' | 'copy_notes'
 
 export interface PricingResult {
@@ -47,8 +44,15 @@ export interface PricingResult {
   waterFee: number
   taskerFee?: number
   platformFee?: number
+  noteSize?: NoteSize
+  numberOfPages?: number
   copyNotesType?: CopyNotesType
   copyNotesPages?: number
+}
+
+export interface CopyNotesPricingInput {
+  noteSize: string
+  numberOfPages: number
 }
 
 function roundNaira(value: number) {
@@ -71,10 +75,39 @@ export function getTieredServiceFee(amount: number) {
   return matchingRule?.fee || TIERED_SERVICE_FEE_RULES[0].fee
 }
 
+export function normalizeNoteSize(value?: string): NoteSize | undefined {
+  if (value === 'small') return 'small'
+  if (value === 'big' || value === 'hardback') return 'big'
+  return undefined
+}
+
+export function calculateCopyNotesPrice(input: CopyNotesPricingInput) {
+  const noteSize = normalizeNoteSize(input.noteSize)
+  const numberOfPages = Number(input.numberOfPages || 0)
+
+  if (!noteSize) {
+    throw new Error('Invalid note size')
+  }
+
+  if (!Number.isInteger(numberOfPages) || numberOfPages < 1) {
+    throw new Error('Invalid number of pages')
+  }
+
+  const baseRate =
+    noteSize === 'small'
+      ? COPY_NOTES_SMALL_PRICE_PER_TWO_PAGES
+      : COPY_NOTES_BIG_PRICE_PER_TWO_PAGES
+
+  return roundNaira(Math.ceil(numberOfPages / 2) * baseRate)
+}
+
 export function calculateOrderPricing(input: {
   amount: number
   taskType: string
   waterBags?: number
+  noteSize?: string
+  numberOfPages?: number
+  drawingPages?: number
   copyNotesType?: string
   copyNotesPages?: number
 }) {
@@ -112,35 +145,44 @@ export function calculateOrderPricing(input: {
   }
 
   if (input.taskType === COPY_NOTES_TASK_TYPE) {
-    const copyNotesPages = Number(input.copyNotesPages || 0)
-    const copyNotesType: CopyNotesType =
-      input.copyNotesType === 'small' ? 'small' : 'hardback'
-    const pagePrice =
-      copyNotesType === 'hardback'
-        ? COPY_NOTES_HARDBACK_PRICE_PER_PAGE
-        : COPY_NOTES_SMALL_PRICE_PER_PAGE
-    const taskerFeePerPage =
-      copyNotesType === 'hardback'
-        ? COPY_NOTES_HARDBACK_TASKER_FEE_PER_PAGE
-        : COPY_NOTES_SMALL_TASKER_FEE_PER_PAGE
-    const platformFeePerPage =
-      copyNotesType === 'hardback'
-        ? COPY_NOTES_HARDBACK_PLATFORM_FEE_PER_PAGE
-        : COPY_NOTES_SMALL_PLATFORM_FEE_PER_PAGE
-    const totalAmount = roundNaira(copyNotesPages * pagePrice)
-    const taskerFee = roundNaira(copyNotesPages * taskerFeePerPage)
-    const platformFee = roundNaira(copyNotesPages * platformFeePerPage)
+    const noteSize = normalizeNoteSize(input.noteSize || input.copyNotesType)
+    const numberOfPages = Number(input.numberOfPages ?? input.copyNotesPages ?? 0)
+    if (
+      !noteSize ||
+      !Number.isInteger(numberOfPages) ||
+      numberOfPages < 1
+    ) {
+      return {
+        amount: 0,
+        serviceFee: 0,
+        totalAmount: 0,
+        pricingModel: 'copy_notes' as const,
+        waterFee: 0,
+        taskerFee: 0,
+        platformFee: 0,
+        noteSize,
+        numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
+        copyNotesType: noteSize,
+        copyNotesPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
+      } satisfies PricingResult
+    }
+    const totalAmount = calculateCopyNotesPrice({
+      noteSize: noteSize || '',
+      numberOfPages,
+    })
 
     return {
-      amount: taskerFee,
-      serviceFee: platformFee,
+      amount: totalAmount,
+      serviceFee: 0,
       totalAmount,
       pricingModel: 'copy_notes' as const,
       waterFee: 0,
-      taskerFee,
-      platformFee,
-      copyNotesType,
-      copyNotesPages,
+      taskerFee: totalAmount,
+      platformFee: 0,
+      noteSize,
+      numberOfPages,
+      copyNotesType: noteSize,
+      copyNotesPages: numberOfPages,
     } satisfies PricingResult
   }
 

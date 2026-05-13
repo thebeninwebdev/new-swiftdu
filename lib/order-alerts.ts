@@ -2,7 +2,7 @@ import OrderAlertEmail from '@/emails/orderAlertEmail'
 import { sendTransactionalEmail } from '@/lib/email'
 import { getSupportEmailAddress } from '@/lib/email-config'
 import { getSiteUrl } from '@/lib/site'
-import { sendTelegramMessage } from '@/lib/telegram'
+import { getTelegramChatIdForTask, sendTelegramMessage } from '@/lib/telegram'
 import { User } from '@/models/user'
 
 type OrderLike = {
@@ -13,6 +13,14 @@ type OrderLike = {
   amount?: number
   totalAmount?: number
   location?: string
+  noteSize?: 'small' | 'big'
+  numberOfPages?: number
+  drawingPages?: number
+  copyNotesType?: string
+  copyNotesPages?: number
+  deadline?: Date | string
+  dueDate?: Date | string
+  deadlineDate?: Date | string
   taskerName?: string
   createdAt?: Date | string
   cancelledAt?: Date | string
@@ -185,6 +193,66 @@ function buildTelegramOrderAlertMessage(input: {
   return lines.join('\n')
 }
 
+function formatCurrency(value: number) {
+  return `NGN ${value.toLocaleString('en-NG')}`
+}
+
+function formatDateTime(value?: Date | string) {
+  if (!value) {
+    return 'Not provided'
+  }
+
+  return new Intl.DateTimeFormat('en-NG', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(value))
+}
+
+export function formatCopyNotesTelegramMessage(order: {
+  _id?: { toString(): string } | string
+  orderId?: string
+  description?: string
+  totalAmount?: number
+  amount?: number
+  location?: string
+  noteSize?: 'small' | 'big'
+  numberOfPages?: number
+  drawingPages?: number
+  copyNotesType?: string
+  copyNotesPages?: number
+  deadline?: Date | string
+  dueDate?: Date | string
+  deadlineDate?: Date | string
+}, customerName?: string | null, dashboardUrl?: string) {
+  const orderId = order.orderId || serializeId(order._id)
+  const dueDate = order.dueDate || order.deadline || order.deadlineDate
+  const lines = [
+    '<b>New Copy Notes task</b>',
+    '<b>Task type:</b> Copy Notes',
+    `<b>Customer:</b> ${escapeTelegramHtml(customerName || 'Unknown')}`,
+    `<b>Location:</b> ${escapeTelegramHtml(order.location || 'Location not provided')}`,
+    `<b>Pages:</b> ${Number(order.numberOfPages || order.copyNotesPages || 0).toLocaleString('en-NG')}`,
+    `<b>Note size:</b> ${escapeTelegramHtml(order.noteSize || (order.copyNotesType === 'hardback' ? 'big' : order.copyNotesType) || 'Not provided')}`,
+    `<b>Due date:</b> ${escapeTelegramHtml(formatDateTime(dueDate))}`,
+    `<b>Calculated amount:</b> ${formatCurrency(Number(order.totalAmount || order.amount || 0))}`,
+  ]
+
+  const description = order.description?.trim()
+  if (description) {
+    lines.push(`<b>Description:</b> ${escapeTelegramHtml(description)}`)
+  }
+
+  if (dashboardUrl) {
+    lines.push(`<a href="${escapeTelegramHtml(dashboardUrl)}">View/accept task</a>`)
+  }
+
+  if (orderId) {
+    lines.push(`<b>Order ID:</b> ${escapeTelegramHtml(orderId)}`)
+  }
+
+  return lines.join('\n')
+}
+
 async function sendTelegramOrderAlert(input: {
   event: OrderAlertEvent
   orderId: string
@@ -197,6 +265,14 @@ async function sendTelegramOrderAlert(input: {
   customerEmail?: string | null
   actorLabel: string
   dashboardUrl: string
+  dueDate?: Date | string
+  deadline?: Date | string
+  deadlineDate?: Date | string
+  noteSize?: 'small' | 'big'
+  numberOfPages?: number
+  drawingPages?: number
+  copyNotesType?: string
+  copyNotesPages?: number
 }) {
   if (process.env.TELEGRAM_ALERTS_ENABLED === 'false') {
     return createSkippedChannelResult('Telegram alerts are disabled.')
@@ -210,7 +286,12 @@ async function sendTelegramOrderAlert(input: {
   }
 
   try {
-    const delivered = await sendTelegramMessage(buildTelegramOrderAlertMessage(input))
+    const delivered = await sendTelegramMessage(
+      input.taskType === 'copy_notes'
+        ? formatCopyNotesTelegramMessage(input, input.customerName, input.dashboardUrl)
+        : buildTelegramOrderAlertMessage(input),
+      getTelegramChatIdForTask(input.taskType)
+    )
 
     return {
       recipientCount: 1,
@@ -376,6 +457,14 @@ export async function notifyAdminsOfOrderEvent(
       amount,
       totalAmount,
       location,
+      dueDate: input.order.dueDate,
+      deadline: input.order.deadline,
+      deadlineDate: input.order.deadlineDate,
+      noteSize: input.order.noteSize,
+      numberOfPages: input.order.numberOfPages,
+      drawingPages: input.order.drawingPages,
+      copyNotesType: input.order.copyNotesType,
+      copyNotesPages: input.order.copyNotesPages,
       customerName: customer?.name,
       customerEmail: customer?.email,
       actorLabel,

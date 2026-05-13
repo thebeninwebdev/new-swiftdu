@@ -27,6 +27,8 @@ interface Order {
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
+  deadline?: string
+  dueDate?: string
   deadlineDate?: string
   deadlineValue?: number
   deadlineUnit?: string
@@ -70,11 +72,14 @@ const taskTypeIcons: Record<string, React.ReactNode> = {
   others: <Package className="h-4 w-4" />,
 }
 
-function formatDeadline(deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
-  if (deadlineDate) {
+function formatDeadline(dueDate?: string, deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
+  const exactDeadline = dueDate || deadlineDate
+
+  if (exactDeadline) {
     return new Intl.DateTimeFormat('en-NG', {
       dateStyle: 'medium',
-    }).format(new Date(deadlineDate))
+      timeStyle: 'short',
+    }).format(new Date(exactDeadline))
   }
 
   if (deadlineValue && deadlineUnit) {
@@ -327,7 +332,7 @@ export default function HistoryPage() {
                       <div className="flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-950/50">
                         <Clock className="h-3.5 w-3.5 text-slate-400" />
                         <span className="text-xs text-slate-600 dark:text-slate-300">
-                          {formatDeadline(order.deadlineDate, order.deadlineValue, order.deadlineUnit)}
+                          {formatDeadline(order.dueDate || order.deadline, order.deadlineDate, order.deadlineValue, order.deadlineUnit)}
                         </span>
                       </div>
                       

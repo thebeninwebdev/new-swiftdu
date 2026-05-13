@@ -13,6 +13,8 @@ interface TaskCardProps {
   description: string
   amount: number
   totalAmount?: number
+  dueDate?: string
+  deadline?: string
   deadlineDate?: string
   deadlineValue?: number
   deadlineUnit?: 'mins' | 'hours' | 'days'
@@ -39,11 +41,14 @@ const taskTypeLabels: Record<string, string> = {
   others: 'Others',
 }
 
-function formatDeadline(deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
-  if (deadlineDate) {
+function formatDeadline(dueDate?: string, deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
+  const exactDeadline = dueDate || deadlineDate
+
+  if (exactDeadline) {
     return new Intl.DateTimeFormat('en-NG', {
       dateStyle: 'medium',
-    }).format(new Date(deadlineDate))
+      timeStyle: 'short',
+    }).format(new Date(exactDeadline))
   }
 
   if (deadlineValue && deadlineUnit) {
@@ -53,11 +58,11 @@ function formatDeadline(deadlineDate?: string, deadlineValue?: number, deadlineU
   return 'Not set'
 }
 
-export function TaskCard({ id, taskType, description, amount, totalAmount, deadlineDate, deadlineValue, deadlineUnit, location, store, createdAt }: TaskCardProps) {
+export function TaskCard({ id, taskType, description, amount, totalAmount, dueDate, deadline, deadlineDate, deadlineValue, deadlineUnit, location, store, createdAt }: TaskCardProps) {
   const router = useRouter()
   const [isAccepting, setIsAccepting] = useState(false)
   const displayAmount = totalAmount || amount
-  const deadlineLabel = formatDeadline(deadlineDate, deadlineValue, deadlineUnit)
+  const deadlineLabel = formatDeadline(dueDate || deadline, deadlineDate, deadlineValue, deadlineUnit)
 
   const handleAcceptTask = async () => {
     try {

@@ -4,11 +4,31 @@ import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
 import { emitOrderUpdated } from '@/lib/socket'
 import { Order } from '@/models/order'
+import Tasker from '@/models/tasker'
 import { DECLINED_TRANSFER_MESSAGE } from '@/lib/tasker-access'
 import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications'
+
+async function getAcceptedTaskerUserId(order: {
+  acceptedBy?: string | null
+  taskerId?: string | null
+}) {
+  if (order.acceptedBy) {
+    return String(order.acceptedBy)
+  }
+
+  if (!order.taskerId) {
+    return null
+  }
+
+  const tasker = await Tasker.findById(order.taskerId)
+    .select('userId')
+    .lean<{ userId?: { toString(): string } | string }>()
+
+  return tasker?.userId ? String(tasker.userId) : null
+}
 
 export async function POST(
   request: NextRequest,
@@ -80,19 +100,28 @@ export async function POST(
 
     emitOrderUpdated(order)
 
-    const taskerPushResult = await sendPushNotification({
-      audience: { roles: ['tasker'] },
-      title: 'Customer marked transfer as paid',
-      body: `${formatPushTaskType(order.taskType)} task in ${order.location} is ready to verify.`,
-      url: `/tasker-dashboard/${order._id.toString()}`,
-      tag: `order-paid-${order._id.toString()}`,
-    })
+    const acceptedTaskerUserId = await getAcceptedTaskerUserId(order)
 
-    if (
-      taskerPushResult.skipped ||
-      taskerPushResult.deliveredCount < taskerPushResult.recipientCount
-    ) {
-      console.warn('[Confirm Transfer Tasker Push Notification]:', taskerPushResult)
+    if (acceptedTaskerUserId) {
+      const taskerPushResult = await sendPushNotification({
+        audience: { userIds: [acceptedTaskerUserId] },
+        title: 'Customer marked transfer as paid',
+        body: `${formatPushTaskType(order.taskType)} task in ${order.location} is ready to verify.`,
+        url: `/tasker-dashboard/${order._id.toString()}`,
+        tag: `order-paid-${order._id.toString()}`,
+      })
+
+      if (
+        taskerPushResult.skipped ||
+        taskerPushResult.deliveredCount < taskerPushResult.recipientCount
+      ) {
+        console.warn('[Confirm Transfer Tasker Push Notification]:', taskerPushResult)
+      }
+    } else {
+      console.warn('[Confirm Transfer Tasker Push Notification]: skipped; accepted tasker user not found', {
+        orderId: order._id.toString(),
+        taskerId: order.taskerId,
+      })
     }
 
     return NextResponse.json({ order })

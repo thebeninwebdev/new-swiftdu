@@ -33,6 +33,14 @@ function getTelegramChatId() {
   );
 }
 
+export function getTelegramChatIdForTask(taskType?: string) {
+  if (taskType === 'copy_notes') {
+    return process.env.TELEGRAM_COPY_NOTES_CHAT_ID?.trim() || getTelegramChatId();
+  }
+
+  return getTelegramChatId();
+}
+
 export async function sendTelegramMessage(
   text: string,
   chatId?: string

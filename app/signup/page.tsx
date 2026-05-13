@@ -539,15 +539,6 @@ export default function SignUpPage() {
         </div>
       </div>
 
-      {/* Help Button */}
-      <button className="fixed bottom-4 left-4 z-50 flex items-center gap-2 rounded-full border-none bg-linear-to-r from-indigo-600 to-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-900/20 transition-all hover:scale-105 hover:from-indigo-700 hover:to-purple-700">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10"/>
-          <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
-          <line x1="12" y1="17" x2="12.01" y2="17"/>
-        </svg>
-        Help
-      </button>
     </div>
   );
 }
