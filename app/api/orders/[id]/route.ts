@@ -12,6 +12,8 @@ import {
   calculateOrderPricing,
   descriptionMentionsWater,
   normalizeNoteSize,
+  normalizePrintingServiceType,
+  PRINTING_TASK_TYPE,
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
 import {
@@ -72,6 +74,8 @@ export async function PATCH(
       waterBags,
       noteSize,
       numberOfPages,
+      printingServiceType,
+      printingNeedsEditing,
       deadline,
       copyNotesType,
       copyNotesPages,
@@ -93,6 +97,8 @@ export async function PATCH(
       deadline !== undefined ||
       copyNotesType !== undefined ||
       copyNotesPages !== undefined
+      || printingServiceType !== undefined
+      || printingNeedsEditing !== undefined
     ) {
       if (!isUserOwner) {
         return NextResponse.json(
@@ -133,9 +139,23 @@ export async function PATCH(
           ? Number(numberOfPages)
           : copyNotesPages !== undefined
             ? Number(copyNotesPages)
-          : order.taskType === 'copy_notes'
+          : order.taskType === 'copy_notes' || order.taskType === PRINTING_TASK_TYPE
             ? Number(order.numberOfPages || order.copyNotesPages || 0)
             : undefined;
+      const nextPrintingServiceType =
+        nextTaskType === PRINTING_TASK_TYPE
+          ? normalizePrintingServiceType(
+              printingServiceType !== undefined
+                ? String(printingServiceType)
+                : order.printingServiceType
+            )
+          : undefined;
+      const nextPrintingNeedsEditing =
+        nextTaskType === PRINTING_TASK_TYPE
+          ? printingNeedsEditing !== undefined
+            ? Boolean(printingNeedsEditing)
+            : Boolean(order.printingNeedsEditing)
+          : false;
       const nextDeadlineDate =
         deadline !== undefined
           ? new Date(String(deadline).trim())
@@ -147,6 +167,7 @@ export async function PATCH(
 
       if (
         nextTaskType !== 'copy_notes' &&
+        nextTaskType !== PRINTING_TASK_TYPE &&
         nextTaskType !== WATER_TASK_TYPE &&
         (!Number.isFinite(nextAmount) || nextAmount < 0)
       ) {
@@ -203,6 +224,22 @@ export async function PATCH(
         }
       }
 
+      if (nextTaskType === PRINTING_TASK_TYPE) {
+        if (!nextPrintingServiceType) {
+          return NextResponse.json(
+            { error: 'Choose printing or photocopying.' },
+            { status: 400 }
+          );
+        }
+
+        if (!Number.isInteger(nextNumberOfPages) || Number(nextNumberOfPages) < 1) {
+          return NextResponse.json(
+            { error: 'Enter the number of pages.' },
+            { status: 400 }
+          );
+        }
+      }
+
       const pricing = calculateOrderPricing({
         amount:
           nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE
@@ -212,6 +249,8 @@ export async function PATCH(
         waterBags: nextWaterBags,
         noteSize: nextNoteSize,
         numberOfPages: nextNumberOfPages,
+        printingServiceType: nextPrintingServiceType,
+        printingNeedsEditing: nextPrintingNeedsEditing,
       });
       const settlement =
         pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'
@@ -235,6 +274,8 @@ export async function PATCH(
       order.waterFee = pricing.waterFee;
       order.noteSize = pricing.noteSize;
       order.numberOfPages = pricing.numberOfPages;
+      order.printingServiceType = pricing.printingServiceType;
+      order.printingNeedsEditing = pricing.printingNeedsEditing;
       order.drawingPages = 0;
       order.copyNotesType = pricing.copyNotesType;
       order.copyNotesPages = pricing.copyNotesPages;

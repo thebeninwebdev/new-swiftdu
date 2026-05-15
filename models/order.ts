@@ -18,6 +18,8 @@ export interface IOrder extends Document {
   waterFee?: number;
   noteSize?: 'small' | 'big';
   numberOfPages?: number;
+  printingServiceType?: 'printing' | 'photocopying';
+  printingNeedsEditing?: boolean;
   drawingPages?: number;
   deadline?: Date;
   dueDate?: Date;
@@ -157,6 +159,14 @@ const orderSchema = new Schema<IOrder>(
       required: function (this: IOrder) {
         return this.taskType === 'copy_notes';
       },
+    },
+    printingServiceType: {
+      type: String,
+      enum: ['printing', 'photocopying'],
+    },
+    printingNeedsEditing: {
+      type: Boolean,
+      default: false,
     },
     drawingPages: {
       type: Number,

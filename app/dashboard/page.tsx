@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  AlertTriangle,
   ArrowRight,
   BriefcaseBusiness,
   Check,
@@ -32,6 +33,9 @@ import { authClient } from '@/lib/auth-client'
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
+  PHOTOCOPY_PRICE_PER_PAGE,
+  PRINTING_PRICE_PER_PAGE,
+  PRINTING_TASK_TYPE,
   WATER_BAG_PRICE,
   WATER_BAG_FEE,
   WATER_TASK_TYPE,
@@ -50,6 +54,8 @@ interface ErrandData {
   waterBags?: string
   noteSize?: string
   numberOfPages?: string
+  printingServiceType?: string
+  printingNeedsEditing?: string
   deadline?: string
   restaurantItems: RestaurantItem[]
   restaurantItemName: string
@@ -220,6 +226,8 @@ export default function ErrandWizardPage() {
     waterBags: '',
     noteSize: '',
     numberOfPages: '',
+    printingServiceType: '',
+    printingNeedsEditing: '',
     deadline: '',
     restaurantItems: [],
     restaurantItemName: '',
@@ -394,20 +402,33 @@ export default function ErrandWizardPage() {
   const shoppingDescription = formData.shoppingItems
     .map((item) => `${item.name} - ${formatNaira(item.price)}`)
     .join(', ')
+  const waterBags = Number(formData.waterBags || 0)
+  const numberOfPages = Number(formData.numberOfPages || 0)
+  const printingLabel =
+    formData.printingServiceType === 'photocopying' ? 'Photocopying' : 'Printing'
   const effectiveDescription =
     formData.taskType === 'restaurant'
       ? restaurantDescription
       : formData.taskType === 'shopping'
         ? shoppingDescription
+        : formData.taskType === PRINTING_TASK_TYPE
+          ? [
+              `${printingLabel} job`,
+              `${numberOfPages || 0} page${numberOfPages === 1 ? '' : 's'}`,
+              `Editing needed: ${formData.printingNeedsEditing === 'yes' ? 'Yes' : 'No'}`,
+              formData.description.trim(),
+            ]
+              .filter(Boolean)
+              .join(' - ')
         : formData.description.trim()
   const amount =
     formData.taskType === 'restaurant'
       ? restaurantBudget
       : formData.taskType === 'shopping'
         ? shoppingBudget
+        : formData.taskType === PRINTING_TASK_TYPE
+          ? 0
         : Number(formData.amount || 0)
-  const waterBags = Number(formData.waterBags || 0)
-  const numberOfPages = Number(formData.numberOfPages || 0)
   const description = effectiveDescription
   const taskType = formData.taskType || 'restaurant'
   const pricing = calculateOrderPricing({
@@ -416,9 +437,13 @@ export default function ErrandWizardPage() {
     waterBags: Number.isFinite(waterBags) ? waterBags : 0,
     noteSize: formData.noteSize,
     numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
+    printingServiceType: formData.printingServiceType,
+    printingNeedsEditing: formData.printingNeedsEditing === 'yes',
   })
   const shouldShowTieredServiceFee =
-    pricing.pricingModel === 'tiered' && Number.isFinite(amount) && amount > 0
+    pricing.pricingModel === 'tiered' &&
+    ((formData.taskType === PRINTING_TASK_TYPE && pricing.amount > 0) ||
+      (Number.isFinite(amount) && amount > 0))
   const selectedStores = storeOptions[formData.taskType] || []
   const selectedStoreLabel = selectedStores.find((item) => item.value === formData.store)?.label || ''
   const waterWarning =
@@ -461,9 +486,21 @@ export default function ErrandWizardPage() {
       packaging: value === 'restaurant' ? previous.packaging : '',
       waterBags: value === WATER_TASK_TYPE ? previous.waterBags : '',
       noteSize: value === 'copy_notes' ? previous.noteSize : '',
-      numberOfPages: value === 'copy_notes' ? previous.numberOfPages : '',
+      numberOfPages:
+        value === 'copy_notes' || value === PRINTING_TASK_TYPE
+          ? previous.numberOfPages
+          : '',
+      printingServiceType:
+        value === PRINTING_TASK_TYPE ? previous.printingServiceType : '',
+      printingNeedsEditing:
+        value === PRINTING_TASK_TYPE ? previous.printingNeedsEditing : '',
       deadline: value === 'copy_notes' ? previous.deadline : '',
-      amount: value === 'copy_notes' || value === WATER_TASK_TYPE ? '0' : previous.amount,
+      amount:
+        value === 'copy_notes' ||
+        value === WATER_TASK_TYPE ||
+        value === PRINTING_TASK_TYPE
+          ? '0'
+          : previous.amount,
     }))
     ;[
       'taskType',
@@ -472,6 +509,8 @@ export default function ErrandWizardPage() {
       'waterBags',
       'noteSize',
       'numberOfPages',
+      'printingServiceType',
+      'printingNeedsEditing',
       'deadline',
       'description',
     ].forEach(clearError)
@@ -629,11 +668,28 @@ if (stepNumber === 2) {
     }
   }
 
-  // ✅ ONLY validate description if NOT water
+  if (formData.taskType === PRINTING_TASK_TYPE) {
+    if (
+      formData.printingServiceType !== 'printing' &&
+      formData.printingServiceType !== 'photocopying'
+    ) {
+      nextErrors.printingServiceType = 'Choose printing or photocopying.'
+    }
+
+    if (!Number.isInteger(numberOfPages) || numberOfPages < 1) {
+      nextErrors.numberOfPages = 'Enter the number of pages.'
+    }
+
+    if (formData.printingNeedsEditing !== 'yes' && formData.printingNeedsEditing !== 'no') {
+      nextErrors.printingNeedsEditing = 'Choose whether editing is needed.'
+    }
+  }
+
   if (
     formData.taskType !== WATER_TASK_TYPE &&
     formData.taskType !== 'restaurant' &&
-    formData.taskType !== 'shopping'
+    formData.taskType !== 'shopping' &&
+    formData.taskType !== PRINTING_TASK_TYPE
   ) {
     if (!description) {
       nextErrors.description = 'Description is required.'
@@ -647,6 +703,7 @@ if (stepNumber === 2) {
 
   if (
     formData.taskType !== 'copy_notes' &&
+    formData.taskType !== PRINTING_TASK_TYPE &&
     formData.taskType !== 'restaurant' &&
     formData.taskType !== 'shopping' &&
     formData.taskType !== WATER_TASK_TYPE &&
@@ -688,10 +745,15 @@ if (stepNumber === 2) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-  ...formData,
-  description: formData.taskType === WATER_TASK_TYPE ? '' : description,
-  amount: formData.taskType === 'restaurant' || formData.taskType === 'shopping' ? String(amount) : formData.amount,
-}),
+          ...formData,
+          description: formData.taskType === WATER_TASK_TYPE ? '' : description,
+          amount:
+            formData.taskType === 'restaurant' || formData.taskType === 'shopping'
+              ? String(amount)
+              : formData.amount,
+          printingServiceType: formData.printingServiceType,
+          printingNeedsEditing: formData.printingNeedsEditing === 'yes',
+        }),
       })
 
       if (!response.ok) {
@@ -713,6 +775,8 @@ if (stepNumber === 2) {
         waterBags: '',
         noteSize: '',
         numberOfPages: '',
+        printingServiceType: '',
+        printingNeedsEditing: '',
         deadline: '',
         restaurantItems: [],
         restaurantItemName: '',
@@ -786,6 +850,18 @@ if (stepNumber === 2) {
               </div>
             </div>
           ) : null}
+
+          <div className="mb-5 rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-red-950 shadow-sm dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100 md:mb-8">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600 dark:text-red-300" />
+              <div>
+                <p className="text-sm font-semibold">Group order notice</p>
+                <p className="mt-1 text-sm text-red-900 dark:text-red-100">
+                  From Monday, May 18, 2026, orders for more than one person will include an extra charge.
+                </p>
+              </div>
+            </div>
+          </div>
 
           {activeOrder ? (
             <div className="mb-5 rounded-3xl border border-indigo-200/80 bg-linear-to-r from-indigo-50 via-white to-cyan-50 p-4 shadow-sm dark:border-indigo-900/60 dark:from-indigo-950/40 dark:via-slate-900 dark:to-cyan-950/40 md:mb-8 md:p-5">
@@ -1030,6 +1106,141 @@ if (stepNumber === 2) {
                       ) : null}
                     </div>
                   ) : null}
+                  {formData.taskType === PRINTING_TASK_TYPE ? (
+                    <div className="space-y-4">
+                      <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
+                        Printing is {formatNaira(PRINTING_PRICE_PER_PAGE)} per page.
+                        Photocopying is {formatNaira(PHOTOCOPY_PRICE_PER_PAGE)} per page.
+                      </div>
+
+                      <div>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <FileText className="h-4 w-4 text-sky-500" />
+                          Service Type
+                        </label>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {[
+                            {
+                              value: 'printing',
+                              label: 'Printing',
+                              price: PRINTING_PRICE_PER_PAGE,
+                            },
+                            {
+                              value: 'photocopying',
+                              label: 'Photocopying',
+                              price: PHOTOCOPY_PRICE_PER_PAGE,
+                            },
+                          ].map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                pauseRealtime()
+                                setFormData((previous) => ({
+                                  ...previous,
+                                  printingServiceType: option.value,
+                                }))
+                                clearError('printingServiceType')
+                              }}
+                              className={`rounded-xl border-2 p-4 text-left transition ${
+                                formData.printingServiceType === option.value
+                                  ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-950/30 dark:text-sky-200'
+                                  : 'border-slate-200 hover:border-sky-300 dark:border-slate-700 dark:hover:border-sky-700'
+                              }`}
+                            >
+                              <div className="font-medium">{option.label}</div>
+                              <div className="text-sm text-slate-500 dark:text-slate-400">
+                                {formatNaira(option.price)} per page
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                        {errors.printingServiceType ? <p className="mt-2 text-sm text-red-500">{errors.printingServiceType}</p> : null}
+                      </div>
+
+                      <div>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <FileText className="h-4 w-4 text-sky-500" />
+                          Number of Pages
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          name="numberOfPages"
+                          value={formData.numberOfPages}
+                          onChange={handleInputChange}
+                          placeholder="How many pages?"
+                          className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 dark:border-slate-700 dark:bg-slate-800"
+                        />
+                        {errors.numberOfPages ? <p className="mt-2 text-sm text-red-500">{errors.numberOfPages}</p> : null}
+                      </div>
+
+                      <div>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <FileText className="h-4 w-4 text-sky-500" />
+                          Any Editing Needed?
+                        </label>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          {[
+                            { value: 'no', label: 'No' },
+                            { value: 'yes', label: 'Yes' },
+                          ].map((option) => (
+                            <button
+                              key={option.value}
+                              type="button"
+                              onClick={() => {
+                                pauseRealtime()
+                                setFormData((previous) => ({
+                                  ...previous,
+                                  printingNeedsEditing: option.value,
+                                }))
+                                clearError('printingNeedsEditing')
+                              }}
+                              className={`rounded-xl border-2 p-4 text-center font-medium transition ${
+                                formData.printingNeedsEditing === option.value
+                                  ? 'border-sky-500 bg-sky-50 text-sky-800 dark:bg-sky-950/30 dark:text-sky-200'
+                                  : 'border-slate-200 hover:border-sky-300 dark:border-slate-700 dark:hover:border-sky-700'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                        {errors.printingNeedsEditing ? <p className="mt-2 text-sm text-red-500">{errors.printingNeedsEditing}</p> : null}
+                        {formData.printingNeedsEditing === 'yes' ? (
+                          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                            This price is tentative. An extra amount may be added for editing the work.
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <div>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <FileText className="h-4 w-4 text-sky-500" />
+                          Work Details
+                        </label>
+                        <textarea
+                          name="description"
+                          value={formData.description}
+                          onChange={handleInputChange}
+                          rows={3}
+                          placeholder="Add document name, paper size, color preference, or other instructions..."
+                          className="w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-sky-500 focus:ring-4 focus:ring-sky-500/10 dark:border-slate-700 dark:bg-slate-800"
+                        />
+                      </div>
+
+                      {pricing.amount > 0 ? (
+                        <div className="rounded-2xl border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100">
+                          {printingLabel} total is {formatNaira(pricing.amount)} before SwiftDU service fee.
+                          {shouldShowTieredServiceFee ? (
+                            <span className="block pt-1 font-semibold">
+                              Service fee for this job is {formatNaira(pricing.serviceFee)}.
+                            </span>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                   {formData.taskType === 'restaurant' ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Package className="h-4 w-4 text-indigo-500" />Packaging</label>
@@ -1241,7 +1452,7 @@ if (stepNumber === 2) {
                       {errors.shoppingItems ? <p className="mt-2 text-sm text-red-500">{errors.shoppingItems}</p> : null}
                     </div>
                   ) : null}
-                  {formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' ? (
+                  {formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== PRINTING_TASK_TYPE ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                         <FileText className="h-4 w-4 text-indigo-500" />
@@ -1268,7 +1479,7 @@ if (stepNumber === 2) {
                       ) : null}
                     </div>
                   ) : null}
-                  {formData.taskType !== 'copy_notes' && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== WATER_TASK_TYPE ? (
+                  {formData.taskType !== 'copy_notes' && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== WATER_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
                   <div>
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Wallet className="h-4 w-4 text-indigo-500" />Item Budget (NGN)</label>
                     <input type="number" name="amount" value={formData.amount} onChange={handleInputChange} placeholder="How much will it cost?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 font-mono text-lg outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />
@@ -1360,6 +1571,18 @@ if (stepNumber === 2) {
                       <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Location</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.location}</span></div>
                       {formData.packaging ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Packaging</span><span className="text-right text-slate-900 dark:text-slate-100">{selectedPackaging?.label} ({formatNaira(restaurantPackagingFee)})</span></div> : null}
                       {formData.taskType === WATER_TASK_TYPE ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Water bags</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.waterBags}</span></div> : null}
+                      {formData.taskType === PRINTING_TASK_TYPE ? (
+                        <>
+                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Service</span><span className="text-right text-slate-900 dark:text-slate-100">{printingLabel}</span></div>
+                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Pages</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.numberOfPages}</span></div>
+                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Editing</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.printingNeedsEditing === 'yes' ? 'Yes' : 'No'}</span></div>
+                          {formData.printingNeedsEditing === 'yes' ? (
+                            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+                              This price is tentative. An extra amount may be added for editing the work.
+                            </div>
+                          ) : null}
+                        </>
+                      ) : null}
                       {formData.taskType === 'copy_notes' ? (
                         <>
                           <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Note size</span><span className="text-right capitalize text-slate-900 dark:text-slate-100">{formData.noteSize}</span></div>
@@ -1369,7 +1592,7 @@ if (stepNumber === 2) {
                       ) : null}
                     </div>
                     <div className="space-y-3 border-t-2 border-slate-200 pt-6 dark:border-slate-700">
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === 'restaurant' ? 'Food + packaging budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food + packaging budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
                       <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span><span className="font-medium">{formatNaira(pricing.serviceFee)}</span></div>
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(pricing.totalAmount)}</span></div>
                     </div>
@@ -1378,6 +1601,12 @@ if (stepNumber === 2) {
                     <div className="flex items-start gap-3">
                   <div className="rounded-full bg-blue-100 p-2 text-blue-600 dark:bg-blue-900/70 dark:text-blue-300"><Info className="h-4 w-4" /></div>
                       <p>After a tasker accepts, the app moves you into a payment step where you see the tasker&apos;s bank details, make payment, and confirm it inside the tracker.</p>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100">
+                    <div className="flex items-start gap-3">
+                      <div className="rounded-full bg-red-100 p-2 text-red-600 dark:bg-red-900/70 dark:text-red-300"><AlertTriangle className="h-4 w-4" /></div>
+                      <p>From Monday, May 18, 2026, orders for more than one person will include an extra charge.</p>
                     </div>
                   </div>
                 </div>

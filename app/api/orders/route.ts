@@ -10,6 +10,8 @@ import {
   calculateOrderPricing,
   descriptionMentionsWater,
   normalizeNoteSize,
+  normalizePrintingServiceType,
+  PRINTING_TASK_TYPE,
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
@@ -44,6 +46,8 @@ export async function POST(request: NextRequest) {
       waterBags,
       noteSize,
       numberOfPages,
+      printingServiceType,
+      printingNeedsEditing,
       deadline,
       copyNotesType,
       copyNotesPages,
@@ -70,9 +74,15 @@ export async function POST(request: NextRequest) {
       String(noteSize || copyNotesType || '').trim()
     );
     const parsedNumberOfPages =
-      normalizedTaskType === 'copy_notes'
+      normalizedTaskType === 'copy_notes' || normalizedTaskType === PRINTING_TASK_TYPE
         ? Number(numberOfPages ?? copyNotesPages)
         : undefined;
+    const normalizedPrintingServiceType =
+      normalizedTaskType === PRINTING_TASK_TYPE
+        ? normalizePrintingServiceType(String(printingServiceType || '').trim())
+        : undefined;
+    const normalizedPrintingNeedsEditing =
+      normalizedTaskType === PRINTING_TASK_TYPE && Boolean(printingNeedsEditing);
     const parsedDeadline =
       normalizedTaskType === 'copy_notes' && (deadline || deadlineDate)
         ? new Date(String(deadline || deadlineDate).trim())
@@ -87,6 +97,7 @@ export async function POST(request: NextRequest) {
 
     if (
       normalizedTaskType !== 'copy_notes' &&
+      normalizedTaskType !== PRINTING_TASK_TYPE &&
       normalizedTaskType !== WATER_TASK_TYPE &&
       (amount === undefined ||
         amount === null ||
@@ -113,6 +124,22 @@ export async function POST(request: NextRequest) {
       ) {
         return NextResponse.json(
           { error: 'Choose a future deadline for the copied notes.' },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (normalizedTaskType === PRINTING_TASK_TYPE) {
+      if (!normalizedPrintingServiceType) {
+        return NextResponse.json(
+          { error: 'Choose printing or photocopying.' },
+          { status: 400 }
+        );
+      }
+
+      if (!Number.isInteger(parsedNumberOfPages) || (parsedNumberOfPages ?? 0) < 1) {
+        return NextResponse.json(
+          { error: 'Enter the number of pages.' },
           { status: 400 }
         );
       }
@@ -146,6 +173,8 @@ export async function POST(request: NextRequest) {
       waterBags: parsedWaterBags,
       noteSize: normalizedNoteSize,
       numberOfPages: parsedNumberOfPages,
+      printingServiceType: normalizedPrintingServiceType,
+      printingNeedsEditing: normalizedPrintingNeedsEditing,
     });
 
     const settlement =
@@ -177,6 +206,8 @@ export async function POST(request: NextRequest) {
       waterFee: pricing.waterFee,
       noteSize: pricing.noteSize,
       numberOfPages: pricing.numberOfPages,
+      printingServiceType: pricing.printingServiceType,
+      printingNeedsEditing: pricing.printingNeedsEditing,
       drawingPages: 0,
       deadline: normalizedTaskType === 'copy_notes' ? parsedDeadline : undefined,
       dueDate: normalizedTaskType === 'copy_notes' ? parsedDeadline : undefined,

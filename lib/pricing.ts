@@ -4,6 +4,8 @@ export const WATER_BAG_FEE = 450
 export const WATER_PLATFORM_FEE_RATE = 0.24
 export const PRINTING_TASK_TYPE = 'printing'
 export const PRINTING_SERVICE_FEE = 500
+export const PRINTING_PRICE_PER_PAGE = 100
+export const PHOTOCOPY_PRICE_PER_PAGE = 50
 export const COPY_NOTES_TASK_TYPE = 'copy_notes'
 export const COPY_NOTES_SMALL_PRICE_PER_TWO_PAGES = 250
 export const COPY_NOTES_BIG_PRICE_PER_TWO_PAGES = 450
@@ -39,6 +41,7 @@ export const TIERED_SERVICE_FEE_RULES = [
 
 export type NoteSize = 'small' | 'big'
 export type CopyNotesType = NoteSize
+export type PrintingServiceType = 'printing' | 'photocopying'
 export type PricingModel = 'tiered' | 'water' | 'copy_notes'
 
 export interface PricingResult {
@@ -54,6 +57,8 @@ export interface PricingResult {
   numberOfPages?: number
   copyNotesType?: CopyNotesType
   copyNotesPages?: number
+  printingServiceType?: PrintingServiceType
+  printingNeedsEditing?: boolean
 }
 
 export interface CopyNotesPricingInput {
@@ -87,6 +92,35 @@ export function normalizeNoteSize(value?: string): NoteSize | undefined {
   return undefined
 }
 
+export function normalizePrintingServiceType(value?: string): PrintingServiceType | undefined {
+  if (value === 'printing') return 'printing'
+  if (value === 'photocopying' || value === 'photocopy') return 'photocopying'
+  return undefined
+}
+
+export function calculatePrintingPrice(input: {
+  printingServiceType?: string
+  numberOfPages: number
+}) {
+  const printingServiceType = normalizePrintingServiceType(input.printingServiceType)
+  const numberOfPages = Number(input.numberOfPages || 0)
+
+  if (!printingServiceType) {
+    throw new Error('Invalid printing service type')
+  }
+
+  if (!Number.isInteger(numberOfPages) || numberOfPages < 1) {
+    throw new Error('Invalid number of pages')
+  }
+
+  const pricePerPage =
+    printingServiceType === 'printing'
+      ? PRINTING_PRICE_PER_PAGE
+      : PHOTOCOPY_PRICE_PER_PAGE
+
+  return roundNaira(numberOfPages * pricePerPage)
+}
+
 export function calculateCopyNotesPrice(input: CopyNotesPricingInput) {
   const noteSize = normalizeNoteSize(input.noteSize)
   const numberOfPages = Number(input.numberOfPages || 0)
@@ -116,6 +150,8 @@ export function calculateOrderPricing(input: {
   drawingPages?: number
   copyNotesType?: string
   copyNotesPages?: number
+  printingServiceType?: string
+  printingNeedsEditing?: boolean
 }) {
   const amount = roundNaira(input.amount)
 
@@ -139,15 +175,27 @@ export function calculateOrderPricing(input: {
   }
 
   if (input.taskType === PRINTING_TASK_TYPE) {
+    const printingServiceType = normalizePrintingServiceType(input.printingServiceType)
+    const numberOfPages = Number(input.numberOfPages || 0)
+    const printingAmount =
+      printingServiceType && Number.isInteger(numberOfPages) && numberOfPages > 0
+        ? calculatePrintingPrice({
+            printingServiceType,
+            numberOfPages,
+          })
+        : 0
     const serviceFee =
-      amount >= 5000 ? getTieredServiceFee(amount) : PRINTING_SERVICE_FEE
+      printingAmount >= 5000 ? getTieredServiceFee(printingAmount) : PRINTING_SERVICE_FEE
 
     return {
-      amount,
+      amount: printingAmount,
       serviceFee,
-      totalAmount: roundNaira(amount + serviceFee),
+      totalAmount: roundNaira(printingAmount + serviceFee),
       pricingModel: 'tiered' as const,
       waterFee: 0,
+      numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
+      printingServiceType,
+      printingNeedsEditing: Boolean(input.printingNeedsEditing),
     } satisfies PricingResult
   }
 
