@@ -417,6 +417,8 @@ export default function ErrandWizardPage() {
     noteSize: formData.noteSize,
     numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
   })
+  const shouldShowTieredServiceFee =
+    pricing.pricingModel === 'tiered' && Number.isFinite(amount) && amount > 0
   const selectedStores = storeOptions[formData.taskType] || []
   const selectedStoreLabel = selectedStores.find((item) => item.value === formData.store)?.label || ''
   const waterWarning =
@@ -1136,6 +1138,11 @@ if (stepNumber === 2) {
                         Food is {formatNaira(restaurantFoodBudget)}.
                         Packaging is {formatNaira(restaurantPackagingFee)}.
                         Budget is {formatNaira(restaurantBudget)} before SwiftDU service fee.
+                        {shouldShowTieredServiceFee ? (
+                          <span className="block pt-1 font-semibold">
+                            Service fee for this budget is {formatNaira(pricing.serviceFee)}.
+                          </span>
+                        ) : null}
                       </div>
                       {waterWarning ? (
                         <div className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
@@ -1220,6 +1227,11 @@ if (stepNumber === 2) {
                       ) : null}
                       <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
                         Item budget is {formatNaira(shoppingBudget)} before SwiftDU service fee.
+                        {shouldShowTieredServiceFee ? (
+                          <span className="block pt-1 font-semibold">
+                            Service fee for this budget is {formatNaira(pricing.serviceFee)}.
+                          </span>
+                        ) : null}
                       </div>
                       {waterWarning ? (
                         <div className="mt-2 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
@@ -1261,6 +1273,11 @@ if (stepNumber === 2) {
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Wallet className="h-4 w-4 text-indigo-500" />Item Budget (NGN)</label>
                     <input type="number" name="amount" value={formData.amount} onChange={handleInputChange} placeholder="How much will it cost?" className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 font-mono text-lg outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />
                     <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">SwiftDU adds the delivery fee to the total you will later transfer to the tasker.</p>
+                    {shouldShowTieredServiceFee ? (
+                      <div className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-900 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
+                        Service fee for this budget is {formatNaira(pricing.serviceFee)}.
+                      </div>
+                    ) : null}
                     {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
                   </div>
                   ) : null}

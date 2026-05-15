@@ -13,9 +13,15 @@ export const WATER_DESCRIPTION_PATTERN = /\bbag(?:s)?\s+of\s+water\b/i
 export const TIERED_SERVICE_FEE_RULES = [
   {
     min: 0,
-    max: 6999,
+    max: 4999,
     fee: 450,
-    label: 'N0 - N6,999',
+    label: 'N0 - N4,999',
+  },
+  {
+    min: 5000,
+    max: 6999,
+    fee: 660,
+    label: 'N5,000 - N6,999',
   },
   {
     min: 7000,
@@ -133,7 +139,8 @@ export function calculateOrderPricing(input: {
   }
 
   if (input.taskType === PRINTING_TASK_TYPE) {
-    const serviceFee = PRINTING_SERVICE_FEE
+    const serviceFee =
+      amount >= 5000 ? getTieredServiceFee(amount) : PRINTING_SERVICE_FEE
 
     return {
       amount,
