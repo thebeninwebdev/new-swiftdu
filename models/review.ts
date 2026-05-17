@@ -38,7 +38,8 @@ const ReviewSchema = new Schema<IReview>(
     },
     comment: {
       type: String,
-      required: true,
+      default: "",
+      trim: true,
       maxlength: 500,
     },
   },

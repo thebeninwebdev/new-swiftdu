@@ -232,7 +232,7 @@ export default function DashboardNotifications() {
                   </p>
 
                   <Button
-                    onClick={() => router.push(`/dashboard/reviews?orderId=${order._id}`)}
+                    onClick={() => router.push(`/dashboard/reviews/${order._id}`)}
                     variant="outline"
                     className="mt-4 h-11 w-full rounded-2xl"
                   >

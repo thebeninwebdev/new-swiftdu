@@ -34,9 +34,10 @@ export async function POST(req: NextRequest) {
     }
 
     const { taskerId, orderId, rating, comment } = await req.json();
+    const reviewComment = typeof comment === 'string' ? comment.trim() : '';
 
     // Validate input
-    if (!taskerId || !orderId || !rating || !comment) {
+    if (!taskerId || !orderId || !rating) {
       return NextResponse.json(
         { error: 'Missing required fields' },
         { status: 400 }
@@ -46,13 +47,6 @@ export async function POST(req: NextRequest) {
     if (rating < 1 || rating > 5) {
       return NextResponse.json(
         { error: 'Rating must be between 1 and 5' },
-        { status: 400 }
-      );
-    }
-
-    if (comment.trim().length < 10) {
-      return NextResponse.json(
-        { error: 'Comment must be at least 10 characters' },
         { status: 400 }
       );
     }
@@ -71,7 +65,7 @@ export async function POST(req: NextRequest) {
       orderId,
       userId: session.user.id,
       rating,
-      comment,
+      comment: reviewComment,
     });
 
     await review.save();

@@ -106,7 +106,7 @@ export default function AccountPage() {
                 className="w-full"
               >
                 <TabsContent value={activeTab} className="mt-0 block w-full flex-none">
-                  <div className="bg-card rounded-2xl border border-border/50 shadow-sm p-4 md:p-6 w-full">
+                  <div className="bg-card rounded-2xl border border-border/50 shadow-sm md:p-6 w-full">
                     {/* Mobile Context Header */}
                     <div className="flex items-center gap-3 mb-5 md:hidden">
                       <div className={cn("p-2 rounded-lg", activeTabData?.bg)}>

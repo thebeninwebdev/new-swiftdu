@@ -157,11 +157,6 @@ export default function ReviewOrderPage() {
       return
     }
 
-    if (comment.trim().length < 10) {
-      toast.error('Please write at least 10 characters of feedback.')
-      return
-    }
-
     try {
       setSubmitting(true)
 
@@ -172,7 +167,7 @@ export default function ReviewOrderPage() {
           orderId: order._id,
           taskerId: order.taskerId,
           rating,
-          comment,
+          comment: comment.trim(),
         }),
       })
 
@@ -465,7 +460,7 @@ export default function ReviewOrderPage() {
             <CardHeader className="pb-2">
               <CardTitle className="text-lg flex items-center gap-2">
                 <MessageSquare className="h-5 w-5 text-primary" />
-                Share your feedback
+                Share your feedback <span className="text-sm font-normal text-slate-400">(optional)</span>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -476,14 +471,15 @@ export default function ReviewOrderPage() {
                 <textarea
                   value={comment}
                   onChange={(e) => setComment(e.target.value)}
-                  placeholder="Tell us about your experience... What went well? What could be improved?"
+                  placeholder="Optional: tell us about your experience..."
                   className="w-full min-h-35 p-4 text-sm bg-slate-50 dark:bg-slate-800/50 border-2 border-transparent focus:border-primary/30 rounded-2xl resize-none transition-all duration-300 outline-none placeholder:text-slate-400"
                   rows={5}
+                  maxLength={500}
                 />
                 <motion.div
                   className="absolute bottom-3 right-3 text-xs text-slate-400"
                   animate={{
-                    color: comment.length >= 10 ? '#22c55e' : '#94a3b8',
+                    color: comment.length > 0 ? '#22c55e' : '#94a3b8',
                   }}
                 >
                   {comment.length} chars

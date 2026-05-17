@@ -11,7 +11,8 @@ import {
   Coffee,
   BookOpen,
   ShoppingBag,
-  Bike
+  Bike,
+  Shirt
 } from 'lucide-react';
 import InstallPwaButton from "@/components/InstallPwaButton";
 
@@ -63,6 +64,13 @@ const Hero = () => {
                 className="px-8 py-4 bg-white text-gray-700 border border-gray-200 rounded-xl font-bold text-lg hover:bg-gray-50 hover:border-gray-300 transition-all flex items-center justify-center gap-2"
               >
                 Become a Runner
+              </Link>
+              <Link 
+                href="/dry-cleaner-signup/signup"
+                className="px-8 py-4 bg-cyan-600 text-white rounded-xl font-bold text-lg shadow-lg shadow-cyan-100 hover:bg-cyan-700 hover:shadow-xl transition-all transform hover:-translate-y-1 flex items-center justify-center gap-2"
+              >
+                <Shirt className="w-5 h-5" />
+                Register as Dry Cleaner
               </Link>
             </div>
 
@@ -462,6 +470,12 @@ const CTASection = () => {
                 className="px-8 py-4 bg-white text-gray-700 border border-gray-200 rounded-xl font-bold text-center hover:bg-gray-50 hover:border-gray-300 transition-all"
               >
                 Become a Runner
+              </Link>
+              <Link 
+                href="/dry-cleaner-signup/signup"
+                className="px-8 py-4 bg-cyan-600 text-white rounded-xl font-bold text-center hover:bg-cyan-700 transition-colors shadow-lg shadow-cyan-100"
+              >
+                Register as Dry Cleaner
               </Link>
             </div>
             <p className="text-xs text-gray-400 mt-4">Available on 5 campuses. Sign up takes less than 2 minutes.</p>

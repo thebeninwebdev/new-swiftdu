@@ -15,6 +15,7 @@ import {
   TrendingUp,
   Activity,
   AlertCircle,
+  Shirt,
 } from 'lucide-react'
 
 interface DashboardStats {
@@ -26,6 +27,8 @@ interface DashboardStats {
   completedOrders: number
   totalReviews: number
   pendingTaskerApprovals: number
+  activeDryCleaners: number
+  pendingDryCleanerApprovals: number
   grossRevenue:number
   totalPlatformFees: number
   paystackSettlementFees: number
@@ -36,7 +39,7 @@ interface DashboardStats {
 
 interface RecentActivity {
   id: string
-  type: 'order' | 'tasker' | 'review' | 'user' | 'declined'
+  type: 'order' | 'tasker' | 'dry-cleaner' | 'review' | 'user' | 'declined'
   message: string
   timestamp: string
   status?: string
@@ -221,12 +224,14 @@ export default function AdminDashboard() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Reviews</CardTitle>
-              <Star className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-medium">Dry Cleaners</CardTitle>
+              <Shirt className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">{stats?.totalReviews || 0}</div>
-              <p className="text-xs text-muted-foreground">Total reviews</p>
+              <div className="text-2xl font-bold">{stats?.activeDryCleaners || 0}</div>
+              <p className="text-xs text-muted-foreground">
+                {stats?.pendingDryCleanerApprovals || 0} pending approval
+              </p>
             </CardContent>
           </Card>
         </div>
@@ -252,6 +257,22 @@ export default function AdminDashboard() {
                 {stats?.pendingTaskerApprovals ? (
                   <Badge variant="destructive" className="ml-auto">
                     {stats.pendingTaskerApprovals}
+                  </Badge>
+                ) : null}
+              </Button>
+
+              <Button
+                variant="outline"
+                className="w-full justify-between text-left"
+                onClick={() => router.push('/admin/dry-cleaners')}
+              >
+                <span className="flex items-center gap-2">
+                  <Shirt className="w-4 h-4" />
+                  Review Dry Cleaners
+                </span>
+                {stats?.pendingDryCleanerApprovals ? (
+                  <Badge variant="destructive" className="ml-auto">
+                    {stats.pendingDryCleanerApprovals}
                   </Badge>
                 ) : null}
               </Button>
@@ -329,12 +350,14 @@ export default function AdminDashboard() {
                       <div className={`p-2 rounded-full ${
                         activity.type === 'order' ? 'bg-blue-100 text-blue-600' :
                         activity.type === 'tasker' ? 'bg-green-100 text-green-600' :
+                        activity.type === 'dry-cleaner' ? 'bg-cyan-100 text-cyan-700' :
                         activity.type === 'declined' ? 'bg-red-100 text-red-600' :
                         activity.type === 'review' ? 'bg-yellow-100 text-yellow-600' :
                         'bg-gray-100 text-gray-600'
                       }`}>
                         {activity.type === 'order' && <ShoppingBag className="w-4 h-4" />}
                         {activity.type === 'tasker' && <Users className="w-4 h-4" />}
+                        {activity.type === 'dry-cleaner' && <Shirt className="w-4 h-4" />}
                         {activity.type === 'declined' && <AlertCircle className="w-4 h-4" />}
                         {activity.type === 'review' && <Star className="w-4 h-4" />}
                         {activity.type === 'user' && <Users className="w-4 h-4" />}
@@ -404,9 +427,9 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-600">
-                {stats?.pendingTaskerApprovals || 0}
+                {(stats?.pendingTaskerApprovals || 0) + (stats?.pendingDryCleanerApprovals || 0)}
               </div>
-              <p className="text-xs text-muted-foreground">Tasker applications</p>
+              <p className="text-xs text-muted-foreground">Tasker and dry cleaner applications</p>
             </CardContent>
           </Card>
         </div>

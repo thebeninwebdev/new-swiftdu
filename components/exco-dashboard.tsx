@@ -395,6 +395,44 @@ type ExcoTasker = {
   rating: number;
 };
 
+type ExcoDryCleaner = {
+  id: string;
+  businessName: string;
+  ownerName: string;
+  email: string;
+  phone: string;
+  location: string;
+  businessLogo?: string;
+  status: "pending" | "approved" | "rejected";
+  pricing: {
+    shirt: number;
+    trouser: number;
+    hoodieMin: number;
+    hoodieMax: number;
+    bedsheetMin: number;
+    bedsheetMax: number;
+    duvetMin?: number;
+    duvetMax?: number;
+    underwear?: number;
+    shoes?: number;
+    doesNotWashShirt?: boolean;
+    doesNotWashTrouser?: boolean;
+    doesNotWashHoodie?: boolean;
+    doesNotWashBedsheet?: boolean;
+    doesNotWashDuvet?: boolean;
+    doesNotWashUnderwear?: boolean;
+    doesNotWashShoes?: boolean;
+  };
+  availability: {
+    acceptingDays: string[];
+    expectedDeliveryDays: number;
+    cutoffTime: string;
+    temporarilyClosed: boolean;
+  };
+  notes: string;
+  createdAt: string;
+};
+
 type ExcoReview = {
   id: string;
   rating: number;
@@ -497,6 +535,10 @@ async function patchManagement(resource: string, body: Record<string, unknown>) 
   }
 }
 
+function dryCleanerPriceLabel(doesNotWash: boolean | undefined, value: string) {
+  return doesNotWash === true ? `Not accepted - ${value}` : value;
+}
+
 function ManagementShell({
   title,
   description,
@@ -541,6 +583,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
       <div className="space-y-4">
         <AssignedTasksPanel canCancel />
         <TaskerManagementPanel canModerate />
+        <DryCleanerManagementPanel canModerate />
         <UserManagementPanel title="User Management" allowSuspension={false} />
         <ReviewsPanel />
       </div>
@@ -575,6 +618,115 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
   }
 
   return null;
+}
+
+function DryCleanerManagementPanel({ canModerate }: { canModerate: boolean }) {
+  const { items, isLoading, error, reload } = useManagementResource<ExcoDryCleaner>("dry-cleaners", true);
+  const paged = usePagedItems(items);
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  const runAction = async (id: string, action: "approve" | "reject" | "close" | "reopen") => {
+    setActionId(`${id}-${action}`);
+    try {
+      await patchManagement("dry-cleaners", { id, action });
+      await reload();
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  return (
+    <ManagementShell
+      title="Dry Cleaner Management"
+      description="Approve laundry providers and monitor their prices, accepting days, and delivery timeline."
+      isLoading={isLoading}
+      error={error}
+      emptyLabel="No dry cleaners found"
+      hasItems={items.length > 0}
+    >
+      <div className="space-y-3">
+        {paged.pageItems.map((dryCleaner) => (
+          <div key={dryCleaner.id} className="rounded-lg border border-slate-200 p-3 dark:border-slate-800">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-50 text-sm font-bold text-slate-500 dark:border-slate-800 dark:bg-slate-900">
+                  {dryCleaner.businessLogo ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={dryCleaner.businessLogo} alt={`${dryCleaner.businessName} logo`} className="h-full w-full object-cover" />
+                  ) : (
+                    dryCleaner.businessName.charAt(0).toUpperCase()
+                  )}
+                </div>
+                <div>
+                  <p className="font-semibold text-slate-950 dark:text-white">{dryCleaner.businessName}</p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {dryCleaner.ownerName} - {dryCleaner.email} - {dryCleaner.phone}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">{dryCleaner.location}</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Badge variant="outline">{dryCleaner.status}</Badge>
+                    {dryCleaner.availability.temporarilyClosed ? <Badge variant="destructive">closed</Badge> : null}
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                {canModerate && dryCleaner.status !== "approved" ? (
+                  <Button size="sm" onClick={() => runAction(dryCleaner.id, "approve")} disabled={Boolean(actionId)}>
+                    Approve
+                  </Button>
+                ) : null}
+                {canModerate && dryCleaner.status !== "rejected" ? (
+                  <Button size="sm" variant="outline" onClick={() => runAction(dryCleaner.id, "reject")} disabled={Boolean(actionId)}>
+                    Reject
+                  </Button>
+                ) : null}
+                {canModerate && dryCleaner.status === "approved" ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => runAction(dryCleaner.id, dryCleaner.availability.temporarilyClosed ? "reopen" : "close")}
+                    disabled={Boolean(actionId)}
+                  >
+                    {dryCleaner.availability.temporarilyClosed ? "Reopen" : "Close"}
+                  </Button>
+                ) : null}
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-3">
+              <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                Shirt: {dryCleanerPriceLabel(dryCleaner.pricing.doesNotWashShirt, `NGN ${dryCleaner.pricing.shirt.toLocaleString()}`)}
+              </div>
+              <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                Trouser: {dryCleanerPriceLabel(dryCleaner.pricing.doesNotWashTrouser, `NGN ${dryCleaner.pricing.trouser.toLocaleString()}`)}
+              </div>
+              <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                Hoodie/Joggers: {dryCleanerPriceLabel(dryCleaner.pricing.doesNotWashHoodie, `NGN ${dryCleaner.pricing.hoodieMin.toLocaleString()}-${dryCleaner.pricing.hoodieMax.toLocaleString()}`)}
+              </div>
+              <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                Bedsheet: {dryCleanerPriceLabel(dryCleaner.pricing.doesNotWashBedsheet, `NGN ${dryCleaner.pricing.bedsheetMin.toLocaleString()}-${dryCleaner.pricing.bedsheetMax.toLocaleString()}`)}
+              </div>
+              <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                Duvet: {dryCleanerPriceLabel(dryCleaner.pricing.doesNotWashDuvet !== false, `NGN ${(dryCleaner.pricing.duvetMin || 2000).toLocaleString()}-${(dryCleaner.pricing.duvetMax || 2500).toLocaleString()}`)}
+              </div>
+              <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                Underwear: {dryCleanerPriceLabel(dryCleaner.pricing.doesNotWashUnderwear !== false, `NGN ${(dryCleaner.pricing.underwear || 500).toLocaleString()}`)}
+              </div>
+              <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                Shoes: {dryCleanerPriceLabel(dryCleaner.pricing.doesNotWashShoes !== false, `NGN ${(dryCleaner.pricing.shoes || 500).toLocaleString()}`)}
+              </div>
+              <div className="rounded-md bg-slate-50 p-2 text-xs capitalize text-slate-600 dark:bg-slate-900 dark:text-slate-300 md:col-span-2">
+                Accepts: {dryCleaner.availability.acceptingDays.join(", ")}
+              </div>
+              <div className="rounded-md bg-slate-50 p-2 text-xs text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                Delivery: {dryCleaner.availability.expectedDeliveryDays} day(s), cutoff {dryCleaner.availability.cutoffTime}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+      <PaginationControls {...paged} onPageChange={paged.setPage} />
+    </ManagementShell>
+  );
 }
 
 function TaskerManagementPanel({ canModerate }: { canModerate: boolean }) {

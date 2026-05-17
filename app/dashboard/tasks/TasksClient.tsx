@@ -14,6 +14,7 @@ import {
   Phone,
   RefreshCw,
   Store,
+  UserRoundX,
   XCircle,
 } from 'lucide-react'
 import { io, type Socket } from 'socket.io-client'
@@ -89,6 +90,24 @@ const taskTypeIcons: Record<string, React.ReactNode> = {
   water: <Package className="h-4 w-4" />,
   others: <Package className="h-4 w-4" />,
 }
+
+const taskerSearchImages = [
+  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1552058544-f2b08422138a?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1607746882042-944635dfe10e?auto=format&fit=crop&w=360&q=80',
+  'https://images.unsplash.com/photo-1624561172888-ac93c696e10c?auto=format&fit=crop&w=360&q=80',
+]
 
 function formatDeadline(dueDate?: string, deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
   const exactDeadline = dueDate || deadlineDate
@@ -175,6 +194,24 @@ const getWhatsAppHref = (phone: string) => {
 const isActiveOrder = (order: Pick<Order, 'status'>) =>
   ACTIVE_ORDER_STATUSES.has(order.status)
 
+function getTaskerSearchMessage(elapsedMs: number) {
+  const elapsedMinutes = elapsedMs / 60000
+
+  if (elapsedMinutes < 1) {
+    return 'Connecting you to nearby taskers'
+  }
+
+  if (elapsedMinutes < 3) {
+    return 'Searching beyond your hostel area'
+  }
+
+  if (elapsedMinutes < 5) {
+    return 'This request is taking longer than usual'
+  }
+
+  return 'Still looking for available taskers'
+}
+
 function TaskerAvatar({ tasker }: { tasker: TaskerDetails }) {
   if (tasker.profileImage) {
     return (
@@ -194,6 +231,162 @@ function TaskerAvatar({ tasker }: { tasker: TaskerDetails }) {
   )
 }
 
+function SearchingTaskerOverlay({
+  order,
+  onCancel,
+  isCancelling,
+  isBusy,
+  searchMessage,
+}: {
+  order: Order
+  onCancel: () => void
+  isCancelling: boolean
+  isBusy: boolean
+  searchMessage: string
+}) {
+  const [taskerImageIndex, setTaskerImageIndex] = useState(
+    () => Math.floor(Math.random() * taskerSearchImages.length)
+  )
+  const taskerImage = taskerSearchImages[taskerImageIndex]
+
+  useEffect(() => {
+    const imageInterval = window.setInterval(() => {
+      setTaskerImageIndex((current) => (current + 1) % taskerSearchImages.length)
+    }, 500)
+
+    return () => window.clearInterval(imageInterval)
+  }, [])
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-sm md:items-center md:justify-center md:p-6">
+      <div className="tasker-search-drawer w-full max-w-lg overflow-hidden rounded-t-[2rem] border border-white/70 bg-white shadow-2xl shadow-slate-950/25 dark:border-slate-800 dark:bg-slate-900 md:rounded-[2rem]">
+        <div className="relative bg-linear-to-br from-slate-950 via-slate-900 to-indigo-950 px-5 pb-5 pt-5 text-white">
+
+          <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-white/25 md:hidden" />
+
+          <div className="flex flex-col">
+            <div className="min-w-0 flex-1">
+              <h2 className="mt-2 text-2xl font-bold tracking-normal">
+                Finding tasker
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-200">
+                {searchMessage}
+              </p>
+            </div>
+
+          </div>
+
+          <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/15">
+            <div className="tasker-search-progress h-full origin-left rounded-full bg-linear-to-r from-sky-300 via-cyan-200 to-emerald-300" />
+          </div>
+          <div className="flex shrink-0 items-center gap-5 mt-5 justify-center">
+              <div className="h-20 w-20 overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/15">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={taskerImage}
+                  alt="Potential tasker"
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={onCancel}
+                disabled={isBusy}
+                className="flex w-16 shrink-0 flex-col items-center gap-1 rounded-2xl bg-white/10 px-2 py-3 text-rose-100 ring-1 ring-white/15 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isCancelling ? (
+                  <Loader2 className="h-6 w-6 animate-spin" />
+                ) : (
+                  <UserRoundX className="h-7 w-7" />
+                )}
+                <span className="text-center text-[11px] font-semibold leading-tight">
+                  Cancel task
+                </span>
+              </button>
+            </div>
+        </div>
+
+        <div className="space-y-4 p-5">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/70 dark:ring-slate-800">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Task
+              </p>
+              <p className="mt-2 truncate text-sm font-semibold text-slate-900 dark:text-white">
+                {taskTypeLabels[order.taskType] || order.taskType}
+              </p>
+            </div>
+            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/70 dark:ring-slate-800">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">
+                Amount
+              </p>
+              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                {formatCurrency(order.totalAmount || order.amount)}
+              </p>
+            </div>
+          </div>
+
+          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/70 dark:ring-slate-800">
+            <div className="flex flex-wrap gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">
+                <MapPin className="h-3.5 w-3.5" />
+                {order.location}
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">
+                <Clock className="h-3.5 w-3.5" />
+                {formatDeadline(
+                  order.dueDate || order.deadline,
+                  order.deadlineDate,
+                  order.deadlineValue,
+                  order.deadlineUnit
+                )}
+              </span>
+            </div>
+          </div>
+
+          {isCancelling ? (
+            <p className="text-center text-xs font-medium text-rose-500 dark:text-rose-300">
+              Cancelling task...
+            </p>
+          ) : null}
+        </div>
+      </div>
+      <style jsx>{`
+        .tasker-search-drawer {
+          animation: tasker-search-drawer-in 260ms cubic-bezier(0.22, 1, 0.36, 1);
+        }
+
+        .tasker-search-progress {
+          animation: tasker-search-progress 2.4s ease-in-out infinite;
+        }
+
+        @keyframes tasker-search-drawer-in {
+          from {
+            opacity: 0;
+            transform: translateY(28px) scale(0.98);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes tasker-search-progress {
+          0% {
+            transform: scaleX(0);
+          }
+          82% {
+            transform: scaleX(1);
+          }
+          100% {
+            transform: scaleX(1);
+          }
+        }
+      `}</style>
+    </div>
+  )
+}
+
 export default function OrdersPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -201,9 +394,11 @@ export default function OrdersPage() {
   const [refreshing, setRefreshing] = useState(false)
   const [confirmingTransfer, setConfirmingTransfer] = useState(false)
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null)
+  const [searchElapsedMs, setSearchElapsedMs] = useState(0)
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [taskerDetails, setTaskerDetails] = useState<TaskerDetails | null>(null)
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
+  const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false)
   const [loadingTasker, setLoadingTasker] = useState(false)
   const [updatingAction, setUpdatingAction] = useState<'cancel' | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -221,6 +416,7 @@ export default function OrdersPage() {
   const socketRef = useRef<Socket | null>(null)
   const realtimeResumeTimeoutRef = useRef<number | null>(null)
   const redirectedToReviewRef = useRef<string | null>(null)
+  const autoCancelledOrderRef = useRef<string | null>(null)
   const requestedOrderId = searchParams.get('orderId')
 
   const disconnectSocket = useCallback(() => {
@@ -581,7 +777,7 @@ export default function OrdersPage() {
     }
   }
 
-  const handleCancelOrder = async () => {
+  const handleCancelOrder = useCallback(async () => {
     if (!currentOrder) {
       return
     }
@@ -613,7 +809,61 @@ export default function OrdersPage() {
     } finally {
       setUpdatingAction(null)
     }
-  }
+  }, [currentOrder, fetchWithRealtimePause, loadOrders, router])
+
+  const requestCancelOrder = useCallback(() => {
+    if (!currentOrder || updatingAction === 'cancel' || confirmingTransfer) {
+      return
+    }
+
+    setCancelConfirmOpen(true)
+  }, [confirmingTransfer, currentOrder, updatingAction])
+
+  const confirmCancelOrder = useCallback(() => {
+    setCancelConfirmOpen(false)
+    void handleCancelOrder()
+  }, [handleCancelOrder])
+
+  useEffect(() => {
+    if (!currentOrder || currentOrder.status !== 'pending') {
+      setSearchElapsedMs(0)
+      return
+    }
+
+    const startedAt = new Date(currentOrder.createdAt).getTime()
+
+    if (!Number.isFinite(startedAt)) {
+      setSearchElapsedMs(0)
+      return
+    }
+
+    const updateElapsed = () => {
+      setSearchElapsedMs(Math.max(Date.now() - startedAt, 0))
+    }
+
+    updateElapsed()
+    const intervalId = window.setInterval(updateElapsed, 1000)
+
+    return () => window.clearInterval(intervalId)
+  }, [currentOrder?._id, currentOrder?.createdAt, currentOrder?.status])
+
+  useEffect(() => {
+    if (!currentOrder || currentOrder.status !== 'pending') {
+      return
+    }
+
+    if (searchElapsedMs < 7 * 60000) {
+      return
+    }
+
+    if (autoCancelledOrderRef.current === currentOrder._id) {
+      return
+    }
+
+    autoCancelledOrderRef.current = currentOrder._id
+    toast.error('No tasker accepted within 7 minutes, so the request was cancelled.')
+    void handleCancelOrder()
+  }, [currentOrder, handleCancelOrder, searchElapsedMs])
 
   if (loading) {
     return (
@@ -645,6 +895,16 @@ export default function OrdersPage() {
 
   return (
     <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+      {currentOrder && isSearchingForTasker ? (
+        <SearchingTaskerOverlay
+          order={currentOrder}
+          onCancel={requestCancelOrder}
+          isCancelling={updatingAction === 'cancel'}
+          isBusy={updatingAction === 'cancel' || confirmingTransfer}
+          searchMessage={getTaskerSearchMessage(searchElapsedMs)}
+        />
+      ) : null}
+
       <div className="sticky top-16 z-10 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 lg:top-0">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           <div className="flex items-center gap-3">
@@ -712,30 +972,6 @@ export default function OrdersPage() {
                       : 'Use the transfer modal to pay your tasker, then tap "I\'ve paid".'}
                 </p>
               </div>
-
-              {isSearchingForTasker ? (
-                <div className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm dark:border-amber-900/50 dark:bg-slate-900">
-                  <div className="flex flex-col gap-4 p-4 sm:flex-row sm:items-center">
-                    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
-                      <Loader2 className="h-6 w-6 animate-spin" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-base font-semibold text-slate-900 dark:text-white">
-                        Searching for an available tasker
-                      </p>
-                      <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
-                        We&apos;re notifying verified taskers around campus right now. Keep this
-                        page open and you&apos;ll see the assignment as soon as someone accepts.
-                      </p>
-                      <div className="mt-3 flex items-center gap-2">
-                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-400" />
-                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-500 [animation-delay:0.2s]" />
-                        <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-amber-600 [animation-delay:0.4s]" />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
 
               <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                 <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
@@ -835,7 +1071,7 @@ export default function OrdersPage() {
                       Open transfer details
                     </Button>
                     <Button
-                      onClick={() => void handleCancelOrder()}
+                      onClick={requestCancelOrder}
                       disabled={updatingAction === 'cancel' || confirmingTransfer}
                       variant="outline"
                       className="h-12 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:border-rose-900 dark:text-rose-400 dark:hover:bg-rose-950/30"
@@ -939,7 +1175,7 @@ export default function OrdersPage() {
 
               {currentOrder.status === 'pending' ? (
                 <Button
-                  onClick={() => void handleCancelOrder()}
+                  onClick={requestCancelOrder}
                   disabled={updatingAction === 'cancel' || confirmingTransfer}
                   variant="outline"
                   className="h-11 w-full rounded-xl border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-700 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
@@ -1079,6 +1315,44 @@ export default function OrdersPage() {
           ) : null}
         </div>
       </div>
+
+      <Dialog open={cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Cancel this task?</DialogTitle>
+            <DialogDescription>
+              Taskers will stop seeing this request. You can create a new task anytime if you
+              still need help.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-3 sm:justify-end">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setCancelConfirmOpen(false)}
+              disabled={updatingAction === 'cancel'}
+              className="h-11 rounded-xl"
+            >
+              Keep searching
+            </Button>
+            <Button
+              type="button"
+              onClick={confirmCancelOrder}
+              disabled={updatingAction === 'cancel'}
+              className="h-11 rounded-xl bg-rose-600 text-white hover:bg-rose-700"
+            >
+              {updatingAction === 'cancel' ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Cancelling...
+                </>
+              ) : (
+                'Cancel task'
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={paymentModalOpen} onOpenChange={setPaymentModalOpen}>
         <DialogContent className="sm:max-w-lg">

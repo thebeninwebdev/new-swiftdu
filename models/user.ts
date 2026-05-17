@@ -20,6 +20,7 @@ export interface IUser extends Document {
   updatedAt: Date;
   isSuspended?: boolean;
   taskerId?: string;
+  dryCleanerId?: string;
   excoRole?: ExcoRole;
 }
 
@@ -83,6 +84,10 @@ const UserSchema = new Schema<IUser>(
       default: false,
     },
     taskerId: {
+      type: String,
+      required: false,
+    },
+    dryCleanerId: {
       type: String,
       required: false,
     },

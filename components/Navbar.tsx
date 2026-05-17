@@ -39,6 +39,12 @@ export const Navbar = () => {
             >
               Get Started
             </Link>
+            <Link 
+              href="/dry-cleaner-signup/signup" 
+              className="bg-cyan-600 text-white px-5 py-2 rounded-full font-medium hover:bg-cyan-700 transition-all transform hover:scale-105"
+            >
+              Dry Cleaner
+            </Link>
           </div>
 
           {/* Mobile Menu Button */}
@@ -68,6 +74,12 @@ export const Navbar = () => {
             className="block w-full mt-4 bg-indigo-600 text-white px-5 py-3 rounded-lg font-medium text-center"
           >
             Get Started
+          </Link>
+          <Link 
+            href="/dry-cleaner-signup/signup" 
+            className="block w-full mt-3 bg-cyan-600 text-white px-5 py-3 rounded-lg font-medium text-center"
+          >
+            Sign up as Dry Cleaner
           </Link>
         </div>
       </div>

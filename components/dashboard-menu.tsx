@@ -6,7 +6,7 @@ import Image from 'next/image'
 import { createAvatar } from '@dicebear/core'
 import * as adventurerNeutral from '@dicebear/adventurer-neutral'
 import { authClient } from '@/lib/auth-client'
-import {LogOut, PlusCircle, ListTodo, User, Bell, UserPlus, Star, BriefcaseBusiness} from 'lucide-react'
+import {LogOut, PlusCircle, ListTodo, User, Bell, UserPlus, Star, BriefcaseBusiness, Shirt} from 'lucide-react'
 
 
 // Navigation items configuration
@@ -304,6 +304,23 @@ export default function DashboardMenu() {
             </div>
           </button>
 
+          <button
+            onClick={() => handleNavigation('/dry-cleaner-signup/signup')}
+            className="mt-3 w-full rounded-2xl bg-linear-to-r from-cyan-500 to-blue-500 p-4 text-left text-white shadow-lg shadow-cyan-500/20 transition-transform duration-300 hover:scale-[1.01]"
+          >
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-xl bg-white/20 p-2">
+                <Shirt className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Sign up as Dry Cleaner</p>
+                <p className="mt-1 text-xs text-cyan-50">
+                  Register your laundry business for approval.
+                </p>
+              </div>
+            </div>
+          </button>
+
           {excoDashboard ? (
             <button
               onClick={() => handleNavigation(excoDashboard.dashboardPath)}
@@ -435,6 +452,23 @@ export default function DashboardMenu() {
                         <div>
                           <p className="font-medium">{taskerAction.title}</p>
                           <p className="text-xs text-emerald-50">{taskerAction.mobileDescription}</p>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+
+                  <div className="pt-2">
+                    <button
+                      onClick={() => handleNavigation('/dry-cleaner-signup/signup')}
+                      className="w-full rounded-xl bg-linear-to-r from-cyan-500 to-blue-500 px-4 py-3 text-left text-white shadow-lg shadow-cyan-500/20 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="rounded-lg bg-white/20 p-2">
+                          <Shirt className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <p className="font-medium">Sign up as Dry Cleaner</p>
+                          <p className="text-xs text-cyan-50">Register your laundry business</p>
                         </div>
                       </div>
                     </button>

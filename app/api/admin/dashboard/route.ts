@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
+import DryCleaner from '@/models/dry-cleaner'
 import { Order } from '@/models/order'
 import {Review} from '@/models/review'
 import {
@@ -36,6 +37,8 @@ export async function GET(req: NextRequest) {
       completedOrders,
       totalReviews,
       pendingTaskerApprovals,
+      activeDryCleaners,
+      pendingDryCleanerApprovals,
       declinedTasks
     ] = await Promise.all([
       User.countDocuments(),
@@ -49,6 +52,8 @@ export async function GET(req: NextRequest) {
       Order.countDocuments({ status: 'completed' }),
       Review.countDocuments(),
       Tasker.countDocuments({ isVerified: false, isRejected: false }),
+      DryCleaner.countDocuments({ status: 'approved' }),
+      DryCleaner.countDocuments({ status: 'pending' }),
       Order.countDocuments({ isDeclinedTask: true })
     ])
 
@@ -93,6 +98,11 @@ export async function GET(req: NextRequest) {
       .populate('userId', 'name')
       .lean()
 
+    const recentDryCleaners = await DryCleaner.find({ status: 'pending' })
+      .sort({ createdAt: -1 })
+      .limit(3)
+      .lean()
+
     const recentDeclinedOrders = await Order.find({ isDeclinedTask: true })
       .sort({ declinedAt: -1, updatedAt: -1 })
       .limit(3)
@@ -111,6 +121,13 @@ export async function GET(req: NextRequest) {
         type: 'tasker' as const,
         message: `${(tasker as any).userId?.name || 'New user'} applied to be a tasker`,
         timestamp: tasker.createdAt,
+        status: 'pending'
+      })),
+      ...recentDryCleaners.map(dryCleaner => ({
+        id: dryCleaner._id.toString(),
+        type: 'dry-cleaner' as const,
+        message: `${dryCleaner.businessName} applied to be a dry cleaner`,
+        timestamp: dryCleaner.createdAt,
         status: 'pending'
       })),
       ...recentReviews.map(review => ({
@@ -144,6 +161,8 @@ export async function GET(req: NextRequest) {
       completedOrders,
       totalReviews,
       pendingTaskerApprovals,
+      activeDryCleaners,
+      pendingDryCleanerApprovals,
       declinedTasks
     }
 

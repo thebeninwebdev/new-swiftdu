@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { authClient } from '@/lib/auth-client'
 import {
   DollarSign,
+  Shirt,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -29,6 +30,12 @@ const adminNavigation = [
     href: '/admin/taskers',
     icon: Users,
     description: 'Review taskers',
+  },
+  {
+    label: 'Dry Cleaners',
+    href: '/admin/dry-cleaners',
+    icon: Shirt,
+    description: 'Approve laundry',
   },
   {
     label: 'Orders',
