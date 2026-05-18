@@ -14,6 +14,7 @@ export interface IOrder extends Document {
   location: string;
   store?: string;
   packaging?: string;
+  restaurantPeopleCount?: number;
   waterBags?: number;
   waterFee?: number;
   noteSize?: 'small' | 'big';
@@ -129,6 +130,10 @@ const orderSchema = new Schema<IOrder>(
     },
     store: String,
     packaging: String,
+    restaurantPeopleCount: {
+      type: Number,
+      min: 1,
+    },
     waterBags: {
       type: Number,
       min: 1,

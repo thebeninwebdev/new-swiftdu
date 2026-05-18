@@ -9,9 +9,11 @@ import { emitOrderUpdated } from '@/lib/socket';
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
+  normalizeRestaurantPeopleCount,
   normalizeNoteSize,
   normalizePrintingServiceType,
   PRINTING_TASK_TYPE,
+  RESTAURANT_MAX_PEOPLE,
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
@@ -43,6 +45,7 @@ export async function POST(request: NextRequest) {
       location,
       store,
       packaging,
+      restaurantPeopleCount,
       waterBags,
       noteSize,
       numberOfPages,
@@ -68,6 +71,12 @@ export async function POST(request: NextRequest) {
     const parsedAmount = Number(amount);
     const normalizedDescription = String(description || '').trim();
     const normalizedTaskType = String(taskType || '').trim();
+    const parsedRestaurantPeopleCount =
+      normalizedTaskType === 'restaurant' ? Number(restaurantPeopleCount || 1) : undefined;
+    const normalizedRestaurantPeopleCount =
+      normalizedTaskType === 'restaurant'
+        ? normalizeRestaurantPeopleCount(parsedRestaurantPeopleCount)
+        : undefined;
     const parsedWaterBags =
       normalizedTaskType === WATER_TASK_TYPE ? Number(waterBags) : undefined;
     const normalizedNoteSize = normalizeNoteSize(
@@ -164,12 +173,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    if (
+      normalizedTaskType === 'restaurant' &&
+      (!Number.isInteger(parsedRestaurantPeopleCount) ||
+        Number(parsedRestaurantPeopleCount) < 1 ||
+        Number(parsedRestaurantPeopleCount) > RESTAURANT_MAX_PEOPLE)
+    ) {
+      return NextResponse.json(
+        { error: `Restaurant food orders can only be for 1 to ${RESTAURANT_MAX_PEOPLE} people.` },
+        { status: 400 }
+      );
+    }
+
     const pricing = calculateOrderPricing({
       amount:
         normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE
           ? 0
           : parsedAmount,
       taskType: normalizedTaskType,
+      restaurantPeopleCount: normalizedRestaurantPeopleCount,
       waterBags: parsedWaterBags,
       noteSize: normalizedNoteSize,
       numberOfPages: parsedNumberOfPages,
@@ -202,6 +224,7 @@ export async function POST(request: NextRequest) {
       location,
       store: normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE ? undefined : store || undefined,
       packaging: packaging || undefined,
+      restaurantPeopleCount: pricing.restaurantPeopleCount,
       waterBags: pricing.waterBags || undefined,
       waterFee: pricing.waterFee,
       noteSize: pricing.noteSize,

@@ -11,9 +11,11 @@ import { ensureBookedAt } from '@/lib/order-response-time';
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
+  normalizeRestaurantPeopleCount,
   normalizeNoteSize,
   normalizePrintingServiceType,
   PRINTING_TASK_TYPE,
+  RESTAURANT_MAX_PEOPLE,
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
 import {
@@ -71,6 +73,7 @@ export async function PATCH(
       location,
       store,
       packaging,
+      restaurantPeopleCount,
       waterBags,
       noteSize,
       numberOfPages,
@@ -91,6 +94,7 @@ export async function PATCH(
       location !== undefined ||
       store !== undefined ||
       packaging !== undefined ||
+      restaurantPeopleCount !== undefined ||
       waterBags !== undefined ||
       noteSize !== undefined ||
       numberOfPages !== undefined ||
@@ -100,6 +104,81 @@ export async function PATCH(
       || printingServiceType !== undefined
       || printingNeedsEditing !== undefined
     ) {
+      const isOnlyRestaurantPeopleUpdate =
+        restaurantPeopleCount !== undefined &&
+        taskType === undefined &&
+        description === undefined &&
+        amount === undefined &&
+        deadlineDate === undefined &&
+        location === undefined &&
+        store === undefined &&
+        packaging === undefined &&
+        waterBags === undefined &&
+        noteSize === undefined &&
+        numberOfPages === undefined &&
+        deadline === undefined &&
+        copyNotesType === undefined &&
+        copyNotesPages === undefined &&
+        printingServiceType === undefined &&
+        printingNeedsEditing === undefined;
+
+      if (isOnlyRestaurantPeopleUpdate && isTaskerOwner && !isUserOwner) {
+        const parsedRestaurantPeopleCount = Number(restaurantPeopleCount);
+
+        if (order.taskType !== 'restaurant') {
+          return NextResponse.json(
+            { error: 'Only restaurant food orders can have people count updated.' },
+            { status: 400 }
+          );
+        }
+
+        if (order.hasPaid || order.paymentStatus === 'paid') {
+          return NextResponse.json(
+            { error: 'The customer has already confirmed payment for this order.' },
+            { status: 400 }
+          );
+        }
+
+        if (order.status !== 'pending' && order.status !== 'in_progress') {
+          return NextResponse.json(
+            { error: 'This order count can only be updated while the order is active.' },
+            { status: 400 }
+          );
+        }
+
+        if (
+          !Number.isInteger(parsedRestaurantPeopleCount) ||
+          parsedRestaurantPeopleCount < 1 ||
+          parsedRestaurantPeopleCount > RESTAURANT_MAX_PEOPLE
+        ) {
+          return NextResponse.json(
+            { error: `Restaurant food orders can only be for 1 to ${RESTAURANT_MAX_PEOPLE} people.` },
+            { status: 400 }
+          );
+        }
+
+        const pricing = calculateOrderPricing({
+          amount: Number(order.amount || 0),
+          taskType: order.taskType,
+          restaurantPeopleCount: normalizeRestaurantPeopleCount(parsedRestaurantPeopleCount),
+        });
+        const settlement = splitServiceFee(pricing.serviceFee);
+
+        order.amount = pricing.amount;
+        order.commission = settlement.serviceFee;
+        order.platformFee = settlement.platformFee;
+        order.taskerFee = settlement.taskerFee;
+        order.serviceFee = settlement.serviceFee;
+        order.pricingModel = pricing.pricingModel;
+        order.totalAmount = pricing.totalAmount;
+        order.restaurantPeopleCount = pricing.restaurantPeopleCount;
+
+        await order.save();
+        emitOrderUpdated(order);
+
+        return NextResponse.json(order);
+      }
+
       if (!isUserOwner) {
         return NextResponse.json(
           { error: 'Only the customer can edit this order' },
@@ -121,6 +200,16 @@ export async function PATCH(
       const nextStore = store !== undefined ? store || undefined : order.store;
       const nextPackaging =
         packaging !== undefined ? packaging || undefined : order.packaging;
+      const parsedRestaurantPeopleCount =
+        nextTaskType === 'restaurant'
+          ? restaurantPeopleCount !== undefined
+            ? Number(restaurantPeopleCount)
+            : Number(order.restaurantPeopleCount || 1)
+          : undefined;
+      const nextRestaurantPeopleCount =
+        nextTaskType === 'restaurant'
+          ? normalizeRestaurantPeopleCount(parsedRestaurantPeopleCount)
+          : undefined;
       const nextWaterBags =
         waterBags !== undefined
           ? Number(waterBags)
@@ -203,6 +292,18 @@ export async function PATCH(
         }
       }
 
+      if (
+        nextTaskType === 'restaurant' &&
+        (!Number.isInteger(parsedRestaurantPeopleCount) ||
+          Number(parsedRestaurantPeopleCount) < 1 ||
+          Number(parsedRestaurantPeopleCount) > RESTAURANT_MAX_PEOPLE)
+      ) {
+        return NextResponse.json(
+          { error: `Restaurant food orders can only be for 1 to ${RESTAURANT_MAX_PEOPLE} people.` },
+          { status: 400 }
+        );
+      }
+
       if (nextTaskType === 'copy_notes') {
         if (!nextNoteSize) {
           return NextResponse.json({ error: 'Choose the note size.' }, { status: 400 });
@@ -246,6 +347,7 @@ export async function PATCH(
             ? 0
             : nextAmount,
         taskType: nextTaskType,
+        restaurantPeopleCount: nextRestaurantPeopleCount,
         waterBags: nextWaterBags,
         noteSize: nextNoteSize,
         numberOfPages: nextNumberOfPages,
@@ -318,6 +420,8 @@ export async function PATCH(
           ? undefined
           : nextStore;
       order.packaging = nextTaskType === 'restaurant' ? nextPackaging : undefined;
+      order.restaurantPeopleCount =
+        nextTaskType === 'restaurant' ? pricing.restaurantPeopleCount : undefined;
     }
 
     if (hasPaid !== undefined) {

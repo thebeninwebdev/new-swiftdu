@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
 import { canTaskerCancelOrder, isCustomerPaymentConfirmed } from '@/lib/order-status'
 import { convertToNaira } from '@/lib/utils'
+import { RESTAURANT_MAX_PEOPLE } from '@/lib/pricing'
 
 const DETAIL_REFRESH_MS = 5000
 
@@ -48,6 +49,7 @@ interface ErrandDetail {
   location: string
   store?: string
   packaging?: string
+  restaurantPeopleCount?: number
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   taskerId?: string
   taskerName?: string
@@ -143,7 +145,7 @@ export default function ErrandDetailPage() {
   const [errand, setErrand] = useState<ErrandDetail | null>(null)
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [loading, setLoading] = useState(true)
-  const [actionLoading, setActionLoading] = useState<'complete' | 'cancel' | 'report' | null>(null)
+  const [actionLoading, setActionLoading] = useState<'complete' | 'cancel' | 'report' | 'people' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showConfirmModal, setShowConfirmModal] = useState<'complete' | 'cancel' | null>(null)
 
@@ -377,6 +379,41 @@ export default function ErrandDetailPage() {
     }
   }
 
+  const handleRestaurantPeopleUpdate = async (peopleCount: number) => {
+    if (!errand || errand.taskType !== 'restaurant') return
+
+    try {
+      setActionLoading('people')
+      setError(null)
+
+      const response = await fetchWithSocketPause(`/api/orders/${errandId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restaurantPeopleCount: peopleCount }),
+      })
+
+      const payload = await response.json()
+
+      if (!response.ok) {
+        setError(payload.error || 'Failed to update the restaurant order count')
+        return
+      }
+
+      setErrand(payload)
+      previousSnapshotRef.current = {
+        status: payload.status,
+        hasPaid: Boolean(payload.hasPaid),
+        isDeclinedTask: Boolean(payload.isDeclinedTask),
+      }
+      toast.success('Restaurant order count updated. The customer total has been recalculated.')
+    } catch (updateError) {
+      console.error('Failed to update restaurant people count', updateError)
+      setError('Failed to update the restaurant order count')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] px-4 py-6 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
@@ -427,6 +464,16 @@ export default function ErrandDetailPage() {
     !errand.taskerHasPaid &&
     errand.settlementStatus !== 'paid'
   const whatsappLink = userInfo ? getWhatsappLink(userInfo.phone, errand, userInfo.name) : ''
+  const restaurantPeopleCount =
+    Number.isInteger(Number(errand.restaurantPeopleCount || 0)) &&
+    Number(errand.restaurantPeopleCount || 0) > 0
+      ? Number(errand.restaurantPeopleCount)
+      : 1
+  const canUpdateRestaurantPeople =
+    errand.taskType === 'restaurant' &&
+    isActive &&
+    !paymentConfirmed &&
+    !transferUnderReview
 
   return (
     <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] px-1 py-2 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 sm:px-2 md:px-3">
@@ -766,6 +813,50 @@ export default function ErrandDetailPage() {
                       </p>
                     ) : null}
                   </div>
+                  {errand.taskType === 'restaurant' ? (
+                    <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 dark:border-orange-900/60 dark:bg-orange-950/30">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-xs font-semibold uppercase tracking-[0.16em] text-orange-700 dark:text-orange-300">
+                            People on order
+                          </p>
+                          <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
+                            {restaurantPeopleCount} {restaurantPeopleCount === 1 ? 'person' : 'people'}
+                          </p>
+                        </div>
+                        <p className="text-right text-xs leading-5 text-orange-700 dark:text-orange-200">
+                          Updates customer total before payment.
+                        </p>
+                      </div>
+                      {canUpdateRestaurantPeople ? (
+                        <div className="mt-3 grid grid-cols-3 gap-2">
+                          {Array.from({ length: RESTAURANT_MAX_PEOPLE }, (_, index) => index + 1).map((people) => (
+                            <button
+                              key={people}
+                              type="button"
+                              onClick={() => void handleRestaurantPeopleUpdate(people)}
+                              disabled={actionLoading === 'people' || people === restaurantPeopleCount}
+                              className={`h-10 rounded-xl border text-sm font-bold transition disabled:cursor-not-allowed ${
+                                people === restaurantPeopleCount
+                                  ? 'border-orange-500 bg-orange-600 text-white'
+                                  : 'border-orange-200 bg-white text-orange-700 hover:border-orange-400 hover:bg-orange-100 dark:border-orange-900/60 dark:bg-slate-900 dark:text-orange-200 dark:hover:bg-orange-950/50'
+                              }`}
+                            >
+                              {actionLoading === 'people' && people === restaurantPeopleCount ? (
+                                <Loader2 className="mx-auto h-4 w-4 animate-spin" />
+                              ) : (
+                                people
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-3 rounded-xl bg-white/70 px-3 py-2 text-xs leading-5 text-orange-800 dark:bg-slate-900/70 dark:text-orange-200">
+                          This can only be updated before the customer confirms payment.
+                        </p>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               </div>
 

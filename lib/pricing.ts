@@ -2,6 +2,9 @@ export const WATER_TASK_TYPE = 'water'
 export const WATER_BAG_PRICE = 750
 export const WATER_BAG_FEE = 450
 export const WATER_PLATFORM_FEE_RATE = 0.24
+export const RESTAURANT_PERSON_FEE = 450
+export const RESTAURANT_GROUP_DISCOUNT_RATE = 0.2222
+export const RESTAURANT_MAX_PEOPLE = 3
 export const PRINTING_TASK_TYPE = 'printing'
 export const PRINTING_SERVICE_FEE = 500
 export const PRINTING_PRICE_PER_PAGE = 100
@@ -59,6 +62,7 @@ export interface PricingResult {
   copyNotesPages?: number
   printingServiceType?: PrintingServiceType
   printingNeedsEditing?: boolean
+  restaurantPeopleCount?: number
 }
 
 export interface CopyNotesPricingInput {
@@ -145,6 +149,7 @@ export function calculateOrderPricing(input: {
   amount: number
   taskType: string
   waterBags?: number
+  restaurantPeopleCount?: number
   noteSize?: string
   numberOfPages?: number
   drawingPages?: number
@@ -241,7 +246,10 @@ export function calculateOrderPricing(input: {
     } satisfies PricingResult
   }
 
-  const serviceFee = getTieredServiceFee(amount)
+  const serviceFee =
+    input.taskType === 'restaurant'
+      ? calculateRestaurantServiceFee(input.restaurantPeopleCount)
+      : getTieredServiceFee(amount)
 
   return {
     amount,
@@ -249,5 +257,30 @@ export function calculateOrderPricing(input: {
     totalAmount: roundNaira(amount + serviceFee),
     pricingModel: 'tiered' as const,
     waterFee: 0,
+    restaurantPeopleCount:
+      input.taskType === 'restaurant'
+        ? normalizeRestaurantPeopleCount(input.restaurantPeopleCount)
+        : undefined,
   } satisfies PricingResult
+}
+
+export function normalizeRestaurantPeopleCount(value?: number) {
+  const count = Number(value || 1)
+
+  if (!Number.isInteger(count) || count < 1) {
+    return 1
+  }
+
+  return count
+}
+
+export function calculateRestaurantServiceFee(peopleCount?: number) {
+  const normalizedPeopleCount = normalizeRestaurantPeopleCount(peopleCount)
+  const baseFee = roundNaira(RESTAURANT_PERSON_FEE * normalizedPeopleCount)
+
+  if (normalizedPeopleCount <= 1) {
+    return baseFee
+  }
+
+  return roundNaira(baseFee * (1 - RESTAURANT_GROUP_DISCOUNT_RATE))
 }

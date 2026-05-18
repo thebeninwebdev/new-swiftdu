@@ -20,6 +20,7 @@ import {
   Sparkles,
   TrendingUp,
   AlertCircle,
+  Info,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -27,6 +28,7 @@ import { authClient } from '@/lib/auth-client'
 import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
 import { convertToNaira } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
+import { calculateRestaurantServiceFee, RESTAURANT_MAX_PEOPLE } from '@/lib/pricing'
 
 const DASHBOARD_REFRESH_MS = 5000
 const REALTIME_REVALIDATE_DELAY_MS = 1200
@@ -47,6 +49,7 @@ interface Errand {
   location: string
   store?: string
   packaging?: string
+  restaurantPeopleCount?: number
   status: string
   taskerId?: string
   acceptedBy?: string
@@ -78,6 +81,7 @@ interface RealtimeTaskPayload {
   location?: string
   store?: string
   packaging?: string
+  restaurantPeopleCount?: number
   status?: string
   taskerId?: string
   acceptedAt?: string
@@ -113,6 +117,14 @@ const taskTypeBg: Record<string, string> = {
   water: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   others: 'bg-slate-50 text-slate-700 border-slate-200',
 }
+
+const restaurantMultipleOrderPrices = Array.from(
+  { length: RESTAURANT_MAX_PEOPLE - 1 },
+  (_, index) => index + 2
+).map((people) => ({
+  people,
+  fee: calculateRestaurantServiceFee(people),
+}))
 
 // Animation variants
 const containerVariants: Variants = {
@@ -228,6 +240,7 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
     location: payload.location || '',
     store: payload.store,
     packaging: payload.packaging,
+    restaurantPeopleCount: payload.restaurantPeopleCount,
     status: payload.status || 'pending',
     taskerId: payload.taskerId,
     acceptedAt: payload.acceptedAt,
@@ -1036,6 +1049,39 @@ export default function TaskerDashboardPage() {
           </div>
         </div>
 
+        {(taskTypeFilter === 'all' || taskTypeFilter === 'restaurant') ? (
+          <div className="mb-4 rounded-3xl border border-orange-200 bg-orange-50 p-4 text-orange-950 shadow-sm dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-orange-100 text-orange-700 dark:bg-orange-900/70 dark:text-orange-200">
+                  <Info className="h-5 w-5" />
+                </div>
+                <div>
+                  <p className="text-sm font-bold">Restaurant multiple-order guide</p>
+                  <p className="mt-1 max-w-2xl text-sm text-orange-900 dark:text-orange-100">
+                    Customers can order restaurant food for up to {RESTAURANT_MAX_PEOPLE} people. If you notice the count is wrong, update the order before the customer pays.
+                  </p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {restaurantMultipleOrderPrices.map((item) => (
+                  <div
+                    key={item.people}
+                    className="rounded-2xl border border-orange-200 bg-white px-3 py-2 text-center shadow-sm dark:border-orange-900/60 dark:bg-slate-900"
+                  >
+                    <p className="text-[10px] font-semibold uppercase text-orange-700 dark:text-orange-300">
+                      {item.people} people
+                    </p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">
+                      {convertToNaira(item.fee)}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        ) : null}
+
         {/* Empty State */}
         {errands.length === 0 ? (
           <motion.div
@@ -1156,6 +1202,22 @@ export default function TaskerDashboardPage() {
                         <span className="capitalize">{errand.packaging}</span>
                       </motion.div>
                     )}
+
+                    {errand.taskType === 'restaurant' && Number(errand.restaurantPeopleCount || 0) > 1 ? (
+                      <motion.div
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.12 }}
+                        className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400"
+                      >
+                        <div className="w-8 h-8 rounded-xl bg-orange-50 dark:bg-orange-950/30 flex items-center justify-center shrink-0">
+                          <Info className="h-4 w-4 text-orange-600 dark:text-orange-400" />
+                        </div>
+                        <span>
+                          {errand.restaurantPeopleCount} people order: {convertToNaira(calculateRestaurantServiceFee(errand.restaurantPeopleCount))}
+                        </span>
+                      </motion.div>
+                    ) : null}
 
                     {formatDueDate(errand) ? (
                       <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400">

@@ -29,6 +29,7 @@ export type OrderSocketPayload = {
   location?: string
   store?: string
   packaging?: string
+  restaurantPeopleCount?: number
   acceptedAt?: string
   createdAt?: string
   paymentStatus?: string
@@ -59,6 +60,7 @@ type SocketOrderLike = {
   location?: string
   store?: string
   packaging?: string
+  restaurantPeopleCount?: number
   acceptedAt?: Date | string
   createdAt?: Date | string
   paymentStatus?: string
@@ -114,6 +116,7 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     location: order.location,
     store: order.store,
     packaging: order.packaging,
+    restaurantPeopleCount: order.restaurantPeopleCount,
     acceptedAt: serializeDate(order.acceptedAt),
     createdAt: serializeDate(order.createdAt),
     paymentStatus: order.paymentStatus,

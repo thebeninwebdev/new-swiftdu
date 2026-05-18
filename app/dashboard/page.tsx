@@ -3,7 +3,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  AlertTriangle,
   ArrowRight,
   BriefcaseBusiness,
   Check,
@@ -36,6 +35,9 @@ import {
   PHOTOCOPY_PRICE_PER_PAGE,
   PRINTING_PRICE_PER_PAGE,
   PRINTING_TASK_TYPE,
+  RESTAURANT_GROUP_DISCOUNT_RATE,
+  RESTAURANT_MAX_PEOPLE,
+  RESTAURANT_PERSON_FEE,
   WATER_BAG_PRICE,
   WATER_BAG_FEE,
   WATER_TASK_TYPE,
@@ -60,6 +62,7 @@ interface ErrandData {
   restaurantItems: RestaurantItem[]
   restaurantItemName: string
   restaurantItemPrice: string
+  restaurantPeople: string
   shoppingItems: RestaurantItem[]
   shoppingItemName: string
   shoppingItemPrice: string
@@ -232,6 +235,7 @@ export default function ErrandWizardPage() {
     restaurantItems: [],
     restaurantItemName: '',
     restaurantItemPrice: '',
+    restaurantPeople: '1',
     shoppingItems: [],
     shoppingItemName: '',
     shoppingItemPrice: '',
@@ -392,6 +396,16 @@ export default function ErrandWizardPage() {
   }, [disconnectSocket])
 
   const restaurantFoodBudget = formData.restaurantItems.reduce((total, item) => total + item.price, 0)
+  const restaurantPeopleCount = Number(formData.restaurantPeople || 1)
+  const normalizedRestaurantPeopleCount =
+    Number.isInteger(restaurantPeopleCount) && restaurantPeopleCount > 0
+      ? restaurantPeopleCount
+      : 1
+  const restaurantBaseServiceFee = RESTAURANT_PERSON_FEE * normalizedRestaurantPeopleCount
+  const restaurantGroupDiscount =
+    normalizedRestaurantPeopleCount > 1
+      ? Math.round(restaurantBaseServiceFee * RESTAURANT_GROUP_DISCOUNT_RATE)
+      : 0
   const selectedPackaging = packagingOptions.find((item) => item.value === formData.packaging)
   const restaurantPackagingFee = selectedPackaging?.price || 0
   const restaurantBudget = restaurantFoodBudget + restaurantPackagingFee
@@ -434,6 +448,7 @@ export default function ErrandWizardPage() {
   const pricing = calculateOrderPricing({
     amount: Number.isFinite(amount) ? amount : 0,
     taskType,
+    restaurantPeopleCount: normalizedRestaurantPeopleCount,
     waterBags: Number.isFinite(waterBags) ? waterBags : 0,
     noteSize: formData.noteSize,
     numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
@@ -469,6 +484,7 @@ export default function ErrandWizardPage() {
     if (
       name === 'restaurantItemName' ||
       name === 'restaurantItemPrice' ||
+      name === 'restaurantPeople' ||
       name === 'shoppingItemName' ||
       name === 'shoppingItemPrice'
     ) {
@@ -637,6 +653,15 @@ if (stepNumber === 2) {
     nextErrors.restaurantItems = 'Add at least one food and price.'
   }
 
+  if (
+    formData.taskType === 'restaurant' &&
+    (!Number.isInteger(restaurantPeopleCount) ||
+      restaurantPeopleCount < 1 ||
+      restaurantPeopleCount > RESTAURANT_MAX_PEOPLE)
+  ) {
+    nextErrors.restaurantPeople = `Enter 1 to ${RESTAURANT_MAX_PEOPLE} people for this food order.`
+  }
+
   if (formData.taskType === 'shopping' && formData.shoppingItems.length === 0) {
     nextErrors.shoppingItems = 'Add at least one item and price.'
   }
@@ -751,6 +776,10 @@ if (stepNumber === 2) {
             formData.taskType === 'restaurant' || formData.taskType === 'shopping'
               ? String(amount)
               : formData.amount,
+          restaurantPeopleCount:
+            formData.taskType === 'restaurant'
+              ? normalizedRestaurantPeopleCount
+              : undefined,
           printingServiceType: formData.printingServiceType,
           printingNeedsEditing: formData.printingNeedsEditing === 'yes',
         }),
@@ -781,6 +810,7 @@ if (stepNumber === 2) {
         restaurantItems: [],
         restaurantItemName: '',
         restaurantItemPrice: '',
+        restaurantPeople: '1',
         shoppingItems: [],
         shoppingItemName: '',
         shoppingItemPrice: '',
@@ -850,18 +880,6 @@ if (stepNumber === 2) {
               </div>
             </div>
           ) : null}
-
-          <div className="mb-5 rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-red-950 shadow-sm dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100 md:mb-8">
-            <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-red-600 dark:text-red-300" />
-              <div>
-                <p className="text-sm font-semibold">Group order notice</p>
-                <p className="mt-1 text-sm text-red-900 dark:text-red-100">
-                  From Monday, May 18, 2026, orders for more than one person will include an extra charge.
-                </p>
-              </div>
-            </div>
-          </div>
 
           {activeOrder ? (
             <div className="mb-5 rounded-3xl border border-indigo-200/80 bg-linear-to-r from-indigo-50 via-white to-cyan-50 p-4 shadow-sm dark:border-indigo-900/60 dark:from-indigo-950/40 dark:via-slate-900 dark:to-cyan-950/40 md:mb-8 md:p-5">
@@ -1296,6 +1314,12 @@ if (stepNumber === 2) {
                           name="restaurantItemName"
                           value={formData.restaurantItemName}
                           onChange={handleInputChange}
+                          onKeyDown={(event) => {
+                            if (event.key === 'Enter') {
+                              event.preventDefault()
+                              addRestaurantItem()
+                            }
+                          }}
                           placeholder="Food item"
                           className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 dark:border-slate-700 dark:bg-slate-800"
                         />
@@ -1345,10 +1369,48 @@ if (stepNumber === 2) {
                           ))}
                         </div>
                       ) : null}
+                      <div>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <Wallet className="h-4 w-4 text-orange-500" />
+                          Number of Orders
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {Array.from({ length: RESTAURANT_MAX_PEOPLE }, (_, index) => String(index + 1)).map((people) => (
+                            <button
+                              key={people}
+                              type="button"
+                              onClick={() => {
+                                pauseRealtime()
+                                setFormData((previous) => ({ ...previous, restaurantPeople: people }))
+                                clearError('restaurantPeople')
+                              }}
+                              className={`h-12 rounded-xl border-2 text-sm font-bold transition ${
+                                formData.restaurantPeople === people
+                                  ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm dark:bg-orange-950/30 dark:text-orange-200'
+                                  : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
+                              }`}
+                            >
+                              {people}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                          How many people are you ordering for?
+                        </p>
+                        {errors.restaurantPeople ? <p className="mt-2 text-sm text-red-500">{errors.restaurantPeople}</p> : null}
+                      </div>
                       <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
-                        Food is {formatNaira(restaurantFoodBudget)}.
+                        {/* Food is {formatNaira(restaurantFoodBudget)}.
                         Packaging is {formatNaira(restaurantPackagingFee)}.
-                        Budget is {formatNaira(restaurantBudget)} before SwiftDU service fee.
+                        Budget is {formatNaira(restaurantBudget)} before SwiftDU service fee. */}
+                        <span className="block pt-1 font-semibold">
+                          If taskers notice the food is for multiple people, they can update your order price before you pay.
+                        </span>
+                        {normalizedRestaurantPeopleCount > 1 ? (
+                          <span className="block pt-1">
+                            SwiftDU fee is {formatNaira(restaurantBaseServiceFee)} minus a {Math.round(RESTAURANT_GROUP_DISCOUNT_RATE * 10000) / 100}% group discount ({formatNaira(restaurantGroupDiscount)}).
+                          </span>
+                        ) : null}
                         {shouldShowTieredServiceFee ? (
                           <span className="block pt-1 font-semibold">
                             Service fee for this budget is {formatNaira(pricing.serviceFee)}.
@@ -1570,6 +1632,7 @@ if (stepNumber === 2) {
                       {formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.description ? <div className="flex justify-between gap-6"><span className="text-slate-500">Description</span><span className="max-w-[18rem] text-right text-slate-900 dark:text-slate-100">{formData.description}</span></div> : null}
                       <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Location</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.location}</span></div>
                       {formData.packaging ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Packaging</span><span className="text-right text-slate-900 dark:text-slate-100">{selectedPackaging?.label} ({formatNaira(restaurantPackagingFee)})</span></div> : null}
+                      {formData.taskType === 'restaurant' ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">People</span><span className="text-right text-slate-900 dark:text-slate-100">{normalizedRestaurantPeopleCount}</span></div> : null}
                       {formData.taskType === WATER_TASK_TYPE ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Water bags</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.waterBags}</span></div> : null}
                       {formData.taskType === PRINTING_TASK_TYPE ? (
                         <>
@@ -1603,12 +1666,14 @@ if (stepNumber === 2) {
                       <p>After a tasker accepts, the app moves you into a payment step where you see the tasker&apos;s bank details, make payment, and confirm it inside the tracker.</p>
                     </div>
                   </div>
-                  <div className="rounded-2xl border border-red-300 bg-red-50 p-4 text-sm text-red-900 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-100">
-                    <div className="flex items-start gap-3">
-                      <div className="rounded-full bg-red-100 p-2 text-red-600 dark:bg-red-900/70 dark:text-red-300"><AlertTriangle className="h-4 w-4" /></div>
-                      <p>From Monday, May 18, 2026, orders for more than one person will include an extra charge.</p>
+                  {formData.taskType === 'restaurant' ? (
+                    <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
+                      <div className="flex items-start gap-3">
+                        <div className="rounded-full bg-orange-100 p-2 text-orange-600 dark:bg-orange-900/70 dark:text-orange-300"><Info className="h-4 w-4" /></div>
+                        <p>If a tasker notices this restaurant order is for multiple people, they can update the price before you pay.</p>
+                      </div>
                     </div>
-                  </div>
+                  ) : null}
                 </div>
               ) : null}
             </div>
