@@ -18,11 +18,15 @@ import {
   Eye,
   CheckCircle,
   XCircle,
-  AlertCircle
+  AlertCircle,
+  MessageCircle
 } from 'lucide-react'
 
 interface Order {
   _id: string
+  source?: 'website' | 'whatsapp'
+  customerPhone?: string
+  customerName?: string
   taskType: string
   description: string
   amount: number
@@ -142,6 +146,7 @@ export default function AdminOrdersPage() {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [taskTypeFilter, setTaskTypeFilter] = useState('all')
+  const [sourceFilter, setSourceFilter] = useState('all')
   const [declinedFilter, setDeclinedFilter] = useState('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
@@ -176,6 +181,7 @@ export default function AdminOrdersPage() {
         search: searchTerm,
         status: statusFilter,
         taskType: taskTypeFilter,
+        source: sourceFilter,
         declined: declinedFilter
       })
 
@@ -194,7 +200,7 @@ export default function AdminOrdersPage() {
     } finally {
       setIsFetching(false)
     }
-  }, [currentPage, searchTerm, statusFilter, taskTypeFilter, declinedFilter])
+  }, [currentPage, searchTerm, statusFilter, taskTypeFilter, sourceFilter, declinedFilter])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -302,7 +308,7 @@ export default function AdminOrdersPage() {
         {/* Filters */}
         <Card className="mb-6">
           <CardContent className="pt-6">
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
               <div className="relative">
                 <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
                 <Input
@@ -338,6 +344,17 @@ export default function AdminOrdersPage() {
                   <SelectItem value="shopping">Shopping</SelectItem>
                   <SelectItem value="water">Bag of Water</SelectItem>
                   <SelectItem value="others">Others</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={sourceFilter} onValueChange={(value) => setSourceFilter(value ?? 'all')}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filter by source" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Sources</SelectItem>
+                  <SelectItem value="website">Website</SelectItem>
+                  <SelectItem value="whatsapp">WhatsApp</SelectItem>
                 </SelectContent>
               </Select>
 
@@ -404,6 +421,12 @@ export default function AdminOrdersPage() {
                           <Badge className={getStatusColor(order.status)}>
                             {order.status.replace('_', ' ').toUpperCase()}
                           </Badge>
+                          {order.source === 'whatsapp' ? (
+                            <Badge variant="secondary" className="gap-1">
+                              <MessageCircle className="h-3 w-3" />
+                              WhatsApp
+                            </Badge>
+                          ) : null}
                           {order.isDeclinedTask ? (
                             <Badge variant="destructive">DECLINED TASK</Badge>
                           ) : null}
@@ -462,7 +485,16 @@ export default function AdminOrdersPage() {
                         <div>
                           <p className="text-sm font-medium text-muted-foreground mb-1">Customer</p>
                           <p className="text-sm">{order.userName}</p>
-                          <p className="text-xs text-muted-foreground">{order.userEmail}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {order.source === 'whatsapp'
+                              ? order.customerPhone || 'WhatsApp'
+                              : order.userEmail}
+                          </p>
+                        </div>
+
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground mb-1">Source</p>
+                          <p className="text-sm">{order.source === 'whatsapp' ? 'WhatsApp' : 'Website'}</p>
                         </div>
 
                         {order.taskerName && (

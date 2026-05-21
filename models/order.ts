@@ -2,9 +2,13 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IOrder extends Document {
   userId: string;
+  source?: 'website' | 'whatsapp';
+  customerPhone?: string;
+  customerName?: string;
   taskType: string;
   description?: string;
   amount: number;
+  itemPrice?: number;
   commission: number;
   platformFee: number;
   taskerFee: number;
@@ -12,6 +16,7 @@ export interface IOrder extends Document {
   pricingModel: 'tiered' | 'water' | 'copy_notes';
   totalAmount: number;
   location: string;
+  deliveryLocation?: string;
   store?: string;
   packaging?: string;
   restaurantPeopleCount?: number;
@@ -75,6 +80,17 @@ const orderSchema = new Schema<IOrder>(
       required: true,
       index: true,
     },
+    source: {
+      type: String,
+      enum: ['website', 'whatsapp'],
+      default: 'website',
+      index: true,
+    },
+    customerPhone: {
+      type: String,
+      index: true,
+    },
+    customerName: String,
     taskType: {
       type: String,
       required: true,
@@ -87,6 +103,10 @@ const orderSchema = new Schema<IOrder>(
     amount: {
       type: Number,
       required: true,
+      min: 0,
+    },
+    itemPrice: {
+      type: Number,
       min: 0,
     },
     commission: {
@@ -124,6 +144,7 @@ const orderSchema = new Schema<IOrder>(
       type: String,
       required: true,
     },
+    deliveryLocation: String,
     taskerHasPaid: {
       type: Boolean,
       default: false,

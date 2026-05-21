@@ -4,6 +4,7 @@ import { getOrderResponseTime } from '@/lib/order-response-time'
 import { Order } from '@/models/order'
 import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
+import mongoose from 'mongoose'
 
 // ─── GET /api/admin/orders ──────────────────────────────────────────────────
 // Returns paginated list of orders with user and tasker details.
@@ -46,6 +47,11 @@ export async function GET(req: NextRequest) {
       filters.taskType = taskType
     }
 
+    const source = searchParams.get('source')
+    if (source && source !== 'all') {
+      filters.source = source
+    }
+
     const declined = searchParams.get('declined')
     if (declined === 'only') {
       filters.isDeclinedTask = true
@@ -61,7 +67,13 @@ export async function GET(req: NextRequest) {
       .lean()
 
     // Get user details
-    const userIds = [...new Set(orders.map(o => o.userId))]
+    const userIds = [
+      ...new Set(
+        orders
+          .map(o => o.userId?.toString())
+          .filter((id): id is string => Boolean(id && mongoose.Types.ObjectId.isValid(id)))
+      )
+    ]
     const users = await User.find({ _id: { $in: userIds } })
       .select('_id name email')
       .lean()
@@ -92,7 +104,10 @@ export async function GET(req: NextRequest) {
     const ordersWithDetails = orders.map(order => ({
       ...order,
       bookedAt: order.bookedAt || order.createdAt,
-      userName: userMap[order.userId.toString()]?.name || 'Unknown User',
+      userName:
+        userMap[order.userId.toString()]?.name ||
+        order.customerName ||
+        (order.source === 'whatsapp' ? 'WhatsApp Customer' : 'Unknown User'),
       userEmail: userMap[order.userId.toString()]?.email || '',
       taskerName: order.taskerId ? taskerMap[order.taskerId.toString()] : undefined,
       ...(() => {
