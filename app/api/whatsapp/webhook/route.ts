@@ -3,14 +3,19 @@ import { connectDB } from '@/lib/db';
 import { getSiteUrl } from '@/lib/site';
 import { splitServiceFee } from '@/lib/order-finance';
 import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
+import { calculateOrderPricing } from '@/lib/pricing';
 import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications';
 import { emitOrderUpdated } from '@/lib/socket';
+import {
+  findLinkedWhatsAppUser,
+  getOrCreatePendingWhatsAppRegistration,
+  type LinkedWhatsAppUser,
+} from '@/lib/whatsapp/registration';
 import { sendWhatsAppText } from '@/lib/whatsapp/send-message';
 import { Order } from '@/models/order';
-import { User } from '@/models/user';
 import { WhatsAppProcessedMessage } from '@/models/whatsapp-processed-message';
 import {
   IWhatsAppSession,
@@ -20,8 +25,6 @@ import {
 
 export const runtime = 'nodejs';
 
-const SERVICE_FEE = 450;
-
 type IncomingWhatsAppText = {
   phone: string;
   text: string;
@@ -29,12 +32,7 @@ type IncomingWhatsAppText = {
   name?: string;
 };
 
-type AuthenticatedWhatsAppUser = {
-  id: string;
-  name?: string | null;
-  email?: string | null;
-  phone?: string | null;
-};
+type AuthenticatedWhatsAppUser = LinkedWhatsAppUser;
 
 type WhatsAppWebhookPayload = {
   entry?: Array<{
@@ -63,71 +61,20 @@ function normalizeInput(value: string) {
   return value.trim().toLowerCase();
 }
 
-function phoneDigits(value?: string | null) {
-  return String(value || '').replace(/\D/g, '');
-}
-
-function getPhoneCandidates(phone: string) {
-  const digits = phoneDigits(phone);
-  const candidates = new Set<string>([phone, digits, `+${digits}`]);
-
-  if (digits.startsWith('234')) {
-    candidates.add(`0${digits.slice(3)}`);
-  }
-
-  if (digits.startsWith('0')) {
-    candidates.add(`234${digits.slice(1)}`);
-    candidates.add(`+234${digits.slice(1)}`);
-  }
-
-  return Array.from(candidates).filter(Boolean);
-}
-
 async function findAuthenticatedWhatsAppUser(phone: string): Promise<AuthenticatedWhatsAppUser | null> {
-  const candidates = getPhoneCandidates(phone);
-  let user = await User.findOne({
-    phone: { $in: candidates },
-    isSuspended: { $ne: true },
-  })
-    .select('_id name email phone')
-    .lean();
-
-  if (!user) {
-    const digits = phoneDigits(phone);
-    const lastTenDigits = digits.slice(-10);
-    const flexiblePhonePattern = lastTenDigits
-      ? `${lastTenDigits.split('').join('\\D*')}$`
-      : null;
-
-    if (flexiblePhonePattern) {
-      user = await User.findOne({
-        phone: { $regex: flexiblePhonePattern },
-        isSuspended: { $ne: true },
-      })
-        .select('_id name email phone')
-        .lean();
-    }
-  }
-
-  if (!user) {
-    return null;
-  }
-
-  return {
-    id: user._id.toString(),
-    name: user.name,
-    email: user.email,
-    phone: user.phone,
-  };
+  return findLinkedWhatsAppUser(phone);
 }
 
-function authenticationPrompt() {
-  return `Please authenticate your WhatsApp number on SwiftDU first.
+async function authenticationPrompt(phone: string, name?: string) {
+  const registration = await getOrCreatePendingWhatsAppRegistration(phone, name);
+  const link = `${getSiteUrl()}/dashboard/whatsapp/register?token=${registration.token}`;
 
-Log in here:
-${getSiteUrl()}/dashboard/account
+  return `Please register this WhatsApp number for the SwiftDU bot first.
 
-Make sure your account phone number is the same WhatsApp number you are messaging from, then reply MENU here.`;
+Open this link:
+${link}
+
+You must already have a SwiftDU website account. Log in on the website, link this WhatsApp number, then reply MENU here.`;
 }
 
 function getMissingEnv(names: string[]) {
@@ -213,15 +160,19 @@ function formatCurrency(value: number) {
 
 function confirmationMessage(session: IWhatsAppSession) {
   const itemPrice = Number(session.data.price || 0);
-  const total = itemPrice + SERVICE_FEE;
+  const pricing = calculateOrderPricing({
+    amount: itemPrice,
+    taskType: 'restaurant',
+    restaurantPeopleCount: 1,
+  });
 
   return `Confirm your order
 
 Store ${session.data.store || 'Not provided'}
 Items ${session.data.description || 'Not provided'}
 Items price ${formatCurrency(itemPrice)}
-Service fee ${formatCurrency(SERVICE_FEE)}
-Total ${formatCurrency(total)}
+Service fee ${formatCurrency(pricing.serviceFee)}
+Total ${formatCurrency(pricing.totalAmount)}
 
 Delivery location ${session.data.location || 'Not provided'}
 
@@ -331,8 +282,12 @@ async function createWhatsAppOrder(
   name?: string
 ) {
   const itemPrice = Number(session.data.price || 0);
-  const totalAmount = itemPrice + SERVICE_FEE;
-  const settlement = splitServiceFee(SERVICE_FEE);
+  const pricing = calculateOrderPricing({
+    amount: itemPrice,
+    taskType: 'restaurant',
+    restaurantPeopleCount: 1,
+  });
+  const settlement = splitServiceFee(pricing.serviceFee);
 
   const order = new Order({
     userId: user.id,
@@ -347,8 +302,8 @@ async function createWhatsAppOrder(
     platformFee: settlement.platformFee,
     taskerFee: settlement.taskerFee,
     serviceFee: settlement.serviceFee,
-    pricingModel: 'tiered',
-    totalAmount,
+    pricingModel: pricing.pricingModel,
+    totalAmount: pricing.totalAmount,
     location: session.data.location,
     deliveryLocation: session.data.location,
     store: session.data.store,
@@ -421,7 +376,7 @@ async function handleMessage(session: IWhatsAppSession, message: IncomingWhatsAp
   if (isGreeting(input)) {
     await setSessionMenu(session, message.messageId, message.name);
     if (!authenticatedUser) {
-      return authenticationPrompt();
+      return authenticationPrompt(message.phone, message.name);
     }
     return mainMenuMessage();
   }
@@ -429,7 +384,7 @@ async function handleMessage(session: IWhatsAppSession, message: IncomingWhatsAp
   if (input === 'cancel') {
     await setSessionMenu(session, message.messageId, message.name);
     if (!authenticatedUser) {
-      return authenticationPrompt();
+      return authenticationPrompt(message.phone, message.name);
     }
     return `Order cancelled.
 
@@ -438,7 +393,7 @@ ${mainMenuMessage()}`;
 
   if (!authenticatedUser) {
     await setSessionMenu(session, message.messageId, message.name);
-    return authenticationPrompt();
+    return authenticationPrompt(message.phone, message.name);
   }
 
   session.name = message.name || session.name;

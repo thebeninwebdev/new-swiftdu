@@ -1,0 +1,110 @@
+import { NextRequest, NextResponse } from 'next/server';
+
+import { auth } from '@/lib/auth';
+import { connectDB } from '@/lib/db';
+import { isSameWhatsAppPhone, maskWhatsAppPhone, normalizeWhatsAppPhone } from '@/lib/whatsapp/registration';
+import { User } from '@/models/user';
+import { WhatsAppRegistration } from '@/models/whatsapp-registration';
+
+export const runtime = 'nodejs';
+
+async function findRegistration(token: string) {
+  return WhatsAppRegistration.findOne({ token }).lean();
+}
+
+export async function GET(request: NextRequest) {
+  try {
+    const token = request.nextUrl.searchParams.get('token')?.trim();
+
+    if (!token) {
+      return NextResponse.json({ error: 'Registration token is required.' }, { status: 400 });
+    }
+
+    await connectDB();
+
+    const registration = await findRegistration(token);
+
+    if (!registration) {
+      return NextResponse.json({ error: 'This WhatsApp registration link is invalid.' }, { status: 404 });
+    }
+
+    return NextResponse.json({
+      phone: maskWhatsAppPhone(registration.phone),
+      status: registration.status,
+    });
+  } catch (error) {
+    console.error('[WhatsApp Registration GET Error]:', error);
+    return NextResponse.json({ error: 'Failed to load WhatsApp registration.' }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const session = await auth.api.getSession({ headers: request.headers });
+
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: 'Log in to your SwiftDU account before linking WhatsApp.' },
+        { status: 401 }
+      );
+    }
+
+    const body = await request.json();
+    const token = typeof body?.token === 'string' ? body.token.trim() : '';
+
+    if (!token) {
+      return NextResponse.json({ error: 'Registration token is required.' }, { status: 400 });
+    }
+
+    await connectDB();
+
+    const [registration, user] = await Promise.all([
+      WhatsAppRegistration.findOne({ token }),
+      User.findById(session.user.id).select('_id name email phone isSuspended').lean(),
+    ]);
+
+    if (!registration) {
+      return NextResponse.json({ error: 'This WhatsApp registration link is invalid.' }, { status: 404 });
+    }
+
+    if (!user || user.isSuspended) {
+      return NextResponse.json({ error: 'Your SwiftDU account cannot link WhatsApp right now.' }, { status: 403 });
+    }
+
+    if (
+      registration.status === 'linked' &&
+      registration.userId &&
+      registration.userId !== session.user.id
+    ) {
+      return NextResponse.json(
+        { error: 'This WhatsApp number is already linked to another SwiftDU account.' },
+        { status: 409 }
+      );
+    }
+
+    const normalizedUserPhone = normalizeWhatsAppPhone(user.phone);
+    if (normalizedUserPhone && !isSameWhatsAppPhone(normalizedUserPhone, registration.phone)) {
+      return NextResponse.json(
+        {
+          error:
+            'Your SwiftDU account phone number must match the WhatsApp number you are linking.',
+        },
+        { status: 400 }
+      );
+    }
+
+    registration.userId = session.user.id;
+    registration.status = 'linked';
+    registration.linkedAt = new Date();
+    await registration.save();
+
+    return NextResponse.json({
+      ok: true,
+      phone: maskWhatsAppPhone(registration.phone),
+      status: registration.status,
+    });
+  } catch (error) {
+    console.error('[WhatsApp Registration POST Error]:', error);
+    return NextResponse.json({ error: 'Failed to link WhatsApp.' }, { status: 500 });
+  }
+}

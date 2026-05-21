@@ -42,6 +42,29 @@ export const TIERED_SERVICE_FEE_RULES = [
   },
 ] as const
 
+export const RESTAURANT_SINGLE_ORDER_SERVICE_FEE_RULES = [
+  {
+    min: 0,
+    max: 4999,
+    fee: RESTAURANT_PERSON_FEE,
+  },
+  {
+    min: 5000,
+    max: 6999,
+    fee: 700,
+  },
+  {
+    min: 7000,
+    max: 9999,
+    fee: 1000,
+  },
+  {
+    min: 10000,
+    max: null,
+    fee: 2000,
+  },
+] as const
+
 export type NoteSize = 'small' | 'big'
 export type CopyNotesType = NoteSize
 export type PrintingServiceType = 'printing' | 'photocopying'
@@ -248,7 +271,7 @@ export function calculateOrderPricing(input: {
 
   const serviceFee =
     input.taskType === 'restaurant'
-      ? calculateRestaurantServiceFee(input.restaurantPeopleCount)
+      ? calculateRestaurantServiceFee(input.restaurantPeopleCount, amount)
       : getTieredServiceFee(amount)
 
   return {
@@ -274,13 +297,22 @@ export function normalizeRestaurantPeopleCount(value?: number) {
   return count
 }
 
-export function calculateRestaurantServiceFee(peopleCount?: number) {
+export function calculateRestaurantServiceFee(peopleCount?: number, amount = 0) {
   const normalizedPeopleCount = normalizeRestaurantPeopleCount(peopleCount)
-  const baseFee = roundNaira(RESTAURANT_PERSON_FEE * normalizedPeopleCount)
 
   if (normalizedPeopleCount <= 1) {
-    return baseFee
+    const matchingRule = RESTAURANT_SINGLE_ORDER_SERVICE_FEE_RULES.find((rule) => {
+      if (rule.max === null) {
+        return amount >= rule.min
+      }
+
+      return amount >= rule.min && amount <= rule.max
+    })
+
+    return matchingRule?.fee || RESTAURANT_PERSON_FEE
   }
+
+  const baseFee = roundNaira(RESTAURANT_PERSON_FEE * normalizedPeopleCount)
 
   return roundNaira(baseFee * (1 - RESTAURANT_GROUP_DISCOUNT_RATE))
 }
