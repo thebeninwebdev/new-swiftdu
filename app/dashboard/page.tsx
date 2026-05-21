@@ -15,7 +15,6 @@ import {
   Info,
   Loader2,
   MapPin,
-  Package,
   ShieldCheck,
   ShoppingBag,
   Store,
@@ -35,9 +34,7 @@ import {
   PHOTOCOPY_PRICE_PER_PAGE,
   PRINTING_PRICE_PER_PAGE,
   PRINTING_TASK_TYPE,
-  RESTAURANT_GROUP_DISCOUNT_RATE,
   RESTAURANT_MAX_PEOPLE,
-  RESTAURANT_PERSON_FEE,
   WATER_BAG_PRICE,
   WATER_BAG_FEE,
   WATER_TASK_TYPE,
@@ -52,7 +49,6 @@ interface ErrandData {
   amount: string
   location: string
   store?: string
-  packaging?: string
   waterBags?: string
   noteSize?: string
   numberOfPages?: string
@@ -156,11 +152,6 @@ const storeOptions: Record<string, Array<{ value: string; label: string }>> = {
   ],
 }
 
-const packagingOptions = [
-  { value: 'cellophane', label: 'Cellophane Bag', price: 0, priceLabel: 'Free' },
-  { value: 'takeaway', label: 'Takeaway Pack', price: 200, priceLabel: 'N200' },
-]
-
 function formatNaira(value: number) {
   return new Intl.NumberFormat('en-NG', {
     style: 'currency',
@@ -235,7 +226,6 @@ export default function ErrandWizardPage() {
     amount: '',
     location: '',
     store: '',
-    packaging: '',
     waterBags: '',
     noteSize: '',
     numberOfPages: '',
@@ -409,14 +399,7 @@ export default function ErrandWizardPage() {
     Number.isInteger(restaurantPeopleCount) && restaurantPeopleCount > 0
       ? restaurantPeopleCount
       : 1
-  const restaurantBaseServiceFee = RESTAURANT_PERSON_FEE * normalizedRestaurantPeopleCount
-  const restaurantGroupDiscount =
-    normalizedRestaurantPeopleCount > 1
-      ? Math.round(restaurantBaseServiceFee * RESTAURANT_GROUP_DISCOUNT_RATE)
-      : 0
-  const selectedPackaging = packagingOptions.find((item) => item.value === formData.packaging)
-  const restaurantPackagingFee = selectedPackaging?.price || 0
-  const restaurantBudget = restaurantFoodBudget + restaurantPackagingFee
+  const restaurantBudget = restaurantFoodBudget
   const restaurantDescription = formData.description.trim()
   const shoppingBudget = formData.shoppingItems.reduce((total, item) => total + item.price, 0)
   const shoppingDescription = formData.shoppingItems
@@ -471,6 +454,10 @@ export default function ErrandWizardPage() {
     description.length > 0 &&
     descriptionMentionsWater(description) &&
     formData.taskType !== WATER_TASK_TYPE
+  const deliveryStep = 3
+  const reviewStep = 4
+  const stepTitles = ['Choose Task', 'Details', 'Delivery', 'Review']
+  const stepIcons = [ShoppingBag, FileText, MapPin, CreditCard]
 
   const clearError = (field: string) =>
     setErrors((previous) => {
@@ -507,7 +494,6 @@ export default function ErrandWizardPage() {
       ...previous,
       taskType: value,
       store: '',
-      packaging: value === 'restaurant' ? previous.packaging : '',
       waterBags: value === WATER_TASK_TYPE ? previous.waterBags : '',
       noteSize: value === 'copy_notes' ? previous.noteSize : '',
       numberOfPages:
@@ -529,7 +515,6 @@ export default function ErrandWizardPage() {
     ;[
       'taskType',
       'store',
-      'packaging',
       'waterBags',
       'noteSize',
       'numberOfPages',
@@ -540,12 +525,6 @@ export default function ErrandWizardPage() {
     ].forEach(clearError)
     setStep(2)
     setErrors({})
-  }
-
-  const handlePackagingSelect = (value: string) => {
-    pauseRealtime()
-    setFormData((previous) => ({ ...previous, packaging: value }))
-    clearError('packaging')
   }
 
   const addShoppingItem = () => {
@@ -612,10 +591,6 @@ if (stepNumber === 2) {
     !formData.store
   ) {
     nextErrors.store = 'Select the store for this task.'
-  }
-
-  if (formData.taskType === 'restaurant' && !formData.packaging) {
-    nextErrors.packaging = 'Choose a packaging option.'
   }
 
   if (formData.taskType === 'restaurant') {
@@ -715,7 +690,7 @@ if (stepNumber === 2) {
   }
 }
 
- if (stepNumber === 3) {
+ if (stepNumber === deliveryStep) {
   if (!formData.location.trim()) {
     nextErrors.location = 'Enter the delivery location.'
   }
@@ -774,7 +749,6 @@ if (stepNumber === 2) {
         amount: '',
         location: '',
         store: '',
-        packaging: '',
         waterBags: '',
         noteSize: '',
         numberOfPages: '',
@@ -803,15 +777,12 @@ if (stepNumber === 2) {
       setStep(2)
       return
     }
-    if (!validateStep(3)) {
-      setStep(3)
+    if (!validateStep(deliveryStep)) {
+      setStep(deliveryStep)
       return
     }
     await createOrder()
   }
-
-  const stepTitles = ['Choose Task', 'Details', 'Delivery', 'Review']
-  const stepIcons = [ShoppingBag, FileText, MapPin, CreditCard]
   const activeStatusLabel = activeOrder
     ? activeOrder.status === 'pending'
       ? 'Searching for a tasker'
@@ -931,9 +902,10 @@ if (stepNumber === 2) {
                 <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 border-t border-slate-200 dark:border-slate-800" />
                 <div
                   className="absolute left-0 top-1/2 h-px -translate-y-1/2 bg-linear-to-r from-indigo-500 to-cyan-500 transition-all duration-500"
-                  style={{ width: `${((step - 1) / 3) * 100}%` }}
+                  style={{ width: `${((step - 1) / (stepTitles.length - 1)) * 100}%` }}
                 />
-                {[1, 2, 3, 4].map((currentStep, index) => {
+                {stepTitles.map((title, index) => {
+                  const currentStep = index + 1
                   const Icon = stepIcons[index]
                   const isActive = currentStep === step
                   const isCompleted = currentStep < step
@@ -951,7 +923,7 @@ if (stepNumber === 2) {
                       <span className={`hidden text-xs font-medium sm:block ${
                         isActive ? 'text-indigo-600 dark:text-indigo-400' : isCompleted ? 'text-slate-700 dark:text-slate-300' : 'text-slate-400'
                       }`}>
-                        {stepTitles[index]}
+                        {title}
                       </span>
                     </div>
                   )
@@ -1231,22 +1203,6 @@ if (stepNumber === 2) {
                       ) : null}
                     </div>
                   ) : null}
-                  {formData.taskType === 'restaurant' ? (
-                    <div>
-                      <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Package className="h-4 w-4 text-indigo-500" />Packaging</label>
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        {packagingOptions.map((option) => (
-                          <button key={option.value} type="button" onClick={() => handlePackagingSelect(option.value)} className={`rounded-xl border-2 p-4 text-center ${
-                            formData.packaging === option.value ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300' : 'border-slate-200 hover:border-indigo-300 dark:border-slate-700 dark:hover:border-indigo-700'
-                          }`}>
-                            <div className="font-medium">{option.label}</div>
-                            <div className="text-sm text-slate-500 dark:text-slate-400">{option.priceLabel}</div>
-                          </button>
-                        ))}
-                      </div>
-                      {errors.packaging ? <p className="mt-2 text-sm text-red-500">{errors.packaging}</p> : null}
-                    </div>
-                  ) : null}
                   {formData.taskType === WATER_TASK_TYPE ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Droplets className="h-4 w-4 text-cyan-500" />Number of Bags</label>
@@ -1300,7 +1256,7 @@ if (stepNumber === 2) {
                           How much will the food cost?
                         </p>
                         <p className="mt-1 text-sm font-medium text-orange-700 dark:text-orange-300 pb-2">
-                          Do not add takeaway price. SwiftDU will calculate that automatically.
+                          Do not forget to calculate the takeaway amount for your budget.
                         </p>
                         {errors.restaurantItemPrice ? <p className="mt-2 text-sm text-red-500">{errors.restaurantItemPrice}</p> : null}
                       </div>
@@ -1335,9 +1291,6 @@ if (stepNumber === 2) {
                         {errors.restaurantPeople ? <p className="mt-2 text-sm text-red-500">{errors.restaurantPeople}</p> : null}
                       </div>
                       <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
-                        {/* Food is {formatNaira(restaurantFoodBudget)}.
-                        Packaging is {formatNaira(restaurantPackagingFee)}.
-                        Budget is {formatNaira(restaurantBudget)} before SwiftDU service fee. */}
                         <span className="block pt-1 font-semibold">
                           If taskers notice the food is for multiple people, they can update your order price before you pay.
                         </span>
@@ -1479,7 +1432,7 @@ if (stepNumber === 2) {
                 </div>
               ) : null}
 
-              {step === 3 ? (
+              {step === deliveryStep ? (
                 <div className="space-y-4 md:space-y-5">
                   <div>
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Delivery Info</h2>
@@ -1500,7 +1453,7 @@ if (stepNumber === 2) {
                 </div>
               ) : null}
 
-              {step === 4 ? (
+              {step === reviewStep ? (
                 <div className="space-y-5 md:space-y-6">
                   <div>
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Review Your Task</h2>
@@ -1543,7 +1496,6 @@ if (stepNumber === 2) {
                       ) : null}
                       {formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.description ? <div className="flex justify-between gap-6"><span className="text-slate-500">Description</span><span className="max-w-[18rem] text-right text-slate-900 dark:text-slate-100">{formData.description}</span></div> : null}
                       <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Location</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.location}</span></div>
-                      {formData.packaging ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Packaging</span><span className="text-right text-slate-900 dark:text-slate-100">{selectedPackaging?.label} ({formatNaira(restaurantPackagingFee)})</span></div> : null}
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">People</span><span className="text-right text-slate-900 dark:text-slate-100">{normalizedRestaurantPeopleCount}</span></div> : null}
                       {formData.taskType === WATER_TASK_TYPE ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Water bags</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.waterBags}</span></div> : null}
                       {formData.taskType === PRINTING_TASK_TYPE ? (
@@ -1567,7 +1519,7 @@ if (stepNumber === 2) {
                       ) : null}
                     </div>
                     <div className="space-y-3 border-t-2 border-slate-200 pt-6 dark:border-slate-700">
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget + packaging' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
                       <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span><span className="font-medium">{formatNaira(pricing.serviceFee)}</span></div>
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(pricing.totalAmount)}</span></div>
                     </div>
@@ -1593,12 +1545,12 @@ if (stepNumber === 2) {
             <div className="border-t border-slate-100 bg-slate-50/50 px-4 pb-4 pt-2 dark:border-slate-800 dark:bg-slate-900/50 sm:px-5 sm:pb-5 md:px-8 md:pb-8">
               <div className="flex gap-3">
                 {step > 1 ? <Button variant="outline" onClick={handleBack} disabled={isSubmitting} className="h-12 flex-1 rounded-xl border-2 hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button> : null}
-                {step > 1 && step < 4 ? (
+                {step > 1 && step < reviewStep ? (
                   <Button onClick={handleNext} className="h-12 flex-1 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-cyan-600">
                     Continue
                     <ChevronRight className="ml-2 h-4 w-4" />
                   </Button>
-                ) : step === 4 ? (
+                ) : step === reviewStep ? (
                   <Button onClick={handleSubmit} disabled={isSubmitting} className="h-12 flex-1 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-cyan-600">
                     {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Posting...</> : <>Post Task<ArrowRight className="ml-2 h-4 w-4" /></>}
                   </Button>

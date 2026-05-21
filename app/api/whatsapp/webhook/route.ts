@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
+import { getSiteUrl } from '@/lib/site';
+import { splitServiceFee } from '@/lib/order-finance';
+import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
+import {
+  formatPushTaskType,
+  sendPushNotification,
+} from '@/lib/push-notifications';
+import { emitOrderUpdated } from '@/lib/socket';
 import { sendWhatsAppText } from '@/lib/whatsapp/send-message';
 import { Order } from '@/models/order';
+import { User } from '@/models/user';
 import { WhatsAppProcessedMessage } from '@/models/whatsapp-processed-message';
 import {
   IWhatsAppSession,
@@ -18,6 +27,13 @@ type IncomingWhatsAppText = {
   text: string;
   messageId: string;
   name?: string;
+};
+
+type AuthenticatedWhatsAppUser = {
+  id: string;
+  name?: string | null;
+  email?: string | null;
+  phone?: string | null;
 };
 
 type WhatsAppWebhookPayload = {
@@ -45,6 +61,73 @@ type WhatsAppWebhookPayload = {
 
 function normalizeInput(value: string) {
   return value.trim().toLowerCase();
+}
+
+function phoneDigits(value?: string | null) {
+  return String(value || '').replace(/\D/g, '');
+}
+
+function getPhoneCandidates(phone: string) {
+  const digits = phoneDigits(phone);
+  const candidates = new Set<string>([phone, digits, `+${digits}`]);
+
+  if (digits.startsWith('234')) {
+    candidates.add(`0${digits.slice(3)}`);
+  }
+
+  if (digits.startsWith('0')) {
+    candidates.add(`234${digits.slice(1)}`);
+    candidates.add(`+234${digits.slice(1)}`);
+  }
+
+  return Array.from(candidates).filter(Boolean);
+}
+
+async function findAuthenticatedWhatsAppUser(phone: string): Promise<AuthenticatedWhatsAppUser | null> {
+  const candidates = getPhoneCandidates(phone);
+  let user = await User.findOne({
+    phone: { $in: candidates },
+    isSuspended: { $ne: true },
+  })
+    .select('_id name email phone')
+    .lean();
+
+  if (!user) {
+    const digits = phoneDigits(phone);
+    const lastTenDigits = digits.slice(-10);
+    const flexiblePhonePattern = lastTenDigits
+      ? `${lastTenDigits.split('').join('\\D*')}$`
+      : null;
+
+    if (flexiblePhonePattern) {
+      user = await User.findOne({
+        phone: { $regex: flexiblePhonePattern },
+        isSuspended: { $ne: true },
+      })
+        .select('_id name email phone')
+        .lean();
+    }
+  }
+
+  if (!user) {
+    return null;
+  }
+
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    email: user.email,
+    phone: user.phone,
+  };
+}
+
+function authenticationPrompt() {
+  return `Please authenticate your WhatsApp number on SwiftDU first.
+
+Log in here:
+${getSiteUrl()}/dashboard/account
+
+Make sure your account phone number is the same WhatsApp number you are messaging from, then reply MENU here.`;
 }
 
 function getMissingEnv(names: string[]) {
@@ -107,7 +190,11 @@ Snacks`;
 }
 
 function pricePrompt() {
-  return `Enter the total price of the items only.
+  return `Enter the food budget only.
+
+Do not forget to calculate the takeaway amount for your budget.
+
+You can only order for one person at a time using this WhatsApp bot.
 
 Example
 1500`;
@@ -195,28 +282,77 @@ async function getOrCreateSession(message: IncomingWhatsAppText) {
   return session;
 }
 
-async function createWhatsAppOrder(session: IWhatsAppSession, phone: string, name?: string) {
+async function notifyWhatsAppOrderCreated(
+  order: Awaited<ReturnType<typeof createWhatsAppOrder>>,
+  user: AuthenticatedWhatsAppUser
+) {
+  emitOrderUpdated(order);
+
+  const taskerPushResult = await sendPushNotification({
+    audience: { roles: ['tasker'] },
+    title: 'New Task Available',
+    body: `${formatPushTaskType(order.taskType)} in ${order.location} - NGN ${Number(order.totalAmount || 0).toLocaleString()}`,
+    url: '/available-tasks',
+    tag: `new-task-${order._id.toString()}`,
+  });
+
+  if (
+    taskerPushResult.skipped ||
+    taskerPushResult.deliveredCount + (taskerPushResult.expiredCount || 0) <
+      taskerPushResult.recipientCount
+  ) {
+    console.warn('[WhatsApp Order Tasker Push Notification]:', taskerPushResult);
+  }
+
+  try {
+    const adminAlertResult = await notifyAdminsOfOrderEvent({
+      event: 'created',
+      order,
+      actorName: user.name || null,
+      actorEmail: user.email || null,
+      actorRole: 'customer',
+    });
+
+    if (
+      adminAlertResult.skipped ||
+      adminAlertResult.deliveredCount < adminAlertResult.recipientCount
+    ) {
+      console.warn('[WhatsApp Order Admin Notification]:', adminAlertResult);
+    }
+  } catch (notificationError) {
+    console.error('[WhatsApp Order Admin Notification Error]:', notificationError);
+  }
+}
+
+async function createWhatsAppOrder(
+  session: IWhatsAppSession,
+  phone: string,
+  user: AuthenticatedWhatsAppUser,
+  name?: string
+) {
   const itemPrice = Number(session.data.price || 0);
   const totalAmount = itemPrice + SERVICE_FEE;
+  const settlement = splitServiceFee(SERVICE_FEE);
 
   const order = new Order({
-    userId: `whatsapp:${phone}`,
+    userId: user.id,
     source: 'whatsapp',
     customerPhone: phone,
-    customerName: name || session.name || undefined,
+    customerName: user.name || name || session.name || undefined,
     taskType: 'restaurant',
     description: session.data.description,
     amount: itemPrice,
     itemPrice,
-    commission: SERVICE_FEE,
-    platformFee: SERVICE_FEE,
-    taskerFee: 0,
-    serviceFee: SERVICE_FEE,
+    commission: settlement.serviceFee,
+    platformFee: settlement.platformFee,
+    taskerFee: settlement.taskerFee,
+    serviceFee: settlement.serviceFee,
     pricingModel: 'tiered',
     totalAmount,
     location: session.data.location,
     deliveryLocation: session.data.location,
     store: session.data.store,
+    restaurantPeopleCount: 1,
     status: 'pending',
     bookedAt: new Date(),
     paymentProvider: 'manual_transfer',
@@ -280,17 +416,29 @@ D. Speak to support`;
 
 async function handleMessage(session: IWhatsAppSession, message: IncomingWhatsAppText) {
   const input = normalizeInput(message.text);
+  const authenticatedUser = await findAuthenticatedWhatsAppUser(message.phone);
 
   if (isGreeting(input)) {
     await setSessionMenu(session, message.messageId, message.name);
+    if (!authenticatedUser) {
+      return authenticationPrompt();
+    }
     return mainMenuMessage();
   }
 
   if (input === 'cancel') {
     await setSessionMenu(session, message.messageId, message.name);
+    if (!authenticatedUser) {
+      return authenticationPrompt();
+    }
     return `Order cancelled.
 
 ${mainMenuMessage()}`;
+  }
+
+  if (!authenticatedUser) {
+    await setSessionMenu(session, message.messageId, message.name);
+    return authenticationPrompt();
   }
 
   session.name = message.name || session.name;
@@ -377,7 +525,14 @@ ${pricePrompt()}`;
 
   if (session.step === 'CONFIRM_ORDER') {
     if (['yes', 'y'].includes(input)) {
-      const order = await createWhatsAppOrder(session, message.phone, message.name);
+      try {
+        const order = await createWhatsAppOrder(
+          session,
+          message.phone,
+          authenticatedUser,
+          message.name
+        );
+        await notifyWhatsAppOrderCreated(order, authenticatedUser);
       const items = session.data.description || 'Not provided';
       const total = Number(order.totalAmount || 0);
       await setSessionMenu(session, message.messageId, message.name);
@@ -389,6 +544,13 @@ Items ${items}
 Total ${formatCurrency(total)}
 
 Please wait while we process your order.`;
+      } catch (error) {
+        console.error('[WhatsApp Order Create Error]:', error);
+        await session.save();
+        return `Sorry, we could not create your order right now.
+
+Please reply YES to try again or MENU to restart.`;
+      }
     }
 
     if (['no', 'n'].includes(input)) {
