@@ -30,7 +30,7 @@ export const PROFILE_COMPLETION_FIELDS: Array<{
   { field: "phone", label: "Phone number" },
   { field: "location", label: "Location" },
   { field: "gender", label: "Gender" },
-  { field: "dateOfBirth", label: "Date of birth" },
+  { field: "dateOfBirth", label: "What is your birthday" },
 ];
 
 export const COUNTRY_CODES = [

@@ -192,7 +192,7 @@ export function ProfileTab() {
     if (formData.dateOfBirth) {
       const date = new Date(`${formData.dateOfBirth}T00:00:00.000Z`)
       if (Number.isNaN(date.getTime()) || date > new Date()) {
-        newErrors.dateOfBirth = "Enter a valid date of birth"
+        newErrors.dateOfBirth = "Enter a valid birthday"
       }
     }
     setErrors(newErrors)
@@ -501,7 +501,7 @@ export function ProfileTab() {
               </Field>
             </div>
 
-            {/* Date of Birth */}
+            {/* Birthday */}
             <div
               className={cn(
                 "transition-all duration-500",
@@ -512,7 +512,7 @@ export function ProfileTab() {
               <Field>
                 <FieldLabel className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   <Calendar className="h-4 w-4" />
-                  Date of Birth
+                  What is your birthday
                 </FieldLabel>
                 {isEditing ? (
                   <div className="relative">

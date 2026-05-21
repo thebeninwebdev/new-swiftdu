@@ -304,7 +304,7 @@ const CampusUseCases = () => {
   const useCases = [
     {
       title: "Food and cafeteria pickups",
-      desc: "Students can list each meal item and price before posting, so the runner knows exactly what to buy and the customer sees the full budget before confirming.",
+      desc: "Students describe what they want and enter a food budget before posting, so the runner knows what to buy and the customer sees the total before confirming.",
       icon: Coffee,
     },
     {

@@ -202,7 +202,7 @@ export default function ProfileCompletionPage() {
       const date = new Date(`${value}T00:00:00.000Z`)
 
       if (Number.isNaN(date.getTime()) || date > new Date()) {
-        throw new Error("Enter a valid date of birth.")
+        throw new Error("Enter a valid birthday.")
       }
     }
 

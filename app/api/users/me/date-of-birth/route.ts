@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('[Date of Birth GET Error]:', error)
     return NextResponse.json(
-      { error: 'Failed to load date of birth.' },
+      { error: 'Failed to load birthday.' },
       { status: 500 }
     )
   }
@@ -73,7 +73,7 @@ export async function PATCH(request: NextRequest) {
 
     if (!dateOfBirth) {
       return NextResponse.json(
-        { error: 'Enter a valid date of birth.' },
+        { error: 'Enter a valid birthday.' },
         { status: 400 }
       )
     }
@@ -88,7 +88,7 @@ export async function PATCH(request: NextRequest) {
   } catch (error) {
     console.error('[Date of Birth PATCH Error]:', error)
     return NextResponse.json(
-      { error: 'Failed to save date of birth.' },
+      { error: 'Failed to save birthday.' },
       { status: 500 }
     )
   }

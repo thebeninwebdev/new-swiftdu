@@ -32,22 +32,6 @@ const DeferredAdsenseLoader = dynamic(
   { ssr: false }
 );
 
-const DeferredAppInstallPromptManager = dynamic(
-  () =>
-    import("@/components/AppInstallPromptManager").then(
-      (module) => module.AppInstallPromptManager
-    ),
-  { ssr: false }
-);
-
-const DeferredDateOfBirthPromptManager = dynamic(
-  () =>
-    import("@/components/DateOfBirthPromptManager").then(
-      (module) => module.DateOfBirthPromptManager
-    ),
-  { ssr: false }
-);
-
 function onIdle(callback: () => void) {
   if (typeof window === "undefined") {
     return () => {};
@@ -92,8 +76,6 @@ export function DeferredAppScripts() {
       <DeferredGoogleAnalytics />
       <DeferredAnalyticsTracker />
       <DeferredAdsenseLoader />
-      <DeferredAppInstallPromptManager />
-      <DeferredDateOfBirthPromptManager />
       <DeferredToaster richColors position="bottom-right" />
     </>
   );

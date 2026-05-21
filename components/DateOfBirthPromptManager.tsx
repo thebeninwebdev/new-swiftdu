@@ -64,13 +64,13 @@ export function DateOfBirthPromptManager() {
       const payload = (await response.json()) as { error?: string }
 
       if (!response.ok) {
-        setError(payload.error || 'Failed to save date of birth.')
+        setError(payload.error || 'Failed to save birthday.')
         return
       }
 
       setShowPrompt(false)
     } catch {
-      setError('Failed to save date of birth.')
+      setError('Failed to save birthday.')
     } finally {
       setIsSaving(false)
     }
@@ -93,7 +93,7 @@ export function DateOfBirthPromptManager() {
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-3">
               <div>
-                <h2 className="text-sm font-semibold">Add your date of birth</h2>
+                <h2 className="text-sm font-semibold">What is your birthday?</h2>
                 <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
                   This helps us keep your Swiftdu account details complete.
                 </p>
@@ -102,13 +102,13 @@ export function DateOfBirthPromptManager() {
                 type="button"
                 onClick={() => setShowPrompt(false)}
                 className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-900 dark:hover:text-slate-200"
-                aria-label="Dismiss date of birth prompt"
+                aria-label="Dismiss birthday prompt"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
             <label className="mt-4 block text-xs font-semibold text-slate-500 dark:text-slate-400">
-              Date of birth
+              Birthday
             </label>
             <input
               type="date"
@@ -126,7 +126,7 @@ export function DateOfBirthPromptManager() {
               disabled={isSaving}
               className="mt-4 inline-flex h-10 w-full items-center justify-center rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
             >
-              {isSaving ? 'Saving...' : 'Save date of birth'}
+              {isSaving ? 'Saving...' : 'Save birthday'}
             </button>
           </div>
         </div>

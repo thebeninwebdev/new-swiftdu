@@ -149,7 +149,7 @@ export async function PATCH(request: NextRequest) {
       const dateOfBirth = parseDateOfBirth(body.dateOfBirth)
       if (dateOfBirth === undefined) {
         return NextResponse.json(
-          { error: 'Enter a valid date of birth.' },
+          { error: 'Enter a valid birthday.' },
           { status: 400 }
         )
       }
