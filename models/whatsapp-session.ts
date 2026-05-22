@@ -3,6 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export type WhatsAppSessionStep =
   | 'MENU'
   | 'SELECT_STORE'
+  | 'ENTER_RESTAURANT_PEOPLE'
   | 'ENTER_DESCRIPTION'
   | 'ENTER_PRICE'
   | 'ENTER_LOCATION'
@@ -14,6 +15,8 @@ export interface IWhatsAppSession extends Document {
   name?: string;
   step: WhatsAppSessionStep;
   data: {
+    taskType?: 'restaurant' | 'shopping';
+    restaurantPeopleCount?: number;
     store?: string;
     description?: string;
     price?: number;
@@ -38,6 +41,7 @@ const whatsappSessionSchema = new Schema<IWhatsAppSession>(
       enum: [
         'MENU',
         'SELECT_STORE',
+        'ENTER_RESTAURANT_PEOPLE',
         'ENTER_DESCRIPTION',
         'ENTER_PRICE',
         'ENTER_LOCATION',
@@ -48,6 +52,8 @@ const whatsappSessionSchema = new Schema<IWhatsAppSession>(
       required: true,
     },
     data: {
+      taskType: String,
+      restaurantPeopleCount: Number,
       store: String,
       description: String,
       price: Number,

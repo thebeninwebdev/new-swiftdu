@@ -103,7 +103,7 @@ function WhatsAppRegistrationContent() {
             <CardTitle className="text-2xl font-bold">Link WhatsApp Bot</CardTitle>
           </CardHeader>
           <CardContent className="space-y-5">
-            {loading || sessionLoading ? (
+            {loading ? (
               <div className="flex items-center gap-3 rounded-xl border border-border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
                 <Loader2 className="h-4 w-4 animate-spin" />
                 Checking your registration link...
@@ -131,8 +131,16 @@ function WhatsAppRegistrationContent() {
                     {linking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Link WhatsApp to my account
                   </Button>
+                ) : sessionLoading ? (
+                  <Button disabled size="lg" className="w-full">
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Checking login...
+                  </Button>
                 ) : (
-                  <Link href="/login" className={buttonVariants({ size: 'lg', className: 'w-full' })}>
+                  <Link
+                    href={`/login?callbackUrl=${encodeURIComponent(`/dashboard/whatsapp/register?token=${token}`)}`}
+                    className={buttonVariants({ size: 'lg', className: 'w-full' })}
+                  >
                     Log in to SwiftDU first
                   </Link>
                 )}

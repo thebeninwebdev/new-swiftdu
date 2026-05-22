@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { getPostAuthRedirect } from "@/lib/profile-completion";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { toast } from "sonner";
@@ -24,8 +24,9 @@ const BRAND_PRIMARY_DARK = "#4338ca";
 const CARD_BORDER = "rgba(255,255,255,0.6)";
 const CARD_SHADOW = "0 24px 80px rgba(79,70,229,0.18)";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [form, setForm] = useState({ email: "", password: "" });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
@@ -44,6 +45,14 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [serverError, setServerError] = useState("");
   const { data: session } = authClient.useSession();
+
+  const callbackUrl = searchParams.get("callbackUrl");
+  const safeCallbackUrl =
+    callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
+      ? callbackUrl
+      : "";
+  const postAuthRedirect = (user?: Parameters<typeof getPostAuthRedirect>[0]) =>
+    safeCallbackUrl || getPostAuthRedirect(user);
 
   const getAuthErrorMessage = (
     err: unknown,
@@ -126,9 +135,9 @@ export default function LoginPage() {
   
   useEffect(() => {
     if (session?.user && !passkeyLoading && !passkeySetupLoading) {
-      router.replace(getPostAuthRedirect(session.user));
+      router.replace(postAuthRedirect(session.user));
     }
-  }, [passkeyLoading, passkeySetupLoading, router, session?.user]);
+  }, [passkeyLoading, passkeySetupLoading, router, session?.user, safeCallbackUrl]);
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -191,7 +200,7 @@ export default function LoginPage() {
         return;
       }
 
-      router.push(getPostAuthRedirect(data?.user));
+      router.push(postAuthRedirect(data?.user));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (err: any) {
       setServerError(err?.message || "Invalid email or password.");
@@ -207,7 +216,7 @@ export default function LoginPage() {
     try {
       const { error } = await authClient.signIn.social({
         provider: "google",
-        callbackURL: "/signup/complete-profile",
+        callbackURL: safeCallbackUrl || "/signup/complete-profile",
         newUserCallbackURL: "/signup/complete-profile",
         errorCallbackURL: "/login",
       });
@@ -285,7 +294,7 @@ export default function LoginPage() {
     }
 
     toast.success("Fingerprint / Face ID sign-in enabled");
-    router.push(getPostAuthRedirect(signInData?.user));
+    router.push(postAuthRedirect(signInData?.user));
   };
 
   const handlePasskeySetupSubmit = async (e: React.FormEvent) => {
@@ -342,7 +351,7 @@ export default function LoginPage() {
         throw new Error(error.message || "Fingerprint / Face ID sign-in failed.");
       }
 
-      router.push(getPostAuthRedirect(data?.user));
+      router.push(postAuthRedirect(data?.user));
     } catch (err: unknown) {
       const message = getAuthErrorMessage(
         err,
@@ -743,5 +752,13 @@ export default function LoginPage() {
       </Dialog>
 
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginContent />
+    </Suspense>
   );
 }

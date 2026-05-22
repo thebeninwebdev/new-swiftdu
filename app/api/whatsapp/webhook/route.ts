@@ -5,7 +5,11 @@ import { getSiteUrl } from '@/lib/site';
 import { splitServiceFee } from '@/lib/order-finance';
 import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
 import { ACTIVE_ORDER_STATUSES, canCustomerCancelOrder } from '@/lib/order-status';
-import { calculateOrderPricing } from '@/lib/pricing';
+import {
+  calculateOrderPricing,
+  calculateRestaurantServiceFee,
+  RESTAURANT_MAX_PEOPLE,
+} from '@/lib/pricing';
 import {
   formatPushTaskType,
   sendPushNotification,
@@ -113,14 +117,15 @@ function mainMenuMessage() {
 Choose an option:
 
 ( ) A. Order food
-( ) B. Track order
-( ) C. Cancel order
-( ) D. Speak to support
+( ) B. Store shopping
+( ) C. Track order
+( ) D. Cancel order
+( ) E. Speak to support
 
-Reply with A, B, C, or D.`;
+Reply with A, B, C, D, or E.`;
 }
 
-function storeMenuMessage() {
+function restaurantStoreMenuMessage() {
   return `Select store:
 
 ( ) A. Cafeteria
@@ -131,7 +136,33 @@ function storeMenuMessage() {
 Reply with A, B, C, or D.`;
 }
 
-function descriptionPrompt() {
+function shoppingStoreMenuMessage() {
+  return `Select shopping store:
+
+( ) A. RITA STORE
+( ) B. SARAH STORE
+( ) C. MUMMY V
+( ) D. Other
+
+Reply with A, B, C, or D.`;
+}
+
+function storeMenuMessage(session: IWhatsAppSession) {
+  return session.data.taskType === 'shopping'
+    ? shoppingStoreMenuMessage()
+    : restaurantStoreMenuMessage();
+}
+
+function descriptionPrompt(session: IWhatsAppSession) {
+  if (session.data.taskType === 'shopping') {
+    return `What do you want to buy?
+
+Example
+Indomie
+Bread
+Toiletries`;
+  }
+
   return `What do you want to order
 
 Example
@@ -140,12 +171,31 @@ Drink
 Snacks`;
 }
 
-function pricePrompt() {
+function restaurantPeoplePrompt() {
+  const options = Array.from({ length: RESTAURANT_MAX_PEOPLE }, (_, index) => {
+    const count = index + 1;
+    const label = count === 1 ? '1 order/person' : `${count} orders/persons`;
+    return `( ) ${count}. ${label} - service fee ${formatCurrency(calculateRestaurantServiceFee(count))}`;
+  }).join('\n');
+
+  return `How many food orders are you making?
+
+${options}
+
+Reply with 1, 2, or 3.`;
+}
+
+function pricePrompt(session: IWhatsAppSession) {
+  if (session.data.taskType === 'shopping') {
+    return `Enter your shopping budget only.
+
+Example
+1500`;
+  }
+
   return `Enter the food budget only.
 
 Do not forget to calculate the takeaway amount for your budget.
-
-You can only order for one person at a time using this WhatsApp bot.
 
 Example
 1500`;
@@ -164,15 +214,20 @@ function formatCurrency(value: number) {
 
 function confirmationMessage(session: IWhatsAppSession) {
   const itemPrice = Number(session.data.price || 0);
+  const taskType = session.data.taskType || 'restaurant';
+  const restaurantPeopleCount = taskType === 'restaurant'
+    ? Number(session.data.restaurantPeopleCount || 1)
+    : undefined;
   const pricing = calculateOrderPricing({
     amount: itemPrice,
-    taskType: 'restaurant',
-    restaurantPeopleCount: 1,
+    taskType,
+    restaurantPeopleCount,
   });
 
   return `Confirm your order
 
 Store ${session.data.store || 'Not provided'}
+${taskType === 'restaurant' ? `Number of orders ${restaurantPeopleCount}` : ''}
 Items ${session.data.description || 'Not provided'}
 Items price ${formatCurrency(itemPrice)}
 Service fee ${formatCurrency(pricing.serviceFee)}
@@ -185,13 +240,14 @@ Reply YES to confirm or NO to cancel.`;
 
 function mapMainMenuSelection(input: string) {
   if (['a', 'order', 'order food', 'food'].includes(input)) return 'A';
-  if (['b', 'track', 'track order', 'track my order', 'status', 'order status'].includes(input)) return 'B';
-  if (['c', 'cancel', 'cancel order', 'cancel my order'].includes(input)) return 'C';
-  if (['d', 'support', 'customer support', 'speak to support', 'help', 'complaint'].includes(input)) return 'D';
+  if (['b', 'shopping', 'store shopping', 'shop', 'buy', 'buy from store'].includes(input)) return 'B';
+  if (['c', 'track', 'track order', 'track my order', 'status', 'order status'].includes(input)) return 'C';
+  if (['d', 'cancel', 'cancel order', 'cancel my order'].includes(input)) return 'D';
+  if (['e', 'support', 'customer support', 'speak to support', 'help', 'complaint'].includes(input)) return 'E';
   return null;
 }
 
-function mapStoreSelection(input: string) {
+function mapRestaurantStoreSelection(input: string) {
   const stores: Record<string, string> = {
     a: 'Cafeteria',
     cafeteria: 'Cafeteria',
@@ -204,6 +260,30 @@ function mapStoreSelection(input: string) {
   };
 
   return stores[input] || null;
+}
+
+function mapShoppingStoreSelection(input: string) {
+  const stores: Record<string, string> = {
+    a: 'RITA STORE',
+    'rita store': 'RITA STORE',
+    rita: 'RITA STORE',
+    b: 'SARAH STORE',
+    'sarah store': 'SARAH STORE',
+    sarah: 'SARAH STORE',
+    c: 'MUMMY V',
+    'mummy v': 'MUMMY V',
+    mummy: 'MUMMY V',
+    d: 'Other',
+    other: 'Other',
+  };
+
+  return stores[input] || null;
+}
+
+function mapStoreSelection(input: string, session: IWhatsAppSession) {
+  return session.data.taskType === 'shopping'
+    ? mapShoppingStoreSelection(input)
+    : mapRestaurantStoreSelection(input);
 }
 
 function isGreeting(input: string) {
@@ -286,10 +366,14 @@ async function createWhatsAppOrder(
   name?: string
 ) {
   const itemPrice = Number(session.data.price || 0);
+  const taskType = session.data.taskType || 'restaurant';
+  const restaurantPeopleCount = taskType === 'restaurant'
+    ? Number(session.data.restaurantPeopleCount || 1)
+    : undefined;
   const pricing = calculateOrderPricing({
     amount: itemPrice,
-    taskType: 'restaurant',
-    restaurantPeopleCount: 1,
+    taskType,
+    restaurantPeopleCount,
   });
   const settlement = splitServiceFee(pricing.serviceFee);
 
@@ -299,7 +383,7 @@ async function createWhatsAppOrder(
     source: 'whatsapp',
     customerPhone: phone,
     customerName: user.name || name || session.name || undefined,
-    taskType: 'restaurant',
+    taskType,
     description: session.data.description,
     amount: itemPrice,
     itemPrice,
@@ -312,7 +396,7 @@ async function createWhatsAppOrder(
     location: session.data.location,
     deliveryLocation: session.data.location,
     store: session.data.store,
-    restaurantPeopleCount: 1,
+    restaurantPeopleCount: pricing.restaurantPeopleCount,
     status: 'pending',
     bookedAt: new Date(),
     paymentProvider: 'manual_transfer',
@@ -449,22 +533,29 @@ ${mainMenuMessage()}`;
 
     if (selection === 'A') {
       session.step = 'SELECT_STORE';
-      session.data = {};
+      session.data = { taskType: 'restaurant' };
       await session.save();
-      return storeMenuMessage();
+      return storeMenuMessage(session);
     }
 
     if (selection === 'B') {
+      session.step = 'SELECT_STORE';
+      session.data = { taskType: 'shopping' };
       await session.save();
-      return trackCurrentOrder(message.phone);
+      return storeMenuMessage(session);
     }
 
     if (selection === 'C') {
       await session.save();
-      return cancelCurrentOrder(message.phone);
+      return trackCurrentOrder(message.phone);
     }
 
     if (selection === 'D') {
+      await session.save();
+      return cancelCurrentOrder(message.phone);
+    }
+
+    if (selection === 'E') {
       session.step = 'MENU';
       await session.save();
       return supportMessage();
@@ -475,24 +566,49 @@ ${mainMenuMessage()}`;
   }
 
   if (session.step === 'SELECT_STORE') {
-    const store = mapStoreSelection(input);
+    const store = mapStoreSelection(input, session);
 
     if (!store) {
       await session.save();
-      return storeMenuMessage();
+      return storeMenuMessage(session);
+    }
+
+    if (session.data.taskType === 'restaurant') {
+      session.step = 'ENTER_RESTAURANT_PEOPLE';
+      session.data = { ...session.data, store };
+      await session.save();
+      return restaurantPeoplePrompt();
     }
 
     session.step = 'ENTER_DESCRIPTION';
     session.data = { ...session.data, store };
     await session.save();
-    return descriptionPrompt();
+    return descriptionPrompt(session);
+  }
+
+  if (session.step === 'ENTER_RESTAURANT_PEOPLE') {
+    const restaurantPeopleCount = Number(input);
+
+    if (
+      !Number.isInteger(restaurantPeopleCount) ||
+      restaurantPeopleCount < 1 ||
+      restaurantPeopleCount > RESTAURANT_MAX_PEOPLE
+    ) {
+      await session.save();
+      return restaurantPeoplePrompt();
+    }
+
+    session.step = 'ENTER_DESCRIPTION';
+    session.data = { ...session.data, restaurantPeopleCount };
+    await session.save();
+    return descriptionPrompt(session);
   }
 
   if (session.step === 'ENTER_DESCRIPTION') {
     session.step = 'ENTER_PRICE';
     session.data = { ...session.data, description: message.text.trim() };
     await session.save();
-    return pricePrompt();
+    return pricePrompt(session);
   }
 
   if (session.step === 'ENTER_PRICE') {
@@ -502,7 +618,7 @@ ${mainMenuMessage()}`;
       await session.save();
       return `Please enter a valid positive number for the item price.
 
-${pricePrompt()}`;
+${pricePrompt(session)}`;
     }
 
     session.step = 'ENTER_LOCATION';
