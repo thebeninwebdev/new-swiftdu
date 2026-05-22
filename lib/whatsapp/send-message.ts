@@ -42,9 +42,10 @@ export async function sendWhatsAppText(to: string, body: string) {
 
     if (!response.ok) {
       const errorBody = await response.text();
-      console.error('[WhatsApp Send Error]:', response.status, errorBody);
+      throw new Error(`WhatsApp send failed with ${response.status}: ${errorBody}`);
     }
   } catch (error) {
     console.error('[WhatsApp Send Error]:', error);
+    throw error;
   }
 }

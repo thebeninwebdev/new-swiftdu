@@ -604,6 +604,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    const alreadyProcessed = await WhatsAppProcessedMessage.exists({
+      messageId: message.messageId,
+    });
+
+    if (alreadyProcessed) {
+      return NextResponse.json({ ok: true, duplicate: true });
+    }
+
+    const session = await getOrCreateSession(message);
+    const reply = await handleMessage(session, message);
+
+    await sendWhatsAppText(message.phone, reply);
+
     try {
       await WhatsAppProcessedMessage.create({
         messageId: message.messageId,
@@ -622,10 +635,6 @@ export async function POST(request: NextRequest) {
       throw error;
     }
 
-    const session = await getOrCreateSession(message);
-    const reply = await handleMessage(session, message);
-
-    await sendWhatsAppText(message.phone, reply);
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('[WhatsApp Webhook Error]:', error);
