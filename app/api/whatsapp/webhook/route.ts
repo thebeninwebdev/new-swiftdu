@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
+import { createOrderTrackingToken, getOrderTrackingUrl } from '@/lib/order-tracking';
 import { getSiteUrl } from '@/lib/site';
 import { splitServiceFee } from '@/lib/order-finance';
 import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
+import { ACTIVE_ORDER_STATUSES, canCustomerCancelOrder } from '@/lib/order-status';
 import { calculateOrderPricing } from '@/lib/pricing';
 import {
   formatPushTaskType,
@@ -108,21 +110,23 @@ function extractTextMessage(payload: WhatsAppWebhookPayload): IncomingWhatsAppTe
 function mainMenuMessage() {
   return `Welcome to SwiftDU 👋
 
-Choose an option
-A. Order food
-B. Track order
-C. Cancel order
-D. Speak to support
+Choose an option:
+
+( ) A. Order food
+( ) B. Track order
+( ) C. Cancel order
+( ) D. Speak to support
 
 Reply with A, B, C, or D.`;
 }
 
 function storeMenuMessage() {
-  return `Select store
-A. Cafeteria
-B. Restaurant
-C. Supermarket
-D. Other
+  return `Select store:
+
+( ) A. Cafeteria
+( ) B. Restaurant
+( ) C. Supermarket
+( ) D. Other
 
 Reply with A, B, C, or D.`;
 }
@@ -181,9 +185,9 @@ Reply YES to confirm or NO to cancel.`;
 
 function mapMainMenuSelection(input: string) {
   if (['a', 'order', 'order food', 'food'].includes(input)) return 'A';
-  if (['b', 'track', 'track order', 'status', 'order status'].includes(input)) return 'B';
-  if (['c', 'cancel order'].includes(input)) return 'C';
-  if (['d', 'support', 'speak to support', 'help', 'complaint'].includes(input)) return 'D';
+  if (['b', 'track', 'track order', 'track my order', 'status', 'order status'].includes(input)) return 'B';
+  if (['c', 'cancel', 'cancel order', 'cancel my order'].includes(input)) return 'C';
+  if (['d', 'support', 'customer support', 'speak to support', 'help', 'complaint'].includes(input)) return 'D';
   return null;
 }
 
@@ -291,6 +295,7 @@ async function createWhatsAppOrder(
 
   const order = new Order({
     userId: user.id,
+    trackingToken: createOrderTrackingToken(),
     source: 'whatsapp',
     customerPhone: phone,
     customerName: user.name || name || session.name || undefined,
@@ -321,52 +326,86 @@ async function createWhatsAppOrder(
   return order;
 }
 
-async function trackLatestOrder(phone: string) {
-  const order = await Order.findOne({ customerPhone: phone, source: 'whatsapp' })
-    .sort({ createdAt: -1 })
-    .lean();
+async function findCurrentWhatsAppOrder(phone: string) {
+  return Order.findOne({
+    customerPhone: phone,
+    source: 'whatsapp',
+    status: { $in: ACTIVE_ORDER_STATUSES },
+  })
+    .sort({ createdAt: -1 });
+}
+
+function supportMessage() {
+  return `SwiftDU support is available on WhatsApp:
+https://wa.me/2349014116505
+
+Tap the link above to speak with customer support.`;
+}
+
+async function trackCurrentOrder(phone: string) {
+  const order = await findCurrentWhatsAppOrder(phone);
 
   if (!order) {
-    return 'No recent order was found for this WhatsApp number.';
+    return `You do not have any order in progress right now.
+
+${mainMenuMessage()}`;
   }
 
-  return `Latest order
+  if (!order.trackingToken) {
+    order.trackingToken = createOrderTrackingToken();
+    await order.save();
+  }
+
+  const trackingUrl = getOrderTrackingUrl(order.trackingToken);
+
+  return `Here is your current order link again:
 
 Items ${order.description || 'Not provided'}
 Status ${String(order.status).replace('_', ' ')}
 Payment ${String(order.paymentStatus || 'unpaid').replace('_', ' ')}
-Total ${formatCurrency(Number(order.totalAmount || order.amount || 0))}`;
+Total ${formatCurrency(Number(order.totalAmount || order.amount || 0))}
+${trackingUrl ? `\nTrack and pay here:\n${trackingUrl}` : ''}`;
 }
 
-async function cancelLatestOrder(phone: string) {
-  const order = await Order.findOneAndUpdate(
-    {
-      customerPhone: phone,
-      source: 'whatsapp',
-      status: 'pending',
-      paymentStatus: 'unpaid',
-    },
-    {
-      $set: {
-        status: 'cancelled',
-        paymentStatus: 'cancelled',
-        cancelledAt: new Date(),
-      },
-    },
-    { sort: { createdAt: -1 }, new: true }
-  );
+async function cancelCurrentOrder(phone: string) {
+  const order = await findCurrentWhatsAppOrder(phone);
 
   if (!order) {
-    return 'There is no active cancellable order for this WhatsApp number.';
+    return `Cancellation cannot be made because you do not have any order in progress.
+
+${mainMenuMessage()}`;
   }
 
-  return `Your latest pending order has been cancelled.
+  if (!canCustomerCancelOrder(order)) {
+    return `Cancellation cannot be made for this order.
 
-Choose an option
-A. Order food
-B. Track order
-C. Cancel order
-D. Speak to support`;
+Your order is already in progress and payment has been made.
+
+Track it here:
+${order.trackingToken ? getOrderTrackingUrl(order.trackingToken) : 'Tracking link is not available right now.'}`;
+  }
+
+  order.status = 'cancelled';
+  order.cancelledAt = new Date();
+  if (!order.hasPaid) {
+    order.paymentStatus = 'cancelled';
+  }
+  order.settlementStatus = 'not_due';
+  order.settlementReference = undefined;
+  order.settlementAccessCode = undefined;
+  order.settlementCheckoutUrl = undefined;
+  order.settlementTransactionId = undefined;
+  order.settlementInitializedAt = undefined;
+  order.settlementPaidAt = undefined;
+  order.settlementDueAt = undefined;
+  order.settlementFailureReason = undefined;
+
+  await order.save();
+  emitOrderUpdated(order);
+
+  return `Your cancellation request has been received and the order has been cancelled.
+
+${mainMenuMessage()}`;
 }
 
 async function handleMessage(session: IWhatsAppSession, message: IncomingWhatsAppText) {
@@ -400,8 +439,9 @@ ${mainMenuMessage()}`;
   session.lastMessageId = message.messageId;
 
   if (session.step === 'SUPPORT') {
+    session.step = 'MENU';
     await session.save();
-    return 'Your message has been received. A support person will attend to you soon.';
+    return supportMessage();
   }
 
   if (session.step === 'MENU') {
@@ -416,18 +456,18 @@ ${mainMenuMessage()}`;
 
     if (selection === 'B') {
       await session.save();
-      return trackLatestOrder(message.phone);
+      return trackCurrentOrder(message.phone);
     }
 
     if (selection === 'C') {
       await session.save();
-      return cancelLatestOrder(message.phone);
+      return cancelCurrentOrder(message.phone);
     }
 
     if (selection === 'D') {
-      session.step = 'SUPPORT';
+      session.step = 'MENU';
       await session.save();
-      return 'A support person will attend to you soon. Please type your complaint clearly.';
+      return supportMessage();
     }
 
     await session.save();
@@ -490,6 +530,7 @@ ${pricePrompt()}`;
         await notifyWhatsAppOrderCreated(order, authenticatedUser);
       const items = session.data.description || 'Not provided';
       const total = Number(order.totalAmount || 0);
+      const trackingUrl = getOrderTrackingUrl(order.trackingToken);
       await setSessionMenu(session, message.messageId, message.name);
 
       return `Your order has been created ✅
@@ -497,6 +538,9 @@ ${pricePrompt()}`;
 Order summary
 Items ${items}
 Total ${formatCurrency(total)}
+
+Track your order and make payment here:
+${trackingUrl}
 
 Please wait while we process your order.`;
       } catch (error) {
@@ -512,11 +556,7 @@ Please reply YES to try again or MENU to restart.`;
       await setSessionMenu(session, message.messageId, message.name);
       return `Order cancelled.
 
-Choose an option
-A. Order food
-B. Track order
-C. Cancel order
-D. Speak to support`;
+${mainMenuMessage()}`;
     }
 
     await session.save();

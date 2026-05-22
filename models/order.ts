@@ -2,6 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 export interface IOrder extends Document {
   userId: string;
+  trackingToken?: string;
   source?: 'website' | 'whatsapp';
   customerPhone?: string;
   customerName?: string;
@@ -79,6 +80,13 @@ const orderSchema = new Schema<IOrder>(
       type: String,
       required: true,
       index: true,
+    },
+    trackingToken: {
+      type: String,
+      index: {
+        unique: true,
+        sparse: true,
+      },
     },
     source: {
       type: String,
