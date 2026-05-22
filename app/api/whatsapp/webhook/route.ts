@@ -5,11 +5,7 @@ import { getSiteUrl } from '@/lib/site';
 import { splitServiceFee } from '@/lib/order-finance';
 import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
 import { ACTIVE_ORDER_STATUSES, canCustomerCancelOrder } from '@/lib/order-status';
-import {
-  calculateOrderPricing,
-  calculateRestaurantServiceFee,
-  RESTAURANT_MAX_PEOPLE,
-} from '@/lib/pricing';
+import { calculateOrderPricing } from '@/lib/pricing';
 import {
   formatPushTaskType,
   sendPushNotification,
@@ -20,7 +16,13 @@ import {
   getOrCreatePendingWhatsAppRegistration,
   type LinkedWhatsAppUser,
 } from '@/lib/whatsapp/registration';
-import { sendWhatsAppText } from '@/lib/whatsapp/send-message';
+import {
+  sendWhatsAppListMessage,
+  sendWhatsAppReplyButtons,
+  sendWhatsAppText,
+  type WhatsAppListSection,
+  type WhatsAppReplyButton,
+} from '@/lib/whatsapp/send-message';
 import { Order } from '@/models/order';
 import { WhatsAppProcessedMessage } from '@/models/whatsapp-processed-message';
 import {
@@ -38,6 +40,23 @@ type IncomingWhatsAppText = {
   name?: string;
 };
 
+type WhatsAppOutgoingReply =
+  | {
+      type: 'text';
+      text: string;
+    }
+  | {
+      type: 'list';
+      body: string;
+      buttonText: string;
+      sections: WhatsAppListSection[];
+    }
+  | {
+      type: 'buttons';
+      body: string;
+      buttons: WhatsAppReplyButton[];
+    };
+
 type AuthenticatedWhatsAppUser = LinkedWhatsAppUser;
 
 type WhatsAppWebhookPayload = {
@@ -53,9 +72,21 @@ type WhatsAppWebhookPayload = {
         messages?: Array<{
           from?: string;
           id?: string;
-          type?: string;
+          type?: 'text' | 'interactive' | string;
           text?: {
             body?: string;
+          };
+          interactive?: {
+            type?: 'list_reply' | 'button_reply' | string;
+            list_reply?: {
+              id?: string;
+              title?: string;
+              description?: string;
+            };
+            button_reply?: {
+              id?: string;
+              title?: string;
+            };
           };
         }>;
       };
@@ -75,9 +106,11 @@ async function authenticationPrompt(phone: string, name?: string) {
   const registration = await getOrCreatePendingWhatsAppRegistration(phone, name);
   const link = `${getSiteUrl()}/dashboard/whatsapp/register?token=${registration.token}`;
 
-  return `Please register this WhatsApp number for the SwiftDU bot first.
+  return `Hi! I am Sammy, welcome to SwiftDU ChatShopping. You can make orders via whatasApp!
 
-Open this link:
+
+
+Open the link:
 ${link}
 
 You must already have a SwiftDU website account. Log in on the website, link this WhatsApp number, then reply MENU here.`;
@@ -92,16 +125,30 @@ function extractTextMessage(payload: WhatsAppWebhookPayload): IncomingWhatsAppTe
     for (const change of entry.changes || []) {
       const value = change.value;
       const message = value?.messages?.find(
-        (item) => item.type === 'text' && item.text?.body && item.from && item.id
+        (item) =>
+          item.from &&
+          item.id &&
+          ((item.type === 'text' && item.text?.body) ||
+            (item.type === 'interactive' &&
+              (item.interactive?.list_reply?.id || item.interactive?.button_reply?.id)))
       );
 
-      if (!message?.from || !message.id || !message.text?.body) {
+      if (!message?.from || !message.id) {
+        continue;
+      }
+
+      const text =
+        message.type === 'interactive'
+          ? message.interactive?.list_reply?.id || message.interactive?.button_reply?.id
+          : message.text?.body;
+
+      if (!text) {
         continue;
       }
 
       return {
         phone: message.from,
-        text: message.text.body,
+        text,
         messageId: message.id,
         name: value?.contacts?.find((contact) => contact.wa_id === message.from)?.profile?.name,
       };
@@ -111,91 +158,61 @@ function extractTextMessage(payload: WhatsAppWebhookPayload): IncomingWhatsAppTe
   return null;
 }
 
-function mainMenuMessage() {
-  return `Welcome to SwiftDU 👋
-
-Choose an option:
-
-( ) A. Order food
-( ) B. Store shopping
-( ) C. Track order
-( ) D. Cancel order
-( ) E. Speak to support
-
-Reply with A, B, C, D, or E.`;
+function textReply(text: string): WhatsAppOutgoingReply {
+  return { type: 'text', text };
 }
 
-function restaurantStoreMenuMessage() {
-  return `Select store:
-
-( ) A. Cafeteria
-( ) B. Restaurant
-( ) C. Supermarket
-( ) D. Other
-
-Reply with A, B, C, or D.`;
+function mainMenuReply(body = 'Welcome to SwiftDU\n\nChoose an option:'): WhatsAppOutgoingReply {
+  return {
+    type: 'list',
+    body,
+    buttonText: 'Choose option',
+    sections: [
+      {
+        rows: [
+          { id: 'ORDER_FOOD', title: 'Order food' },
+          { id: 'TRACK_ORDER', title: 'Track order' },
+          { id: 'CANCEL_ORDER', title: 'Cancel order' },
+          { id: 'SUPPORT', title: 'Speak to support' },
+        ],
+      },
+    ],
+  };
 }
 
-function shoppingStoreMenuMessage() {
-  return `Select shopping store:
-
-( ) A. RITA STORE
-( ) B. SARAH STORE
-( ) C. MUMMY V
-( ) D. Other
-
-Reply with A, B, C, or D.`;
+function storeMenuReply(): WhatsAppOutgoingReply {
+  return {
+    type: 'list',
+    body: 'Select store:',
+    buttonText: 'Choose store',
+    sections: [
+      {
+        rows: [
+          { id: 'AKPAN', title: 'AKPAN' },
+          { id: 'BLESS_D_FOODS', title: 'BLESS D FOODS' },
+          { id: 'INDOMIE_SPOT', title: 'INDOMIE SPOT' },
+          { id: 'MAMA', title: 'MAMA' },
+        ],
+      },
+    ],
+  };
 }
 
-function storeMenuMessage(session: IWhatsAppSession) {
-  return session.data.taskType === 'shopping'
-    ? shoppingStoreMenuMessage()
-    : restaurantStoreMenuMessage();
-}
-
-function descriptionPrompt(session: IWhatsAppSession) {
-  if (session.data.taskType === 'shopping') {
-    return `What do you want to buy?
-
-Example
-Indomie
-Bread
-Toiletries`;
-  }
-
+function descriptionPrompt() {
   return `What do you want to order
 
 Example
-Rice and chicken
-Drink
-Snacks`;
+Jollof Rice - 500
+2 Meat - 600
+Sprite - 500`;
 }
 
-function restaurantPeoplePrompt() {
-  const options = Array.from({ length: RESTAURANT_MAX_PEOPLE }, (_, index) => {
-    const count = index + 1;
-    const label = count === 1 ? '1 order/person' : `${count} orders/persons`;
-    return `( ) ${count}. ${label} - service fee ${formatCurrency(calculateRestaurantServiceFee(count))}`;
-  }).join('\n');
-
-  return `How many food orders are you making?
-
-${options}
-
-Reply with 1, 2, or 3.`;
-}
-
-function pricePrompt(session: IWhatsAppSession) {
-  if (session.data.taskType === 'shopping') {
-    return `Enter your shopping budget only.
-
-Example
-1500`;
-  }
-
+function pricePrompt() {
   return `Enter the food budget only.
 
 Do not forget to calculate the takeaway amount for your budget.
+
+You can only order for one person at a time using this WhatsApp bot.
 
 Example
 1500`;
@@ -205,29 +222,24 @@ function locationPrompt() {
   return `Where should we deliver it
 
 Example
-Hostel B, Room 12`;
+Amnesty Hostel`;
 }
 
 function formatCurrency(value: number) {
   return `₦${value.toLocaleString('en-NG')}`;
 }
 
-function confirmationMessage(session: IWhatsAppSession) {
+function confirmationBody(session: IWhatsAppSession) {
   const itemPrice = Number(session.data.price || 0);
-  const taskType = session.data.taskType || 'restaurant';
-  const restaurantPeopleCount = taskType === 'restaurant'
-    ? Number(session.data.restaurantPeopleCount || 1)
-    : undefined;
   const pricing = calculateOrderPricing({
     amount: itemPrice,
-    taskType,
-    restaurantPeopleCount,
+    taskType: 'restaurant',
+    restaurantPeopleCount: 1,
   });
 
   return `Confirm your order
 
 Store ${session.data.store || 'Not provided'}
-${taskType === 'restaurant' ? `Number of orders ${restaurantPeopleCount}` : ''}
 Items ${session.data.description || 'Not provided'}
 Items price ${formatCurrency(itemPrice)}
 Service fee ${formatCurrency(pricing.serviceFee)}
@@ -238,52 +250,41 @@ Delivery location ${session.data.location || 'Not provided'}
 Reply YES to confirm or NO to cancel.`;
 }
 
+function confirmationReply(session: IWhatsAppSession): WhatsAppOutgoingReply {
+  return {
+    type: 'buttons',
+    body: confirmationBody(session),
+    buttons: [
+      { id: 'YES', title: 'Confirm order' },
+      { id: 'NO', title: 'Cancel order' },
+    ],
+  };
+}
+
 function mapMainMenuSelection(input: string) {
-  if (['a', 'order', 'order food', 'food'].includes(input)) return 'A';
-  if (['b', 'shopping', 'store shopping', 'shop', 'buy', 'buy from store'].includes(input)) return 'B';
-  if (['c', 'track', 'track order', 'track my order', 'status', 'order status'].includes(input)) return 'C';
-  if (['d', 'cancel', 'cancel order', 'cancel my order'].includes(input)) return 'D';
-  if (['e', 'support', 'customer support', 'speak to support', 'help', 'complaint'].includes(input)) return 'E';
+  if (['a', 'order', 'order food', 'food', 'order_food'].includes(input)) return 'A';
+  if (['b', 'track', 'track order', 'track my order', 'status', 'order status', 'track_order'].includes(input)) return 'B';
+  if (['c', 'cancel', 'cancel order', 'cancel my order', 'cancel_order'].includes(input)) return 'C';
+  if (['d', 'support', 'customer support', 'speak to support', 'help', 'complaint'].includes(input)) return 'D';
   return null;
 }
 
-function mapRestaurantStoreSelection(input: string) {
+function mapStoreSelection(input: string) {
   const stores: Record<string, string> = {
-    a: 'Cafeteria',
-    cafeteria: 'Cafeteria',
-    b: 'Restaurant',
-    restaurant: 'Restaurant',
-    c: 'Supermarket',
-    supermarket: 'Supermarket',
-    d: 'Other',
-    other: 'Other',
+    a: 'AKPAN',
+    akpan: 'AKPAN',
+    b: 'BLESS D FOODS',
+    bless_d_foods: 'BLESS D FOODS',
+    'bless d foods': 'BLESS D FOODS',
+    'bless d food': 'BLESS D FOODS',
+    c: 'INDOMIE SPOT',
+    indomie_spot: 'INDOMIE SPOT',
+    'indomie spot': 'INDOMIE SPOT',
+    d: 'MAMA',
+    mama: 'MAMA',
   };
 
   return stores[input] || null;
-}
-
-function mapShoppingStoreSelection(input: string) {
-  const stores: Record<string, string> = {
-    a: 'RITA STORE',
-    'rita store': 'RITA STORE',
-    rita: 'RITA STORE',
-    b: 'SARAH STORE',
-    'sarah store': 'SARAH STORE',
-    sarah: 'SARAH STORE',
-    c: 'MUMMY V',
-    'mummy v': 'MUMMY V',
-    mummy: 'MUMMY V',
-    d: 'Other',
-    other: 'Other',
-  };
-
-  return stores[input] || null;
-}
-
-function mapStoreSelection(input: string, session: IWhatsAppSession) {
-  return session.data.taskType === 'shopping'
-    ? mapShoppingStoreSelection(input)
-    : mapRestaurantStoreSelection(input);
 }
 
 function isGreeting(input: string) {
@@ -366,14 +367,10 @@ async function createWhatsAppOrder(
   name?: string
 ) {
   const itemPrice = Number(session.data.price || 0);
-  const taskType = session.data.taskType || 'restaurant';
-  const restaurantPeopleCount = taskType === 'restaurant'
-    ? Number(session.data.restaurantPeopleCount || 1)
-    : undefined;
   const pricing = calculateOrderPricing({
     amount: itemPrice,
-    taskType,
-    restaurantPeopleCount,
+    taskType: 'restaurant',
+    restaurantPeopleCount: 1,
   });
   const settlement = splitServiceFee(pricing.serviceFee);
 
@@ -383,7 +380,7 @@ async function createWhatsAppOrder(
     source: 'whatsapp',
     customerPhone: phone,
     customerName: user.name || name || session.name || undefined,
-    taskType,
+    taskType: 'restaurant',
     description: session.data.description,
     amount: itemPrice,
     itemPrice,
@@ -396,7 +393,7 @@ async function createWhatsAppOrder(
     location: session.data.location,
     deliveryLocation: session.data.location,
     store: session.data.store,
-    restaurantPeopleCount: pricing.restaurantPeopleCount,
+    restaurantPeopleCount: 1,
     status: 'pending',
     bookedAt: new Date(),
     paymentProvider: 'manual_transfer',
@@ -430,9 +427,7 @@ async function trackCurrentOrder(phone: string) {
   const order = await findCurrentWhatsAppOrder(phone);
 
   if (!order) {
-    return `You do not have any order in progress right now.
-
-${mainMenuMessage()}`;
+    return mainMenuReply('You do not have any order in progress right now.\n\nChoose an option:');
   }
 
   if (!order.trackingToken) {
@@ -442,31 +437,31 @@ ${mainMenuMessage()}`;
 
   const trackingUrl = getOrderTrackingUrl(order.trackingToken);
 
-  return `Here is your current order link again:
+  return textReply(`Here is your current order link again:
 
 Items ${order.description || 'Not provided'}
 Status ${String(order.status).replace('_', ' ')}
 Payment ${String(order.paymentStatus || 'unpaid').replace('_', ' ')}
 Total ${formatCurrency(Number(order.totalAmount || order.amount || 0))}
-${trackingUrl ? `\nTrack and pay here:\n${trackingUrl}` : ''}`;
+${trackingUrl ? `\nTrack and pay here:\n${trackingUrl}` : ''}`);
 }
 
 async function cancelCurrentOrder(phone: string) {
   const order = await findCurrentWhatsAppOrder(phone);
 
   if (!order) {
-    return `Cancellation cannot be made because you do not have any order in progress.
-
-${mainMenuMessage()}`;
+    return mainMenuReply(
+      'Cancellation cannot be made because you do not have any order in progress.\n\nChoose an option:'
+    );
   }
 
   if (!canCustomerCancelOrder(order)) {
-    return `Cancellation cannot be made for this order.
+    return textReply(`Cancellation cannot be made for this order.
 
 Your order is already in progress and payment has been made.
 
 Track it here:
-${order.trackingToken ? getOrderTrackingUrl(order.trackingToken) : 'Tracking link is not available right now.'}`;
+${order.trackingToken ? getOrderTrackingUrl(order.trackingToken) : 'Tracking link is not available right now.'}`);
   }
 
   order.status = 'cancelled';
@@ -487,36 +482,37 @@ ${order.trackingToken ? getOrderTrackingUrl(order.trackingToken) : 'Tracking lin
   await order.save();
   emitOrderUpdated(order);
 
-  return `Your cancellation request has been received and the order has been cancelled.
-
-${mainMenuMessage()}`;
+  return mainMenuReply(
+    'Your cancellation request has been received and the order has been cancelled.\n\nChoose an option:'
+  );
 }
 
-async function handleMessage(session: IWhatsAppSession, message: IncomingWhatsAppText) {
+async function handleMessage(
+  session: IWhatsAppSession,
+  message: IncomingWhatsAppText
+): Promise<WhatsAppOutgoingReply> {
   const input = normalizeInput(message.text);
   const authenticatedUser = await findAuthenticatedWhatsAppUser(message.phone);
 
   if (isGreeting(input)) {
     await setSessionMenu(session, message.messageId, message.name);
     if (!authenticatedUser) {
-      return authenticationPrompt(message.phone, message.name);
+      return textReply(await authenticationPrompt(message.phone, message.name));
     }
-    return mainMenuMessage();
+    return mainMenuReply();
   }
 
   if (input === 'cancel') {
     await setSessionMenu(session, message.messageId, message.name);
     if (!authenticatedUser) {
-      return authenticationPrompt(message.phone, message.name);
+      return textReply(await authenticationPrompt(message.phone, message.name));
     }
-    return `Order cancelled.
-
-${mainMenuMessage()}`;
+    return mainMenuReply('Order cancelled.\n\nChoose an option:');
   }
 
   if (!authenticatedUser) {
     await setSessionMenu(session, message.messageId, message.name);
-    return authenticationPrompt(message.phone, message.name);
+    return textReply(await authenticationPrompt(message.phone, message.name));
   }
 
   session.name = message.name || session.name;
@@ -525,7 +521,7 @@ ${mainMenuMessage()}`;
   if (session.step === 'SUPPORT') {
     session.step = 'MENU';
     await session.save();
-    return supportMessage();
+    return textReply(supportMessage());
   }
 
   if (session.step === 'MENU') {
@@ -533,82 +529,50 @@ ${mainMenuMessage()}`;
 
     if (selection === 'A') {
       session.step = 'SELECT_STORE';
-      session.data = { taskType: 'restaurant' };
+      session.data = {};
       await session.save();
-      return storeMenuMessage(session);
+      return storeMenuReply();
     }
 
     if (selection === 'B') {
-      session.step = 'SELECT_STORE';
-      session.data = { taskType: 'shopping' };
-      await session.save();
-      return storeMenuMessage(session);
-    }
-
-    if (selection === 'C') {
       await session.save();
       return trackCurrentOrder(message.phone);
     }
 
-    if (selection === 'D') {
+    if (selection === 'C') {
       await session.save();
       return cancelCurrentOrder(message.phone);
     }
 
-    if (selection === 'E') {
+    if (selection === 'D') {
       session.step = 'MENU';
       await session.save();
-      return supportMessage();
+      return textReply(supportMessage());
     }
 
     await session.save();
-    return mainMenuMessage();
+    return mainMenuReply();
   }
 
   if (session.step === 'SELECT_STORE') {
-    const store = mapStoreSelection(input, session);
+    const store = mapStoreSelection(input);
 
     if (!store) {
       await session.save();
-      return storeMenuMessage(session);
-    }
-
-    if (session.data.taskType === 'restaurant') {
-      session.step = 'ENTER_RESTAURANT_PEOPLE';
-      session.data = { ...session.data, store };
-      await session.save();
-      return restaurantPeoplePrompt();
+      return storeMenuReply();
     }
 
     session.step = 'ENTER_DESCRIPTION';
     session.data = { ...session.data, store };
     await session.save();
-    return descriptionPrompt(session);
-  }
-
-  if (session.step === 'ENTER_RESTAURANT_PEOPLE') {
-    const restaurantPeopleCount = Number(input);
-
-    if (
-      !Number.isInteger(restaurantPeopleCount) ||
-      restaurantPeopleCount < 1 ||
-      restaurantPeopleCount > RESTAURANT_MAX_PEOPLE
-    ) {
-      await session.save();
-      return restaurantPeoplePrompt();
-    }
-
-    session.step = 'ENTER_DESCRIPTION';
-    session.data = { ...session.data, restaurantPeopleCount };
-    await session.save();
-    return descriptionPrompt(session);
+    return textReply(descriptionPrompt());
   }
 
   if (session.step === 'ENTER_DESCRIPTION') {
     session.step = 'ENTER_PRICE';
     session.data = { ...session.data, description: message.text.trim() };
     await session.save();
-    return pricePrompt(session);
+    return textReply(pricePrompt());
   }
 
   if (session.step === 'ENTER_PRICE') {
@@ -616,22 +580,22 @@ ${mainMenuMessage()}`;
 
     if (!Number.isFinite(price) || price <= 0) {
       await session.save();
-      return `Please enter a valid positive number for the item price.
+      return textReply(`Please enter a valid positive number for the item price.
 
-${pricePrompt(session)}`;
+${pricePrompt()}`);
     }
 
     session.step = 'ENTER_LOCATION';
     session.data = { ...session.data, price };
     await session.save();
-    return locationPrompt();
+    return textReply(locationPrompt());
   }
 
   if (session.step === 'ENTER_LOCATION') {
     session.step = 'CONFIRM_ORDER';
     session.data = { ...session.data, location: message.text.trim() };
     await session.save();
-    return confirmationMessage(session);
+    return confirmationReply(session);
   }
 
   if (session.step === 'CONFIRM_ORDER') {
@@ -644,12 +608,12 @@ ${pricePrompt(session)}`;
           message.name
         );
         await notifyWhatsAppOrderCreated(order, authenticatedUser);
-      const items = session.data.description || 'Not provided';
-      const total = Number(order.totalAmount || 0);
-      const trackingUrl = getOrderTrackingUrl(order.trackingToken);
-      await setSessionMenu(session, message.messageId, message.name);
+        const items = session.data.description || 'Not provided';
+        const total = Number(order.totalAmount || 0);
+        const trackingUrl = getOrderTrackingUrl(order.trackingToken);
+        await setSessionMenu(session, message.messageId, message.name);
 
-      return `Your order has been created ✅
+        return textReply(`Your order has been created
 
 Order summary
 Items ${items}
@@ -658,29 +622,27 @@ Total ${formatCurrency(total)}
 Track your order and make payment here:
 ${trackingUrl}
 
-Please wait while we process your order.`;
+Please wait while we process your order.`);
       } catch (error) {
         console.error('[WhatsApp Order Create Error]:', error);
         await session.save();
-        return `Sorry, we could not create your order right now.
+        return textReply(`Sorry, we could not create your order right now.
 
-Please reply YES to try again or MENU to restart.`;
+Please reply YES to try again or MENU to restart.`);
       }
     }
 
     if (['no', 'n'].includes(input)) {
       await setSessionMenu(session, message.messageId, message.name);
-      return `Order cancelled.
-
-${mainMenuMessage()}`;
+      return mainMenuReply('Order cancelled.\n\nChoose an option:');
     }
 
     await session.save();
-    return confirmationMessage(session);
+    return confirmationReply(session);
   }
 
   await setSessionMenu(session, message.messageId, message.name);
-  return mainMenuMessage();
+  return mainMenuReply();
 }
 
 export async function GET(request: NextRequest) {
@@ -694,6 +656,29 @@ export async function GET(request: NextRequest) {
   }
 
   return new NextResponse('Forbidden', { status: 403 });
+}
+
+async function sendWhatsAppReply(to: string, reply: WhatsAppOutgoingReply) {
+  if (reply.type === 'text') {
+    await sendWhatsAppText(to, reply.text);
+    return;
+  }
+
+  if (reply.type === 'list') {
+    await sendWhatsAppListMessage({
+      to,
+      body: reply.body,
+      buttonText: reply.buttonText,
+      sections: reply.sections,
+    });
+    return;
+  }
+
+  await sendWhatsAppReplyButtons({
+    to,
+    body: reply.body,
+    buttons: reply.buttons,
+  });
 }
 
 export async function POST(request: NextRequest) {
@@ -731,7 +716,7 @@ export async function POST(request: NextRequest) {
     const session = await getOrCreateSession(message);
     const reply = await handleMessage(session, message);
 
-    await sendWhatsAppText(message.phone, reply);
+    await sendWhatsAppReply(message.phone, reply);
 
     try {
       await WhatsAppProcessedMessage.create({
@@ -757,3 +742,4 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 500 });
   }
 }
+
