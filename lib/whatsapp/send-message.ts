@@ -7,6 +7,8 @@ interface WhatsAppTextPayload {
   };
 }
 
+const WHATSAPP_MESSAGE_FOOTER = 'Sammy from SwiftDU';
+
 export type WhatsAppListSection = {
   title?: string;
   rows: Array<{
@@ -30,6 +32,9 @@ interface WhatsAppListPayload {
     body: {
       text: string;
     };
+    footer?: {
+      text: string;
+    };
     action: {
       button: string;
       sections: WhatsAppListSection[];
@@ -46,6 +51,9 @@ interface WhatsAppReplyButtonsPayload {
     body: {
       text: string;
     };
+    footer?: {
+      text: string;
+    };
     action: {
       buttons: Array<{
         type: 'reply';
@@ -59,6 +67,15 @@ type WhatsAppMessagePayload =
   | WhatsAppTextPayload
   | WhatsAppListPayload
   | WhatsAppReplyButtonsPayload;
+
+interface WhatsAppReadPayload {
+  messaging_product: 'whatsapp';
+  status: 'read';
+  message_id: string;
+  typing_indicator?: {
+    type: 'text';
+  };
+}
 
 function requireWhatsAppSendEnv() {
   const accessToken = process.env.WHATSAPP_ACCESS_TOKEN?.trim();
@@ -97,12 +114,16 @@ async function sendWhatsAppPayload(payload: WhatsAppMessagePayload, logLabel: st
   }
 }
 
+function withWhatsAppFooter(body: string) {
+  return `${body}\n\n${WHATSAPP_MESSAGE_FOOTER}`;
+}
+
 export async function sendWhatsAppText(to: string, body: string) {
   const payload: WhatsAppTextPayload = {
     messaging_product: 'whatsapp',
     to,
     type: 'text',
-    text: { body },
+    text: { body: withWhatsAppFooter(body) },
   };
 
   await sendWhatsAppPayload(payload, 'WhatsApp Text Send Error');
@@ -126,6 +147,7 @@ export async function sendWhatsAppListMessage({
     interactive: {
       type: 'list',
       body: { text: body },
+      footer: { text: WHATSAPP_MESSAGE_FOOTER },
       action: {
         button: buttonText,
         sections,
@@ -152,6 +174,7 @@ export async function sendWhatsAppReplyButtons({
     interactive: {
       type: 'button',
       body: { text: body },
+      footer: { text: WHATSAPP_MESSAGE_FOOTER },
       action: {
         buttons: buttons.map((button) => ({
           type: 'reply',
@@ -162,4 +185,35 @@ export async function sendWhatsAppReplyButtons({
   };
 
   await sendWhatsAppPayload(payload, 'WhatsApp Reply Buttons Send Error');
+}
+
+export async function markWhatsAppMessageRead(messageId: string, showTyping = true) {
+  try {
+    const { accessToken, phoneNumberId } = requireWhatsAppSendEnv();
+    const payload: WhatsAppReadPayload = {
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: messageId,
+      ...(showTyping ? { typing_indicator: { type: 'text' as const } } : {}),
+    };
+
+    const response = await fetch(
+      `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      }
+    );
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`WhatsApp read receipt failed with ${response.status}: ${errorBody}`);
+    }
+  } catch (error) {
+    console.error('[WhatsApp Read Receipt / Typing Indicator Error]:', error);
+  }
 }

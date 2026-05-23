@@ -17,6 +17,7 @@ import {
   type LinkedWhatsAppUser,
 } from '@/lib/whatsapp/registration';
 import {
+  markWhatsAppMessageRead,
   sendWhatsAppListMessage,
   sendWhatsAppReplyButtons,
   sendWhatsAppText,
@@ -106,7 +107,7 @@ async function authenticationPrompt(phone: string, name?: string) {
   const registration = await getOrCreatePendingWhatsAppRegistration(phone, name);
   const link = `${getSiteUrl()}/dashboard/whatsapp/register?token=${registration.token}`;
 
-  return `Hi! I am Sammy, welcome to SwiftDU ChatShopping. You can make orders via whatasApp!
+  return `Hi! I am Sammy, welcome to SwiftDU SmartOrder. You can make orders via whatasApp!
 
 
 
@@ -162,7 +163,12 @@ function textReply(text: string): WhatsAppOutgoingReply {
   return { type: 'text', text };
 }
 
-function mainMenuReply(body = 'Welcome to SwiftDU\n\nChoose an option:'): WhatsAppOutgoingReply {
+function welcomeMenuBody(name?: string) {
+  return `Hello${name ? ` ${name}` : ''}
+How may I assist you today?`;
+}
+
+function mainMenuReply(body = welcomeMenuBody()): WhatsAppOutgoingReply {
   return {
     type: 'list',
     body,
@@ -174,6 +180,7 @@ function mainMenuReply(body = 'Welcome to SwiftDU\n\nChoose an option:'): WhatsA
           { id: 'TRACK_ORDER', title: 'Track order' },
           { id: 'CANCEL_ORDER', title: 'Cancel order' },
           { id: 'SUPPORT', title: 'Speak to support' },
+          { id: 'GET_WEBSITE_LINK', title: 'Get website link' },
         ],
       },
     ],
@@ -207,6 +214,14 @@ Jollof Rice - 500
 Sprite - 500`;
 }
 
+function orderPromptReply(): WhatsAppOutgoingReply {
+  return {
+    type: 'buttons',
+    body: descriptionPrompt(),
+    buttons: [{ id: 'ORDER_DETAILS', title: 'Order' }],
+  };
+}
+
 function pricePrompt() {
   return `Enter the food budget only.
 
@@ -218,11 +233,16 @@ Example
 1500`;
 }
 
-function locationPrompt() {
-  return `Where should we deliver it
-
-Example
-Amnesty Hostel`;
+function locationPromptReply(): WhatsAppOutgoingReply {
+  return {
+    type: 'buttons',
+    body: 'Where should we deliver it?',
+    buttons: [
+      { id: 'GIRLS_HOSTEL', title: 'Girls Hostel' },
+      { id: 'AMNESTY', title: 'Amnesty' },
+      { id: 'STAFF_QUARTERS', title: 'Staff Quarters' },
+    ],
+  };
 }
 
 function formatCurrency(value: number) {
@@ -266,6 +286,19 @@ function mapMainMenuSelection(input: string) {
   if (['b', 'track', 'track order', 'track my order', 'status', 'order status', 'track_order'].includes(input)) return 'B';
   if (['c', 'cancel', 'cancel order', 'cancel my order', 'cancel_order'].includes(input)) return 'C';
   if (['d', 'support', 'customer support', 'speak to support', 'help', 'complaint'].includes(input)) return 'D';
+  if (
+    [
+      'e',
+      'website',
+      'website link',
+      'get website link',
+      'site',
+      'swiftdu website',
+      'get_website_link',
+    ].includes(input)
+  ) {
+    return 'E';
+  }
   return null;
 }
 
@@ -285,6 +318,21 @@ function mapStoreSelection(input: string) {
   };
 
   return stores[input] || null;
+}
+
+function mapLocationSelection(input: string) {
+  const locations: Record<string, string> = {
+    girls_hostel: 'Girls Hostel',
+    'girls hostel': 'Girls Hostel',
+    girls: 'Girls Hostel',
+    hostel: 'Girls Hostel',
+    amnesty: 'Amnesty',
+    staff_quarters: 'Staff Quarters',
+    'staff quarters': 'Staff Quarters',
+    staff: 'Staff Quarters',
+  };
+
+  return locations[input] || null;
 }
 
 function isGreeting(input: string) {
@@ -423,6 +471,11 @@ https://wa.me/2349014116505
 Tap the link above to speak with customer support.`;
 }
 
+function websiteLinkMessage() {
+  return `Open SwiftDU here:
+${getSiteUrl()}`;
+}
+
 async function trackCurrentOrder(phone: string) {
   const order = await findCurrentWhatsAppOrder(phone);
 
@@ -499,7 +552,7 @@ async function handleMessage(
     if (!authenticatedUser) {
       return textReply(await authenticationPrompt(message.phone, message.name));
     }
-    return mainMenuReply();
+    return mainMenuReply(welcomeMenuBody(message.name || authenticatedUser.name || session.name));
   }
 
   if (input === 'cancel') {
@@ -550,6 +603,12 @@ async function handleMessage(
       return textReply(supportMessage());
     }
 
+    if (selection === 'E') {
+      session.step = 'MENU';
+      await session.save();
+      return textReply(websiteLinkMessage());
+    }
+
     await session.save();
     return mainMenuReply();
   }
@@ -565,10 +624,15 @@ async function handleMessage(
     session.step = 'ENTER_DESCRIPTION';
     session.data = { ...session.data, store };
     await session.save();
-    return textReply(descriptionPrompt());
+    return orderPromptReply();
   }
 
   if (session.step === 'ENTER_DESCRIPTION') {
+    if (['order', 'order_details'].includes(input)) {
+      await session.save();
+      return textReply(descriptionPrompt());
+    }
+
     session.step = 'ENTER_PRICE';
     session.data = { ...session.data, description: message.text.trim() };
     await session.save();
@@ -588,12 +652,19 @@ ${pricePrompt()}`);
     session.step = 'ENTER_LOCATION';
     session.data = { ...session.data, price };
     await session.save();
-    return textReply(locationPrompt());
+    return locationPromptReply();
   }
 
   if (session.step === 'ENTER_LOCATION') {
+    const location = mapLocationSelection(input);
+
+    if (!location) {
+      await session.save();
+      return locationPromptReply();
+    }
+
     session.step = 'CONFIRM_ORDER';
-    session.data = { ...session.data, location: message.text.trim() };
+    session.data = { ...session.data, location };
     await session.save();
     return confirmationReply(session);
   }
@@ -705,6 +776,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ ok: true });
     }
 
+    await markWhatsAppMessageRead(message.messageId);
+
     const alreadyProcessed = await WhatsAppProcessedMessage.exists({
       messageId: message.messageId,
     });
@@ -742,4 +815,3 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 500 });
   }
 }
-
