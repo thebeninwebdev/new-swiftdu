@@ -15,6 +15,8 @@ import {
   Info,
   Loader2,
   MapPin,
+  Mic,
+  MicOff,
   ShieldCheck,
   ShoppingBag,
   Store,
@@ -27,6 +29,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { ProfileCompletionCard } from '@/components/profile-completion-card'
+import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { authClient } from '@/lib/auth-client'
 import {
   calculateOrderPricing,
@@ -55,6 +58,7 @@ interface ErrandData {
   printingServiceType?: string
   printingNeedsEditing?: string
   deadline?: string
+  packaging?: string
   restaurantItemPrice: string
   restaurantPeople: string
   shoppingItems: RestaurantItem[]
@@ -152,6 +156,11 @@ const storeOptions: Record<string, Array<{ value: string; label: string }>> = {
   ],
 }
 
+const restaurantPackagingOptions = [
+  { value: '', label: 'No takeaway pack' },
+  { value: 'Takeaway pack', label: 'Takeaway pack' },
+]
+
 function formatNaira(value: number) {
   return new Intl.NumberFormat('en-NG', {
     style: 'currency',
@@ -232,6 +241,7 @@ export default function ErrandWizardPage() {
     printingServiceType: '',
     printingNeedsEditing: '',
     deadline: '',
+    packaging: '',
     restaurantItemPrice: '',
     restaurantPeople: '1',
     shoppingItems: [],
@@ -459,13 +469,50 @@ export default function ErrandWizardPage() {
   const stepTitles = ['Choose Task', 'Details', 'Delivery', 'Review']
   const stepIcons = [ShoppingBag, FileText, MapPin, CreditCard]
 
-  const clearError = (field: string) =>
+  const clearError = useCallback((field: string) =>
     setErrors((previous) => {
       if (!previous[field]) return previous
       const next = { ...previous }
       delete next[field]
       return next
-    })
+    }), [])
+
+  const handleSpeechTranscript = useCallback(
+    (value: string) => {
+      pauseRealtime()
+      setFormData((previous) => ({ ...previous, description: value }))
+      clearError('description')
+    },
+    [clearError, pauseRealtime]
+  )
+
+  const handleSpeechError = useCallback((error: string) => {
+    if (error === 'not-allowed' || error === 'service-not-allowed') {
+      toast.error('Microphone permission denied')
+      return
+    }
+
+    if (error === 'audio-capture') {
+      toast.error('Microphone unavailable')
+      return
+    }
+
+    if (error !== 'aborted' && error !== 'no-speech') {
+      toast.error('Speech input stopped. Please try again.')
+    }
+  }, [])
+
+  const {
+    isListening: isSpeechListening,
+    isSupported: isSpeechSupported,
+    startListening,
+    stopListening,
+  } = useSpeechRecognition({
+    onTranscript: handleSpeechTranscript,
+    onStart: () => toast.info('Listening...'),
+    onCaptured: () => toast.success('Speech captured'),
+    onError: handleSpeechError,
+  })
 
   const handleInputChange = (
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -505,6 +552,7 @@ export default function ErrandWizardPage() {
       printingNeedsEditing:
         value === PRINTING_TASK_TYPE ? previous.printingNeedsEditing : '',
       deadline: value === 'copy_notes' ? previous.deadline : '',
+      packaging: value === 'restaurant' ? previous.packaging : '',
       amount:
         value === 'copy_notes' ||
         value === WATER_TASK_TYPE ||
@@ -755,6 +803,7 @@ if (stepNumber === 2) {
         printingServiceType: '',
         printingNeedsEditing: '',
         deadline: '',
+        packaging: '',
         restaurantItemPrice: '',
         restaurantPeople: '1',
         shoppingItems: [],
@@ -1233,7 +1282,71 @@ if (stepNumber === 2) {
                           rows={4}
                           className="mt-2 w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 dark:border-slate-700 dark:bg-slate-800"
                         />
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                          Tap the microphone to say your order or type manually.
+                        </p>
+                        {isSpeechSupported === true ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              pauseRealtime()
+                              if (isSpeechListening) {
+                                stopListening()
+                                return
+                              }
+                              startListening(formData.description)
+                            }}
+                            className={`mt-3 h-11 rounded-xl border-2 border-orange-200 bg-orange-50 px-4 font-semibold text-orange-700 hover:bg-orange-100 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-200 dark:hover:bg-orange-950/50 ${
+                              isSpeechListening ? 'animate-pulse ring-4 ring-orange-500/15' : ''
+                            }`}
+                          >
+                            {isSpeechListening ? (
+                              <>
+                                <MicOff className="mr-2 h-4 w-4" />
+                                Listening...
+                              </>
+                            ) : (
+                              <>
+                                <Mic className="mr-2 h-4 w-4" />
+                                Say Your Order
+                              </>
+                            )}
+                          </Button>
+                        ) : isSpeechSupported === false ? (
+                          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                            Speech input is not supported on this browser.
+                          </p>
+                        ) : null}
                         {errors.description ? <p className="mt-2 text-sm text-red-500">{errors.description}</p> : null}
+                      </div>
+                      <div>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <ShoppingBag className="h-4 w-4 text-orange-500" />
+                          Packaging
+                        </label>
+                        <div className="grid grid-cols-2 gap-2">
+                          {restaurantPackagingOptions.map((option) => (
+                            <button
+                              key={option.label}
+                              type="button"
+                              onClick={() => {
+                                pauseRealtime()
+                                setFormData((previous) => ({ ...previous, packaging: option.value }))
+                              }}
+                              className={`h-12 rounded-xl border-2 px-3 text-sm font-bold transition ${
+                                (formData.packaging || '') === option.value
+                                  ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm dark:bg-orange-950/30 dark:text-orange-200'
+                                  : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                          If you choose takeaway, include that cost in your food budget.
+                        </p>
                       </div>
                       <div>
                         <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -1497,6 +1610,7 @@ if (stepNumber === 2) {
                       {formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.description ? <div className="flex justify-between gap-6"><span className="text-slate-500">Description</span><span className="max-w-[18rem] text-right text-slate-900 dark:text-slate-100">{formData.description}</span></div> : null}
                       <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Location</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.location}</span></div>
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">People</span><span className="text-right text-slate-900 dark:text-slate-100">{normalizedRestaurantPeopleCount}</span></div> : null}
+                      {formData.taskType === 'restaurant' ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Packaging</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.packaging || 'No takeaway pack'}</span></div> : null}
                       {formData.taskType === WATER_TASK_TYPE ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Water bags</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.waterBags}</span></div> : null}
                       {formData.taskType === PRINTING_TASK_TYPE ? (
                         <>
