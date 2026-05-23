@@ -59,6 +59,7 @@ type WhatsAppOutgoingReply =
     };
 
 type AuthenticatedWhatsAppUser = LinkedWhatsAppUser;
+type WhatsAppSessionData = IWhatsAppSession['data'];
 
 type WhatsAppWebhookPayload = {
   entry?: Array<{
@@ -206,12 +207,10 @@ function storeMenuReply(): WhatsAppOutgoingReply {
 }
 
 function descriptionPrompt() {
-  return `What do you want to order
+  return `Type your order details.
 
 Example
-Jollof Rice - 500
-2 Meat - 600
-Sprite - 500`;
+Jollof Rice - 500, 2 Meat - 600, Sprite - 500`;
 }
 
 function orderPromptReply(): WhatsAppOutgoingReply {
@@ -235,7 +234,7 @@ function peopleCountPromptReply(): WhatsAppOutgoingReply {
 }
 
 function pricePrompt() {
-  return `Enter the food budget only.
+  return `Type the food budget using numbers only.
 
 Do not forget to calculate the takeaway amount for your budget.
 
@@ -276,18 +275,26 @@ function confirmationBody(session: IWhatsAppSession) {
     restaurantPeopleCount,
   });
 
-  return `Confirm your order
+  return `Please review your order
 
-Store ${session.data.store || 'Not provided'}
-People ${restaurantPeopleCount}
-Items ${session.data.description || 'Not provided'}
-Items price ${formatCurrency(itemPrice)}
-Service fee ${formatCurrency(pricing.serviceFee)}
-Total ${formatCurrency(pricing.totalAmount)}
+STORE
+${session.data.store || 'Not provided'}
 
-Delivery location ${session.data.location || 'Not provided'}
+ORDER
+${session.data.description || 'Not provided'}
 
-Reply YES to confirm or NO to cancel.`;
+PEOPLE
+${restaurantPeopleCount}
+
+DELIVERY
+${session.data.location || 'Not provided'}
+
+PAYMENT
+Items price: ${formatCurrency(itemPrice)}
+Service fee: ${formatCurrency(pricing.serviceFee)}
+Total: ${formatCurrency(pricing.totalAmount)}
+
+Confirm only if everything is correct.`;
 }
 
 function confirmationReply(session: IWhatsAppSession): WhatsAppOutgoingReply {
@@ -295,8 +302,28 @@ function confirmationReply(session: IWhatsAppSession): WhatsAppOutgoingReply {
     type: 'buttons',
     body: confirmationBody(session),
     buttons: [
-      { id: 'YES', title: 'Confirm order' },
-      { id: 'NO', title: 'Cancel order' },
+      { id: 'YES', title: 'Confirm' },
+      { id: 'EDIT_ORDER', title: 'Edit order' },
+      { id: 'NO', title: 'Cancel' },
+    ],
+  };
+}
+
+function editOrderReply(): WhatsAppOutgoingReply {
+  return {
+    type: 'list',
+    body: 'What would you like to edit?',
+    buttonText: 'Choose answer',
+    sections: [
+      {
+        rows: [
+          { id: 'EDIT_STORE', title: 'Store' },
+          { id: 'EDIT_ITEMS', title: 'Items' },
+          { id: 'EDIT_BUDGET', title: 'Budget' },
+          { id: 'EDIT_PEOPLE', title: 'People count' },
+          { id: 'EDIT_LOCATION', title: 'Delivery location' },
+        ],
+      },
     ],
   };
 }
@@ -372,6 +399,66 @@ function mapLocationSelection(input: string) {
   };
 
   return locations[input] || null;
+}
+
+function mapEditOrderSelection(input: string) {
+  const selections: Record<string, 'STORE' | 'ITEMS' | 'BUDGET' | 'PEOPLE' | 'LOCATION'> = {
+    edit_store: 'STORE',
+    store: 'STORE',
+    edit_items: 'ITEMS',
+    items: 'ITEMS',
+    order: 'ITEMS',
+    edit_budget: 'BUDGET',
+    budget: 'BUDGET',
+    price: 'BUDGET',
+    edit_people: 'PEOPLE',
+    people: 'PEOPLE',
+    'people count': 'PEOPLE',
+    edit_location: 'LOCATION',
+    location: 'LOCATION',
+    delivery: 'LOCATION',
+    'delivery location': 'LOCATION',
+  };
+
+  return selections[input] || null;
+}
+
+function isOrderReadyForConfirmation(data: WhatsAppSessionData) {
+  return Boolean(
+    data.store &&
+      data.description &&
+      Number(data.price || 0) > 0 &&
+      data.restaurantPeopleCount &&
+      data.location
+  );
+}
+
+function nextPromptAfterUpdate(session: IWhatsAppSession, data: WhatsAppSessionData) {
+  if (isOrderReadyForConfirmation(data)) {
+    session.step = 'CONFIRM_ORDER';
+    session.data = data;
+    return confirmationReply(session);
+  }
+
+  session.data = data;
+
+  if (!data.description) {
+    session.step = 'ENTER_DESCRIPTION';
+    return orderPromptReply();
+  }
+
+  if (!data.price) {
+    session.step = 'ENTER_PRICE';
+    return budgetPromptReply();
+  }
+
+  if (!data.restaurantPeopleCount) {
+    session.step = 'ENTER_RESTAURANT_PEOPLE';
+    return peopleCountPromptReply();
+  }
+
+  session.step = 'ENTER_LOCATION';
+  return locationPromptReply();
 }
 
 function isGreeting(input: string) {
@@ -661,10 +748,52 @@ async function handleMessage(
       return storeMenuReply();
     }
 
-    session.step = 'ENTER_RESTAURANT_PEOPLE';
-    session.data = { ...session.data, store };
+    const nextData = { ...session.data, store };
+    const reply = nextPromptAfterUpdate(session, nextData);
     await session.save();
-    return peopleCountPromptReply();
+    return reply;
+  }
+
+  if (session.step === 'ENTER_DESCRIPTION') {
+    if (['order', 'order_details'].includes(input)) {
+      await session.save();
+      return textReply(descriptionPrompt());
+    }
+
+    const nextData = { ...session.data, description: message.text.trim() };
+    const reply = nextPromptAfterUpdate(session, nextData);
+    await session.save();
+    return reply;
+  }
+
+  if (session.step === 'ENTER_PRICE') {
+    if (['enter_budget', 'budget'].includes(input)) {
+      await session.save();
+      return textReply(pricePrompt());
+    }
+
+    const normalizedPriceInput = input.replace(/,/g, '');
+
+    if (!/^\d+$/.test(normalizedPriceInput)) {
+      await session.save();
+      return textReply(`Please enter digits only for the food budget.
+
+${pricePrompt()}`);
+    }
+
+    const price = Number(normalizedPriceInput);
+
+    if (!Number.isFinite(price) || price <= 0) {
+      await session.save();
+      return textReply(`Please enter a positive food budget.
+
+${pricePrompt()}`);
+    }
+
+    const nextData = { ...session.data, price };
+    const reply = nextPromptAfterUpdate(session, nextData);
+    await session.save();
+    return reply;
   }
 
   if (session.step === 'ENTER_RESTAURANT_PEOPLE') {
@@ -675,43 +804,10 @@ async function handleMessage(
       return peopleCountPromptReply();
     }
 
-    session.step = 'ENTER_DESCRIPTION';
-    session.data = { ...session.data, restaurantPeopleCount };
+    const nextData = { ...session.data, restaurantPeopleCount };
+    const reply = nextPromptAfterUpdate(session, nextData);
     await session.save();
-    return orderPromptReply();
-  }
-
-  if (session.step === 'ENTER_DESCRIPTION') {
-    if (['order', 'order_details'].includes(input)) {
-      await session.save();
-      return textReply(descriptionPrompt());
-    }
-
-    session.step = 'ENTER_PRICE';
-    session.data = { ...session.data, description: message.text.trim() };
-    await session.save();
-    return budgetPromptReply();
-  }
-
-  if (session.step === 'ENTER_PRICE') {
-    if (['enter_budget', 'budget'].includes(input)) {
-      await session.save();
-      return textReply(pricePrompt());
-    }
-
-    const price = Number(input.replace(/,/g, ''));
-
-    if (!Number.isFinite(price) || price <= 0) {
-      await session.save();
-      return textReply(`Please enter a valid positive number for the item price.
-
-${pricePrompt()}`);
-    }
-
-    session.step = 'ENTER_LOCATION';
-    session.data = { ...session.data, price };
-    await session.save();
-    return locationPromptReply();
+    return reply;
   }
 
   if (session.step === 'ENTER_LOCATION') {
@@ -722,10 +818,47 @@ ${pricePrompt()}`);
       return locationPromptReply();
     }
 
-    session.step = 'CONFIRM_ORDER';
-    session.data = { ...session.data, location };
+    const nextData = { ...session.data, location };
+    const reply = nextPromptAfterUpdate(session, nextData);
     await session.save();
-    return confirmationReply(session);
+    return reply;
+  }
+
+  if (session.step === 'EDIT_ORDER') {
+    const editSelection = mapEditOrderSelection(input);
+
+    if (editSelection === 'STORE') {
+      session.step = 'SELECT_STORE';
+      await session.save();
+      return storeMenuReply();
+    }
+
+    if (editSelection === 'ITEMS') {
+      session.step = 'ENTER_DESCRIPTION';
+      await session.save();
+      return textReply(descriptionPrompt());
+    }
+
+    if (editSelection === 'BUDGET') {
+      session.step = 'ENTER_PRICE';
+      await session.save();
+      return budgetPromptReply();
+    }
+
+    if (editSelection === 'PEOPLE') {
+      session.step = 'ENTER_RESTAURANT_PEOPLE';
+      await session.save();
+      return peopleCountPromptReply();
+    }
+
+    if (editSelection === 'LOCATION') {
+      session.step = 'ENTER_LOCATION';
+      await session.save();
+      return locationPromptReply();
+    }
+
+    await session.save();
+    return editOrderReply();
   }
 
   if (session.step === 'CONFIRM_ORDER') {
@@ -765,6 +898,12 @@ Please reply YES to try again or MENU to restart.`);
     if (['no', 'n'].includes(input)) {
       await setSessionMenu(session, message.messageId, message.name);
       return mainMenuReply('Order cancelled.\n\nChoose an option:');
+    }
+
+    if (['edit', 'edit_order'].includes(input)) {
+      session.step = 'EDIT_ORDER';
+      await session.save();
+      return editOrderReply();
     }
 
     await session.save();

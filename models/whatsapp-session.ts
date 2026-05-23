@@ -8,6 +8,7 @@ export type WhatsAppSessionStep =
   | 'ENTER_PRICE'
   | 'ENTER_LOCATION'
   | 'CONFIRM_ORDER'
+  | 'EDIT_ORDER'
   | 'SUPPORT';
 
 export interface IWhatsAppSession extends Document {
@@ -46,6 +47,7 @@ const whatsappSessionSchema = new Schema<IWhatsAppSession>(
         'ENTER_PRICE',
         'ENTER_LOCATION',
         'CONFIRM_ORDER',
+        'EDIT_ORDER',
         'SUPPORT',
       ],
       default: 'MENU',
