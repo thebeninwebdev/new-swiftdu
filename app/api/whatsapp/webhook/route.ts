@@ -207,17 +207,21 @@ function storeMenuReply(): WhatsAppOutgoingReply {
 }
 
 function descriptionPrompt() {
-  return `Type your order details.
+  return `Type your order details below.
 
-Example
-Jollof Rice - 500, 2 Meat - 600, Sprite - 500`;
+Example:
+Jollof Rice - 500
+2 Meat - 600
+Sprite - 500
+
+Please include the food/item name and price.`;
 }
 
 function orderPromptReply(): WhatsAppOutgoingReply {
   return {
     type: 'buttons',
     body: descriptionPrompt(),
-    buttons: [{ id: 'ORDER_DETAILS', title: 'Order' }],
+    buttons: [{ id: 'ORDER_DETAILS', title: 'Enter details' }],
   };
 }
 
@@ -234,19 +238,21 @@ function peopleCountPromptReply(): WhatsAppOutgoingReply {
 }
 
 function pricePrompt() {
-  return `Type the food budget using numbers only.
+  return `Enter your total food budget.
 
-Do not forget to calculate the takeaway amount for your budget.
+Use numbers only.
 
-Example
-1500`;
+Example:
+1500
+
+Do not include ₦, commas, or words.`;
 }
 
 function budgetPromptReply(): WhatsAppOutgoingReply {
   return {
     type: 'buttons',
     body: pricePrompt(),
-    buttons: [{ id: 'ENTER_BUDGET', title: 'Enter budget' }],
+    buttons: [{ id: 'ENTER_BUDGET', title: 'Type budget' }],
   };
 }
 
@@ -755,7 +761,7 @@ async function handleMessage(
   }
 
   if (session.step === 'ENTER_DESCRIPTION') {
-    if (['order', 'order_details'].includes(input)) {
+    if (['order_details', 'enter details'].includes(input)) {
       await session.save();
       return textReply(descriptionPrompt());
     }
@@ -767,27 +773,23 @@ async function handleMessage(
   }
 
   if (session.step === 'ENTER_PRICE') {
-    if (['enter_budget', 'budget'].includes(input)) {
+    if (['enter_budget', 'type budget', 'budget'].includes(input)) {
       await session.save();
       return textReply(pricePrompt());
     }
 
-    const normalizedPriceInput = input.replace(/,/g, '');
+    const normalizedPriceInput = input;
 
     if (!/^\d+$/.test(normalizedPriceInput)) {
       await session.save();
-      return textReply(`Please enter digits only for the food budget.
-
-${pricePrompt()}`);
+      return textReply(pricePrompt());
     }
 
     const price = Number(normalizedPriceInput);
 
     if (!Number.isFinite(price) || price <= 0) {
       await session.save();
-      return textReply(`Please enter a positive food budget.
-
-${pricePrompt()}`);
+      return textReply(pricePrompt());
     }
 
     const nextData = { ...session.data, price };
