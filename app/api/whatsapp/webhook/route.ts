@@ -210,11 +210,7 @@ function descriptionPrompt() {
   return `Type your order details below.
 
 Example:
-Jollof Rice - 500
-2 Meat - 600
-Sprite - 500
-
-Please include the food/item name and price.
+Jollof Rice - 500, 2 Meat - 600, Sprite - 500
 
 Type cancel anytime to end this order.`;
 }
