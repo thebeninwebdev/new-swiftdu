@@ -158,6 +158,25 @@ export async function sendWhatsAppListMessage({
   await sendWhatsAppPayload(payload, 'WhatsApp List Message Send Error');
 }
 
+export async function sendWhatsAppWelcomeMenu(to: string, name?: string | null) {
+  await sendWhatsAppListMessage({
+    to,
+    body: `Hello${name ? ` ${name}` : ''}\nHow may I assist you today?`,
+    buttonText: 'Choose option',
+    sections: [
+      {
+        rows: [
+          { id: 'ORDER_FOOD', title: 'Order food' },
+          { id: 'TRACK_ORDER', title: 'Track order' },
+          { id: 'CANCEL_ORDER', title: 'Cancel order' },
+          { id: 'SUPPORT', title: 'Speak to support' },
+          { id: 'GET_WEBSITE_LINK', title: 'Get website link' },
+        ],
+      },
+    ],
+  });
+}
+
 export async function sendWhatsAppReplyButtons({
   to,
   body,

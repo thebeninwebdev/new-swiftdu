@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
 import { isSameWhatsAppPhone, maskWhatsAppPhone, normalizeWhatsAppPhone } from '@/lib/whatsapp/registration';
+import { sendWhatsAppWelcomeMenu } from '@/lib/whatsapp/send-message';
 import { User } from '@/models/user';
 import { WhatsAppRegistration } from '@/models/whatsapp-registration';
 
@@ -93,10 +94,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const wasAlreadyLinkedToUser =
+      registration.status === 'linked' && registration.userId === session.user.id;
+
     registration.userId = session.user.id;
     registration.status = 'linked';
     registration.linkedAt = new Date();
     await registration.save();
+
+    if (!wasAlreadyLinkedToUser) {
+      try {
+        await sendWhatsAppWelcomeMenu(registration.phone, user.name || registration.name);
+      } catch (error) {
+        console.error('[WhatsApp Registration Welcome Send Error]:', error);
+      }
+    }
 
     return NextResponse.json({
       ok: true,

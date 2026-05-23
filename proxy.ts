@@ -2,7 +2,12 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { auth } from '@/lib/auth';
 import { EXCO_DASHBOARD_PATHS, getExcoDashboardPath } from '@/lib/exco-constants';
-import { COMPLETE_PROFILE_PATH, isProfileComplete } from '@/lib/profile-completion';
+import {
+  buildCompleteProfilePath,
+  getSafeNextPath,
+  COMPLETE_PROFILE_PATH,
+  isProfileComplete,
+} from '@/lib/profile-completion';
 
 const PUBLIC_ROUTES = [
   '/',
@@ -35,7 +40,8 @@ function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) 
 }
 
 export async function proxy(request: NextRequest) {
-  const { pathname } = request.nextUrl;
+  const { pathname, search } = request.nextUrl;
+  const currentPath = `${pathname}${search}`;
 
   const session = await auth.api.getSession({
     headers: request.headers,
@@ -55,7 +61,11 @@ export async function proxy(request: NextRequest) {
   const isAuthRoute = AUTH_ROUTES.includes(pathname);
 
   if (user && (pathname === '/' || isAuthRoute)) {
-    const nextRoute = isProfileComplete(user) ? defaultRoute : COMPLETE_PROFILE_PATH;
+    const callbackUrl = request.nextUrl.searchParams.get('callbackUrl');
+    const safeCallbackUrl = isAuthRoute ? getSafeNextPath(callbackUrl) : null;
+    const nextRoute = isProfileComplete(user)
+      ? safeCallbackUrl ?? defaultRoute
+      : buildCompleteProfilePath(safeCallbackUrl);
     return NextResponse.redirect(new URL(nextRoute, request.url));
   }
 
@@ -64,7 +74,9 @@ export async function proxy(request: NextRequest) {
   }
 
   if (!user) {
-    return NextResponse.redirect(new URL('/login', request.url));
+    const loginUrl = new URL('/login', request.url);
+    loginUrl.searchParams.set('callbackUrl', currentPath);
+    return NextResponse.redirect(loginUrl);
   }
 
   if (pathname.startsWith('/admin') && role !== 'admin') {
