@@ -222,15 +222,33 @@ function orderPromptReply(): WhatsAppOutgoingReply {
   };
 }
 
+function peopleCountPromptReply(): WhatsAppOutgoingReply {
+  return {
+    type: 'buttons',
+    body: 'How many people are you ordering for?',
+    buttons: [
+      { id: 'PEOPLE_1', title: '1 person' },
+      { id: 'PEOPLE_2', title: '2 persons' },
+      { id: 'PEOPLE_3', title: '3 persons' },
+    ],
+  };
+}
+
 function pricePrompt() {
   return `Enter the food budget only.
 
 Do not forget to calculate the takeaway amount for your budget.
 
-You can only order for one person at a time using this WhatsApp bot.
-
 Example
 1500`;
+}
+
+function budgetPromptReply(): WhatsAppOutgoingReply {
+  return {
+    type: 'buttons',
+    body: pricePrompt(),
+    buttons: [{ id: 'ENTER_BUDGET', title: 'Enter budget' }],
+  };
 }
 
 function locationPromptReply(): WhatsAppOutgoingReply {
@@ -251,15 +269,17 @@ function formatCurrency(value: number) {
 
 function confirmationBody(session: IWhatsAppSession) {
   const itemPrice = Number(session.data.price || 0);
+  const restaurantPeopleCount = Number(session.data.restaurantPeopleCount || 1);
   const pricing = calculateOrderPricing({
     amount: itemPrice,
     taskType: 'restaurant',
-    restaurantPeopleCount: 1,
+    restaurantPeopleCount,
   });
 
   return `Confirm your order
 
 Store ${session.data.store || 'Not provided'}
+People ${restaurantPeopleCount}
 Items ${session.data.description || 'Not provided'}
 Items price ${formatCurrency(itemPrice)}
 Service fee ${formatCurrency(pricing.serviceFee)}
@@ -318,6 +338,25 @@ function mapStoreSelection(input: string) {
   };
 
   return stores[input] || null;
+}
+
+function mapPeopleCountSelection(input: string) {
+  const counts: Record<string, number> = {
+    '1': 1,
+    one: 1,
+    '1 person': 1,
+    people_1: 1,
+    '2': 2,
+    two: 2,
+    '2 persons': 2,
+    people_2: 2,
+    '3': 3,
+    three: 3,
+    '3 persons': 3,
+    people_3: 3,
+  };
+
+  return counts[input] || null;
 }
 
 function mapLocationSelection(input: string) {
@@ -415,10 +454,11 @@ async function createWhatsAppOrder(
   name?: string
 ) {
   const itemPrice = Number(session.data.price || 0);
+  const restaurantPeopleCount = Number(session.data.restaurantPeopleCount || 1);
   const pricing = calculateOrderPricing({
     amount: itemPrice,
     taskType: 'restaurant',
-    restaurantPeopleCount: 1,
+    restaurantPeopleCount,
   });
   const settlement = splitServiceFee(pricing.serviceFee);
 
@@ -441,7 +481,7 @@ async function createWhatsAppOrder(
     location: session.data.location,
     deliveryLocation: session.data.location,
     store: session.data.store,
-    restaurantPeopleCount: 1,
+    restaurantPeopleCount,
     status: 'pending',
     bookedAt: new Date(),
     paymentProvider: 'manual_transfer',
@@ -621,8 +661,22 @@ async function handleMessage(
       return storeMenuReply();
     }
 
-    session.step = 'ENTER_DESCRIPTION';
+    session.step = 'ENTER_RESTAURANT_PEOPLE';
     session.data = { ...session.data, store };
+    await session.save();
+    return peopleCountPromptReply();
+  }
+
+  if (session.step === 'ENTER_RESTAURANT_PEOPLE') {
+    const restaurantPeopleCount = mapPeopleCountSelection(input);
+
+    if (!restaurantPeopleCount) {
+      await session.save();
+      return peopleCountPromptReply();
+    }
+
+    session.step = 'ENTER_DESCRIPTION';
+    session.data = { ...session.data, restaurantPeopleCount };
     await session.save();
     return orderPromptReply();
   }
@@ -636,10 +690,15 @@ async function handleMessage(
     session.step = 'ENTER_PRICE';
     session.data = { ...session.data, description: message.text.trim() };
     await session.save();
-    return textReply(pricePrompt());
+    return budgetPromptReply();
   }
 
   if (session.step === 'ENTER_PRICE') {
+    if (['enter_budget', 'budget'].includes(input)) {
+      await session.save();
+      return textReply(pricePrompt());
+    }
+
     const price = Number(input.replace(/,/g, ''));
 
     if (!Number.isFinite(price) || price <= 0) {

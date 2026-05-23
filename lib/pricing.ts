@@ -3,7 +3,6 @@ export const WATER_BAG_PRICE = 750
 export const WATER_BAG_FEE = 450
 export const WATER_PLATFORM_FEE_RATE = 0.24
 export const RESTAURANT_PERSON_FEE = 450
-export const RESTAURANT_GROUP_DISCOUNT_RATE = 0.2222
 export const RESTAURANT_MAX_PEOPLE = 3
 export const PRINTING_TASK_TYPE = 'printing'
 export const PRINTING_SERVICE_FEE = 500
@@ -64,6 +63,12 @@ export const RESTAURANT_SINGLE_ORDER_SERVICE_FEE_RULES = [
     fee: 2000,
   },
 ] as const
+
+export const RESTAURANT_SERVICE_FEE_BY_PEOPLE_COUNT: Record<number, number> = {
+  1: 450,
+  2: 700,
+  3: 1050,
+}
 
 export type NoteSize = 'small' | 'big'
 export type CopyNotesType = NoteSize
@@ -271,7 +276,7 @@ export function calculateOrderPricing(input: {
 
   const serviceFee =
     input.taskType === 'restaurant'
-      ? calculateRestaurantServiceFee(input.restaurantPeopleCount, amount)
+      ? calculateRestaurantServiceFee(input.restaurantPeopleCount)
       : getTieredServiceFee(amount)
 
   return {
@@ -294,25 +299,11 @@ export function normalizeRestaurantPeopleCount(value?: number) {
     return 1
   }
 
-  return count
+  return Math.min(count, RESTAURANT_MAX_PEOPLE)
 }
 
-export function calculateRestaurantServiceFee(peopleCount?: number, amount = 0) {
+export function calculateRestaurantServiceFee(peopleCount?: number) {
   const normalizedPeopleCount = normalizeRestaurantPeopleCount(peopleCount)
 
-  if (normalizedPeopleCount <= 1) {
-    const matchingRule = RESTAURANT_SINGLE_ORDER_SERVICE_FEE_RULES.find((rule) => {
-      if (rule.max === null) {
-        return amount >= rule.min
-      }
-
-      return amount >= rule.min && amount <= rule.max
-    })
-
-    return matchingRule?.fee || RESTAURANT_PERSON_FEE
-  }
-
-  const baseFee = roundNaira(RESTAURANT_PERSON_FEE * normalizedPeopleCount)
-
-  return roundNaira(baseFee * (1 - RESTAURANT_GROUP_DISCOUNT_RATE))
+  return RESTAURANT_SERVICE_FEE_BY_PEOPLE_COUNT[normalizedPeopleCount] || RESTAURANT_PERSON_FEE
 }
