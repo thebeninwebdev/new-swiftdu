@@ -214,21 +214,15 @@ Jollof Rice - 500
 2 Meat - 600
 Sprite - 500
 
-Please include the food/item name and price.`;
-}
+Please include the food/item name and price.
 
-function orderPromptReply(): WhatsAppOutgoingReply {
-  return {
-    type: 'buttons',
-    body: descriptionPrompt(),
-    buttons: [{ id: 'ORDER_DETAILS', title: 'Enter details' }],
-  };
+Type cancel anytime to end this order.`;
 }
 
 function peopleCountPromptReply(): WhatsAppOutgoingReply {
   return {
     type: 'buttons',
-    body: 'How many people are you ordering for?',
+    body: 'How many people are you ordering for?\n\nType cancel anytime to end this order.',
     buttons: [
       { id: 'PEOPLE_1', title: '1 person' },
       { id: 'PEOPLE_2', title: '2 persons' },
@@ -245,21 +239,15 @@ Use numbers only.
 Example:
 1500
 
-Do not include ₦, commas, or words.`;
-}
+Do not include ₦, commas, or words.
 
-function budgetPromptReply(): WhatsAppOutgoingReply {
-  return {
-    type: 'buttons',
-    body: pricePrompt(),
-    buttons: [{ id: 'ENTER_BUDGET', title: 'Type budget' }],
-  };
+Type cancel anytime to end this order.`;
 }
 
 function locationPromptReply(): WhatsAppOutgoingReply {
   return {
     type: 'buttons',
-    body: 'Where should we deliver it?',
+    body: 'Where should we deliver it?\n\nType cancel anytime to end this order.',
     buttons: [
       { id: 'GIRLS_HOSTEL', title: 'Girls Hostel' },
       { id: 'AMNESTY', title: 'Amnesty' },
@@ -450,12 +438,12 @@ function nextPromptAfterUpdate(session: IWhatsAppSession, data: WhatsAppSessionD
 
   if (!data.description) {
     session.step = 'ENTER_DESCRIPTION';
-    return orderPromptReply();
+    return textReply(descriptionPrompt());
   }
 
   if (!data.price) {
     session.step = 'ENTER_PRICE';
-    return budgetPromptReply();
+    return textReply(pricePrompt());
   }
 
   if (!data.restaurantPeopleCount) {
@@ -680,20 +668,20 @@ async function handleMessage(
   const input = normalizeInput(message.text);
   const authenticatedUser = await findAuthenticatedWhatsAppUser(message.phone);
 
-  if (isGreeting(input)) {
-    await setSessionMenu(session, message.messageId, message.name);
-    if (!authenticatedUser) {
-      return textReply(await authenticationPrompt(message.phone, message.name));
-    }
-    return mainMenuReply(welcomeMenuBody(message.name || authenticatedUser.name || session.name));
-  }
-
   if (input === 'cancel') {
     await setSessionMenu(session, message.messageId, message.name);
     if (!authenticatedUser) {
       return textReply(await authenticationPrompt(message.phone, message.name));
     }
     return mainMenuReply('Order cancelled.\n\nChoose an option:');
+  }
+
+  if (isGreeting(input)) {
+    await setSessionMenu(session, message.messageId, message.name);
+    if (!authenticatedUser) {
+      return textReply(await authenticationPrompt(message.phone, message.name));
+    }
+    return mainMenuReply(welcomeMenuBody(message.name || authenticatedUser.name || session.name));
   }
 
   if (!authenticatedUser) {
@@ -761,11 +749,6 @@ async function handleMessage(
   }
 
   if (session.step === 'ENTER_DESCRIPTION') {
-    if (['order_details', 'enter details'].includes(input)) {
-      await session.save();
-      return textReply(descriptionPrompt());
-    }
-
     const nextData = { ...session.data, description: message.text.trim() };
     const reply = nextPromptAfterUpdate(session, nextData);
     await session.save();
@@ -773,11 +756,6 @@ async function handleMessage(
   }
 
   if (session.step === 'ENTER_PRICE') {
-    if (['enter_budget', 'type budget', 'budget'].includes(input)) {
-      await session.save();
-      return textReply(pricePrompt());
-    }
-
     const normalizedPriceInput = input;
 
     if (!/^\d+$/.test(normalizedPriceInput)) {
@@ -844,7 +822,7 @@ async function handleMessage(
     if (editSelection === 'BUDGET') {
       session.step = 'ENTER_PRICE';
       await session.save();
-      return budgetPromptReply();
+      return textReply(pricePrompt());
     }
 
     if (editSelection === 'PEOPLE') {
