@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Area,
@@ -19,16 +19,19 @@ import {
   BadgeDollarSign,
   BarChart3,
   BriefcaseBusiness,
+  CheckCircle2,
   Cpu,
   LineChart,
   Loader2,
   Megaphone,
+  PlusCircle,
   ShieldAlert,
   TrendingUp,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -36,6 +39,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import { EXCO_ROLE_LABELS, type ExcoRole } from "@/lib/exco-constants";
 
 type CountDatum = {
@@ -76,6 +80,8 @@ type DashboardData = {
       platformFee: number;
       paystackSettlementFee: number;
       netPlatformProfit: number;
+      approvedExpenditures: number;
+      businessProfit: number;
       taskerFee: number;
       waterFee: number;
     };
@@ -86,6 +92,8 @@ type DashboardData = {
       platformFee: number;
       paystackSettlementFee: number;
       netPlatformProfit: number;
+      approvedExpenditures: number;
+      businessProfit: number;
       taskerFee: number;
       waterFee: number;
     };
@@ -211,6 +219,27 @@ type DashboardData = {
     settlementBreakdown: CountDatum[];
     paymentBreakdown: CountDatum[];
   };
+};
+
+type ExpenditureApprovalRole = "CFO" | "CMO" | "COO" | "CTO" | "CEO";
+
+type ExpenditureItem = {
+  id: string;
+  title: string;
+  amount: number;
+  category: string;
+  notes: string;
+  status: "pending" | "approved";
+  requiredApprovals: ExpenditureApprovalRole[];
+  approvals: Array<{
+    role: ExpenditureApprovalRole;
+    approvedByName?: string;
+    approvedAt: string;
+  }>;
+  pendingApprovals: ExpenditureApprovalRole[];
+  createdByName: string;
+  approvedAt: string | null;
+  createdAt: string | null;
 };
 
 const ROLE_CONFIG = {
@@ -1628,6 +1657,8 @@ function FinanceSections({ data }: { data: DashboardData }) {
             ["Platform fees", data.finance.completedMoney.platformFee],
             ["Paystack fees", data.finance.completedMoney.paystackSettlementFee],
             ["Net platform profit", data.finance.completedMoney.netPlatformProfit],
+            ["Approved expenditures", data.finance.completedMoney.approvedExpenditures],
+            ["Business profit", data.finance.completedMoney.businessProfit],
             ["Tasker fees", data.finance.completedMoney.taskerFee],
           ].map(([label, value]) => (
             <div key={label} className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 dark:bg-slate-900">
@@ -1639,6 +1670,224 @@ function FinanceSections({ data }: { data: DashboardData }) {
       </Card>
       </div>
     </div>
+  );
+}
+
+function ExpenditurePanel({ role }: { role: ExcoRole }) {
+  const [items, setItems] = useState<ExpenditureItem[]>([]);
+  const [actorRole, setActorRole] = useState<ExpenditureApprovalRole | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    title: "",
+    amount: "",
+    category: "",
+    notes: "",
+  });
+
+  const loadExpenditures = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const response = await fetch("/api/expenditures?limit=50", { cache: "no-store" });
+      if (!response.ok) throw new Error("Unable to load expenditures.");
+      const data = await response.json();
+      setItems(data.items || []);
+      setActorRole(data.actorRole || null);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to load expenditures.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadExpenditures();
+  }, [loadExpenditures]);
+
+  async function createExpenditure(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsSaving(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch("/api/expenditures", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: form.title,
+          amount: Number(form.amount),
+          category: form.category,
+          notes: form.notes,
+        }),
+      });
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error || "Unable to add expenditure.");
+
+      setForm({ title: "", amount: "", category: "", notes: "" });
+      setMessage("Expenditure added. It will affect profit after all approvals.");
+      await loadExpenditures();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to add expenditure.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function approveExpenditure(id: string) {
+    setIsSaving(true);
+    setMessage(null);
+
+    try {
+      const response = await fetch(`/api/expenditures/${id}/approve`, { method: "POST" });
+      const data = await response.json();
+
+      if (!response.ok) throw new Error(data.error || "Unable to approve expenditure.");
+
+      setMessage(data.item?.status === "approved" ? "Expenditure fully approved." : "Approval recorded.");
+      await loadExpenditures();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Unable to approve expenditure.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  const pendingItems = items.filter((item) => item.status === "pending");
+  const approvedItems = items.filter((item) => item.status === "approved").slice(0, 5);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Business Expenditures</CardTitle>
+        <CardDescription>
+          Expenses reduce profit only after CFO, CMO, COO, CTO, and CEO approvals.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        {role === "CFO" ? (
+          <form onSubmit={createExpenditure} className="grid gap-3 rounded-lg border border-slate-200 p-4 dark:border-slate-800 md:grid-cols-2">
+            <Input
+              value={form.title}
+              onChange={(event) => setForm((current) => ({ ...current, title: event.target.value }))}
+              placeholder="Hosting cost"
+              required
+            />
+            <Input
+              value={form.amount}
+              onChange={(event) => setForm((current) => ({ ...current, amount: event.target.value }))}
+              placeholder="Amount"
+              type="number"
+              min="1"
+              required
+            />
+            <Input
+              value={form.category}
+              onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
+              placeholder="Category"
+              required
+            />
+            <Textarea
+              value={form.notes}
+              onChange={(event) => setForm((current) => ({ ...current, notes: event.target.value }))}
+              placeholder="Optional notes"
+              className="md:col-span-2"
+            />
+            <Button type="submit" disabled={isSaving} className="md:col-span-2">
+              {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlusCircle className="mr-2 h-4 w-4" />}
+              Add expenditure
+            </Button>
+          </form>
+        ) : null}
+
+        {message ? <p className="text-sm text-slate-600 dark:text-slate-300">{message}</p> : null}
+
+        {isLoading ? (
+          <div className="flex items-center gap-2 text-sm text-slate-500">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Loading expenditures...
+          </div>
+        ) : pendingItems.length === 0 ? (
+          <EmptyState label="No expenditures waiting for approval" />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800">
+                  <th className="pb-3 pr-4 font-semibold">Expense</th>
+                  <th className="pb-3 pr-4 font-semibold">Amount</th>
+                  <th className="pb-3 pr-4 font-semibold">Approved</th>
+                  <th className="pb-3 pr-4 font-semibold">Waiting On</th>
+                  <th className="pb-3 pr-4 font-semibold">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {pendingItems.map((item) => {
+                  const hasApproved = actorRole
+                    ? item.approvals.some((approval) => approval.role === actorRole)
+                    : false;
+                  const canApprove = Boolean(actorRole && item.pendingApprovals.includes(actorRole));
+
+                  return (
+                    <tr key={item.id} className="border-b border-slate-100 align-top dark:border-slate-900">
+                      <td className="py-4 pr-4">
+                        <div className="font-semibold">{item.title}</div>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {item.category} - added by {item.createdByName || "CFO"}
+                        </p>
+                        {item.notes ? <p className="mt-2 text-xs text-slate-500">{item.notes}</p> : null}
+                      </td>
+                      <td className="py-4 pr-4 font-semibold">{formatValue(item.amount, "currency")}</td>
+                      <td className="py-4 pr-4">
+                        <div className="flex flex-wrap gap-1">
+                          {item.approvals.map((approval) => (
+                            <Badge key={approval.role} variant="outline" className="border-emerald-200 bg-emerald-50 text-emerald-700">
+                              {approval.role}
+                            </Badge>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-4 pr-4">
+                        <div className="flex flex-wrap gap-1">
+                          {item.pendingApprovals.map((approvalRole) => (
+                            <Badge key={approvalRole} variant="outline">
+                              {approvalRole}
+                            </Badge>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-4 pr-4">
+                        <Button
+                          size="sm"
+                          disabled={!canApprove || isSaving}
+                          onClick={() => approveExpenditure(item.id)}
+                        >
+                          <CheckCircle2 className="mr-2 h-4 w-4" />
+                          {hasApproved ? "Approved" : "Approve"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {approvedItems.length > 0 ? (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold">Recently approved</p>
+            {approvedItems.map((item) => (
+              <div key={item.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3 text-sm dark:bg-slate-900">
+                <span>{item.title}</span>
+                <span className="font-semibold">{formatValue(item.amount, "currency")}</span>
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -2382,6 +2631,7 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
 
         <InsightPanel insights={data.insights} />
         <ExcoManagementPanels role={role} />
+        <ExpenditurePanel role={role} />
 
         {section}
       </div>

@@ -194,6 +194,9 @@ const getWhatsAppHref = (phone: string) => {
 const isActiveOrder = (order: Pick<Order, 'status'>) =>
   ACTIVE_ORDER_STATUSES.has(order.status)
 
+const canRetryOrder = (order: Order) =>
+  order.status === 'cancelled' && !order.hasPaid && order.paymentStatus !== 'paid'
+
 function getTaskerSearchMessage(elapsedMs: number) {
   const elapsedMinutes = elapsedMs / 60000
 
@@ -400,7 +403,7 @@ export default function OrdersPage() {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false)
   const [loadingTasker, setLoadingTasker] = useState(false)
-  const [updatingAction, setUpdatingAction] = useState<'cancel' | null>(null)
+  const [updatingAction, setUpdatingAction] = useState<'cancel' | 'retry' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const trackedOrderIdRef = useRef<string | null>(null)
   const previousSnapshotRef = useRef<{
@@ -810,6 +813,49 @@ export default function OrdersPage() {
       setUpdatingAction(null)
     }
   }, [currentOrder, fetchWithRealtimePause, loadOrders, router])
+
+  const handleRetryOrder = useCallback(
+    async (order: Order) => {
+      if (updatingAction || confirmingTransfer || !canRetryOrder(order)) {
+        return
+      }
+
+      try {
+        setUpdatingAction('retry')
+        const response = await fetchWithRealtimePause(`/api/orders/${order._id}/retry`, {
+          method: 'POST',
+        })
+        const data = await response.json()
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Failed to retry task')
+        }
+
+        trackedOrderIdRef.current = data._id
+        taskerOrderRef.current = null
+        previousSnapshotRef.current = {
+          id: data._id,
+          taskerId: data.taskerId,
+          hasPaid: data.hasPaid,
+          isDeclinedTask: data.isDeclinedTask,
+        }
+        setTaskerDetails(null)
+        setCurrentOrder(data)
+        setRecentOrders((previous) => [
+          data,
+          ...previous.filter((existingOrder) => existingOrder._id !== data._id),
+        ])
+        toast.success('Task sent again. We are looking for taskers now.')
+        router.replace(`/dashboard/tasks?orderId=${data._id}`)
+        void loadOrders(true)
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : 'Failed to retry task')
+      } finally {
+        setUpdatingAction(null)
+      }
+    },
+    [confirmingTransfer, fetchWithRealtimePause, loadOrders, router, updatingAction]
+  )
 
   const requestCancelOrder = useCallback(() => {
     if (!currentOrder || updatingAction === 'cancel' || confirmingTransfer) {
@@ -1280,6 +1326,7 @@ export default function OrdersPage() {
               <div className="space-y-2">
                 {pastOrders.map((order) => {
                   const status = order.isDeclinedTask ? declinedStatusConfig : statusConfig[order.status]
+                  const retryable = canRetryOrder(order)
 
                   return (
                     <div
@@ -1307,6 +1354,23 @@ export default function OrdersPage() {
                           {formatCurrency(order.totalAmount || order.amount)}
                         </p>
                       </div>
+                      {retryable ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={updatingAction === 'retry' || confirmingTransfer}
+                          onClick={() => void handleRetryOrder(order)}
+                          className="shrink-0 rounded-xl border-sky-200 text-sky-700 hover:bg-sky-50 dark:border-sky-900 dark:text-sky-300 dark:hover:bg-sky-950/30"
+                        >
+                          {updatingAction === 'retry' ? (
+                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <RefreshCw className="mr-2 h-3.5 w-3.5" />
+                          )}
+                          Retry
+                        </Button>
+                      ) : null}
                     </div>
                   )
                 })}

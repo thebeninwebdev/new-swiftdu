@@ -124,7 +124,8 @@ function WhatsAppRegistrationContent() {
                   WhatsApp number: <span className="font-semibold">{registration?.phone}</span>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  You must be logged in to your SwiftDU website account before linking this WhatsApp bot.
+                  Log in to any SwiftDU account you own, then link this WhatsApp number to use Sammy.
+                  If you changed numbers, this will replace your previous WhatsApp link.
                 </p>
                 {session?.user ? (
                   <Button onClick={handleLink} disabled={linking} size="lg" className="w-full">

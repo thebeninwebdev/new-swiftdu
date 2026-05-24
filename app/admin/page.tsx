@@ -15,6 +15,7 @@ import {
   TrendingUp,
   Activity,
   AlertCircle,
+  CheckCircle2,
   Shirt,
 } from 'lucide-react'
 
@@ -33,6 +34,8 @@ interface DashboardStats {
   totalPlatformFees: number
   paystackSettlementFees: number
   profit: number
+  netPlatformProfit: number
+  approvedExpenditures: number
   totalCompensation: number
   declinedTasks: number
 }
@@ -45,13 +48,28 @@ interface RecentActivity {
   status?: string
 }
 
+type ExpenditureItem = {
+  id: string
+  title: string
+  amount: number
+  category: string
+  notes: string
+  status: 'pending' | 'approved'
+  approvals: Array<{ role: string; approvedByName?: string; approvedAt: string }>
+  pendingApprovals: string[]
+  createdByName: string
+  createdAt: string | null
+}
+
 export default function AdminDashboard() {
   const router = useRouter()
   const [admin, setAdmin] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
+  const [expenditures, setExpenditures] = useState<ExpenditureItem[]>([])
   const [isStatsLoading, setIsStatsLoading] = useState(false)
+  const [isApprovingExpense, setIsApprovingExpense] = useState(false)
 
   // Auth check
   useEffect(() => {
@@ -83,6 +101,12 @@ export default function AdminDashboard() {
       const data = await response.json()
       setStats(data.stats)
       setRecentActivity(data.recentActivity || [])
+
+      const expenditureResponse = await fetch('/api/expenditures?limit=50')
+      if (expenditureResponse.ok) {
+        const expenditureData = await expenditureResponse.json()
+        setExpenditures(expenditureData.items || [])
+      }
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error)
     } finally {
@@ -95,6 +119,19 @@ export default function AdminDashboard() {
       fetchStats()
     }
   }, [admin])
+
+  const approveExpenditure = async (id: string) => {
+    setIsApprovingExpense(true)
+    try {
+      const response = await fetch(`/api/expenditures/${id}/approve`, { method: 'POST' })
+      if (!response.ok) throw new Error('Failed to approve expenditure')
+      await fetchStats()
+    } catch (error) {
+      console.error('Failed to approve expenditure:', error)
+    } finally {
+      setIsApprovingExpense(false)
+    }
+  }
 
   if (isLoading) {
     return (
@@ -128,7 +165,7 @@ export default function AdminDashboard() {
 
       <div className="max-w-7xl mx-auto px-4 py-8">
         {/* Income Breakdown */}
-        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 md:gap-6">
+        <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5 md:gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Gross Revenue</CardTitle>
@@ -167,6 +204,18 @@ export default function AdminDashboard() {
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Approved Expenditures</CardTitle>
+              <TrendingUp className="h-4 w-4 rotate-180 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">
+                â‚¦{isStatsLoading ? '...' : (stats?.approvedExpenditures || 0).toLocaleString()}
+              </div>
+              <p className="text-xs text-muted-foreground">Subtracted after full approval</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Compensation</CardTitle>
               <Activity className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
@@ -178,6 +227,85 @@ export default function AdminDashboard() {
             </CardContent>
           </Card>
         </div>
+
+        <Card className="mb-8">
+          <CardHeader>
+            <CardTitle>CEO Expenditure Approvals</CardTitle>
+            <CardDescription>
+              CFO-created expenses reduce profit only after CFO, CMO, COO, CTO, and CEO approval.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {expenditures.filter((item) => item.status === 'pending').length === 0 ? (
+              <div className="text-sm text-muted-foreground">No expenditures waiting for CEO approval.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[760px] text-left text-sm">
+                  <thead>
+                    <tr className="border-b text-xs uppercase text-muted-foreground">
+                      <th className="pb-3 pr-4 font-semibold">Expense</th>
+                      <th className="pb-3 pr-4 font-semibold">Amount</th>
+                      <th className="pb-3 pr-4 font-semibold">Approved</th>
+                      <th className="pb-3 pr-4 font-semibold">Waiting On</th>
+                      <th className="pb-3 pr-4 font-semibold">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {expenditures
+                      .filter((item) => item.status === 'pending')
+                      .map((item) => {
+                        const canApprove = item.pendingApprovals.includes('CEO')
+                        const hasApproved = item.approvals.some((approval) => approval.role === 'CEO')
+
+                        return (
+                          <tr key={item.id} className="border-b align-top">
+                            <td className="py-4 pr-4">
+                              <div className="font-semibold">{item.title}</div>
+                              <p className="mt-1 text-xs text-muted-foreground">
+                                {item.category} - added by {item.createdByName || 'CFO'}
+                              </p>
+                              {item.notes ? (
+                                <p className="mt-2 text-xs text-muted-foreground">{item.notes}</p>
+                              ) : null}
+                            </td>
+                            <td className="py-4 pr-4 font-semibold">â‚¦{item.amount.toLocaleString()}</td>
+                            <td className="py-4 pr-4">
+                              <div className="flex flex-wrap gap-1">
+                                {item.approvals.map((approval) => (
+                                  <Badge key={approval.role} variant="outline">
+                                    {approval.role}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="py-4 pr-4">
+                              <div className="flex flex-wrap gap-1">
+                                {item.pendingApprovals.map((role) => (
+                                  <Badge key={role} variant="secondary">
+                                    {role}
+                                  </Badge>
+                                ))}
+                              </div>
+                            </td>
+                            <td className="py-4 pr-4">
+                              <Button
+                                size="sm"
+                                disabled={!canApprove || isApprovingExpense}
+                                onClick={() => approveExpenditure(item.id)}
+                              >
+                                <CheckCircle2 className="mr-2 h-4 w-4" />
+                                {hasApproved ? 'Approved' : 'Approve'}
+                              </Button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         {/* Stats Cards */}
         <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 md:gap-6">

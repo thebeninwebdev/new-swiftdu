@@ -10,6 +10,7 @@ import {
   calculatePaystackSettlementFee,
   excludeCancelledOrders,
 } from '@/lib/order-finance'
+import { getApprovedExpenditureTotal } from '@/lib/expenditures'
 
 // ─── GET /api/admin/dashboard ────────────────────────────────────────────────
 // Returns dashboard statistics and recent activity.
@@ -77,6 +78,8 @@ export async function GET(req: NextRequest) {
     const totalPlatformFees = platformFeeAgg[0]?.total || 0
     const paystackSettlementFees = calculatePaystackSettlementFee(totalPlatformFees)
     const profit = calculateNetPlatformProfit(totalPlatformFees)
+    const approvedExpenditures = await getApprovedExpenditureTotal()
+    const businessProfit = profit - approvedExpenditures
     const totalCompensation = compensationAgg[0]?.total || 0
 
     // Get recent activity (last 10 items)
@@ -152,7 +155,9 @@ export async function GET(req: NextRequest) {
       totalTaskers,
       totalOrders,
       grossRevenue,
-      profit,
+      profit: businessProfit,
+      netPlatformProfit: profit,
+      approvedExpenditures,
       totalPlatformFees,
       paystackSettlementFees,
       totalCompensation,

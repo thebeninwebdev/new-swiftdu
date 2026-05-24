@@ -8,6 +8,7 @@ import {
   calculatePaystackSettlementFee,
   excludeCancelledOrders,
 } from "@/lib/order-finance";
+import { getApprovedExpenditureTotal } from "@/lib/expenditures";
 import { Order } from "@/models/order";
 import { Review } from "@/models/review";
 import Tasker from "@/models/tasker";
@@ -79,6 +80,8 @@ type MoneySummary = {
   platformFee: number;
   paystackSettlementFee: number;
   netPlatformProfit: number;
+  approvedExpenditures: number;
+  businessProfit: number;
   taskerFee: number;
   waterFee: number;
 };
@@ -266,28 +269,39 @@ function buildAnalyticsBuckets(rangeKey: AnalyticsRangeKey, since: Date, dateFor
 
 async function getMoneySummary(match: Record<string, unknown>) {
   const financeMatch = excludeCancelledOrders(match);
-  const [summary] = await Order.aggregate<MoneySummary>([
-    { $match: financeMatch },
-    {
-      $group: {
-        _id: null,
-        totalAmount: { $sum: "$totalAmount" },
-        amount: { $sum: "$amount" },
-        serviceFee: { $sum: "$serviceFee" },
-        platformFee: { $sum: "$platformFee" },
-        taskerFee: { $sum: "$taskerFee" },
-        waterFee: { $sum: "$waterFee" },
+  const dateMatch =
+    typeof match.createdAt === "object" && match.createdAt !== null
+      ? { approvedAt: match.createdAt }
+      : {};
+  const [summary, approvedExpenditures] = await Promise.all([
+    Order.aggregate<MoneySummary>([
+      { $match: financeMatch },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: "$totalAmount" },
+          amount: { $sum: "$amount" },
+          serviceFee: { $sum: "$serviceFee" },
+          platformFee: { $sum: "$platformFee" },
+          taskerFee: { $sum: "$taskerFee" },
+          waterFee: { $sum: "$waterFee" },
+        },
       },
-    },
+    ]).then((rows) => rows[0]),
+    getApprovedExpenditureTotal(dateMatch),
   ]);
+  const platformFee = summary?.platformFee || 0;
+  const netPlatformProfit = calculateNetPlatformProfit(platformFee);
 
   return {
     totalAmount: summary?.totalAmount || 0,
     amount: summary?.amount || 0,
     serviceFee: summary?.serviceFee || 0,
-    platformFee: summary?.platformFee || 0,
-    paystackSettlementFee: calculatePaystackSettlementFee(summary?.platformFee || 0),
-    netPlatformProfit: calculateNetPlatformProfit(summary?.platformFee || 0),
+    platformFee,
+    paystackSettlementFee: calculatePaystackSettlementFee(platformFee),
+    netPlatformProfit,
+    approvedExpenditures,
+    businessProfit: netPlatformProfit - approvedExpenditures,
     taskerFee: summary?.taskerFee || 0,
     waterFee: summary?.waterFee || 0,
   };
@@ -843,9 +857,9 @@ function buildCards(role: ExcoRole, data: {
       },
       {
         label: "Profit made",
-        value: data.completedMoney.netPlatformProfit,
+        value: data.completedMoney.businessProfit,
         format: "currency",
-        description: "SwiftDU platform fees after Paystack settlement charges.",
+        description: "SwiftDU profit after Paystack fees and approved expenditures.",
       },
       {
         label: "Paystack fees",

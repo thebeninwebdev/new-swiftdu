@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 
 import { auth } from '@/lib/auth';
 import { connectDB } from '@/lib/db';
-import { isSameWhatsAppPhone, maskWhatsAppPhone, normalizeWhatsAppPhone } from '@/lib/whatsapp/registration';
+import { maskWhatsAppPhone } from '@/lib/whatsapp/registration';
 import { sendWhatsAppWelcomeMenu } from '@/lib/whatsapp/send-message';
 import { User } from '@/models/user';
 import { WhatsAppRegistration } from '@/models/whatsapp-registration';
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
 
     const [registration, user] = await Promise.all([
       WhatsAppRegistration.findOne({ token }),
-      User.findById(session.user.id).select('_id name email phone isSuspended').lean(),
+      User.findById(session.user.id).select('_id name email isSuspended').lean(),
     ]);
 
     if (!registration) {
@@ -72,30 +72,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Your SwiftDU account cannot link WhatsApp right now.' }, { status: 403 });
     }
 
-    if (
-      registration.status === 'linked' &&
-      registration.userId &&
-      registration.userId !== session.user.id
-    ) {
-      return NextResponse.json(
-        { error: 'This WhatsApp number is already linked to another SwiftDU account.' },
-        { status: 409 }
-      );
-    }
-
-    const normalizedUserPhone = normalizeWhatsAppPhone(user.phone);
-    if (normalizedUserPhone && !isSameWhatsAppPhone(normalizedUserPhone, registration.phone)) {
-      return NextResponse.json(
-        {
-          error:
-            'Your SwiftDU account phone number must match the WhatsApp number you are linking.',
-        },
-        { status: 400 }
-      );
-    }
-
     const wasAlreadyLinkedToUser =
       registration.status === 'linked' && registration.userId === session.user.id;
+
+    await WhatsAppRegistration.updateMany(
+      {
+        userId: session.user.id,
+        _id: { $ne: registration._id },
+      },
+      {
+        $set: { status: 'pending' },
+        $unset: { userId: '', linkedAt: '' },
+      }
+    );
 
     registration.userId = session.user.id;
     registration.status = 'linked';
