@@ -45,6 +45,7 @@ import {
 
 const ACTIVE_ORDER_REFRESH_MS = 4000
 const REALTIME_PAUSE_MS = 1200
+const LOW_TASKER_NOTICE_RETURN_DATE = '2026-06-01'
 
 interface ErrandData {
   taskType: string
@@ -199,7 +200,23 @@ function formatReadyDate(value?: string) {
   }).format(new Date(value))
 }
 
+function getLagosDateKey(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Lagos',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const year = parts.find((part) => part.type === 'year')?.value
+  const month = parts.find((part) => part.type === 'month')?.value
+  const day = parts.find((part) => part.type === 'day')?.value
+
+  return year && month && day ? `${year}-${month}-${day}` : ''
+}
+
 function isLowTaskerAvailabilityWindow(date: Date) {
+  if (getLagosDateKey(date) < LOW_TASKER_NOTICE_RETURN_DATE) return false
+
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Africa/Lagos',
     weekday: 'short',
