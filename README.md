@@ -32,6 +32,20 @@ VAPID_PRIVATE_KEY=your_private_key
 VAPID_SUBJECT=mailto:support@your-domain.com
 ```
 
+## Speech To Text
+
+The order form can record audio in the browser and send it to the separate
+SwiftDU STT FastAPI service.
+
+The frontend posts audio to `/api/stt/transcribe`, and the Next.js API route
+forwards it to the hosted Faster Whisper backend. Add these variables locally
+and in Vercel:
+
+```bash
+STT_API_URL=https://swiftdu-stt.onrender.com
+STT_API_KEY=your_stt_api_key
+```
+
 ## Twilio WhatsApp Alerts
 
 Order admin alerts support email plus WhatsApp notifications through Twilio. New bookings and booking cancellations will send a WhatsApp alert to the configured admin number directly from the app server.

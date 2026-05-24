@@ -29,7 +29,6 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { ProfileCompletionCard } from '@/components/profile-completion-card'
-import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { authClient } from '@/lib/auth-client'
 import {
   calculateOrderPricing,
@@ -45,6 +44,7 @@ import {
 
 const ACTIVE_ORDER_REFRESH_MS = 4000
 const REALTIME_PAUSE_MS = 1200
+const STT_MAX_RECORDING_MS = 120_000
 
 interface ErrandData {
   taskType: string
@@ -212,6 +212,38 @@ function isLowTaskerAvailabilityWindow(date: Date) {
   return ['Mon', 'Wed'].includes(weekday || '') && hour >= 0 && hour < 14
 }
 
+function combineDescription(baseText: string, transcript: string) {
+  const nextTranscript = transcript.trim()
+  if (!baseText.trim()) return nextTranscript
+  if (!nextTranscript) return baseText
+  return `${baseText.trim()}\n${nextTranscript}`
+}
+
+function getSupportedAudioMimeType() {
+  if (typeof MediaRecorder === 'undefined') return ''
+
+  const candidates = [
+    'audio/webm;codecs=opus',
+    'audio/webm',
+    'audio/mp4',
+    'audio/ogg;codecs=opus',
+  ]
+
+  return candidates.find((type) => MediaRecorder.isTypeSupported(type)) || ''
+}
+
+function getAudioExtension(mimeType: string) {
+  if (mimeType.includes('mp4')) return 'm4a'
+  if (mimeType.includes('ogg')) return 'ogg'
+  return 'webm'
+}
+
+function stopMediaRecorder(recorder: MediaRecorder | null) {
+  if (recorder && recorder.state !== 'inactive') {
+    recorder.stop()
+  }
+}
+
 export default function ErrandWizardPage() {
   const router = useRouter()
   const { data: session } = authClient.useSession()
@@ -224,6 +256,11 @@ export default function ErrandWizardPage() {
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
   const socketRef = useRef<Socket | null>(null)
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const mediaStreamRef = useRef<MediaStream | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const recordingTimeoutRef = useRef<number | null>(null)
+  const recordingBaseTextRef = useRef('')
   const fetchingActiveOrderRef = useRef(false)
   const isRealtimePausedRef = useRef(false)
   const realtimeResumeTimeoutRef = useRef<number | null>(null)
@@ -248,6 +285,8 @@ export default function ErrandWizardPage() {
     shoppingItemName: '',
     shoppingItemPrice: '',
   })
+  const [isRecordingOrder, setIsRecordingOrder] = useState(false)
+  const [isTranscribingOrder, setIsTranscribingOrder] = useState(false)
   const sessionUserId = session?.user?.id
 
   const fetchCurrentOrder = useCallback(async () => {
@@ -399,6 +438,11 @@ export default function ErrandWizardPage() {
       if (realtimeResumeTimeoutRef.current) {
         window.clearTimeout(realtimeResumeTimeoutRef.current)
       }
+      if (recordingTimeoutRef.current) {
+        window.clearTimeout(recordingTimeoutRef.current)
+      }
+      stopMediaRecorder(mediaRecorderRef.current)
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
       disconnectSocket()
     }
   }, [disconnectSocket])
@@ -477,42 +521,131 @@ export default function ErrandWizardPage() {
       return next
     }), [])
 
-  const handleSpeechTranscript = useCallback(
-    (value: string) => {
-      pauseRealtime()
-      setFormData((previous) => ({ ...previous, description: value }))
-      clearError('description')
+  const transcribeOrderAudio = useCallback(
+    async (audioBlob: Blob, mimeType: string) => {
+      setIsTranscribingOrder(true)
+
+      try {
+        const form = new FormData()
+        const extension = getAudioExtension(mimeType || audioBlob.type)
+        form.append('file', audioBlob, `swiftdu-order.${extension}`)
+
+        const response = await fetch('/api/stt/transcribe', {
+          method: 'POST',
+          body: form,
+        })
+
+        const data = (await response.json().catch(() => null)) as
+          | { text?: string; detail?: string }
+          | null
+
+        if (!response.ok) {
+          throw new Error(data?.detail || 'Transcription failed.')
+        }
+
+        const text = data?.text?.trim()
+
+        if (!text) {
+          throw new Error('No speech was detected.')
+        }
+
+        pauseRealtime()
+        setFormData((previous) => ({
+          ...previous,
+          description: combineDescription(recordingBaseTextRef.current, text),
+        }))
+        clearError('description')
+        toast.success('Speech captured')
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : 'Transcription failed.')
+      } finally {
+        setIsTranscribingOrder(false)
+      }
     },
     [clearError, pauseRealtime]
   )
 
-  const handleSpeechError = useCallback((error: string) => {
-    if (error === 'not-allowed' || error === 'service-not-allowed') {
-      toast.error('Microphone permission denied')
-      return
+  const stopOrderRecording = useCallback(() => {
+    if (recordingTimeoutRef.current) {
+      window.clearTimeout(recordingTimeoutRef.current)
+      recordingTimeoutRef.current = null
     }
 
-    if (error === 'audio-capture') {
-      toast.error('Microphone unavailable')
-      return
-    }
-
-    if (error !== 'aborted' && error !== 'no-speech') {
-      toast.error('Speech input stopped. Please try again.')
-    }
+    stopMediaRecorder(mediaRecorderRef.current)
   }, [])
 
-  const {
-    isListening: isSpeechListening,
-    isSupported: isSpeechSupported,
-    startListening,
-    stopListening,
-  } = useSpeechRecognition({
-    onTranscript: handleSpeechTranscript,
-    onStart: () => toast.info('Listening...'),
-    onCaptured: () => toast.success('Speech captured'),
-    onError: handleSpeechError,
-  })
+  const startOrderRecording = useCallback(async () => {
+    if (typeof window === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      toast.error('Speech recording is not supported on this browser.')
+      return
+    }
+
+    if (typeof MediaRecorder === 'undefined') {
+      toast.error('Speech recording is not supported on this browser.')
+      return
+    }
+
+    pauseRealtime()
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mimeType = getSupportedAudioMimeType()
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined)
+
+      mediaStreamRef.current = stream
+      mediaRecorderRef.current = recorder
+      audioChunksRef.current = []
+      recordingBaseTextRef.current = formData.description
+
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      recorder.onerror = () => {
+        toast.error('Could not record audio. Please try again.')
+      }
+
+      recorder.onstop = () => {
+        setIsRecordingOrder(false)
+        mediaRecorderRef.current = null
+        stream.getTracks().forEach((track) => track.stop())
+        mediaStreamRef.current = null
+
+        const chunks = audioChunksRef.current
+        audioChunksRef.current = []
+
+        if (!chunks.length) {
+          toast.error('No audio was captured.')
+          return
+        }
+
+        const audioBlob = new Blob(chunks, { type: mimeType || 'audio/webm' })
+        void transcribeOrderAudio(audioBlob, mimeType || 'audio/webm')
+      }
+
+      recorder.start()
+      setIsRecordingOrder(true)
+      toast.info('Recording...')
+
+      recordingTimeoutRef.current = window.setTimeout(() => {
+        stopOrderRecording()
+      }, STT_MAX_RECORDING_MS)
+    } catch (error) {
+      mediaStreamRef.current?.getTracks().forEach((track) => track.stop())
+      mediaStreamRef.current = null
+      mediaRecorderRef.current = null
+      setIsRecordingOrder(false)
+
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        toast.error('Microphone permission denied')
+        return
+      }
+
+      toast.error('Microphone unavailable')
+    }
+  }, [formData.description, pauseRealtime, stopOrderRecording, transcribeOrderAudio])
 
   const handleInputChange = (
     event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
@@ -1283,41 +1416,40 @@ if (stepNumber === 2) {
                           className="mt-2 w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 dark:border-slate-700 dark:bg-slate-800"
                         />
                         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                          Tap the microphone to say your order or type manually.
+                          Type manually or record your order and let SwiftDU fill it in.
                         </p>
-                        {isSpeechSupported === true ? (
-                          <Button
-                            type="button"
-                            variant="outline"
-                            onClick={() => {
-                              pauseRealtime()
-                              if (isSpeechListening) {
-                                stopListening()
-                                return
-                              }
-                              startListening(formData.description)
-                            }}
-                            className={`mt-3 h-11 rounded-xl border-2 border-orange-200 bg-orange-50 px-4 font-semibold text-orange-700 hover:bg-orange-100 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-200 dark:hover:bg-orange-950/50 ${
-                              isSpeechListening ? 'animate-pulse ring-4 ring-orange-500/15' : ''
-                            }`}
-                          >
-                            {isSpeechListening ? (
-                              <>
-                                <MicOff className="mr-2 h-4 w-4" />
-                                Listening...
-                              </>
-                            ) : (
-                              <>
-                                <Mic className="mr-2 h-4 w-4" />
-                                Say Your Order
-                              </>
-                            )}
-                          </Button>
-                        ) : isSpeechSupported === false ? (
-                          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                            Speech input is not supported on this browser.
-                          </p>
-                        ) : null}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          disabled={isTranscribingOrder}
+                          onClick={() => {
+                            if (isRecordingOrder) {
+                              stopOrderRecording()
+                              return
+                            }
+                            void startOrderRecording()
+                          }}
+                          className={`mt-3 h-11 w-full rounded-xl border-2 border-orange-200 bg-orange-50 px-4 font-semibold text-orange-700 hover:bg-orange-100 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-200 dark:hover:bg-orange-950/50 sm:w-auto ${
+                            isRecordingOrder ? 'animate-pulse ring-4 ring-orange-500/15' : ''
+                          }`}
+                        >
+                          {isTranscribingOrder ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Transcribing...
+                            </>
+                          ) : isRecordingOrder ? (
+                            <>
+                              <MicOff className="mr-2 h-4 w-4" />
+                              Stop recording
+                            </>
+                          ) : (
+                            <>
+                              <Mic className="mr-2 h-4 w-4" />
+                              Say your order
+                            </>
+                          )}
+                        </Button>
                         {errors.description ? <p className="mt-2 text-sm text-red-500">{errors.description}</p> : null}
                       </div>
                       <div>
