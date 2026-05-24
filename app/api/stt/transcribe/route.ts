@@ -1,6 +1,9 @@
 import { NextResponse } from 'next/server'
 
-const DEFAULT_STT_API_URL = 'https://swiftdu-stt.onrender.com'
+const DEFAULT_STT_API_URL =
+  process.env.NODE_ENV === 'development'
+    ? 'http://127.0.0.1:8000'
+    : 'https://swiftdu-stt.onrender.com'
 
 export async function POST(request: Request) {
   const sttApiUrl = process.env.STT_API_URL?.trim() || DEFAULT_STT_API_URL
@@ -24,7 +27,8 @@ export async function POST(request: Request) {
   outgoingForm.append('file', file, file.name || 'swiftdu-order.webm')
 
   try {
-    const response = await fetch(new URL('/transcribe', sttApiUrl), {
+    const transcribeUrl = new URL('/transcribe', sttApiUrl)
+    const response = await fetch(transcribeUrl, {
       method: 'POST',
       headers: {
         'x-api-key': sttApiKey,
@@ -38,13 +42,14 @@ export async function POST(request: Request) {
 
     if (!response.ok) {
       return NextResponse.json(
-        { detail: data?.detail || 'Transcription failed.' },
+        { detail: data?.detail || 'Transcription failed.', status: response.status },
         { status: response.status }
       )
     }
 
     return NextResponse.json({ text: data?.text || '' })
-  } catch {
+  } catch (error) {
+    console.error('STT service request failed', error)
     return NextResponse.json(
       { detail: 'Speech transcription service is unavailable.' },
       { status: 502 }
