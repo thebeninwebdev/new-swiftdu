@@ -28,6 +28,7 @@ export async function GET(
   const status = String(request.nextUrl.searchParams.get('status') || '').toLowerCase()
   const reference = String(
     request.nextUrl.searchParams.get('tx_ref') ||
+      request.nextUrl.searchParams.get('trxref') ||
       request.nextUrl.searchParams.get('reference') ||
       ''
   ).trim()
@@ -35,7 +36,7 @@ export async function GET(
     request.nextUrl.searchParams.get('transaction_id') || ''
   ).trim()
 
-  if (status && status !== 'successful' && status !== 'pending') {
+  if (status && status !== 'successful' && status !== 'pending' && !reference) {
     redirectUrl.searchParams.set(
       'settlement',
       status === 'cancelled' ? 'cancelled' : 'failed'

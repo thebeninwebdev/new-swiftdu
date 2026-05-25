@@ -1,7 +1,8 @@
 const PAYSTACK_API_BASE_URL = 'https://api.paystack.co'
 
 function getPaystackSecretKey() {
-  const secretKey = process.env.PAYSTACK_SECRET_KEY?.trim()
+  const secretKey =
+    process.env.PAYSTACK_SECRET_KEY?.trim() || process.env.PAYSTACK_SECRET?.trim()
 
   if (!secretKey) {
     throw new Error('PAYSTACK_SECRET_KEY is missing.')
@@ -78,10 +79,16 @@ export async function initializePaystackCheckout(payload: {
   callback_url?: string
   metadata?: Record<string, string | number | boolean>
 }) {
+  const amountInKobo = Math.round(Number(payload.amount || 0) * 100)
+
+  if (!Number.isFinite(amountInKobo) || amountInKobo <= 0) {
+    throw new Error('Paystack settlement amount is invalid.')
+  }
+
   return paystackRequest<PaystackInitResponse>('/transaction/initialize', {
     method: 'POST',
     body: JSON.stringify({
-      amount: Number(payload.amount) * 100, // Convert to kobo
+      amount: amountInKobo,
       currency: 'NGN',
       email: payload.email,
       reference: payload.reference,

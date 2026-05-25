@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   CreditCard,
   Loader2,
+  MessageCircle,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -32,6 +33,7 @@ interface SettlementOrder {
 
 const MAX_VERIFY_RETRIES = 12
 const VERIFY_RETRY_MS = 5000
+const SUPPORT_WHATSAPP_URL = 'https://wa.me/2349053479802'
 
 const formatDate = (date?: string) =>
   date
@@ -292,7 +294,10 @@ function TaskerPaymentPageContent() {
 
   useEffect(() => {
     const settlement = String(searchParams.get('settlement') || '').toLowerCase()
-    const reference = searchParams.get('tx_ref') || searchParams.get('reference')
+    const reference =
+      searchParams.get('tx_ref') ||
+      searchParams.get('trxref') ||
+      searchParams.get('reference')
     const transactionId = searchParams.get('transaction_id')
     const status = String(searchParams.get('status') || '').toLowerCase()
 
@@ -339,9 +344,8 @@ function TaskerPaymentPageContent() {
     const orderReference = String(order.settlementReference || '').trim()
     const isPaid = Boolean(order.taskerHasPaid || order.settlementStatus === 'paid')
     const canAutoVerify =
-      Boolean(storedReference) &&
       Boolean(orderReference) &&
-      storedReference === orderReference &&
+      (!storedReference || storedReference === orderReference) &&
       (order.settlementStatus === 'initialized' || order.settlementStatus === 'pending')
 
     if (!canAutoVerify || isPaid || autoVerifyingReferenceRef.current === orderReference) {
@@ -369,7 +373,14 @@ function TaskerPaymentPageContent() {
       const payload = await response.json()
 
       if (!response.ok) {
-        throw new Error(payload.error || 'Failed to open the Flutterwave checkout.')
+        throw new Error(payload.error || 'Failed to open the Paystack checkout.')
+      }
+
+      if (payload.alreadyPaid && payload.order) {
+        setOrder(payload.order)
+        clearStoredPendingReference()
+        toast.success('Platform settlement paid successfully.')
+        return
       }
 
       if (!payload.checkoutUrl) {
@@ -418,6 +429,10 @@ function TaskerPaymentPageContent() {
   const isPaid = Boolean(order.taskerHasPaid || order.settlementStatus === 'paid')
   const isOverdue = order.settlementStatus === 'overdue'
   const isAwaitingConfirmation = order.settlementStatus === 'pending'
+  const supportMessage = encodeURIComponent(
+    `Hello SwiftDU support, I need help with my Paystack platform settlement for task ${order._id}.`
+  )
+  const supportUrl = `${SUPPORT_WHATSAPP_URL}?text=${supportMessage}`
 
   return (
     <div className="mx-auto mt-10 max-w-xl px-4">
@@ -542,6 +557,16 @@ function TaskerPaymentPageContent() {
             View task
           </Button>
         </div>
+
+        <a
+          href={supportUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-3 inline-flex h-11 w-full items-center justify-center rounded-xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200 dark:hover:bg-emerald-950/50"
+        >
+          <MessageCircle className="mr-2 h-4 w-4" />
+          Contact support on WhatsApp
+        </a>
 
         {!isPaid && order.settlementReference ? (
           <Button

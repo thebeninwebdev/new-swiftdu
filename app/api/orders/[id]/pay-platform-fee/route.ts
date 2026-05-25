@@ -6,6 +6,10 @@ import { getAppBaseUrl, initializePaystackCheckout } from '@/lib/paystack-settle
 import { getSettlementDueAt } from '@/lib/order-finance'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import { emitOrderUpdated } from '@/lib/socket'
+import {
+  PendingSettlementVerificationError,
+  verifyAndMarkOrderSettlementPaid,
+} from '@/lib/settlement-payment'
 import { Order } from '@/models/order'
 
 export async function POST(
@@ -60,15 +64,59 @@ export async function POST(
       )
     }
 
+    const existingSettlementReference = String(order.settlementReference || '').trim()
+    const existingCheckoutUrl = String(order.settlementCheckoutUrl || '').trim()
+
+    if (
+      existingSettlementReference &&
+      (order.settlementStatus === 'initialized' || order.settlementStatus === 'pending')
+    ) {
+      try {
+        const updatedOrder = await verifyAndMarkOrderSettlementPaid({
+          order,
+          reference: existingSettlementReference,
+        })
+
+        await syncTaskerSettlementStatus(String(session.user.taskerId))
+        emitOrderUpdated(updatedOrder)
+
+        return NextResponse.json({
+          alreadyPaid: true,
+          order: updatedOrder,
+          reference: existingSettlementReference,
+        })
+      } catch (error) {
+        if (error instanceof PendingSettlementVerificationError && existingCheckoutUrl) {
+          emitOrderUpdated(error.order)
+
+          return NextResponse.json({
+            checkoutUrl: existingCheckoutUrl,
+            reference: existingSettlementReference,
+            pending: true,
+          })
+        }
+
+        if (!(error instanceof PendingSettlementVerificationError)) {
+          console.warn(
+            '[POST /api/orders/[id]/pay-platform-fee] Existing settlement check failed',
+            error
+          )
+        }
+      }
+    }
+
     const reference = `swiftdu-settlement-${order._id.toString()}-${Date.now()}`
     const callbackUrl = `${getAppBaseUrl(
       request.nextUrl.origin
     )}/api/orders/${order._id.toString()}/pay-platform-fee/callback`
     const fullName = String(session.user.name || 'Tasker').trim() || 'Tasker'
+    const email =
+      String(session.user.email || '').trim() ||
+      `tasker-${session.user.id}@swiftdu.org`
 
     const checkout = await initializePaystackCheckout({
       amount: Number(order.platformFee || 0),
-      email: session.user.email || `tasker-${session.user.id}@swiftdu.local`,
+      email,
       reference,
       customer_name: fullName,
       phone: session.user.phone || undefined,
