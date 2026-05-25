@@ -2,6 +2,7 @@ import OrderAlertEmail from '@/emails/orderAlertEmail'
 import { sendTransactionalEmail } from '@/lib/email'
 import { getSupportEmailAddress } from '@/lib/email-config'
 import { getSiteUrl } from '@/lib/site'
+import { getTelegramChatIdForTask, sendTelegramMessage } from '@/lib/telegram'
 import { User } from '@/models/user'
 
 type OrderLike = {
@@ -96,6 +97,34 @@ function formatTaskType(taskType?: string) {
   return labels[taskType || ''] || taskType || 'errand'
 }
 
+function escapeHtml(value?: string | null) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+}
+
+function formatCurrency(value: number) {
+  return `NGN ${value.toLocaleString('en-NG')}`
+}
+
+function formatDateTime(value?: Date | string) {
+  if (!value) {
+    return 'Not provided'
+  }
+
+  const date = new Date(value)
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Not provided'
+  }
+
+  return new Intl.DateTimeFormat('en-NG', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(date)
+}
+
 function getActorLabel(
   actorRole: OrderAlertActorRole | undefined,
   actorName?: string | null,
@@ -149,6 +178,117 @@ function createSkippedChannelResult(reason: string): AlertChannelResult {
   }
 }
 
+function buildTelegramOrderAlertMessage(input: {
+  event: OrderAlertEvent
+  taskType?: string
+  description?: string
+  amount: number
+  totalAmount: number
+  location: string
+  customerName?: string | null
+  customerEmail?: string | null
+  dashboardUrl: string
+}) {
+  const heading = input.event === 'cancelled' ? 'Booking cancelled' : 'New booking received'
+  const description = input.description?.trim()
+  const lines = [
+    `<b>${escapeHtml(heading)}</b>`,
+    `<b>Task:</b> ${escapeHtml(formatTaskType(input.taskType))}`,
+    `<b>Location:</b> ${escapeHtml(input.location)}`,
+    ...(description ? [`<b>Description:</b> ${escapeHtml(description)}`] : []),
+    `<b>Amount:</b> ${formatCurrency(input.amount)}`,
+    `<b>Total:</b> ${formatCurrency(input.totalAmount)}`,
+    `<b>Customer:</b> ${escapeHtml(input.customerName || input.customerEmail || 'Unknown')}`,
+    `<a href="${escapeHtml(input.dashboardUrl)}">View dashboard</a>`,
+  ]
+
+  return lines.join('\n')
+}
+
+function formatCopyNotesTelegramMessage(
+  order: {
+    orderId?: string
+    description?: string
+    totalAmount?: number
+    amount?: number
+    location?: string
+    noteSize?: 'small' | 'big'
+    numberOfPages?: number
+    copyNotesType?: string
+    copyNotesPages?: number
+    deadline?: Date | string
+    dueDate?: Date | string
+    deadlineDate?: Date | string
+  },
+  customerName?: string | null,
+  dashboardUrl?: string
+) {
+  const dueDate = order.dueDate || order.deadline || order.deadlineDate
+  const lines = [
+    '<b>New Copy Notes task</b>',
+    '<b>Task type:</b> Copy Notes',
+    `<b>Customer:</b> ${escapeHtml(customerName || 'Unknown')}`,
+    `<b>Location:</b> ${escapeHtml(order.location || 'Location not provided')}`,
+    `<b>Pages:</b> ${Number(order.numberOfPages || order.copyNotesPages || 0).toLocaleString('en-NG')}`,
+    `<b>Note size:</b> ${escapeHtml(
+      order.noteSize ||
+        (order.copyNotesType === 'hardback' ? 'big' : order.copyNotesType) ||
+        'Not provided'
+    )}`,
+    `<b>Due date:</b> ${escapeHtml(formatDateTime(dueDate))}`,
+    `<b>Calculated amount:</b> ${formatCurrency(Number(order.totalAmount || order.amount || 0))}`,
+  ]
+
+  const description = order.description?.trim()
+  if (description) {
+    lines.push(`<b>Description:</b> ${escapeHtml(description)}`)
+  }
+
+  if (dashboardUrl) {
+    lines.push(`<a href="${escapeHtml(dashboardUrl)}">View/accept task</a>`)
+  }
+
+  if (order.orderId) {
+    lines.push(`<b>Order ID:</b> ${escapeHtml(order.orderId)}`)
+  }
+
+  return lines.join('\n')
+}
+
+async function sendTelegramOrderAlertDirect(input: {
+  event: OrderAlertEvent
+  orderId: string
+  taskType?: string
+  description?: string
+  amount: number
+  totalAmount: number
+  location: string
+  customerName?: string | null
+  customerEmail?: string | null
+  dashboardUrl: string
+  dueDate?: Date | string
+  deadline?: Date | string
+  deadlineDate?: Date | string
+  noteSize?: 'small' | 'big'
+  numberOfPages?: number
+  copyNotesType?: string
+  copyNotesPages?: number
+}): Promise<AlertChannelResult> {
+  const delivered = await sendTelegramMessage(
+    input.taskType === 'copy_notes'
+      ? formatCopyNotesTelegramMessage(input, input.customerName, input.dashboardUrl)
+      : buildTelegramOrderAlertMessage(input),
+    getTelegramChatIdForTask(input.taskType)
+  )
+
+  return {
+    recipientCount: 1,
+    deliveredCount: delivered ? 1 : 0,
+    skipped: false,
+    reason: delivered ? undefined : 'Telegram send failed.',
+  }
+}
+
 async function sendTelegramOrderAlert(input: {
   event: OrderAlertEvent
   orderId: string
@@ -180,7 +320,7 @@ async function sendTelegramOrderAlert(input: {
     process.env.NEXT_PUBLIC_SAMMY_URL?.trim()
 
   if (!sammyBaseUrl) {
-    return createSkippedChannelResult('Sammy notification URL is missing.')
+    return sendTelegramOrderAlertDirect(input)
   }
 
   try {
@@ -205,11 +345,11 @@ async function sendTelegramOrderAlert(input: {
       | null
     const delivered = response.ok && Boolean(data?.ok)
 
-    if (data?.result) {
+    if (data?.result?.deliveredCount) {
       return data.result
     }
 
-    return {
+    const sammyResult = {
       recipientCount: 1,
       deliveredCount: delivered ? 1 : 0,
       skipped: false,
@@ -217,14 +357,27 @@ async function sendTelegramOrderAlert(input: {
         ? undefined
         : data?.error || `Sammy Telegram notification failed with ${response.status}.`,
     }
-  } catch (error) {
-    return {
-      recipientCount: 1,
-      deliveredCount: 0,
-      skipped: false,
-      reason: 'Telegram send failed.',
-      failures: [error instanceof Error ? error.message : 'Unknown Telegram error'],
+
+    if (delivered) {
+      return sammyResult
     }
+
+    const directResult = await sendTelegramOrderAlertDirect(input)
+
+    return {
+      ...directResult,
+      failures: data?.result?.failures,
+    }
+  } catch (error) {
+    const directResult = await sendTelegramOrderAlertDirect(input)
+    const failure = error instanceof Error ? error.message : 'Unknown Telegram error'
+
+    return directResult.deliveredCount > 0
+      ? directResult
+      : {
+          ...directResult,
+          failures: [failure],
+        }
   }
 }
 
