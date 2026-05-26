@@ -12,6 +12,7 @@ import {
   calculateOrderPricing,
   descriptionMentionsWater,
   normalizeRestaurantPeopleCount,
+  normalizeRestaurantTakeawayCount,
   normalizeNoteSize,
   normalizePrintingServiceType,
   PRINTING_TASK_TYPE,
@@ -74,6 +75,7 @@ export async function PATCH(
       store,
       packaging,
       restaurantPeopleCount,
+      restaurantTakeawayCount,
       waterBags,
       noteSize,
       numberOfPages,
@@ -95,6 +97,7 @@ export async function PATCH(
       store !== undefined ||
       packaging !== undefined ||
       restaurantPeopleCount !== undefined ||
+      restaurantTakeawayCount !== undefined ||
       waterBags !== undefined ||
       noteSize !== undefined ||
       numberOfPages !== undefined ||
@@ -158,9 +161,13 @@ export async function PATCH(
         }
 
         const pricing = calculateOrderPricing({
-          amount: Number(order.amount || 0),
+          amount: Number(order.itemPrice ?? Number(order.amount || 0) - Number(order.restaurantPackagingFee || 0)),
           taskType: order.taskType,
           restaurantPeopleCount: normalizeRestaurantPeopleCount(parsedRestaurantPeopleCount),
+          restaurantTakeawayCount: normalizeRestaurantTakeawayCount(
+            order.restaurantTakeawayCount,
+            parsedRestaurantPeopleCount
+          ),
         });
         const settlement = splitServiceFee(pricing.serviceFee);
 
@@ -172,6 +179,8 @@ export async function PATCH(
         order.pricingModel = pricing.pricingModel;
         order.totalAmount = pricing.totalAmount;
         order.restaurantPeopleCount = pricing.restaurantPeopleCount;
+        order.restaurantTakeawayCount = pricing.restaurantTakeawayCount;
+        order.restaurantPackagingFee = pricing.restaurantPackagingFee || 0;
 
         await order.save();
         emitOrderUpdated(order);
@@ -196,7 +205,12 @@ export async function PATCH(
       const nextTaskType = taskType !== undefined ? String(taskType) : order.taskType;
       const nextDescription =
         description !== undefined ? String(description).trim() : order.description;
-      const nextAmount = amount !== undefined ? Number(amount) : order.amount;
+      const nextAmount =
+        amount !== undefined
+          ? Number(amount)
+          : nextTaskType === 'restaurant'
+            ? Number(order.itemPrice ?? Number(order.amount || 0) - Number(order.restaurantPackagingFee || 0))
+            : order.amount;
       const nextStore = store !== undefined ? store || undefined : order.store;
       const nextPackaging =
         packaging !== undefined ? packaging || undefined : order.packaging;
@@ -209,6 +223,19 @@ export async function PATCH(
       const nextRestaurantPeopleCount =
         nextTaskType === 'restaurant'
           ? normalizeRestaurantPeopleCount(parsedRestaurantPeopleCount)
+          : undefined;
+      const parsedRestaurantTakeawayCount =
+        nextTaskType === 'restaurant'
+          ? restaurantTakeawayCount !== undefined
+            ? Number(restaurantTakeawayCount)
+            : Number(order.restaurantTakeawayCount || 0)
+          : undefined;
+      const nextRestaurantTakeawayCount =
+        nextTaskType === 'restaurant'
+          ? normalizeRestaurantTakeawayCount(
+              parsedRestaurantTakeawayCount,
+              nextRestaurantPeopleCount
+            )
           : undefined;
       const nextWaterBags =
         waterBags !== undefined
@@ -304,6 +331,18 @@ export async function PATCH(
         );
       }
 
+      if (
+        nextTaskType === 'restaurant' &&
+        (!Number.isInteger(parsedRestaurantTakeawayCount) ||
+          Number(parsedRestaurantTakeawayCount) < 0 ||
+          Number(parsedRestaurantTakeawayCount) > Number(nextRestaurantPeopleCount || 1))
+      ) {
+        return NextResponse.json(
+          { error: 'Choose how many restaurant orders need takeaway packs.' },
+          { status: 400 }
+        );
+      }
+
       if (nextTaskType === 'copy_notes') {
         if (!nextNoteSize) {
           return NextResponse.json({ error: 'Choose the note size.' }, { status: 400 });
@@ -348,6 +387,7 @@ export async function PATCH(
             : nextAmount,
         taskType: nextTaskType,
         restaurantPeopleCount: nextRestaurantPeopleCount,
+        restaurantTakeawayCount: nextRestaurantTakeawayCount,
         waterBags: nextWaterBags,
         noteSize: nextNoteSize,
         numberOfPages: nextNumberOfPages,
@@ -366,6 +406,8 @@ export async function PATCH(
       order.taskType = nextTaskType;
       order.description = nextDescription;
       order.amount = pricing.amount;
+      order.itemPrice =
+        nextTaskType === 'restaurant' || nextTaskType === 'shopping' ? nextAmount : undefined;
       order.commission = settlement.serviceFee;
       order.platformFee = settlement.platformFee;
       order.taskerFee = settlement.taskerFee;
@@ -419,9 +461,20 @@ export async function PATCH(
         nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE
           ? undefined
           : nextStore;
-      order.packaging = nextTaskType === 'restaurant' ? nextPackaging : undefined;
+      order.packaging =
+        nextTaskType === 'restaurant'
+          ? pricing.restaurantTakeawayCount && pricing.restaurantTakeawayCount > 0
+            ? pricing.restaurantTakeawayCount === pricing.restaurantPeopleCount
+              ? 'Takeaway pack'
+              : `${pricing.restaurantTakeawayCount} takeaway, ${Number(pricing.restaurantPeopleCount || 0) - pricing.restaurantTakeawayCount} cellophane`
+            : nextPackaging || 'Cellophane'
+          : undefined;
       order.restaurantPeopleCount =
         nextTaskType === 'restaurant' ? pricing.restaurantPeopleCount : undefined;
+      order.restaurantTakeawayCount =
+        nextTaskType === 'restaurant' ? pricing.restaurantTakeawayCount : undefined;
+      order.restaurantPackagingFee =
+        nextTaskType === 'restaurant' ? pricing.restaurantPackagingFee || 0 : 0;
     }
 
     if (hasPaid !== undefined) {

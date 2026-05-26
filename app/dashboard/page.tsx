@@ -38,6 +38,7 @@ import {
   PRINTING_PRICE_PER_PAGE,
   PRINTING_TASK_TYPE,
   RESTAURANT_MAX_PEOPLE,
+  RESTAURANT_TAKEAWAY_FEE,
   WATER_BAG_PRICE,
   WATER_BAG_FEE,
   WATER_TASK_TYPE,
@@ -62,6 +63,7 @@ interface ErrandData {
   packaging?: string
   restaurantItemPrice: string
   restaurantPeople: string
+  restaurantTakeawayCount: string
   shoppingItems: RestaurantItem[]
   shoppingItemName: string
   shoppingItemPrice: string
@@ -156,11 +158,6 @@ const storeOptions: Record<string, Array<{ value: string; label: string }>> = {
     { value: 'indomie', label: 'Indomie Spot' },
   ],
 }
-
-const restaurantPackagingOptions = [
-  { value: '', label: 'No takeaway pack' },
-  { value: 'Takeaway pack', label: 'Takeaway pack' },
-]
 
 function formatNaira(value: number) {
   return new Intl.NumberFormat('en-NG', {
@@ -261,6 +258,7 @@ export default function ErrandWizardPage() {
     packaging: '',
     restaurantItemPrice: '',
     restaurantPeople: '1',
+    restaurantTakeawayCount: '',
     shoppingItems: [],
     shoppingItemName: '',
     shoppingItemPrice: '',
@@ -426,6 +424,12 @@ export default function ErrandWizardPage() {
     Number.isInteger(restaurantPeopleCount) && restaurantPeopleCount > 0
       ? restaurantPeopleCount
       : 1
+  const restaurantTakeawayCount = Number(formData.restaurantTakeawayCount || 0)
+  const normalizedRestaurantTakeawayCount =
+    Number.isInteger(restaurantTakeawayCount) && restaurantTakeawayCount >= 0
+      ? Math.min(restaurantTakeawayCount, normalizedRestaurantPeopleCount)
+      : 0
+  const restaurantPackagingFee = normalizedRestaurantTakeawayCount * RESTAURANT_TAKEAWAY_FEE
   const restaurantBudget = restaurantFoodBudget
   const restaurantDescription = formData.description.trim()
   const shoppingBudget = formData.shoppingItems.reduce((total, item) => total + item.price, 0)
@@ -465,6 +469,7 @@ export default function ErrandWizardPage() {
     amount: Number.isFinite(amount) ? amount : 0,
     taskType,
     restaurantPeopleCount: normalizedRestaurantPeopleCount,
+    restaurantTakeawayCount: normalizedRestaurantTakeawayCount,
     waterBags: Number.isFinite(waterBags) ? waterBags : 0,
     noteSize: formData.noteSize,
     numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
@@ -481,10 +486,16 @@ export default function ErrandWizardPage() {
     description.length > 0 &&
     descriptionMentionsWater(description) &&
     formData.taskType !== WATER_TASK_TYPE
-  const deliveryStep = 3
-  const reviewStep = 4
-  const stepTitles = ['Choose Task', 'Details', 'Delivery', 'Review']
-  const stepIcons = [ShoppingBag, FileText, MapPin, CreditCard]
+  const hasRestaurantPackagingStep = formData.taskType === 'restaurant'
+  const packagingStep = hasRestaurantPackagingStep ? 3 : -1
+  const deliveryStep = hasRestaurantPackagingStep ? 4 : 3
+  const reviewStep = hasRestaurantPackagingStep ? 5 : 4
+  const stepTitles = hasRestaurantPackagingStep
+    ? ['Choose Task', 'Details', 'Packaging', 'Delivery', 'Review']
+    : ['Choose Task', 'Details', 'Delivery', 'Review']
+  const stepIcons = hasRestaurantPackagingStep
+    ? [ShoppingBag, FileText, ShoppingBag, MapPin, CreditCard]
+    : [ShoppingBag, FileText, MapPin, CreditCard]
 
   const clearError = useCallback((field: string) =>
     setErrors((previous) => {
@@ -570,6 +581,8 @@ export default function ErrandWizardPage() {
         value === PRINTING_TASK_TYPE ? previous.printingNeedsEditing : '',
       deadline: value === 'copy_notes' ? previous.deadline : '',
       packaging: value === 'restaurant' ? previous.packaging : '',
+      restaurantTakeawayCount:
+        value === 'restaurant' ? previous.restaurantTakeawayCount : '',
       amount:
         value === 'copy_notes' ||
         value === WATER_TASK_TYPE ||
@@ -587,6 +600,7 @@ export default function ErrandWizardPage() {
       'printingNeedsEditing',
       'deadline',
       'description',
+      'restaurantTakeawayCount',
     ].forEach(clearError)
     setStep(2)
     setErrors({})
@@ -755,6 +769,22 @@ if (stepNumber === 2) {
   }
 }
 
+if (stepNumber === packagingStep) {
+  if (
+    formData.taskType === 'restaurant' &&
+    (formData.packaging === 'mixed' && formData.restaurantTakeawayCount === '')
+  ) {
+    nextErrors.restaurantTakeawayCount = 'Tell us how many should be takeaway.'
+  } else if (
+    formData.taskType === 'restaurant' &&
+    (!Number.isInteger(restaurantTakeawayCount) ||
+      restaurantTakeawayCount < 0 ||
+      restaurantTakeawayCount > normalizedRestaurantPeopleCount)
+  ) {
+    nextErrors.restaurantTakeawayCount = 'Choose how many orders need takeaway packs.'
+  }
+}
+
  if (stepNumber === deliveryStep) {
   if (!formData.location.trim()) {
     nextErrors.location = 'Enter the delivery location.'
@@ -794,6 +824,10 @@ if (stepNumber === 2) {
             formData.taskType === 'restaurant'
               ? normalizedRestaurantPeopleCount
               : undefined,
+          restaurantTakeawayCount:
+            formData.taskType === 'restaurant'
+              ? normalizedRestaurantTakeawayCount
+              : undefined,
           printingServiceType: formData.printingServiceType,
           printingNeedsEditing: formData.printingNeedsEditing === 'yes',
         }),
@@ -823,6 +857,7 @@ if (stepNumber === 2) {
         packaging: '',
         restaurantItemPrice: '',
         restaurantPeople: '1',
+        restaurantTakeawayCount: '',
         shoppingItems: [],
         shoppingItemName: '',
         shoppingItemPrice: '',
@@ -841,6 +876,10 @@ if (stepNumber === 2) {
 
     if (!validateStep(2)) {
       setStep(2)
+      return
+    }
+    if (hasRestaurantPackagingStep && !validateStep(packagingStep)) {
+      setStep(packagingStep)
       return
     }
     if (!validateStep(deliveryStep)) {
@@ -1339,34 +1378,6 @@ if (stepNumber === 2) {
                       </div>
                       <div>
                         <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          <ShoppingBag className="h-4 w-4 text-orange-500" />
-                          Packaging
-                        </label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {restaurantPackagingOptions.map((option) => (
-                            <button
-                              key={option.label}
-                              type="button"
-                              onClick={() => {
-                                pauseRealtime()
-                                setFormData((previous) => ({ ...previous, packaging: option.value }))
-                              }}
-                              className={`h-12 rounded-xl border-2 px-3 text-sm font-bold transition ${
-                                (formData.packaging || '') === option.value
-                                  ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm dark:bg-orange-950/30 dark:text-orange-200'
-                                  : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
-                              }`}
-                            >
-                              {option.label}
-                            </button>
-                          ))}
-                        </div>
-                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                          If you choose takeaway, include that cost in your food budget.
-                        </p>
-                      </div>
-                      <div>
-                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                           <Wallet className="h-4 w-4 text-orange-500" />
                           Budget
                         </label>
@@ -1386,7 +1397,7 @@ if (stepNumber === 2) {
                           How much will the food cost?
                         </p>
                         <p className="mt-1 text-sm font-medium text-orange-700 dark:text-orange-300 pb-2">
-                          Do not forget to calculate the takeaway amount for your budget.
+                          Add only the food price here. Takeaway packs are counted in the next step.
                         </p>
                         {errors.restaurantItemPrice ? <p className="mt-2 text-sm text-red-500">{errors.restaurantItemPrice}</p> : null}
                       </div>
@@ -1402,8 +1413,14 @@ if (stepNumber === 2) {
                               type="button"
                               onClick={() => {
                                 pauseRealtime()
-                                setFormData((previous) => ({ ...previous, restaurantPeople: people }))
+                                setFormData((previous) => ({
+                                  ...previous,
+                                  restaurantPeople: people,
+                                  packaging: '',
+                                  restaurantTakeawayCount: '',
+                                }))
                                 clearError('restaurantPeople')
+                                clearError('restaurantTakeawayCount')
                               }}
                               className={`h-12 rounded-xl border-2 text-sm font-bold transition ${
                                 formData.restaurantPeople === people
@@ -1562,6 +1579,115 @@ if (stepNumber === 2) {
                 </div>
               ) : null}
 
+              {step === packagingStep ? (
+                <div className="space-y-5 md:space-y-6">
+                  <div>
+                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Packaging</h2>
+                    <p className="mt-2 text-slate-500 dark:text-slate-400">A quick packaging check before delivery details.</p>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-950 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
+                      {normalizedRestaurantPeopleCount === 1
+                        ? `Should this order be in takeaway or cellophane? Takeaway adds ${formatNaira(RESTAURANT_TAKEAWAY_FEE)}.`
+                        : `You are ordering for ${normalizedRestaurantPeopleCount} people. Is everything in takeaway, or should some be cellophane? Takeaway is ${formatNaira(RESTAURANT_TAKEAWAY_FEE)} each.`}
+                    </div>
+
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          pauseRealtime()
+                          setFormData((previous) => ({
+                            ...previous,
+                            packaging: 'Takeaway pack',
+                            restaurantTakeawayCount: String(normalizedRestaurantPeopleCount),
+                          }))
+                          clearError('restaurantTakeawayCount')
+                        }}
+                        className={`min-h-11 rounded-full border-2 px-4 text-sm font-bold transition ${
+                          normalizedRestaurantTakeawayCount === normalizedRestaurantPeopleCount &&
+                          formData.packaging !== 'mixed'
+                            ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm dark:bg-orange-950/30 dark:text-orange-200'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
+                        }`}
+                      >
+                        {normalizedRestaurantPeopleCount === 1 ? 'Takeaway' : 'Yes, all takeaway'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          pauseRealtime()
+                          setFormData((previous) => ({
+                            ...previous,
+                            packaging:
+                              normalizedRestaurantPeopleCount === 1 ? 'Cellophane' : 'mixed',
+                            restaurantTakeawayCount:
+                              normalizedRestaurantPeopleCount === 1 ? '0' : '',
+                          }))
+                          clearError('restaurantTakeawayCount')
+                        }}
+                        className={`min-h-11 rounded-full border-2 px-4 text-sm font-bold transition ${
+                          (normalizedRestaurantPeopleCount === 1 &&
+                            normalizedRestaurantTakeawayCount === 0 &&
+                            formData.packaging === 'Cellophane') ||
+                          formData.packaging === 'mixed'
+                            ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm dark:bg-orange-950/30 dark:text-orange-200'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
+                        }`}
+                      >
+                        {normalizedRestaurantPeopleCount === 1 ? 'Cellophane' : 'No, ask me'}
+                      </button>
+                    </div>
+
+                    {normalizedRestaurantPeopleCount > 1 && formData.packaging === 'mixed' ? (
+                      <>
+                        <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-950 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
+                          How many of the {normalizedRestaurantPeopleCount} orders should be in takeaway?
+                        </div>
+                        <div className="flex flex-wrap justify-end gap-2">
+                          {Array.from(
+                            { length: Math.max(normalizedRestaurantPeopleCount - 1, 1) },
+                            (_, index) => index + 1
+                          ).map((count) => (
+                            <button
+                              key={count}
+                              type="button"
+                              onClick={() => {
+                                pauseRealtime()
+                                setFormData((previous) => ({
+                                  ...previous,
+                                  restaurantTakeawayCount: String(count),
+                                }))
+                                clearError('restaurantTakeawayCount')
+                              }}
+                              className={`h-11 min-w-11 rounded-full border-2 px-4 text-sm font-bold transition ${
+                                formData.restaurantTakeawayCount === String(count)
+                                  ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm dark:bg-orange-950/30 dark:text-orange-200'
+                                  : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
+                              }`}
+                            >
+                              {count}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    ) : null}
+
+                    {errors.restaurantTakeawayCount ? (
+                      <p className="text-sm text-red-500">{errors.restaurantTakeawayCount}</p>
+                    ) : null}
+
+                    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
+                      Packaging fee: <span className="font-semibold">{formatNaira(restaurantPackagingFee)}</span>
+                      {normalizedRestaurantTakeawayCount > 0 ? (
+                        <span> ({normalizedRestaurantTakeawayCount} x {formatNaira(RESTAURANT_TAKEAWAY_FEE)})</span>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {step === deliveryStep ? (
                 <div className="space-y-4 md:space-y-5">
                   <div>
@@ -1627,7 +1753,7 @@ if (stepNumber === 2) {
                       {formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.description ? <div className="flex justify-between gap-6"><span className="text-slate-500">Description</span><span className="max-w-[18rem] text-right text-slate-900 dark:text-slate-100">{formData.description}</span></div> : null}
                       <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Location</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.location}</span></div>
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">People</span><span className="text-right text-slate-900 dark:text-slate-100">{normalizedRestaurantPeopleCount}</span></div> : null}
-                      {formData.taskType === 'restaurant' ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Packaging</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.packaging || 'No takeaway pack'}</span></div> : null}
+                      {formData.taskType === 'restaurant' ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Packaging</span><span className="text-right text-slate-900 dark:text-slate-100">{normalizedRestaurantTakeawayCount > 0 ? `${normalizedRestaurantTakeawayCount} takeaway${normalizedRestaurantTakeawayCount === 1 ? '' : 's'}` : 'Cellophane'}</span></div> : null}
                       {formData.taskType === WATER_TASK_TYPE ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Water bags</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.waterBags}</span></div> : null}
                       {formData.taskType === PRINTING_TASK_TYPE ? (
                         <>
@@ -1650,7 +1776,8 @@ if (stepNumber === 2) {
                       ) : null}
                     </div>
                     <div className="space-y-3 border-t-2 border-slate-200 pt-6 dark:border-slate-700">
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(pricing.amount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span></div>
+                      {formData.taskType === 'restaurant' ? <div className="flex justify-between text-sm"><span className="text-slate-500">Takeaway packs</span><span className="font-medium">{formatNaira(restaurantPackagingFee)}</span></div> : null}
                       <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span><span className="font-medium">{formatNaira(pricing.serviceFee)}</span></div>
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(pricing.totalAmount)}</span></div>
                     </div>

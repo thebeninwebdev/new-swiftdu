@@ -4,6 +4,7 @@ export const WATER_BAG_FEE = 450
 export const WATER_PLATFORM_FEE_RATE = 0.24
 export const RESTAURANT_PERSON_FEE = 450
 export const RESTAURANT_MAX_PEOPLE = 3
+export const RESTAURANT_TAKEAWAY_FEE = 200
 export const PRINTING_TASK_TYPE = 'printing'
 export const PRINTING_SERVICE_FEE = 500
 export const PRINTING_PRICE_PER_PAGE = 100
@@ -91,6 +92,8 @@ export interface PricingResult {
   printingServiceType?: PrintingServiceType
   printingNeedsEditing?: boolean
   restaurantPeopleCount?: number
+  restaurantTakeawayCount?: number
+  restaurantPackagingFee?: number
 }
 
 export interface CopyNotesPricingInput {
@@ -178,6 +181,7 @@ export function calculateOrderPricing(input: {
   taskType: string
   waterBags?: number
   restaurantPeopleCount?: number
+  restaurantTakeawayCount?: number
   noteSize?: string
   numberOfPages?: number
   drawingPages?: number
@@ -274,6 +278,30 @@ export function calculateOrderPricing(input: {
     } satisfies PricingResult
   }
 
+  if (input.taskType === 'restaurant') {
+    const restaurantPeopleCount = normalizeRestaurantPeopleCount(input.restaurantPeopleCount)
+    const restaurantTakeawayCount = normalizeRestaurantTakeawayCount(
+      input.restaurantTakeawayCount,
+      restaurantPeopleCount
+    )
+    const restaurantPackagingFee = calculateRestaurantPackagingFee(
+      restaurantTakeawayCount,
+      restaurantPeopleCount
+    )
+    const serviceFee = calculateRestaurantServiceFee(restaurantPeopleCount)
+
+    return {
+      amount: roundNaira(amount + restaurantPackagingFee),
+      serviceFee,
+      totalAmount: roundNaira(amount + restaurantPackagingFee + serviceFee),
+      pricingModel: 'tiered' as const,
+      waterFee: 0,
+      restaurantPeopleCount,
+      restaurantTakeawayCount,
+      restaurantPackagingFee,
+    } satisfies PricingResult
+  }
+
   const serviceFee =
     input.taskType === 'restaurant'
       ? calculateRestaurantServiceFee(input.restaurantPeopleCount)
@@ -300,6 +328,23 @@ export function normalizeRestaurantPeopleCount(value?: number) {
   }
 
   return Math.min(count, RESTAURANT_MAX_PEOPLE)
+}
+
+export function normalizeRestaurantTakeawayCount(value?: number, peopleCount?: number) {
+  const normalizedPeopleCount = normalizeRestaurantPeopleCount(peopleCount)
+  const count = Number(value || 0)
+
+  if (!Number.isInteger(count) || count < 0) {
+    return 0
+  }
+
+  return Math.min(count, normalizedPeopleCount)
+}
+
+export function calculateRestaurantPackagingFee(takeawayCount?: number, peopleCount?: number) {
+  return roundNaira(
+    normalizeRestaurantTakeawayCount(takeawayCount, peopleCount) * RESTAURANT_TAKEAWAY_FEE
+  )
 }
 
 export function calculateRestaurantServiceFee(peopleCount?: number) {

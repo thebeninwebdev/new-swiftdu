@@ -10,6 +10,7 @@ import {
   calculateOrderPricing,
   descriptionMentionsWater,
   normalizeRestaurantPeopleCount,
+  normalizeRestaurantTakeawayCount,
   normalizeNoteSize,
   normalizePrintingServiceType,
   PRINTING_TASK_TYPE,
@@ -46,6 +47,7 @@ export async function POST(request: NextRequest) {
       store,
       packaging,
       restaurantPeopleCount,
+      restaurantTakeawayCount,
       waterBags,
       noteSize,
       numberOfPages,
@@ -76,6 +78,15 @@ export async function POST(request: NextRequest) {
     const normalizedRestaurantPeopleCount =
       normalizedTaskType === 'restaurant'
         ? normalizeRestaurantPeopleCount(parsedRestaurantPeopleCount)
+        : undefined;
+    const parsedRestaurantTakeawayCount =
+      normalizedTaskType === 'restaurant' ? Number(restaurantTakeawayCount || 0) : undefined;
+    const normalizedRestaurantTakeawayCount =
+      normalizedTaskType === 'restaurant'
+        ? normalizeRestaurantTakeawayCount(
+            parsedRestaurantTakeawayCount,
+            normalizedRestaurantPeopleCount
+          )
         : undefined;
     const parsedWaterBags =
       normalizedTaskType === WATER_TASK_TYPE ? Number(waterBags) : undefined;
@@ -185,6 +196,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (
+      normalizedTaskType === 'restaurant' &&
+      (!Number.isInteger(parsedRestaurantTakeawayCount) ||
+        Number(parsedRestaurantTakeawayCount) < 0 ||
+        Number(parsedRestaurantTakeawayCount) > Number(normalizedRestaurantPeopleCount || 1))
+    ) {
+      return NextResponse.json(
+        { error: 'Choose how many restaurant orders need takeaway packs.' },
+        { status: 400 }
+      );
+    }
+
     const pricing = calculateOrderPricing({
       amount:
         normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE
@@ -192,6 +215,7 @@ export async function POST(request: NextRequest) {
           : parsedAmount,
       taskType: normalizedTaskType,
       restaurantPeopleCount: normalizedRestaurantPeopleCount,
+      restaurantTakeawayCount: normalizedRestaurantTakeawayCount,
       waterBags: parsedWaterBags,
       noteSize: normalizedNoteSize,
       numberOfPages: parsedNumberOfPages,
@@ -223,8 +247,18 @@ export async function POST(request: NextRequest) {
       totalAmount: pricing.totalAmount,
       location,
       store: normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE ? undefined : store || undefined,
-      packaging: packaging || undefined,
+      itemPrice: normalizedTaskType === 'restaurant' || normalizedTaskType === 'shopping' ? parsedAmount : undefined,
+      packaging:
+        normalizedTaskType === 'restaurant'
+          ? pricing.restaurantTakeawayCount && pricing.restaurantTakeawayCount > 0
+            ? pricing.restaurantTakeawayCount === pricing.restaurantPeopleCount
+              ? 'Takeaway pack'
+              : `${pricing.restaurantTakeawayCount} takeaway, ${Number(pricing.restaurantPeopleCount || 0) - pricing.restaurantTakeawayCount} cellophane`
+            : 'Cellophane'
+          : packaging || undefined,
       restaurantPeopleCount: pricing.restaurantPeopleCount,
+      restaurantTakeawayCount: pricing.restaurantTakeawayCount,
+      restaurantPackagingFee: pricing.restaurantPackagingFee || 0,
       waterBags: pricing.waterBags || undefined,
       waterFee: pricing.waterFee,
       noteSize: pricing.noteSize,
