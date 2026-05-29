@@ -5,6 +5,8 @@ export const WATER_PLATFORM_FEE_RATE = 0.24
 export const RESTAURANT_PERSON_FEE = 450
 export const RESTAURANT_MAX_PEOPLE = 3
 export const RESTAURANT_TAKEAWAY_FEE = 200
+export const SHOPPING_RITA_STORE = 'rita'
+export const SHOPPING_NON_RITA_SERVICE_FEE = 700
 export const PRINTING_TASK_TYPE = 'printing'
 export const PRINTING_SERVICE_FEE = 500
 export const PRINTING_PRICE_PER_PAGE = 100
@@ -179,6 +181,7 @@ export function calculateCopyNotesPrice(input: CopyNotesPricingInput) {
 export function calculateOrderPricing(input: {
   amount: number
   taskType: string
+  store?: string
   waterBags?: number
   restaurantPeopleCount?: number
   restaurantTakeawayCount?: number
@@ -299,6 +302,22 @@ export function calculateOrderPricing(input: {
       restaurantPeopleCount,
       restaurantTakeawayCount,
       restaurantPackagingFee,
+    } satisfies PricingResult
+  }
+
+  if (input.taskType === 'shopping') {
+    const normalizedStore = String(input.store || '').trim().toLowerCase()
+    const serviceFee =
+      normalizedStore && normalizedStore !== SHOPPING_RITA_STORE
+        ? SHOPPING_NON_RITA_SERVICE_FEE
+        : getTieredServiceFee(amount)
+
+    return {
+      amount,
+      serviceFee,
+      totalAmount: roundNaira(amount + serviceFee),
+      pricingModel: 'tiered' as const,
+      waterFee: 0,
     } satisfies PricingResult
   }
 

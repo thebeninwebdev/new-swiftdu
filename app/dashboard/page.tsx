@@ -21,7 +21,6 @@ import {
   ShoppingBag,
   Store,
   Wallet,
-  X,
   type LucideIcon,
 } from 'lucide-react'
 import { io, type Socket } from 'socket.io-client'
@@ -64,15 +63,6 @@ interface ErrandData {
   restaurantItemPrice: string
   restaurantPeople: string
   restaurantTakeawayCount: string
-  shoppingItems: RestaurantItem[]
-  shoppingItemName: string
-  shoppingItemPrice: string
-}
-
-interface RestaurantItem {
-  id: string
-  name: string
-  price: number
 }
 
 interface ActiveOrder {
@@ -259,9 +249,6 @@ export default function ErrandWizardPage() {
     restaurantItemPrice: '',
     restaurantPeople: '1',
     restaurantTakeawayCount: '',
-    shoppingItems: [],
-    shoppingItemName: '',
-    shoppingItemPrice: '',
   })
   const sessionUserId = session?.user?.id
 
@@ -432,10 +419,8 @@ export default function ErrandWizardPage() {
   const restaurantPackagingFee = normalizedRestaurantTakeawayCount * RESTAURANT_TAKEAWAY_FEE
   const restaurantBudget = restaurantFoodBudget
   const restaurantDescription = formData.description.trim()
-  const shoppingBudget = formData.shoppingItems.reduce((total, item) => total + item.price, 0)
-  const shoppingDescription = formData.shoppingItems
-    .map((item) => `${item.name} - ${formatNaira(item.price)}`)
-    .join(', ')
+  const shoppingBudget = parseMoneyInput(formData.amount)
+  const shoppingDescription = formData.description.trim()
   const waterBags = Number(formData.waterBags || 0)
   const numberOfPages = Number(formData.numberOfPages || 0)
   const printingLabel =
@@ -468,6 +453,7 @@ export default function ErrandWizardPage() {
   const pricing = calculateOrderPricing({
     amount: Number.isFinite(amount) ? amount : 0,
     taskType,
+    store: formData.store,
     restaurantPeopleCount: normalizedRestaurantPeopleCount,
     restaurantTakeawayCount: normalizedRestaurantTakeawayCount,
     waterBags: Number.isFinite(waterBags) ? waterBags : 0,
@@ -548,18 +534,16 @@ export default function ErrandWizardPage() {
     pauseRealtime()
     const { name, value } = event.target
     const nextValue =
-      name === 'restaurantItemPrice' || name === 'shoppingItemPrice' || name === 'amount'
+      name === 'restaurantItemPrice' || name === 'amount'
         ? formatMoneyInput(value)
         : value
     setFormData((previous) => ({ ...previous, [name]: nextValue }))
     clearError(name)
     if (
       name === 'restaurantItemPrice' ||
-      name === 'restaurantPeople' ||
-      name === 'shoppingItemName' ||
-      name === 'shoppingItemPrice'
+      name === 'restaurantPeople'
     ) {
-      clearError('shoppingItems')
+      clearError('amount')
     }
   }
 
@@ -588,7 +572,7 @@ export default function ErrandWizardPage() {
         value === WATER_TASK_TYPE ||
         value === PRINTING_TASK_TYPE
           ? '0'
-          : previous.amount,
+          : '',
     }))
     ;[
       'taskType',
@@ -600,49 +584,11 @@ export default function ErrandWizardPage() {
       'printingNeedsEditing',
       'deadline',
       'description',
+      'amount',
       'restaurantTakeawayCount',
     ].forEach(clearError)
     setStep(2)
     setErrors({})
-  }
-
-  const addShoppingItem = () => {
-    pauseRealtime()
-    const name = formData.shoppingItemName.trim()
-    const price = parseMoneyInput(formData.shoppingItemPrice)
-
-    if (!name || !Number.isFinite(price) || price <= 0) {
-      setErrors((previous) => ({
-        ...previous,
-        shoppingItems: 'Enter the item name and a valid price.',
-      }))
-      return
-    }
-
-    setFormData((previous) => ({
-      ...previous,
-      shoppingItems: [
-        ...previous.shoppingItems,
-        {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          name,
-          price: Math.round(price),
-        },
-      ],
-      shoppingItemName: '',
-      shoppingItemPrice: '',
-    }))
-    clearError('shoppingItems')
-    clearError('description')
-    clearError('amount')
-  }
-
-  const removeShoppingItem = (id: string) => {
-    pauseRealtime()
-    setFormData((previous) => ({
-      ...previous,
-      shoppingItems: previous.shoppingItems.filter((item) => item.id !== id),
-    }))
   }
 
   const handleLocationSelect = (value: string) => {
@@ -693,8 +639,16 @@ if (stepNumber === 2) {
     nextErrors.restaurantPeople = `Enter 1 to ${RESTAURANT_MAX_PEOPLE} people for this food order.`
   }
 
-  if (formData.taskType === 'shopping' && formData.shoppingItems.length === 0) {
-    nextErrors.shoppingItems = 'Add at least one item and price.'
+  if (formData.taskType === 'shopping') {
+    if (!shoppingDescription) {
+      nextErrors.description = 'Describe the items you want.'
+    } else if (shoppingDescription.length < 5) {
+      nextErrors.description = 'Use at least 5 characters.'
+    }
+
+    if (!Number.isFinite(shoppingBudget) || shoppingBudget <= 0) {
+      nextErrors.amount = 'Enter a valid shopping budget.'
+    }
   }
 
   if (formData.taskType === 'restaurant' && waterWarning) {
@@ -858,9 +812,6 @@ if (stepNumber === packagingStep) {
         restaurantItemPrice: '',
         restaurantPeople: '1',
         restaurantTakeawayCount: '',
-        shoppingItems: [],
-        shoppingItemName: '',
-        shoppingItemPrice: '',
       })
       setStep(1)
       router.push('/dashboard/tasks')
@@ -1459,64 +1410,76 @@ if (stepNumber === packagingStep) {
                       <div>
                         <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                           <Store className="h-4 w-4 text-emerald-500" />
-                          Store Items and Price
+                          Items description
                         </label>
-                      </div>
-                      <div className="grid gap-3 sm:grid-cols-[1fr_10rem_auto]">
-                        <input
-                          type="text"
-                          name="shoppingItemName"
-                          value={formData.shoppingItemName}
+                        <textarea
+                          name="description"
+                          value={formData.description}
                           onChange={handleInputChange}
-                          placeholder="Store item"
-                          className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800"
+                          placeholder="Describe what you want. Example: Milo, biscuits, soap, tissue..."
+                          rows={4}
+                          className="mt-2 w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800"
                         />
-                        <input
-                          type="text"
-                          inputMode="numeric"
-                          name="shoppingItemPrice"
-                          value={formData.shoppingItemPrice}
-                          onChange={handleInputChange}
-                          onKeyDown={(event) => {
-                            if (event.key === 'Enter') {
-                              event.preventDefault()
-                              addShoppingItem()
-                            }
-                          }}
-                          placeholder="1,500"
-                          className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 font-mono outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800"
-                        />
-                        <Button
-                          type="button"
-                          onClick={addShoppingItem}
-                          className="h-12 rounded-xl bg-emerald-600 px-5 text-white hover:bg-emerald-700"
-                        >
-                          Add
-                        </Button>
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                          Tap the microphone to say your order or type manually.
+                        </p>
+                        {isSpeechSupported === true ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              pauseRealtime()
+                              if (isSpeechListening) {
+                                stopListening()
+                                return
+                              }
+                              startListening(formData.description)
+                            }}
+                            className={`mt-3 h-11 w-full rounded-xl border-2 border-emerald-200 bg-emerald-50 px-4 font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-200 dark:hover:bg-emerald-950/50 sm:w-auto ${
+                              isSpeechListening ? 'animate-pulse ring-4 ring-emerald-500/15' : ''
+                            }`}
+                          >
+                            {isSpeechListening ? (
+                              <>
+                                <MicOff className="mr-2 h-4 w-4" />
+                                Listening...
+                              </>
+                            ) : (
+                              <>
+                                <Mic className="mr-2 h-4 w-4" />
+                                Say your order
+                              </>
+                            )}
+                          </Button>
+                        ) : isSpeechSupported === false ? (
+                          <p className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                            Speech input is not supported on this browser.
+                          </p>
+                        ) : null}
+                        {errors.description ? <p className="mt-2 text-sm text-red-500">{errors.description}</p> : null}
                       </div>
-                      {formData.shoppingItems.length > 0 ? (
-                        <div className="flex flex-wrap gap-2">
-                          {formData.shoppingItems.map((item) => (
-                            <span
-                              key={item.id}
-                              className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100"
-                            >
-                              <span className="truncate">{item.name}</span>
-                              <span className="font-mono text-emerald-700 dark:text-emerald-200">
-                                {formatNaira(item.price)}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => removeShoppingItem(item.id)}
-                                className="rounded-full p-0.5 text-emerald-500 hover:bg-emerald-100 hover:text-emerald-700 dark:hover:bg-emerald-900/50"
-                                aria-label={`Remove ${item.name}`}
-                              >
-                                <X className="h-3.5 w-3.5" />
-                              </button>
-                            </span>
-                          ))}
+                      <div>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <Wallet className="h-4 w-4 text-emerald-500" />
+                          Budget
+                        </label>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">₦</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            name="amount"
+                            value={formData.amount}
+                            onChange={handleInputChange}
+                            placeholder="1,500"
+                            className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 pl-9 font-mono text-lg outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-700 dark:bg-slate-800"
+                          />
                         </div>
-                      ) : null}
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                          How much should the store items cost?
+                        </p>
+                        {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
+                      </div>
                       <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
                         Item budget is {formatNaira(shoppingBudget)} before SwiftDU service fee.
                         {shouldShowTieredServiceFee ? (
@@ -1530,7 +1493,6 @@ if (stepNumber === packagingStep) {
                           Choose the bag of water task for water delivery.
                         </div>
                       ) : null}
-                      {errors.shoppingItems ? <p className="mt-2 text-sm text-red-500">{errors.shoppingItems}</p> : null}
                     </div>
                   ) : null}
                   {formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== PRINTING_TASK_TYPE ? (
@@ -1732,21 +1694,11 @@ if (stepNumber === packagingStep) {
                           </span>
                         </div>
                       ) : null}
-                      {formData.taskType === 'shopping' && formData.shoppingItems.length > 0 ? (
+                      {formData.taskType === 'shopping' && formData.description ? (
                         <div className="flex justify-between gap-6">
-                          <span className="text-slate-500">Store items</span>
-                          <span className="flex max-w-[22rem] flex-wrap justify-end gap-2 text-right">
-                            {formData.shoppingItems.map((item) => (
-                              <span
-                                key={item.id}
-                                className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-slate-900 shadow-sm dark:bg-slate-900 dark:text-slate-100"
-                              >
-                                <span>{item.name}</span>
-                                <span className="font-mono text-emerald-600 dark:text-emerald-300">
-                                  {formatNaira(item.price)}
-                                </span>
-                              </span>
-                            ))}
+                          <span className="text-slate-500">Description</span>
+                          <span className="max-w-[22rem] text-right text-slate-900 dark:text-slate-100">
+                            {formData.description}
                           </span>
                         </div>
                       ) : null}

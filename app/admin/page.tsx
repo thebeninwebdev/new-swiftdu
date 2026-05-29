@@ -209,7 +209,7 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
-                â‚¦{isStatsLoading ? '...' : (stats?.approvedExpenditures || 0).toLocaleString()}
+                ₦{isStatsLoading ? '...' : (stats?.approvedExpenditures || 0).toLocaleString()}
               </div>
               <p className="text-xs text-muted-foreground">Subtracted after full approval</p>
             </CardContent>
@@ -268,7 +268,7 @@ export default function AdminDashboard() {
                                 <p className="mt-2 text-xs text-muted-foreground">{item.notes}</p>
                               ) : null}
                             </td>
-                            <td className="py-4 pr-4 font-semibold">â‚¦{item.amount.toLocaleString()}</td>
+                            <td className="py-4 pr-4 font-semibold">₦{item.amount.toLocaleString()}</td>
                             <td className="py-4 pr-4">
                               <div className="flex flex-wrap gap-1">
                                 {item.approvals.map((approval) => (

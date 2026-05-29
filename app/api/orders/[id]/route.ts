@@ -163,6 +163,7 @@ export async function PATCH(
         const pricing = calculateOrderPricing({
           amount: Number(order.itemPrice ?? Number(order.amount || 0) - Number(order.restaurantPackagingFee || 0)),
           taskType: order.taskType,
+          store: order.store,
           restaurantPeopleCount: normalizeRestaurantPeopleCount(parsedRestaurantPeopleCount),
           restaurantTakeawayCount: normalizeRestaurantTakeawayCount(
             order.restaurantTakeawayCount,
@@ -380,12 +381,29 @@ export async function PATCH(
         }
       }
 
+      if (nextTaskType === 'shopping') {
+        if (nextDescription.length < 5) {
+          return NextResponse.json(
+            { error: 'Describe the items you want.' },
+            { status: 400 }
+          );
+        }
+
+        if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+          return NextResponse.json(
+            { error: 'Enter a valid shopping budget.' },
+            { status: 400 }
+          );
+        }
+      }
+
       const pricing = calculateOrderPricing({
         amount:
           nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE
             ? 0
             : nextAmount,
         taskType: nextTaskType,
+        store: nextStore,
         restaurantPeopleCount: nextRestaurantPeopleCount,
         restaurantTakeawayCount: nextRestaurantTakeawayCount,
         waterBags: nextWaterBags,

@@ -208,12 +208,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (normalizedTaskType === 'shopping') {
+      if (normalizedDescription.length < 5) {
+        return NextResponse.json(
+          { error: 'Describe the items you want.' },
+          { status: 400 }
+        );
+      }
+
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+        return NextResponse.json(
+          { error: 'Enter a valid shopping budget.' },
+          { status: 400 }
+        );
+      }
+    }
+
     const pricing = calculateOrderPricing({
       amount:
         normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE
           ? 0
           : parsedAmount,
       taskType: normalizedTaskType,
+      store: typeof store === 'string' ? store : undefined,
       restaurantPeopleCount: normalizedRestaurantPeopleCount,
       restaurantTakeawayCount: normalizedRestaurantTakeawayCount,
       waterBags: parsedWaterBags,

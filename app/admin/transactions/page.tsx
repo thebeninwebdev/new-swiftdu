@@ -242,7 +242,7 @@ export default function AdminTransactionsPage() {
               <TrendingDown className="h-4 w-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-bold">â‚¦{stats?.totalPaystackSettlementFees?.toLocaleString() || "0"}</div>
+              <div className="text-2xl font-bold">₦{stats?.totalPaystackSettlementFees?.toLocaleString() || "0"}</div>
               <p className="text-xs text-muted-foreground">1.5% of platform fees</p>
             </CardContent>
           </Card>
@@ -341,7 +341,7 @@ export default function AdminTransactionsPage() {
                             <span>Tasker: {transaction.taskerName}</span>
                           )}
                           {typeof transaction.paystackSettlementFee === 'number' && (
-                            <span>Paystack: â‚¦{transaction.paystackSettlementFee.toLocaleString()}</span>
+                            <span>Paystack: ₦{transaction.paystackSettlementFee.toLocaleString()}</span>
                           )}
                         </div>
                       </div>
