@@ -46,6 +46,9 @@ import {
 const ACTIVE_ORDER_REFRESH_MS = 4000
 const REALTIME_PAUSE_MS = 1200
 const LOW_TASKER_NOTICE_RETURN_DATE = '2026-06-01'
+const PACKAGING_LANGUAGE_STORAGE_KEY = 'swiftdu:restaurant-packaging-language'
+
+type PackagingLanguage = 'pidgin' | 'english'
 
 interface ErrandData {
   taskType: string
@@ -216,6 +219,61 @@ function isLowTaskerAvailabilityWindow(date: Date) {
   return ['Mon', 'Wed'].includes(weekday || '') && hour >= 0 && hour < 14
 }
 
+
+function TypeTypingEffect({
+  text,
+  speed = 30,
+  className = '',
+  onComplete,
+}: {
+  text: string
+  speed?: number
+  className?: string
+  onComplete?: () => void
+}) {
+  const [displayed, setDisplayed] = useState('')
+  const [isDone, setIsDone] = useState(false)
+  const indexRef = useRef(0)
+  const timeoutRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    setDisplayed('')
+    setIsDone(false)
+    indexRef.current = 0
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current)
+    }
+
+    const typeNext = () => {
+      if (indexRef.current < text.length) {
+        setDisplayed(text.slice(0, indexRef.current + 1))
+        indexRef.current += 1
+        timeoutRef.current = window.setTimeout(typeNext, speed)
+      } else {
+        setIsDone(true)
+        onComplete?.()
+      }
+    }
+
+    timeoutRef.current = window.setTimeout(typeNext, speed)
+
+    return () => {
+      if (timeoutRef.current) {
+        window.clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [text, speed, onComplete])
+
+  return (
+    <span className={className}>
+      {displayed}
+      {!isDone && (
+        <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-current align-middle" />
+      )}
+    </span>
+  )
+}
+
 export default function ErrandWizardPage() {
   const router = useRouter()
   const { data: session } = authClient.useSession()
@@ -224,6 +282,7 @@ export default function ErrandWizardPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isRealtimePaused, setIsRealtimePaused] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const [packagingLanguage, setPackagingLanguage] = useState<PackagingLanguage>('pidgin')
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
@@ -297,6 +356,29 @@ export default function ErrandWizardPage() {
 
   useEffect(() => {
     setMounted(true)
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+
+    try {
+      const savedLanguage = window.localStorage.getItem(PACKAGING_LANGUAGE_STORAGE_KEY)
+      if (savedLanguage === 'english' || savedLanguage === 'pidgin') {
+        setPackagingLanguage(savedLanguage)
+      }
+    } catch {
+      setPackagingLanguage('pidgin')
+    }
+  }, [mounted])
+
+  const updatePackagingLanguage = useCallback((language: PackagingLanguage) => {
+    setPackagingLanguage(language)
+
+    try {
+      window.localStorage.setItem(PACKAGING_LANGUAGE_STORAGE_KEY, language)
+    } catch {
+      // Preference persistence is best-effort; the UI should still switch immediately.
+    }
   }, [])
 
   useEffect(() => {
@@ -482,6 +564,32 @@ export default function ErrandWizardPage() {
   const stepIcons = hasRestaurantPackagingStep
     ? [ShoppingBag, FileText, ShoppingBag, MapPin, CreditCard]
     : [ShoppingBag, FileText, MapPin, CreditCard]
+  const packagingCopy =
+    packagingLanguage === 'english'
+      ? {
+          subtitle: 'A quick packaging check before delivery details.',
+          languageButton: 'Use Nigerian Pidgin',
+          singleQuestion: `Should this order be in takeaway or cellophane? Takeaway adds ${formatNaira(RESTAURANT_TAKEAWAY_FEE)}.`,
+          multipleQuestion: `You are ordering for ${normalizedRestaurantPeopleCount} people. Is everything in takeaway, or should some be cellophane? Takeaway is ${formatNaira(RESTAURANT_TAKEAWAY_FEE)} each.`,
+          singleTakeaway: 'Takeaway',
+          allTakeaway: 'Yes, all takeaway',
+          singleCellophane: 'Cellophane',
+          mixedPrompt: 'No, ask me',
+          takeawayCountQuestion: `How many of the ${normalizedRestaurantPeopleCount} orders should be in takeaway?`,
+          feeLabel: 'Packaging fee',
+        }
+      : {
+          subtitle: 'Make we quickly confirm packaging before delivery details.',
+          languageButton: 'Show in English',
+          singleQuestion: `You want make dem put this food for takeaway pack or cellophane? Takeaway go add ${formatNaira(RESTAURANT_TAKEAWAY_FEE)}.`,
+          multipleQuestion: `You dey order for ${normalizedRestaurantPeopleCount} people. Make all enter takeaway pack, abi some go dey cellophane? Takeaway na ${formatNaira(RESTAURANT_TAKEAWAY_FEE)} each.`,
+          singleTakeaway: 'Takeaway',
+          allTakeaway: 'Yes, all takeaway',
+          singleCellophane: 'Cellophane',
+          mixedPrompt: 'No, ask me',
+          takeawayCountQuestion: `How many from the ${normalizedRestaurantPeopleCount} orders make enter takeaway pack?`,
+          feeLabel: 'Packaging fee',
+        }
 
   const clearError = useCallback((field: string) =>
     setErrors((previous) => {
@@ -1543,16 +1651,38 @@ if (stepNumber === packagingStep) {
 
               {step === packagingStep ? (
                 <div className="space-y-5 md:space-y-6">
-                  <div>
-                    <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Packaging</h2>
-                    <p className="mt-2 text-slate-500 dark:text-slate-400">A quick packaging check before delivery details.</p>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Packaging</h2>
+                      <p className="mt-2 text-slate-500 dark:text-slate-400">
+                        <TypeTypingEffect text={packagingCopy.subtitle} speed={20} />
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() =>
+                        updatePackagingLanguage(
+                          packagingLanguage === 'english' ? 'pidgin' : 'english'
+                        )
+                      }
+                      className="h-10 w-fit border-orange-200 text-orange-700 hover:bg-orange-50 dark:border-orange-900/60 dark:text-orange-200 dark:hover:bg-orange-950/30"
+                    >
+                      {packagingCopy.languageButton}
+                    </Button>
                   </div>
 
                   <div className="space-y-4">
                     <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-950 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
-                      {normalizedRestaurantPeopleCount === 1
-                        ? `Should this order be in takeaway or cellophane? Takeaway adds ${formatNaira(RESTAURANT_TAKEAWAY_FEE)}.`
-                        : `You are ordering for ${normalizedRestaurantPeopleCount} people. Is everything in takeaway, or should some be cellophane? Takeaway is ${formatNaira(RESTAURANT_TAKEAWAY_FEE)} each.`}
+                      <TypeTypingEffect
+                        text={
+                          normalizedRestaurantPeopleCount === 1
+                            ? packagingCopy.singleQuestion
+                            : packagingCopy.multipleQuestion
+                        }
+                        speed={25}
+                        className="block whitespace-pre-line leading-relaxed"
+                      />
                     </div>
 
                     <div className="flex flex-wrap justify-end gap-2">
@@ -1574,7 +1704,9 @@ if (stepNumber === packagingStep) {
                             : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
                         }`}
                       >
-                        {normalizedRestaurantPeopleCount === 1 ? 'Takeaway' : 'Yes, all takeaway'}
+                        {normalizedRestaurantPeopleCount === 1
+                          ? packagingCopy.singleTakeaway
+                          : packagingCopy.allTakeaway}
                       </button>
                       <button
                         type="button"
@@ -1598,14 +1730,20 @@ if (stepNumber === packagingStep) {
                             : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
                         }`}
                       >
-                        {normalizedRestaurantPeopleCount === 1 ? 'Cellophane' : 'No, ask me'}
+                        {normalizedRestaurantPeopleCount === 1
+                          ? packagingCopy.singleCellophane
+                          : packagingCopy.mixedPrompt}
                       </button>
                     </div>
 
                     {normalizedRestaurantPeopleCount > 1 && formData.packaging === 'mixed' ? (
                       <>
                         <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-950 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
-                          How many of the {normalizedRestaurantPeopleCount} orders should be in takeaway?
+                          <TypeTypingEffect
+                            text={packagingCopy.takeawayCountQuestion}
+                            speed={25}
+                            className="block whitespace-pre-line leading-relaxed"
+                          />
                         </div>
                         <div className="flex flex-wrap justify-end gap-2">
                           {Array.from(
@@ -1641,7 +1779,7 @@ if (stepNumber === packagingStep) {
                     ) : null}
 
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
-                      Packaging fee: <span className="font-semibold">{formatNaira(restaurantPackagingFee)}</span>
+                      {packagingCopy.feeLabel}: <span className="font-semibold">{formatNaira(restaurantPackagingFee)}</span>
                       {normalizedRestaurantTakeawayCount > 0 ? (
                         <span> ({normalizedRestaurantTakeawayCount} x {formatNaira(RESTAURANT_TAKEAWAY_FEE)})</span>
                       ) : null}
