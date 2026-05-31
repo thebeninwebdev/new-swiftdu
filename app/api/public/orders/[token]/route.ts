@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 import { connectDB } from '@/lib/db';
+import { emitOrderUpdated } from '@/lib/socket';
 import { Order } from '@/models/order';
 import Tasker from '@/models/tasker';
 
@@ -41,6 +42,9 @@ function serializeOrder(order: any, tasker: any | null) {
     declinedMessage: order.declinedMessage || '',
     paymentStatus: order.paymentStatus || 'unpaid',
     paymentFailureReason: order.paymentFailureReason || '',
+    cafeInquiry: Boolean(order.cafeInquiry),
+    cafeInquiryFeePaid: Boolean(order.cafeInquiryFeePaid),
+    cafeInquiryDetailsSubmitted: Boolean(order.cafeInquiryDetailsSubmitted),
     tasker: tasker
       ? {
           name: order.taskerName || 'Tasker',
@@ -78,5 +82,74 @@ export async function GET(
   } catch (error) {
     console.error('[GET /api/public/orders/[token]]', error);
     return NextResponse.json({ error: 'Failed to fetch order' }, { status: 500 });
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ token: string }> }
+) {
+  try {
+    await connectDB();
+
+    const { token } = await params;
+    const order = await Order.findOne({ trackingToken: token, source: 'whatsapp' });
+
+    if (!order) {
+      return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    }
+
+    if (
+      !order.cafeInquiry ||
+      !order.cafeInquiryFeePaid ||
+      order.cafeInquiryDetailsSubmitted
+    ) {
+      return NextResponse.json(
+        { error: 'This order is not waiting for cafe details.' },
+        { status: 400 }
+      );
+    }
+
+    if (order.status === 'cancelled' || order.status === 'completed') {
+      return NextResponse.json({ error: 'This order is no longer active.' }, { status: 400 });
+    }
+
+    const body = await request.json();
+    const description = String(body.description || '').trim();
+    const amount = Number(body.amount);
+
+    if (description.length < 5) {
+      return NextResponse.json(
+        { error: 'Describe the food you want to buy.' },
+        { status: 400 }
+      );
+    }
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return NextResponse.json({ error: 'Enter a valid food budget.' }, { status: 400 });
+    }
+
+    order.description = description;
+    order.amount = amount;
+    order.itemPrice = amount;
+    order.totalAmount = amount;
+    order.cafeInquiryDetailsSubmitted = true;
+    order.hasPaid = false;
+    order.paidAt = undefined;
+    order.paymentStatus = 'unpaid';
+    order.paymentFailureReason = undefined;
+    order.customerTransferredAt = undefined;
+
+    await order.save();
+    emitOrderUpdated(order);
+
+    const tasker = order.taskerId
+      ? await Tasker.findById(order.taskerId).select('phone profileImage bankDetails').lean()
+      : null;
+
+    return NextResponse.json({ order: serializeOrder(order, tasker) });
+  } catch (error) {
+    console.error('[PATCH /api/public/orders/[token]]', error);
+    return NextResponse.json({ error: 'Failed to update cafe order details.' }, { status: 500 });
   }
 }

@@ -24,6 +24,7 @@ import {
   LineChart,
   Loader2,
   Megaphone,
+  MessageCircle,
   PlusCircle,
   ShieldAlert,
   TrendingUp,
@@ -502,6 +503,28 @@ type ExcoOrder = {
   createdAt: string | null;
 };
 
+type ExcoFailedSettlement = {
+  id: string;
+  orderDescription: string;
+  taskType: string;
+  location: string;
+  amount: number;
+  store: string;
+  status: string;
+  customerName: string;
+  customerEmail: string;
+  taskerId: string;
+  taskerName: string;
+  taskerEmail: string;
+  taskerPhone: string;
+  acceptedAt: string | null;
+  createdAt: string | null;
+  description: string;
+  settlementFailureReason: string;
+  paymentStatus: string;
+  settlementStatus: string;
+};
+
 type ExcoSupportTicket = {
   id: string;
   title: string;
@@ -630,6 +653,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
   if (role === "CTO") {
     return (
       <div className="space-y-4">
+        <FailedSettlementsPanel />
         <AssignedTasksPanel canCancel={false} />
         <TaskerManagementPanel canModerate={false} />
         <UserManagementPanel title="User Management" allowSuspension />
@@ -890,6 +914,146 @@ function TaskerManagementPanel({ canModerate }: { canModerate: boolean }) {
             </div>
           </div>
         ))}
+      </div>
+      <PaginationControls {...paged} onPageChange={paged.setPage} />
+    </ManagementShell>
+  );
+}
+
+function FailedSettlementsPanel() {
+  const { items, isLoading, error, reload } = useManagementResource<ExcoFailedSettlement>(
+    "failed-settlements",
+    true
+  );
+  const paged = usePagedItems(items);
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  const verifySettlement = async (order: ExcoFailedSettlement) => {
+    setActionId(order.id);
+    try {
+      await patchManagement("failed-settlements", {
+        id: order.id,
+        action: "verify-settlement",
+      });
+      await reload();
+    } finally {
+      setActionId(null);
+    }
+  };
+
+  return (
+    <ManagementShell
+      title="Failed Tasker Settlements"
+      description="Review failed settlement records and manually verify transactions whose settlement status is wrong."
+      isLoading={isLoading}
+      error={error}
+      emptyLabel="No failed tasker settlements found"
+      hasItems={items.length > 0}
+    >
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1200px] text-left text-sm">
+          <thead>
+            <tr className="border-b border-slate-200 text-xs uppercase text-slate-500 dark:border-slate-800 dark:text-slate-400">
+              <th className="pb-3 pr-4 font-semibold">Order</th>
+              <th className="pb-3 pr-4 font-semibold">Customer</th>
+              <th className="pb-3 pr-4 font-semibold">Tasker Assigned</th>
+              <th className="pb-3 pr-4 font-semibold">Task Details</th>
+              <th className="pb-3 pr-4 font-semibold">Failure</th>
+              <th className="pb-3 pr-4 font-semibold">Statuses</th>
+              <th className="pb-3 pr-4 font-semibold">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {paged.pageItems.map((order) => (
+              <tr key={order.id} className="border-b border-slate-100 align-top dark:border-slate-900">
+                <td className="py-4 pr-4">
+                  <div className="max-w-[18rem] font-semibold text-slate-950 dark:text-white">
+                    {order.orderDescription}
+                  </div>
+                  <p className="mt-1 font-mono text-xs text-slate-500">{order.id}</p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Created {formatDate(order.createdAt)}
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Accepted {formatDate(order.acceptedAt)}
+                  </p>
+                </td>
+                <td className="py-4 pr-4">
+                  <div className="font-medium text-slate-900 dark:text-white">
+                    {order.customerName}
+                  </div>
+                  {order.customerEmail ? (
+                    <p className="mt-1 text-xs text-slate-500">{order.customerEmail}</p>
+                  ) : null}
+                </td>
+                <td className="py-4 pr-4">
+                  <div className="font-medium text-slate-900 dark:text-white">
+                    {order.taskerName}
+                  </div>
+                  <div className="mt-1 space-y-0.5 text-xs text-slate-500">
+                    {order.taskerEmail ? <p>{order.taskerEmail}</p> : null}
+                    {order.taskerPhone ? <p>{order.taskerPhone}</p> : null}
+                    {!order.taskerId ? <p>No tasker assigned</p> : null}
+                  </div>
+                </td>
+                <td className="py-4 pr-4">
+                  <div className="grid gap-1 text-xs text-slate-600 dark:text-slate-300">
+                    <span>Type: {order.taskType}</span>
+                    <span>Location: {order.location}</span>
+                    <span>Amount: {formatValue(order.amount, "currency")}</span>
+                    <span>Store: {order.store}</span>
+                    <span>Status: {order.status.replace("_", " ")}</span>
+                    <span className="max-w-[18rem]">Description: {order.description}</span>
+                  </div>
+                </td>
+                <td className="py-4 pr-4">
+                  <p className="max-w-[18rem] text-sm text-slate-700 dark:text-slate-200">
+                    {order.settlementFailureReason}
+                  </p>
+                </td>
+                <td className="py-4 pr-4">
+                  <div className="space-y-2">
+                    <Badge variant="outline">payment: {order.paymentStatus}</Badge>
+                    <Badge
+                      variant="outline"
+                      className="border-amber-200 bg-amber-50 text-amber-700"
+                    >
+                      settlement: {order.settlementStatus}
+                    </Badge>
+                  </div>
+                </td>
+                <td className="py-4 pr-4">
+                  <div className="flex flex-col gap-2">
+                    <Button
+                      size="sm"
+                      disabled={Boolean(actionId)}
+                      onClick={() => verifySettlement(order)}
+                      className="gap-2"
+                    >
+                      {actionId === order.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="h-4 w-4" />
+                      )}
+                      {actionId === order.id ? "Verifying..." : "Verify settlement"}
+                    </Button>
+                    <a
+                      href={`https://wa.me/2349053479802?text=${encodeURIComponent(
+                        `I have paid for SwiftDU settlement on order ${order.id}. Please verify it.`
+                      )}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex h-7 shrink-0 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[0.8rem] font-medium text-slate-900 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900"
+                    >
+                      <MessageCircle className="h-3.5 w-3.5" />
+                      I have paid
+                    </a>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       </div>
       <PaginationControls {...paged} onPageChange={paged.setPage} />
     </ManagementShell>

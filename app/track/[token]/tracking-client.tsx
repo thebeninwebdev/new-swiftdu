@@ -37,6 +37,9 @@ type PublicOrder = {
   declinedMessage: string;
   paymentStatus: 'unpaid' | 'initialized' | 'paid' | 'failed' | 'cancelled';
   paymentFailureReason: string;
+  cafeInquiry: boolean;
+  cafeInquiryFeePaid: boolean;
+  cafeInquiryDetailsSubmitted: boolean;
   tasker: {
     name: string;
     phone: string;
@@ -170,7 +173,16 @@ export default function TrackingClient({ token }: { token: string }) {
   }, [loadOrder]);
 
   const status = useMemo(() => (order ? getStatusCopy(order) : null), [order]);
-  const needsPayment = Boolean(order?.taskerId && !order?.hasPaid && !order?.isDeclinedTask);
+  const needsCafeDetails = Boolean(
+    order?.cafeInquiry && order.cafeInquiryFeePaid && !order.cafeInquiryDetailsSubmitted
+  );
+  const transferAmount =
+    order?.cafeInquiry && order.cafeInquiryFeePaid
+      ? Number(order.amount || 0)
+      : Number(order?.totalAmount || order?.amount || 0);
+  const needsPayment = Boolean(
+    order?.taskerId && !order?.hasPaid && !order?.isDeclinedTask && !needsCafeDetails
+  );
   const whatsappHref = order?.tasker?.phone ? getWhatsAppHref(order.tasker.phone) : null;
 
   const confirmTransfer = async () => {
@@ -306,7 +318,7 @@ export default function TrackingClient({ token }: { token: string }) {
 
                 <div className="rounded-xl bg-slate-950 p-4 text-white">
                   <p className="text-xs text-slate-400">Total amount</p>
-                  <p className="mt-1 text-3xl font-bold">{formatCurrency(order.totalAmount)}</p>
+                  <p className="mt-1 text-3xl font-bold">{formatCurrency(transferAmount)}</p>
                   <div className="mt-3 flex items-center justify-between gap-3 text-xs text-slate-400">
                     <span>Order: {formatCurrency(order.amount)}</span>
                     <span>Service: {formatCurrency(order.serviceFee || order.commission)}</span>
@@ -332,6 +344,26 @@ export default function TrackingClient({ token }: { token: string }) {
               </div>
             </section>
 
+            {needsCafeDetails ? (
+              <section className="rounded-xl border border-orange-200 bg-orange-50 p-4 shadow-sm">
+                <p className="font-bold text-slate-950">Message your tasker for cafe options</p>
+                <p className="mt-1 text-sm leading-6 text-slate-600">
+                  Your cafe inquiry fee is marked as paid. Use WhatsApp to ask what is available, choose the food, and agree on the budget with your tasker.
+                </p>
+                {whatsappHref ? (
+                  <a
+                    href={whatsappHref}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-4 flex h-12 w-full items-center justify-center rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white transition hover:bg-emerald-700"
+                  >
+                    Open WhatsApp with tasker
+                    <ExternalLink className="ml-2 h-4 w-4" />
+                  </a>
+                ) : null}
+              </section>
+            ) : null}
+
             <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start gap-3">
                 <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-sky-50 text-sky-700">
@@ -354,7 +386,7 @@ export default function TrackingClient({ token }: { token: string }) {
                     </a>
                   ) : null}
                 </div>
-                {whatsappHref && order.hasPaid ? (
+                {whatsappHref && (order.hasPaid || needsCafeDetails) ? (
                   <a
                     href={whatsappHref}
                     target="_blank"
@@ -374,8 +406,10 @@ export default function TrackingClient({ token }: { token: string }) {
                     <CreditCard className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-bold">Make payment</p>
-                    <p className="text-sm text-slate-500">Transfer to the tasker account.</p>
+                  <p className="font-bold">Make payment</p>
+                    <p className="text-sm text-slate-500">
+                      Transfer {formatCurrency(transferAmount)} to the tasker account.
+                    </p>
                   </div>
                 </div>
 
@@ -421,7 +455,7 @@ export default function TrackingClient({ token }: { token: string }) {
               </section>
             ) : null}
 
-            {order.hasPaid && whatsappHref ? (
+            {(order.hasPaid || needsCafeDetails) && whatsappHref ? (
               <a
                 href={whatsappHref}
                 target="_blank"

@@ -55,52 +55,67 @@ export async function POST(
 
     const bookedAt = new Date();
 
-    order.status = 'pending';
-    order.bookedAt = bookedAt;
-    order.cancelledAt = undefined;
-    order.taskerId = undefined;
-    order.taskerName = undefined;
-    order.acceptedBy = undefined;
-    order.acceptedAt = undefined;
-    order.paidAt = undefined;
-    order.completedAt = undefined;
-    order.hasPaid = false;
-    order.isDeclinedTask = false;
-    order.declinedAt = undefined;
-    order.declinedReason = undefined;
-    order.declinedMessage = undefined;
-    order.declinedByTaskerAt = undefined;
-    order.paymentStatus = 'unpaid';
-    order.paymentReference = undefined;
-    order.paymentLink = undefined;
-    order.paymentTransactionId = undefined;
-    order.paymentInitializedAt = undefined;
-    order.paymentVerifiedAt = undefined;
-    order.paymentFailureReason = undefined;
-    order.customerTransferredAt = undefined;
-    order.taskerHasPaid = false;
-    order.settlementStatus = 'not_due';
-    order.settlementReference = undefined;
-    order.settlementAccessCode = undefined;
-    order.settlementCheckoutUrl = undefined;
-    order.settlementTransactionId = undefined;
-    order.settlementInitializedAt = undefined;
-    order.settlementPaidAt = undefined;
-    order.settlementDueAt = undefined;
-    order.settlementFailureReason = undefined;
+    const retriedOrder = new Order({
+      userId: order.userId,
+      source: order.source,
+      customerPhone: order.customerPhone,
+      customerName: order.customerName,
+      taskType: order.taskType,
+      description: order.description,
+      amount: order.amount,
+      itemPrice: order.itemPrice,
+      commission: order.commission,
+      platformFee: order.platformFee,
+      taskerFee: order.taskerFee,
+      serviceFee: order.serviceFee,
+      pricingModel: order.pricingModel,
+      totalAmount: order.totalAmount,
+      location: order.location,
+      deliveryLocation: order.deliveryLocation,
+      store: order.store,
+      packaging: order.packaging,
+      restaurantPeopleCount: order.restaurantPeopleCount,
+      restaurantTakeawayCount: order.restaurantTakeawayCount,
+      restaurantPackagingFee: order.restaurantPackagingFee,
+      cafeInquiry: order.cafeInquiry,
+      cafeInquiryFeePaid: false,
+      cafeInquiryDetailsSubmitted: order.cafeInquiryDetailsSubmitted,
+      waterBags: order.waterBags,
+      waterFee: order.waterFee,
+      noteSize: order.noteSize,
+      numberOfPages: order.numberOfPages,
+      printingServiceType: order.printingServiceType,
+      printingNeedsEditing: order.printingNeedsEditing,
+      drawingPages: order.drawingPages,
+      deadline: order.deadline,
+      dueDate: order.dueDate,
+      copyNotesType: order.copyNotesType,
+      copyNotesPages: order.copyNotesPages,
+      deadlineDate: order.deadlineDate,
+      deadlineValue: order.deadlineValue,
+      deadlineUnit: order.deadlineUnit,
+      status: 'pending',
+      bookedAt,
+      hasPaid: false,
+      taskerHasPaid: false,
+      isDeclinedTask: false,
+      paymentProvider: 'manual_transfer',
+      paymentStatus: 'unpaid',
+      settlementStatus: 'not_due',
+    });
 
-    await order.save();
+    await retriedOrder.save();
 
-    emitOrderUpdated(order);
+    emitOrderUpdated(retriedOrder);
 
     const taskerPushResult = await sendPushNotification({
       audience: { roles: ['tasker'] },
       title: 'New Task Available',
-      body: `${formatPushTaskType(order.taskType)} in ${order.location} - NGN ${Number(
-        order.totalAmount || 0
+      body: `${formatPushTaskType(retriedOrder.taskType)} in ${retriedOrder.location} - NGN ${Number(
+        retriedOrder.totalAmount || 0
       ).toLocaleString()}`,
       url: '/available-tasks',
-      tag: `retry-task-${order._id.toString()}-${bookedAt.getTime()}`,
+      tag: `new-task-${retriedOrder._id.toString()}`,
     });
 
     if (
@@ -114,7 +129,7 @@ export async function POST(
     try {
       const adminAlertResult = await notifyAdminsOfOrderEvent({
         event: 'created',
-        order,
+        order: retriedOrder,
         actorName: session.user.name || null,
         actorEmail: session.user.email || null,
         actorRole: 'customer',
@@ -130,7 +145,7 @@ export async function POST(
       console.error('[Orders Retry Admin Notification Error]:', notificationError);
     }
 
-    return NextResponse.json(order);
+    return NextResponse.json(retriedOrder, { status: 201 });
   } catch (error) {
     console.error('[Orders Retry Error]:', error);
     return NextResponse.json(

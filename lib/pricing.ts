@@ -3,6 +3,8 @@ export const WATER_BAG_PRICE = 750
 export const WATER_BAG_FEE = 450
 export const WATER_PLATFORM_FEE_RATE = 0.24
 export const RESTAURANT_PERSON_FEE = 450
+export const CAFE_INQUIRY_EXTRA_FEE = 100
+export const CAFE_INQUIRY_SERVICE_FEE = RESTAURANT_PERSON_FEE + CAFE_INQUIRY_EXTRA_FEE
 export const RESTAURANT_MAX_PEOPLE = 3
 export const RESTAURANT_TAKEAWAY_FEE = 200
 export const SHOPPING_RITA_STORE = 'rita'
@@ -192,6 +194,7 @@ export function calculateOrderPricing(input: {
   copyNotesPages?: number
   printingServiceType?: string
   printingNeedsEditing?: boolean
+  cafeInquiry?: boolean
 }) {
   const amount = roundNaira(input.amount)
 
@@ -291,6 +294,20 @@ export function calculateOrderPricing(input: {
       restaurantTakeawayCount,
       restaurantPeopleCount
     )
+
+    if (input.cafeInquiry) {
+      return {
+        amount: restaurantPackagingFee,
+        serviceFee: CAFE_INQUIRY_SERVICE_FEE,
+        totalAmount: roundNaira(CAFE_INQUIRY_SERVICE_FEE + restaurantPackagingFee),
+        pricingModel: 'tiered' as const,
+        waterFee: 0,
+        restaurantPeopleCount,
+        restaurantTakeawayCount,
+        restaurantPackagingFee,
+      } satisfies PricingResult
+    }
+
     const serviceFee = calculateRestaurantServiceFee(restaurantPeopleCount)
 
     return {

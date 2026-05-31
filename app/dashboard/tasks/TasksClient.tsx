@@ -21,6 +21,7 @@ import { io, type Socket } from 'socket.io-client'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
+import { CAFE_INQUIRY_SERVICE_FEE } from '@/lib/pricing'
 import {
   Dialog,
   DialogContent,
@@ -48,6 +49,9 @@ interface Order {
   location: string
   store?: string
   packaging?: string
+  cafeInquiry?: boolean
+  cafeInquiryFeePaid?: boolean
+  cafeInquiryDetailsSubmitted?: boolean
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   taskerName?: string
   taskerId?: string
@@ -718,7 +722,21 @@ export default function OrdersPage() {
   }, [disconnectSocket])
 
   const transferUnderReview = Boolean(currentOrder?.isDeclinedTask)
-  const needsPayment = Boolean(currentOrder?.taskerId && !currentOrder?.hasPaid && !transferUnderReview)
+  const needsCafeDetails = Boolean(
+    currentOrder?.cafeInquiry &&
+      currentOrder.cafeInquiryFeePaid &&
+      !currentOrder.cafeInquiryDetailsSubmitted
+  )
+  const transferAmount =
+    currentOrder?.cafeInquiry && currentOrder.cafeInquiryFeePaid
+      ? Number(currentOrder.amount || 0)
+      : Number(currentOrder?.totalAmount || currentOrder?.amount || 0)
+  const needsPayment = Boolean(
+    currentOrder?.taskerId &&
+      !currentOrder?.hasPaid &&
+      !transferUnderReview &&
+      !needsCafeDetails
+  )
   const whatsappHref = taskerDetails?.phone ? getWhatsAppHref(taskerDetails.phone) : null
 
   useEffect(() => {
@@ -843,7 +861,10 @@ export default function OrdersPage() {
         setCurrentOrder(data)
         setRecentOrders((previous) => [
           data,
-          ...previous.filter((existingOrder) => existingOrder._id !== data._id),
+          ...previous.filter(
+            (existingOrder) =>
+              existingOrder._id !== data._id && existingOrder._id !== order._id
+          ),
         ])
         toast.success('Task sent again. We are looking for taskers now.')
         router.replace(`/dashboard/tasks?orderId=${data._id}`)
@@ -1070,9 +1091,13 @@ export default function OrdersPage() {
                   </div>
 
                   <div className="rounded-xl bg-slate-950 p-4 text-white">
-                    <p className="text-xs text-slate-400">Total amount to transfer to your tasker</p>
+                    <p className="text-xs text-slate-400">
+                      {currentOrder.cafeInquiry && currentOrder.cafeInquiryFeePaid
+                        ? 'Food budget to transfer to your tasker'
+                        : 'Total amount to transfer to your tasker'}
+                    </p>
                     <p className="mt-1 text-2xl font-bold">
-                      {formatCurrency(currentOrder.totalAmount || currentOrder.amount)}
+                      {formatCurrency(transferAmount)}
                     </p>
                     <div className="mt-3 flex items-center justify-between text-xs text-slate-400">
                       <span>Item budget: {formatCurrency(currentOrder.amount)}</span>
@@ -1138,6 +1163,27 @@ export default function OrdersPage() {
                 </div>
               ) : null}
 
+              {needsCafeDetails ? (
+                <div className="rounded-2xl border border-orange-200 bg-orange-50/90 p-4 dark:border-orange-900/60 dark:bg-orange-950/20">
+                  <p className="font-semibold text-slate-900 dark:text-white">
+                    Message your tasker for cafe options
+                  </p>
+                  <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
+                    Your {formatCurrency(CAFE_INQUIRY_SERVICE_FEE)} cafe inquiry service fee is marked as paid. Use WhatsApp to ask what is available, choose the food, and agree on the budget with your tasker.
+                  </p>
+                  {whatsappHref ? (
+                    <a
+                      href={whatsappHref}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-4 inline-flex h-11 w-full items-center justify-center rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white transition hover:bg-emerald-700"
+                    >
+                      Open WhatsApp
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
+
               {transferUnderReview ? (
                 <div className="rounded-2xl border border-rose-200 bg-rose-50/90 p-4 dark:border-rose-900/60 dark:bg-rose-950/20">
                   <div className="flex items-start gap-3">
@@ -1186,7 +1232,7 @@ export default function OrdersPage() {
                           </p>
                         ) : null}
                       </div>
-                      {currentOrder.hasPaid && whatsappHref ? (
+                      {(currentOrder.hasPaid || needsCafeDetails) && whatsappHref ? (
                         <a
                           href={whatsappHref}
                           target="_blank"
@@ -1201,6 +1247,11 @@ export default function OrdersPage() {
                       <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200">
                         Call or message this number on WhatsApp and stay online so your tasker can
                         reach you quickly.
+                      </div>
+                    ) : null}
+                    {needsCafeDetails ? (
+                      <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50/80 px-4 py-3 text-sm text-orange-800 dark:border-orange-900/60 dark:bg-orange-950/20 dark:text-orange-200">
+                        Ask what is in cafe on WhatsApp, then agree on the food and budget with your tasker.
                       </div>
                     ) : null}
                   </div>
@@ -1425,7 +1476,7 @@ export default function OrdersPage() {
             <DialogDescription>
               Send{' '}
               <span className="font-semibold text-slate-900 dark:text-white">
-                {formatCurrency(currentOrder?.totalAmount || currentOrder?.amount || 0)}
+                {formatCurrency(transferAmount)}
               </span>{' '}
               to the account below, then tap &quot;I&apos;ve paid&quot;.
             </DialogDescription>
@@ -1437,7 +1488,7 @@ export default function OrdersPage() {
                 Transfer Amount
               </p>
               <p className="mt-2 text-3xl font-bold">
-                {formatCurrency(currentOrder?.totalAmount || currentOrder?.amount || 0)}
+                {formatCurrency(transferAmount)}
               </p>
             </div>
 

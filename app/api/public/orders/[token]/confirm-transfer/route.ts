@@ -40,6 +40,20 @@ export async function POST(
       );
     }
 
+    if (order.cafeInquiry && !order.cafeInquiryFeePaid) {
+      order.cafeInquiryFeePaid = true;
+      order.paymentProvider = 'manual_transfer';
+      order.paymentStatus = 'unpaid';
+      order.paymentVerifiedAt = new Date();
+      order.customerTransferredAt = new Date();
+      order.paymentFailureReason = undefined;
+      await order.save();
+
+      emitOrderUpdated(order);
+
+      return NextResponse.json({ ok: true });
+    }
+
     if (order.hasPaid && order.paymentStatus === 'paid') {
       return NextResponse.json({ ok: true });
     }

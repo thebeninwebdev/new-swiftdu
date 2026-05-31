@@ -214,7 +214,7 @@ export default function AdminOrdersPage() {
   }, [admin, fetchOrders])
 
   // Handle order actions
-  const handleOrderAction = async (orderId: string, action: 'cancel' | 'complete') => {
+  const handleOrderAction = async (orderId: string, action: 'cancel' | 'complete' | 'clear-declined') => {
     try {
       const res = await fetch(`/api/admin/orders/${orderId}`, {
         method: 'PATCH',
@@ -230,6 +230,7 @@ export default function AdminOrdersPage() {
 
       toast.success(
         action === 'cancel' ? 'Order cancelled' :
+        action === 'clear-declined' ? 'Declined task flag cleared' :
         'Order marked as completed'
       )
 
@@ -469,6 +470,17 @@ export default function AdminOrdersPage() {
                             <CheckCircle className="w-4 h-4" />
                           </Button>
                         )}
+
+                        {order.isDeclinedTask ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleOrderAction(order._id, 'clear-declined')}
+                            title="Clear declined task flag"
+                          >
+                            Clear declined
+                          </Button>
+                        ) : null}
                       </div>
                     </div>
                   </div>
@@ -614,6 +626,14 @@ export default function AdminOrdersPage() {
                                   Flagged {new Date(order.declinedAt).toLocaleString()}
                                 </p>
                               ) : null}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleOrderAction(order._id, 'clear-declined')}
+                                className="mt-3 border-red-200 bg-white text-red-700 hover:bg-red-100"
+                              >
+                                Set declined flag to false
+                              </Button>
                             </div>
                           </div>
                         </div>

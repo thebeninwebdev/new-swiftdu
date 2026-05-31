@@ -145,7 +145,7 @@ export default function ErrandDetailPage() {
   const [errand, setErrand] = useState<ErrandDetail | null>(null)
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [loading, setLoading] = useState(true)
-  const [actionLoading, setActionLoading] = useState<'complete' | 'cancel' | 'report' | 'people' | null>(null)
+  const [actionLoading, setActionLoading] = useState<'complete' | 'cancel' | 'report' | 'people' | 'clearDeclined' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [showConfirmModal, setShowConfirmModal] = useState<'complete' | 'cancel' | null>(null)
 
@@ -374,6 +374,39 @@ export default function ErrandDetailPage() {
     } catch (reportError) {
       console.error('Failed to report transfer issue', reportError)
       setError('Failed to report transfer issue')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleClearDeclinedTask = async () => {
+    try {
+      setActionLoading('clearDeclined')
+      setError(null)
+
+      const response = await fetchWithSocketPause(`/api/orders/${errandId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clearDeclinedTask: true }),
+      })
+
+      const payload = await response.json()
+
+      if (!response.ok) {
+        setError(payload.error || 'Failed to clear declined task flag')
+        return
+      }
+
+      setErrand(payload)
+      previousSnapshotRef.current = {
+        status: payload.status,
+        hasPaid: Boolean(payload.hasPaid),
+        isDeclinedTask: Boolean(payload.isDeclinedTask),
+      }
+      toast.success('Declined task flag cleared.')
+    } catch (clearError) {
+      console.error('Failed to clear declined task flag', clearError)
+      setError('Failed to clear declined task flag')
     } finally {
       setActionLoading(null)
     }
@@ -879,6 +912,21 @@ export default function ErrandDetailPage() {
                           {errand.declinedMessage ||
                             'The transaction was not found. Admin will review this dispute and contact the customer within 24 hours.'}
                         </p>
+                        <Button
+                          variant="outline"
+                          onClick={() => void handleClearDeclinedTask()}
+                          disabled={actionLoading === 'clearDeclined'}
+                          className="mt-3 h-10 rounded-xl border-rose-200 bg-white text-rose-700 hover:bg-rose-100 dark:border-rose-900 dark:bg-slate-950 dark:text-rose-200 dark:hover:bg-rose-950/40"
+                        >
+                          {actionLoading === 'clearDeclined' ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Clearing...
+                            </>
+                          ) : (
+                            'Set declined flag to false'
+                          )}
+                        </Button>
                       </div>
                     </div>
                   </div>

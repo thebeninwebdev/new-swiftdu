@@ -23,6 +23,9 @@ export interface IOrder extends Document {
   restaurantPeopleCount?: number;
   restaurantTakeawayCount?: number;
   restaurantPackagingFee?: number;
+  cafeInquiry?: boolean;
+  cafeInquiryFeePaid?: boolean;
+  cafeInquiryDetailsSubmitted?: boolean;
   waterBags?: number;
   waterFee?: number;
   noteSize?: 'small' | 'big';
@@ -173,6 +176,19 @@ const orderSchema = new Schema<IOrder>(
       type: Number,
       default: 0,
       min: 0,
+    },
+    cafeInquiry: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    cafeInquiryFeePaid: {
+      type: Boolean,
+      default: false,
+    },
+    cafeInquiryDetailsSubmitted: {
+      type: Boolean,
+      default: false,
     },
     waterBags: {
       type: Number,

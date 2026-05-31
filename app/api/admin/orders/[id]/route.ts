@@ -29,7 +29,7 @@ export async function PATCH(
     const { id } = await context.params;
     const { action } = await req.json()
 
-    if (!['cancel', 'complete'].includes(action)) {
+    if (!['cancel', 'complete', 'clear-declined'].includes(action)) {
       return NextResponse.json(
         { error: 'Invalid action' },
         { status: 400 }
@@ -49,6 +49,14 @@ export async function PATCH(
 
     ensureBookedAt(order)
 
+    const clearDeclinedTask = () => {
+      order.isDeclinedTask = false
+      order.declinedAt = undefined
+      order.declinedReason = undefined
+      order.declinedMessage = undefined
+      order.declinedByTaskerAt = undefined
+    }
+
     if (action === 'cancel') {
       order.status = 'cancelled'
       order.cancelledAt = new Date()
@@ -67,6 +75,15 @@ export async function PATCH(
     } else if (action === 'complete') {
       order.status = 'completed'
       order.completedAt = new Date()
+    } else if (action === 'clear-declined') {
+      if (!order.isDeclinedTask) {
+        return NextResponse.json(
+          { error: 'Only declined tasks can be cleared with this action.' },
+          { status: 400 }
+        )
+      }
+
+      clearDeclinedTask()
     }
 
     await order.save()

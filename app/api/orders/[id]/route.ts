@@ -86,7 +86,45 @@ export async function PATCH(
       copyNotesPages,
       status,
       hasPaid,
+      clearDeclinedTask,
+      cafeInquiry,
     } = body;
+
+    const resetDeclinedTask = () => {
+      order.isDeclinedTask = false;
+      order.declinedAt = undefined;
+      order.declinedReason = undefined;
+      order.declinedMessage = undefined;
+      order.declinedByTaskerAt = undefined;
+    };
+
+    if (clearDeclinedTask === true) {
+      if (!isTaskerOwner || isUserOwner) {
+        return NextResponse.json(
+          { error: 'Only the assigned tasker can clear this declined task flag.' },
+          { status: 403 }
+        );
+      }
+
+      if (order.status !== 'in_progress') {
+        return NextResponse.json(
+          { error: 'Only in-progress tasks can be cleared from the tasker dashboard.' },
+          { status: 400 }
+        );
+      }
+
+      if (!order.isDeclinedTask) {
+        return NextResponse.json(
+          { error: 'This task is not currently declined.' },
+          { status: 400 }
+        );
+      }
+
+      resetDeclinedTask();
+      await order.save();
+      emitOrderUpdated(order);
+      return NextResponse.json(order);
+    }
 
     if (
       taskType !== undefined ||
@@ -105,7 +143,8 @@ export async function PATCH(
       copyNotesType !== undefined ||
       copyNotesPages !== undefined
       || printingServiceType !== undefined
-      || printingNeedsEditing !== undefined
+      || printingNeedsEditing !== undefined ||
+      cafeInquiry !== undefined
     ) {
       const isOnlyRestaurantPeopleUpdate =
         restaurantPeopleCount !== undefined &&
@@ -196,6 +235,45 @@ export async function PATCH(
         );
       }
 
+      if (
+        order.cafeInquiry &&
+        order.cafeInquiryFeePaid &&
+        !order.cafeInquiryDetailsSubmitted &&
+        description !== undefined &&
+        amount !== undefined
+      ) {
+        const nextDescription = String(description || '').trim();
+        const nextAmount = Number(amount);
+
+        if (nextDescription.length < 5) {
+          return NextResponse.json(
+            { error: 'Describe what you want after the cafe update.' },
+            { status: 400 }
+          );
+        }
+
+        if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+          return NextResponse.json(
+            { error: 'Enter a valid food budget.' },
+            { status: 400 }
+          );
+        }
+
+        order.description = nextDescription;
+        order.amount = nextAmount;
+        order.itemPrice = nextAmount;
+        order.totalAmount = nextAmount;
+        order.cafeInquiryDetailsSubmitted = true;
+        order.hasPaid = false;
+        order.paidAt = undefined;
+        order.paymentStatus = 'unpaid';
+        order.paymentFailureReason = undefined;
+        order.customerTransferredAt = undefined;
+        await order.save();
+        emitOrderUpdated(order);
+        return NextResponse.json(order);
+      }
+
       if (order.status !== 'pending' || order.taskerId) {
         return NextResponse.json(
           { error: 'This order can only be edited before a tasker accepts it' },
@@ -204,6 +282,7 @@ export async function PATCH(
       }
 
       const nextTaskType = taskType !== undefined ? String(taskType) : order.taskType;
+      const nextCafeInquiry = nextTaskType === 'restaurant' && cafeInquiry === true;
       const nextDescription =
         description !== undefined ? String(description).trim() : order.description;
       const nextAmount =
@@ -301,7 +380,7 @@ export async function PATCH(
         );
       }
 
-      if (descriptionMentionsWater(nextDescription) && nextTaskType !== WATER_TASK_TYPE) {
+      if (nextDescription && descriptionMentionsWater(nextDescription) && nextTaskType !== WATER_TASK_TYPE) {
         return NextResponse.json(
           {
             error:
@@ -411,6 +490,7 @@ export async function PATCH(
         numberOfPages: nextNumberOfPages,
         printingServiceType: nextPrintingServiceType,
         printingNeedsEditing: nextPrintingNeedsEditing,
+        cafeInquiry: nextCafeInquiry,
       });
       const settlement =
         pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'
@@ -432,6 +512,9 @@ export async function PATCH(
       order.serviceFee = settlement.serviceFee;
       order.pricingModel = pricing.pricingModel;
       order.totalAmount = pricing.totalAmount;
+      order.cafeInquiry = nextCafeInquiry;
+      order.cafeInquiryFeePaid = false;
+      order.cafeInquiryDetailsSubmitted = !nextCafeInquiry;
       order.waterBags = pricing.waterBags || undefined;
       order.waterFee = pricing.waterFee;
       order.noteSize = pricing.noteSize;
@@ -444,11 +527,7 @@ export async function PATCH(
       order.hasPaid = false;
       order.paidAt = undefined;
       order.taskerHasPaid = false;
-      order.isDeclinedTask = false;
-      order.declinedAt = undefined;
-      order.declinedReason = undefined;
-      order.declinedMessage = undefined;
-      order.declinedByTaskerAt = undefined;
+      resetDeclinedTask();
       order.paymentProvider = 'manual_transfer';
       order.paymentStatus = 'unpaid';
       order.paymentReference = undefined;

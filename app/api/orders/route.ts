@@ -15,6 +15,7 @@ import {
   normalizePrintingServiceType,
   PRINTING_TASK_TYPE,
   RESTAURANT_MAX_PEOPLE,
+  CAFE_INQUIRY_SERVICE_FEE,
   WATER_TASK_TYPE,
 } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
@@ -57,6 +58,7 @@ export async function POST(request: NextRequest) {
       copyNotesType,
       copyNotesPages,
       deadlineDate,
+      cafeInquiry,
     } = body;
 
     // Validation
@@ -73,6 +75,7 @@ export async function POST(request: NextRequest) {
     const parsedAmount = Number(amount);
     const normalizedDescription = String(description || '').trim();
     const normalizedTaskType = String(taskType || '').trim();
+    const isCafeInquiry = normalizedTaskType === 'restaurant' && cafeInquiry === true;
     const parsedRestaurantPeopleCount =
       normalizedTaskType === 'restaurant' ? Number(restaurantPeopleCount || 1) : undefined;
     const normalizedRestaurantPeopleCount =
@@ -119,6 +122,7 @@ export async function POST(request: NextRequest) {
       normalizedTaskType !== 'copy_notes' &&
       normalizedTaskType !== PRINTING_TASK_TYPE &&
       normalizedTaskType !== WATER_TASK_TYPE &&
+      !isCafeInquiry &&
       (amount === undefined ||
         amount === null ||
         amount === '' ||
@@ -165,7 +169,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (descriptionMentionsWater(normalizedDescription) && normalizedTaskType !== WATER_TASK_TYPE) {
+    if (normalizedDescription && descriptionMentionsWater(normalizedDescription) && normalizedTaskType !== WATER_TASK_TYPE) {
       return NextResponse.json(
         {
           error:
@@ -233,6 +237,7 @@ export async function POST(request: NextRequest) {
       store: typeof store === 'string' ? store : undefined,
       restaurantPeopleCount: normalizedRestaurantPeopleCount,
       restaurantTakeawayCount: normalizedRestaurantTakeawayCount,
+      cafeInquiry: isCafeInquiry,
       waterBags: parsedWaterBags,
       noteSize: normalizedNoteSize,
       numberOfPages: parsedNumberOfPages,
@@ -276,6 +281,9 @@ export async function POST(request: NextRequest) {
       restaurantPeopleCount: pricing.restaurantPeopleCount,
       restaurantTakeawayCount: pricing.restaurantTakeawayCount,
       restaurantPackagingFee: pricing.restaurantPackagingFee || 0,
+      cafeInquiry: isCafeInquiry,
+      cafeInquiryFeePaid: false,
+      cafeInquiryDetailsSubmitted: !isCafeInquiry,
       waterBags: pricing.waterBags || undefined,
       waterFee: pricing.waterFee,
       noteSize: pricing.noteSize,
@@ -305,7 +313,9 @@ export async function POST(request: NextRequest) {
     const taskerPushResult = await sendPushNotification({
       audience: { roles: ['tasker'] },
       title: 'New Task Available',
-      body: `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${pricing.totalAmount.toLocaleString()}`,
+      body: isCafeInquiry
+        ? `Cafe inquiry in ${location} - NGN ${CAFE_INQUIRY_SERVICE_FEE.toLocaleString()} service fee`
+        : `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${pricing.totalAmount.toLocaleString()}`,
       url: '/available-tasks',
       tag: `new-task-${order._id.toString()}`,
     });

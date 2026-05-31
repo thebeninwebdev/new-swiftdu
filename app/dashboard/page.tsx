@@ -38,6 +38,8 @@ import {
   PRINTING_TASK_TYPE,
   RESTAURANT_MAX_PEOPLE,
   RESTAURANT_TAKEAWAY_FEE,
+  CAFE_INQUIRY_EXTRA_FEE,
+  CAFE_INQUIRY_SERVICE_FEE,
   WATER_BAG_PRICE,
   WATER_BAG_FEE,
   WATER_TASK_TYPE,
@@ -63,6 +65,7 @@ interface ErrandData {
   printingNeedsEditing?: string
   deadline?: string
   packaging?: string
+  cafeInquiry?: boolean
   restaurantItemPrice: string
   restaurantPeople: string
   restaurantTakeawayCount: string
@@ -237,6 +240,7 @@ function TypeTypingEffect({
   const timeoutRef = useRef<number | null>(null)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setDisplayed('')
     setIsDone(false)
     indexRef.current = 0
@@ -305,6 +309,7 @@ export default function ErrandWizardPage() {
     printingNeedsEditing: '',
     deadline: '',
     packaging: '',
+    cafeInquiry: false,
     restaurantItemPrice: '',
     restaurantPeople: '1',
     restaurantTakeawayCount: '',
@@ -488,6 +493,7 @@ export default function ErrandWizardPage() {
   }, [disconnectSocket])
 
   const restaurantFoodBudget = parseMoneyInput(formData.restaurantItemPrice)
+  const isCafeInquiry = formData.taskType === 'restaurant' && formData.cafeInquiry === true
   const restaurantPeopleCount = Number(formData.restaurantPeople || 1)
   const normalizedRestaurantPeopleCount =
     Number.isInteger(restaurantPeopleCount) && restaurantPeopleCount > 0
@@ -500,7 +506,9 @@ export default function ErrandWizardPage() {
       : 0
   const restaurantPackagingFee = normalizedRestaurantTakeawayCount * RESTAURANT_TAKEAWAY_FEE
   const restaurantBudget = restaurantFoodBudget
-  const restaurantDescription = formData.description.trim()
+  const restaurantDescription = isCafeInquiry
+    ? formData.description.trim() || 'Text me what is in cafe'
+    : formData.description.trim()
   const shoppingBudget = parseMoneyInput(formData.amount)
   const shoppingDescription = formData.description.trim()
   const waterBags = Number(formData.waterBags || 0)
@@ -543,6 +551,7 @@ export default function ErrandWizardPage() {
     numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
     printingServiceType: formData.printingServiceType,
     printingNeedsEditing: formData.printingNeedsEditing === 'yes',
+    cafeInquiry: isCafeInquiry,
   })
   const shouldShowTieredServiceFee =
     pricing.pricingModel === 'tiered' &&
@@ -673,6 +682,7 @@ export default function ErrandWizardPage() {
         value === PRINTING_TASK_TYPE ? previous.printingNeedsEditing : '',
       deadline: value === 'copy_notes' ? previous.deadline : '',
       packaging: value === 'restaurant' ? previous.packaging : '',
+      cafeInquiry: value === 'restaurant' ? previous.cafeInquiry : false,
       restaurantTakeawayCount:
         value === 'restaurant' ? previous.restaurantTakeawayCount : '',
       amount:
@@ -727,13 +737,13 @@ if (stepNumber === 2) {
   }
 
   if (formData.taskType === 'restaurant') {
-    if (!restaurantDescription) {
+    if (!isCafeInquiry && !restaurantDescription) {
       nextErrors.description = 'Describe what you want to order.'
-    } else if (restaurantDescription.length < 5) {
+    } else if (!isCafeInquiry && restaurantDescription.length < 5) {
       nextErrors.description = 'Use at least 5 characters.'
     }
 
-    if (!Number.isFinite(restaurantFoodBudget) || restaurantFoodBudget <= 0) {
+    if (!isCafeInquiry && (!Number.isFinite(restaurantFoodBudget) || restaurantFoodBudget <= 0)) {
       nextErrors.restaurantItemPrice = 'Enter a valid food budget.'
     }
   }
@@ -882,6 +892,7 @@ if (stepNumber === packagingStep) {
           ...formData,
           description: formData.taskType === WATER_TASK_TYPE ? '' : description,
           amount: String(amount),
+          cafeInquiry: isCafeInquiry,
           restaurantPeopleCount:
             formData.taskType === 'restaurant'
               ? normalizedRestaurantPeopleCount
@@ -917,6 +928,7 @@ if (stepNumber === packagingStep) {
         printingNeedsEditing: '',
         deadline: '',
         packaging: '',
+        cafeInquiry: false,
         restaurantItemPrice: '',
         restaurantPeople: '1',
         restaurantTakeawayCount: '',
@@ -1384,6 +1396,33 @@ if (stepNumber === packagingStep) {
                   ) : null}
                   {formData.taskType === 'restaurant' ? (
                     <div className="space-y-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          pauseRealtime()
+                          setFormData((previous) => ({
+                            ...previous,
+                            cafeInquiry: !previous.cafeInquiry,
+                            description: !previous.cafeInquiry ? '' : previous.description,
+                            restaurantItemPrice: !previous.cafeInquiry ? '' : previous.restaurantItemPrice,
+                            packaging: !previous.cafeInquiry ? '' : previous.packaging,
+                            restaurantTakeawayCount: !previous.cafeInquiry ? '0' : previous.restaurantTakeawayCount,
+                          }))
+                          clearError('description')
+                          clearError('restaurantItemPrice')
+                        }}
+                        className={`w-full rounded-2xl border-2 px-4 py-3 text-left transition ${
+                          isCafeInquiry
+                            ? 'border-orange-500 bg-orange-50 text-orange-900 dark:bg-orange-950/30 dark:text-orange-100'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                        }`}
+                      >
+                        <span className="block font-bold">Text me what is in cafe</span>
+                        <span className="mt-1 block text-sm">
+                          Adds {formatNaira(CAFE_INQUIRY_EXTRA_FEE)} to the normal restaurant service fee. You can add your food description and budget after the tasker checks the cafe.
+                        </span>
+                      </button>
+                      {!isCafeInquiry ? (
                       <div>
                         <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                           <ShoppingBag className="h-4 w-4 text-orange-500" />
@@ -1435,6 +1474,8 @@ if (stepNumber === packagingStep) {
                         ) : null}
                         {errors.description ? <p className="mt-2 text-sm text-red-500">{errors.description}</p> : null}
                       </div>
+                      ) : null}
+                      {!isCafeInquiry ? (
                       <div>
                         <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                           <Wallet className="h-4 w-4 text-orange-500" />
@@ -1460,6 +1501,7 @@ if (stepNumber === packagingStep) {
                         </p>
                         {errors.restaurantItemPrice ? <p className="mt-2 text-sm text-red-500">{errors.restaurantItemPrice}</p> : null}
                       </div>
+                      ) : null}
                       <div>
                         <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                           <Wallet className="h-4 w-4 text-orange-500" />
@@ -1498,7 +1540,9 @@ if (stepNumber === packagingStep) {
                       </div>
                       <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
                         <span className="block pt-1 font-semibold">
-                          If taskers notice the food is for multiple people, they can update your order price before you pay.
+                          {isCafeInquiry
+                            ? `Tasker will notify you of available food before you make a decision.`
+                            : 'If taskers notice the food is for multiple people, they can update your order price before you pay.'}
                         </span>
                         {shouldShowTieredServiceFee ? (
                           <span className="block pt-1 font-semibold">
@@ -1655,7 +1699,7 @@ if (stepNumber === packagingStep) {
                     <div>
                       <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Packaging</h2>
                       <p className="mt-2 text-slate-500 dark:text-slate-400">
-                        <TypeTypingEffect text={packagingCopy.subtitle} speed={20} />
+                        {packagingCopy.subtitle}
                       </p>
                     </div>
                     <Button
@@ -1870,12 +1914,6 @@ if (stepNumber === packagingStep) {
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between text-sm"><span className="text-slate-500">Takeaway packs</span><span className="font-medium">{formatNaira(restaurantPackagingFee)}</span></div> : null}
                       <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span><span className="font-medium">{formatNaira(pricing.serviceFee)}</span></div>
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(pricing.totalAmount)}</span></div>
-                    </div>
-                  </div>
-                  <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
-                    <div className="flex items-start gap-3">
-                  <div className="rounded-full bg-blue-100 p-2 text-blue-600 dark:bg-blue-900/70 dark:text-blue-300"><Info className="h-4 w-4" /></div>
-                      <p>After a tasker accepts, the app moves you into a payment step where you see the tasker&apos;s bank details, make payment, and confirm it inside the tracker.</p>
                     </div>
                   </div>
                   {formData.taskType === 'restaurant' ? (

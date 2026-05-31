@@ -4,6 +4,7 @@ import { Types } from "mongoose";
 import { getExcoAccess, type ExcoRole } from "@/lib/exco";
 import { connectDB } from "@/lib/db";
 import { emitOrderUpdated } from "@/lib/socket";
+import { syncTaskerSettlementStatus } from "@/lib/tasker-settlement";
 import DryCleaner from "@/models/dry-cleaner";
 import { Order } from "@/models/order";
 import { Review } from "@/models/review";
@@ -11,7 +12,14 @@ import Support from "@/models/support";
 import Tasker from "@/models/tasker";
 import { User } from "@/models/user";
 
-type Resource = "taskers" | "dry-cleaners" | "reviews" | "users" | "support" | "orders";
+type Resource =
+  | "taskers"
+  | "dry-cleaners"
+  | "reviews"
+  | "users"
+  | "support"
+  | "orders"
+  | "failed-settlements";
 
 const RESOURCE_ACCESS: Record<Resource, ExcoRole[]> = {
   taskers: ["COO", "CFO", "CTO"],
@@ -20,6 +28,7 @@ const RESOURCE_ACCESS: Record<Resource, ExcoRole[]> = {
   users: ["COO", "CMO", "CTO"],
   support: ["CTO"],
   orders: ["COO", "CTO"],
+  "failed-settlements": ["CTO"],
 };
 
 function canAccess(resource: Resource, role: ExcoRole | null) {
@@ -33,7 +42,8 @@ function normalizeResource(value: string | null): Resource | null {
     value === "reviews" ||
     value === "users" ||
     value === "support" ||
-    value === "orders"
+    value === "orders" ||
+    value === "failed-settlements"
   ) {
     return value;
   }
@@ -303,6 +313,129 @@ async function getOrders() {
   }));
 }
 
+async function getFailedSettlements() {
+  const rows = await Order.aggregate<{
+    id: string;
+    orderDescription?: string;
+    taskType?: string;
+    location?: string;
+    amount?: number;
+    store?: string;
+    status?: string;
+    customerName?: string;
+    customerEmail?: string;
+    taskerId?: string;
+    taskerName?: string;
+    taskerEmail?: string;
+    taskerPhone?: string;
+    acceptedAt?: Date | null;
+    createdAt?: Date | null;
+    settlementFailureReason?: string;
+    paymentStatus?: string;
+    settlementStatus?: string;
+  }>([
+    { $match: { settlementStatus: "failed" } },
+    { $sort: { updatedAt: -1, createdAt: -1 } },
+    { $limit: 50 },
+    {
+      $addFields: {
+        userObjectId: {
+          $convert: {
+            input: "$userId",
+            to: "objectId",
+            onError: null,
+            onNull: null,
+          },
+        },
+        taskerObjectId: {
+          $convert: {
+            input: "$taskerId",
+            to: "objectId",
+            onError: null,
+            onNull: null,
+          },
+        },
+      },
+    },
+    {
+      $lookup: {
+        from: "user",
+        localField: "userObjectId",
+        foreignField: "_id",
+        as: "customer",
+      },
+    },
+    { $unwind: { path: "$customer", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "taskers",
+        localField: "taskerObjectId",
+        foreignField: "_id",
+        as: "tasker",
+      },
+    },
+    { $unwind: { path: "$tasker", preserveNullAndEmptyArrays: true } },
+    {
+      $lookup: {
+        from: "user",
+        localField: "tasker.userId",
+        foreignField: "_id",
+        as: "taskerUser",
+      },
+    },
+    { $unwind: { path: "$taskerUser", preserveNullAndEmptyArrays: true } },
+    {
+      $project: {
+        _id: 0,
+        id: { $toString: "$_id" },
+        orderDescription: { $ifNull: ["$description", "$taskType"] },
+        taskType: "$taskType",
+        location: "$location",
+        amount: "$amount",
+        store: { $ifNull: ["$store", ""] },
+        status: "$status",
+        customerName: {
+          $ifNull: ["$customer.name", { $ifNull: ["$customerName", "Unknown customer"] }],
+        },
+        customerEmail: { $ifNull: ["$customer.email", ""] },
+        taskerId: { $ifNull: ["$taskerId", ""] },
+        taskerName: {
+          $ifNull: ["$taskerUser.name", { $ifNull: ["$taskerName", "Unassigned"] }],
+        },
+        taskerEmail: { $ifNull: ["$taskerUser.email", ""] },
+        taskerPhone: { $ifNull: ["$tasker.phone", ""] },
+        acceptedAt: "$acceptedAt",
+        createdAt: "$createdAt",
+        settlementFailureReason: { $ifNull: ["$settlementFailureReason", "No failure reason recorded"] },
+        paymentStatus: { $ifNull: ["$paymentStatus", "unpaid"] },
+        settlementStatus: { $ifNull: ["$settlementStatus", "failed"] },
+      },
+    },
+  ]);
+
+  return rows.map((row) => ({
+    id: row.id,
+    orderDescription: row.orderDescription || row.taskType || "Task",
+    taskType: row.taskType || "others",
+    location: row.location || "Unknown location",
+    amount: row.amount || 0,
+    store: row.store || "Not set",
+    status: row.status || "pending",
+    customerName: row.customerName || "Unknown customer",
+    customerEmail: row.customerEmail || "",
+    taskerId: row.taskerId || "",
+    taskerName: row.taskerName || "Unassigned",
+    taskerEmail: row.taskerEmail || "",
+    taskerPhone: row.taskerPhone || "",
+    acceptedAt: row.acceptedAt ? row.acceptedAt.toISOString() : null,
+    createdAt: row.createdAt ? row.createdAt.toISOString() : null,
+    description: row.orderDescription || row.taskType || "Task",
+    settlementFailureReason: row.settlementFailureReason || "No failure reason recorded",
+    paymentStatus: row.paymentStatus || "unpaid",
+    settlementStatus: row.settlementStatus || "failed",
+  }));
+}
+
 async function getSupportTickets() {
   const tickets = await Support.find()
     .sort({ createdAt: -1 })
@@ -355,6 +488,9 @@ export async function GET(request: NextRequest) {
   if (resource === "dry-cleaners") return NextResponse.json({ items: await getDryCleaners() });
   if (resource === "reviews") return NextResponse.json({ items: await getReviews() });
   if (resource === "orders") return NextResponse.json({ items: await getOrders() });
+  if (resource === "failed-settlements") {
+    return NextResponse.json({ items: await getFailedSettlements() });
+  }
   if (resource === "users") {
     return NextResponse.json({ items: await getUsers(access.excoRole as ExcoRole) });
   }
@@ -499,6 +635,41 @@ export async function PATCH(request: NextRequest) {
 
     await order.save();
     emitOrderUpdated(order);
+    return NextResponse.json({ ok: true });
+  }
+
+  if (resource === "failed-settlements") {
+    const { id, action } = body as { id?: string; action?: string };
+
+    if (!id || action !== "verify-settlement") {
+      return NextResponse.json({ error: "Invalid settlement action" }, { status: 400 });
+    }
+
+    if (access.excoRole !== "CTO") {
+      return NextResponse.json({ error: "Only CTO can verify failed settlements" }, { status: 403 });
+    }
+
+    const order = await Order.findById(id);
+    if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+
+    if (order.settlementStatus !== "failed") {
+      return NextResponse.json(
+        { error: "Only failed settlements can be verified here." },
+        { status: 400 }
+      );
+    }
+
+    order.settlementStatus = "paid";
+    order.taskerHasPaid = true;
+    order.settlementPaidAt = new Date();
+    order.settlementFailureReason = undefined;
+
+    await order.save();
+    if (order.taskerId) {
+      await syncTaskerSettlementStatus(order.taskerId);
+    }
+    emitOrderUpdated(order);
+
     return NextResponse.json({ ok: true });
   }
 
