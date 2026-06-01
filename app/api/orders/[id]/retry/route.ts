@@ -8,7 +8,6 @@ import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications';
-import { createOrderTrackingToken } from '@/lib/order-tracking';
 import {
   getUserLookupConditions,
   hasActiveServiceFeeDiscountReservation,
@@ -99,7 +98,6 @@ export async function POST(
     const retriedOrder = new Order({
       userId: order.userId,
       source: order.source,
-      trackingToken: createOrderTrackingToken(),
       customerPhone: order.customerPhone,
       customerName: order.customerName,
       taskType: order.taskType,

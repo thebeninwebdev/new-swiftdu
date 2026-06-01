@@ -298,7 +298,7 @@ function SearchingTaskerOverlay({
               <button
                 type="button"
                 onClick={onCancel}
-                disabled={isBusy}
+                disabled={isBusy} 
                 className="flex w-16 shrink-0 flex-col items-center gap-1 rounded-2xl bg-white/10 px-2 py-3 text-rose-100 ring-1 ring-white/15 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {isCancelling ? (
@@ -961,7 +961,7 @@ export default function OrdersPage() {
   const isSearchingForTasker = currentOrder?.status === 'pending'
 
   return (
-    <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+    <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 ">
       {currentOrder && isSearchingForTasker ? (
         <SearchingTaskerOverlay
           order={currentOrder}
@@ -972,7 +972,7 @@ export default function OrdersPage() {
         />
       ) : null}
 
-      <div className="sticky top-16 z-10 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 lg:top-0">
+      {/* <div className="sticky top-16 z-10 border-b border-slate-200 bg-white/95 px-4 py-3 shadow-sm backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 lg:top-0">
         <div className="mx-auto flex max-w-2xl items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
@@ -995,7 +995,7 @@ export default function OrdersPage() {
             <RefreshCw className={`h-5 w-5 ${refreshing ? 'animate-spin' : ''}`} />
           </button>
         </div>
-      </div>
+      </div> */}
 
       <div className="mx-auto max-w-2xl px-3 py-4 sm:px-4 sm:py-6">
         <div className="space-y-4">

@@ -28,7 +28,6 @@ import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications';
-import { createOrderTrackingToken } from '@/lib/order-tracking';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes']);
 
@@ -335,7 +334,6 @@ export async function POST(request: NextRequest) {
     const order = new Order({
       userId: session.user.id,
       source: 'website',
-      trackingToken: createOrderTrackingToken(),
       taskType: normalizedTaskType,
       description: normalizedDescription,
       amount: pricing.amount,

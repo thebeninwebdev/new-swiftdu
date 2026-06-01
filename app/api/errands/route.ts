@@ -9,7 +9,6 @@ import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications'
-import { createOrderTrackingToken, getOrderTrackingUrl } from '@/lib/order-tracking'
 import { sendWhatsAppText } from '@/lib/whatsapp/send-message'
 
 export const dynamic = 'force-dynamic'
@@ -154,7 +153,6 @@ export async function POST(request: NextRequest) {
     }
 
     const acceptedAt = new Date()
-    const trackingToken = order.trackingToken || createOrderTrackingToken()
 
     const updatedOrder = await Order.findOneAndUpdate(
       { _id: orderId, status: 'pending' },
@@ -167,7 +165,6 @@ export async function POST(request: NextRequest) {
           paymentProvider: 'manual_transfer',
           taskerId: tasker._id.toString(),
           taskerName: taskerName || session.user.name || 'Anonymous',
-          trackingToken,
         },
       },
       { new: true }
@@ -198,14 +195,11 @@ export async function POST(request: NextRequest) {
 
     if (updatedOrder.source === 'whatsapp' && updatedOrder.customerPhone) {
       try {
-        const trackingUrl = getOrderTrackingUrl(updatedOrder.trackingToken)
-
         await sendWhatsAppText(
           updatedOrder.customerPhone,
           `${updatedOrder.taskerName || 'A tasker'} has accepted your SwiftDU order.
 
-Track the order and make payment here:
-${trackingUrl}`
+Please stay close to WhatsApp. SwiftDU will contact you with the next step.`
         )
       } catch (whatsAppError) {
         console.error('[Errands Accept WhatsApp Notification]:', whatsAppError)

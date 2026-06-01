@@ -41,7 +41,6 @@ import {
   RESTAURANT_MAX_PEOPLE,
   RESTAURANT_TAKEAWAY_FEE,
   CAFE_INQUIRY_EXTRA_FEE,
-  CAFE_INQUIRY_SERVICE_FEE,
   WATER_BAG_PRICE,
   WATER_BAG_FEE,
   WATER_TASK_TYPE,
@@ -1044,11 +1043,7 @@ if (stepNumber === 2) {
         restaurantTakeawayCount: '',
       })
       setStep(2)
-      router.push(
-        createdOrder.trackingToken
-          ? `/track/${createdOrder.trackingToken}`
-          : '/dashboard/tasks'
-      )
+      router.push(`/dashboard/tasks?orderId=${createdOrder._id}`)
     } catch {
       toast.error('An error occurred while posting the task.')
     } finally {
@@ -1090,7 +1085,6 @@ if (stepNumber === 2) {
     : null
   const showLowTaskerAvailabilityNotice =
     isLowTaskerAvailabilityWindow(currentTime) && !isTaskerAvailabilityNoticeDismissed
-  const hasTopNotices = showLowTaskerAvailabilityNotice || Boolean(activeOrder)
   const dismissTaskerAvailabilityNotice = useCallback(() => {
     setIsTaskerAvailabilityNoticeDismissed(true)
   }, [])
@@ -1106,8 +1100,6 @@ if (stepNumber === 2) {
 
   const selectedTask = taskTypes.find((item) => item.value === formData.taskType) || taskTypes[0]
   const quickLocations = ['Amnesty Hostel', 'Girls Hostel', 'PLT', 'Library', 'NDDC Auditorium']
-  const mobileStepLabel =
-    step === 1 ? 'Choose Category' : step === 2 ? 'Describe Order' : step === 3 ? 'Quick Details' : 'Review & Place'
 
   const renderCategoryCards = (compact = false) => (
     <div className={compact ? 'space-y-2.5' : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-5'}>
@@ -1505,7 +1497,7 @@ if (stepNumber === 2) {
             />
           </div>
           <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            Enter only the food price.
+            Don&apos;t forget to include price of takeaway if any.
           </p>
           {errors.restaurantItemPrice ? <p className="mt-2 text-sm text-red-500">{errors.restaurantItemPrice}</p> : null}
         </div>
@@ -1582,7 +1574,7 @@ if (stepNumber === 2) {
 
   const renderTopNotices = () => (
     showLowTaskerAvailabilityNotice || activeOrder ? (
-    <div className="space-y-3 px-3 pt-20 min-[390px]:px-4 lg:px-0 lg:pt-0">
+    <div className="space-y-3 px-3 min-[390px]:px-4 lg:px-0">
       {showLowTaskerAvailabilityNotice ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
           <p className="font-bold">Taskers may be in class right now</p>
@@ -1665,7 +1657,7 @@ if (stepNumber === 2) {
 
   const MobileErrandWizard = () => (
     <section className="lg:hidden" onClick={dismissNoticeOnWizardButtonClick}>
-      <div className={`min-h-screen bg-transparent px-3 pb-6 min-[390px]:px-4 ${hasTopNotices ? 'pt-4' : 'pt-24'}`}>
+      <div className="min-h-screen bg-transparent px-3 pb-6 pt-4 min-[390px]:px-4">
         <div className="mx-auto max-w-md">
           {step === 1 ? (
             <div>
@@ -1736,7 +1728,7 @@ if (stepNumber === 2) {
   if (!mounted) return null
 
   return (
-    <div className="min-h-screen bg-blue-50 px-4 py-4 dark:bg-slate-950 md:px-8 md:py-8">
+    <div className="min-h-screen px-4 py-4 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl space-y-0 lg:space-y-5">
         {renderTopNotices()}
 
