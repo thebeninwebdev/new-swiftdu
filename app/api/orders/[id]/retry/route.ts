@@ -8,7 +8,13 @@ import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications';
+import { createOrderTrackingToken } from '@/lib/order-tracking';
+import {
+  getUserLookupConditions,
+  hasActiveServiceFeeDiscountReservation,
+} from '@/lib/service-fee-discount';
 import { Order } from '@/models/order';
+import { User } from '@/models/user';
 
 export async function POST(
   request: NextRequest,
@@ -54,22 +60,67 @@ export async function POST(
     }
 
     const bookedAt = new Date();
+    const customerLookupConditions = getUserLookupConditions({ id: session.user.id });
+    const customerAccount = customerLookupConditions.length
+      ? await User.findOne({ $or: customerLookupConditions })
+          .select(
+            'serviceFeeDiscountEnabled serviceFeeDiscountGrantedByUserId serviceFeeDiscountGrantedByName serviceFeeDiscountGrantedByPhone serviceFeeDiscountRemainingOrders'
+          )
+          .lean()
+      : null;
+    const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(session.user.id);
+    const fullServiceFee = Number(
+      order.serviceFeeBeforeDiscount || order.serviceFee || order.commission || 0
+    );
+    const serviceFeeDiscountApplied = Boolean(
+      customerAccount?.serviceFeeDiscountEnabled &&
+        Number(customerAccount.serviceFeeDiscountRemainingOrders || 0) > 0 &&
+        !hasDiscountReservation &&
+        fullServiceFee > 0
+    );
+    const discountCommissionAmount = serviceFeeDiscountApplied
+      ? order.pricingModel === 'tiered'
+        ? Number(order.taskerFee || fullServiceFee)
+        : fullServiceFee
+      : 0;
+    const retriedServiceFee = serviceFeeDiscountApplied ? 0 : fullServiceFee;
+    const retriedPlatformFee = serviceFeeDiscountApplied ? 0 : Number(order.platformFee || 0);
+    const retriedTaskerFee =
+      serviceFeeDiscountApplied && order.pricingModel === 'tiered'
+        ? 0
+        : Number(order.taskerFee || 0);
+    const fullTotalAmount =
+      Number(order.totalAmount || 0) +
+      (order.serviceFeeDiscountApplied ? fullServiceFee : 0);
+    const retriedTotalAmount = serviceFeeDiscountApplied
+      ? Math.max(0, fullTotalAmount - fullServiceFee)
+      : fullTotalAmount;
 
     const retriedOrder = new Order({
       userId: order.userId,
       source: order.source,
+      trackingToken: createOrderTrackingToken(),
       customerPhone: order.customerPhone,
       customerName: order.customerName,
       taskType: order.taskType,
       description: order.description,
       amount: order.amount,
       itemPrice: order.itemPrice,
-      commission: order.commission,
-      platformFee: order.platformFee,
-      taskerFee: order.taskerFee,
-      serviceFee: order.serviceFee,
+      commission: retriedServiceFee,
+      platformFee: retriedPlatformFee,
+      taskerFee: retriedTaskerFee,
+      serviceFee: retriedServiceFee,
+      serviceFeeBeforeDiscount: serviceFeeDiscountApplied ? fullServiceFee : undefined,
+      serviceFeeDiscountApplied,
+      serviceFeeDiscountGrantedByName: serviceFeeDiscountApplied
+        ? customerAccount?.serviceFeeDiscountGrantedByName || undefined
+        : undefined,
+      serviceFeeDiscountGrantedByPhone: serviceFeeDiscountApplied
+        ? customerAccount?.serviceFeeDiscountGrantedByPhone || undefined
+        : undefined,
+      discountCommissionAmount,
       pricingModel: order.pricingModel,
-      totalAmount: order.totalAmount,
+      totalAmount: retriedTotalAmount,
       location: order.location,
       deliveryLocation: order.deliveryLocation,
       store: order.store,

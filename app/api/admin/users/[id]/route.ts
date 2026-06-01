@@ -1,6 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Types } from 'mongoose'
 import { connectDB } from '@/lib/db'
+import { auth } from '@/lib/auth'
 import { User } from '@/models/user'
+
+function getUserLookupConditions({
+  id,
+  email,
+}: {
+  id?: string | null
+  email?: string | null
+}) {
+  const conditions: Record<string, unknown>[] = []
+
+  if (id) {
+    conditions.push({ id })
+
+    if (Types.ObjectId.isValid(id)) {
+      conditions.push({ _id: new Types.ObjectId(id) })
+    }
+  }
+
+  if (email) {
+    conditions.push({ email: email.trim().toLowerCase() })
+  }
+
+  return conditions
+}
 
 // ─── PATCH /api/admin/users/[id] ────────────────────────────────────────────
 // Update user status (verify, suspend, activate).
@@ -21,9 +47,9 @@ export async function PATCH(
     await connectDB()
 
     const { id } = await params
-    const { action, phone } = await req.json()
+    const { action, phone, discountOrderCount } = await req.json()
 
-    if (!['verify', 'suspend', 'activate', 'update-phone'].includes(action)) {
+    if (!['verify', 'suspend', 'activate', 'update-phone', 'grant-discount', 'remove-discount'].includes(action)) {
       return NextResponse.json(
         { error: 'Invalid action' },
         { status: 400 }
@@ -46,7 +72,17 @@ export async function PATCH(
       )
     }
 
-    const updateData: { emailVerified?: boolean; isSuspended?: boolean; phone?: string } = {}
+    const updateData: {
+      emailVerified?: boolean
+      isSuspended?: boolean
+      phone?: string
+      serviceFeeDiscountEnabled?: boolean
+      serviceFeeDiscountGrantedByUserId?: string
+      serviceFeeDiscountGrantedByName?: string
+      serviceFeeDiscountGrantedByPhone?: string
+      serviceFeeDiscountGrantedAt?: Date
+      serviceFeeDiscountRemainingOrders?: number
+    } = {}
 
     if (action === 'verify') {
       updateData.emailVerified = true
@@ -65,6 +101,71 @@ export async function PATCH(
       }
 
       updateData.phone = normalizedPhone
+    } else if (action === 'grant-discount') {
+      const normalizedDiscountOrderCount = Number(discountOrderCount)
+
+      if (
+        !Number.isInteger(normalizedDiscountOrderCount) ||
+        normalizedDiscountOrderCount < 1
+      ) {
+        return NextResponse.json(
+          { error: 'Enter how many upcoming orders should receive the discount.' },
+          { status: 400 }
+        )
+      }
+
+      const session = await auth.api.getSession({ headers: req.headers })
+      const grantorLookupConditions = getUserLookupConditions({
+        id: session?.user?.id,
+        email: session?.user?.email,
+      })
+      const grantor = grantorLookupConditions.length
+        ? await User.findOne({ $or: grantorLookupConditions })
+            .select('name phone email')
+            .lean()
+        : null
+      const grantorPhone = typeof grantor?.phone === 'string' ? grantor.phone.trim() : ''
+
+      if (!grantorPhone) {
+        return NextResponse.json(
+          { error: 'Add a phone number to your account before granting a discount.' },
+          { status: 400 }
+        )
+      }
+
+      updateData.serviceFeeDiscountEnabled = true
+      updateData.serviceFeeDiscountGrantedByUserId = session?.user?.id
+      updateData.serviceFeeDiscountGrantedByName =
+        grantor?.name || session?.user?.name || session?.user?.email || 'SwiftDU team'
+      updateData.serviceFeeDiscountGrantedByPhone = grantorPhone
+      updateData.serviceFeeDiscountGrantedAt = new Date()
+      updateData.serviceFeeDiscountRemainingOrders = normalizedDiscountOrderCount
+    } else if (action === 'remove-discount') {
+      const user = await User.findByIdAndUpdate(
+        id,
+        {
+          $set: {
+            serviceFeeDiscountEnabled: false,
+            serviceFeeDiscountRemainingOrders: 0,
+          },
+          $unset: {
+            serviceFeeDiscountGrantedByUserId: '',
+            serviceFeeDiscountGrantedByName: '',
+            serviceFeeDiscountGrantedByPhone: '',
+            serviceFeeDiscountGrantedAt: '',
+          },
+        },
+        { new: true }
+      )
+
+      if (!user) {
+        return NextResponse.json(
+          { error: 'User not found' },
+          { status: 404 }
+        )
+      }
+
+      return NextResponse.json(user)
     }
 
     const user = await User.findByIdAndUpdate(

@@ -22,6 +22,12 @@ export interface IUser extends Document {
   taskerId?: string;
   dryCleanerId?: string;
   excoRole?: ExcoRole;
+  serviceFeeDiscountEnabled?: boolean;
+  serviceFeeDiscountGrantedByUserId?: string;
+  serviceFeeDiscountGrantedByName?: string;
+  serviceFeeDiscountGrantedByPhone?: string;
+  serviceFeeDiscountGrantedAt?: Date;
+  serviceFeeDiscountRemainingOrders?: number;
 }
 
 const UserSchema = new Schema<IUser>(
@@ -95,6 +101,32 @@ const UserSchema = new Schema<IUser>(
       type: String,
       enum: ["CFO", "CMO", "COO", "CTO"],
       required: false,
+    },
+    serviceFeeDiscountEnabled: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    serviceFeeDiscountGrantedByUserId: {
+      type: String,
+      required: false,
+    },
+    serviceFeeDiscountGrantedByName: {
+      type: String,
+      required: false,
+    },
+    serviceFeeDiscountGrantedByPhone: {
+      type: String,
+      required: false,
+    },
+    serviceFeeDiscountGrantedAt: {
+      type: Date,
+      required: false,
+    },
+    serviceFeeDiscountRemainingOrders: {
+      type: Number,
+      default: 0,
+      min: 0,
     }
   },
   {

@@ -17,6 +17,8 @@ import {
   MapPin,
   Mic,
   MicOff,
+  Minus,
+  Plus,
   ShieldCheck,
   ShoppingBag,
   Store,
@@ -86,6 +88,7 @@ interface TaskTypeConfig {
   value: string
   label: string
   description: string
+  mobileDescription: string
   icon: LucideIcon
   accent: string
 }
@@ -101,13 +104,15 @@ const taskTypes: TaskTypeConfig[] = [
     value: 'restaurant',
     label: 'Restaurant Food',
     description: 'Meals and food pickups from campus restaurants.',
+    mobileDescription: 'Food & meals',
     icon: ShoppingBag,
-    accent: 'from-orange-500 to-rose-500',
+    accent: 'from-blue-500 to-cyan-500',
   },
   {
     value: 'printing',
     label: 'Printing Services',
     description: 'Notes, assignments, and document printing.',
+    mobileDescription: 'Documents',
     icon: FileText,
     accent: 'from-sky-500 to-indigo-500',
   },
@@ -115,6 +120,7 @@ const taskTypes: TaskTypeConfig[] = [
     value: 'copy_notes',
     label: 'Copy Notes',
     description: 'Copy small or big notes by page count.',
+    mobileDescription: 'By page',
     icon: FileText,
     accent: 'from-amber-500 to-yellow-500',
   },
@@ -122,6 +128,7 @@ const taskTypes: TaskTypeConfig[] = [
     value: 'shopping',
     label: 'Store Shopping',
     description: 'Groceries, toiletries, and small campus-store items.',
+    mobileDescription: 'Groceries',
     icon: Store,
     accent: 'from-emerald-500 to-teal-500',
   },
@@ -129,6 +136,7 @@ const taskTypes: TaskTypeConfig[] = [
     value: WATER_TASK_TYPE,
     label: 'Bag of Water',
     description: 'Order bags of water at a fixed per-bag price.',
+    mobileDescription: 'Per bag',
     icon: Droplets,
     accent: 'from-cyan-500 to-blue-500',
   },
@@ -148,12 +156,22 @@ const storeOptions: Record<string, Array<{ value: string; label: string }>> = {
   ],
   restaurant: [
     { value: '', label: 'Select a store...' },
+    { value: 'tasker_choose', label: 'Help me choose / any open cafe' },
     { value: 'akpan', label: 'Akpan Store' },
     { value: 'mama', label: "Mama's Kitchen" },
     { value: 'golley', label: 'Golley Shop' },
     { value: 'indomie', label: 'Indomie Spot' },
   ],
 }
+
+const restaurantQuickOrders = [
+  'Fried rice and chicken',
+  'Jollof rice and chicken',
+  'Indomie and egg',
+  'White rice and stew',
+  'Beans and plantain',
+  'Rice, chicken and drink',
+]
 
 function formatNaira(value: number) {
   return new Intl.NumberFormat('en-NG', {
@@ -287,9 +305,16 @@ export default function ErrandWizardPage() {
   const [isRealtimePaused, setIsRealtimePaused] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [packagingLanguage, setPackagingLanguage] = useState<PackagingLanguage>('pidgin')
+  const [isTaskerAvailabilityNoticeDismissed, setIsTaskerAvailabilityNoticeDismissed] = useState(false)
+  const [isMobileViewport, setIsMobileViewport] = useState(false)
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
+  const [serviceFeeDiscount, setServiceFeeDiscount] = useState<{
+    hasAvailableDiscount: boolean
+    hasActiveReservation: boolean
+    remainingOrders: number
+  } | null>(null)
   const socketRef = useRef<Socket | null>(null)
   const fetchingActiveOrderRef = useRef(false)
   const isRealtimePausedRef = useRef(false)
@@ -297,7 +322,7 @@ export default function ErrandWizardPage() {
   const isTasker = session?.user.role === 'tasker'
 
   const [formData, setFormData] = useState<ErrandData>({
-    taskType: '',
+    taskType: 'restaurant',
     description: '',
     amount: '',
     location: '',
@@ -315,6 +340,38 @@ export default function ErrandWizardPage() {
     restaurantTakeawayCount: '',
   })
   const sessionUserId = session?.user?.id
+
+  useEffect(() => {
+    if (!sessionUserId) {
+      setServiceFeeDiscount(null)
+      return
+    }
+
+    let ignore = false
+
+    async function loadServiceFeeDiscount() {
+      try {
+        const response = await fetch('/api/users/me/service-fee-discount', {
+          cache: 'no-store',
+        })
+        const payload = await response.json()
+
+        if (!ignore) {
+          setServiceFeeDiscount(response.ok ? payload : null)
+        }
+      } catch {
+        if (!ignore) {
+          setServiceFeeDiscount(null)
+        }
+      }
+    }
+
+    void loadServiceFeeDiscount()
+
+    return () => {
+      ignore = true
+    }
+  }, [sessionUserId, activeOrder?._id, activeOrder?.status])
 
   const fetchCurrentOrder = useCallback(async () => {
     if (fetchingActiveOrderRef.current) return
@@ -362,6 +419,20 @@ export default function ErrandWizardPage() {
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+
+    const mediaQuery = window.matchMedia('(max-width: 1023px)')
+    const updateMobileViewport = () => setIsMobileViewport(mediaQuery.matches)
+
+    updateMobileViewport()
+    mediaQuery.addEventListener('change', updateMobileViewport)
+
+    return () => {
+      mediaQuery.removeEventListener('change', updateMobileViewport)
+    }
+  }, [mounted])
 
   useEffect(() => {
     if (!mounted) return
@@ -484,6 +555,34 @@ export default function ErrandWizardPage() {
   }, [activeOrder?._id, disconnectSocket, fetchCurrentOrder, isRealtimePaused, mounted])
 
   useEffect(() => {
+    const handleWizardBack = () => {
+      setStep((previous) => Math.max(1, previous - 1))
+      setErrors({})
+    }
+
+    window.addEventListener('swiftdu-wizard-back', handleWizardBack)
+
+    return () => {
+      window.removeEventListener('swiftdu-wizard-back', handleWizardBack)
+      window.dispatchEvent(
+        new CustomEvent('swiftdu-wizard-back-state', {
+          detail: { canGoBack: false },
+        })
+      )
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!mounted) return
+
+    window.dispatchEvent(
+      new CustomEvent('swiftdu-wizard-back-state', {
+        detail: { canGoBack: step > 1 },
+      })
+    )
+  }, [mounted, step])
+
+  useEffect(() => {
     return () => {
       if (realtimeResumeTimeoutRef.current) {
         window.clearTimeout(realtimeResumeTimeoutRef.current)
@@ -504,7 +603,7 @@ export default function ErrandWizardPage() {
     Number.isInteger(restaurantTakeawayCount) && restaurantTakeawayCount >= 0
       ? Math.min(restaurantTakeawayCount, normalizedRestaurantPeopleCount)
       : 0
-  const restaurantPackagingFee = normalizedRestaurantTakeawayCount * RESTAURANT_TAKEAWAY_FEE
+  const restaurantPackagingFee = 0
   const restaurantBudget = restaurantFoodBudget
   const restaurantDescription = isCafeInquiry
     ? formData.description.trim() || 'Text me what is in cafe'
@@ -545,7 +644,7 @@ export default function ErrandWizardPage() {
     taskType,
     store: formData.store,
     restaurantPeopleCount: normalizedRestaurantPeopleCount,
-    restaurantTakeawayCount: normalizedRestaurantTakeawayCount,
+    restaurantTakeawayCount: 0,
     waterBags: Number.isFinite(waterBags) ? waterBags : 0,
     noteSize: formData.noteSize,
     numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
@@ -553,6 +652,13 @@ export default function ErrandWizardPage() {
     printingNeedsEditing: formData.printingNeedsEditing === 'yes',
     cafeInquiry: isCafeInquiry,
   })
+  const hasAvailableServiceFeeDiscount = Boolean(
+    serviceFeeDiscount?.hasAvailableDiscount && pricing.serviceFee > 0
+  )
+  const displayedServiceFee = hasAvailableServiceFeeDiscount ? 0 : pricing.serviceFee
+  const displayedTotalAmount = hasAvailableServiceFeeDiscount
+    ? Math.max(0, pricing.totalAmount - pricing.serviceFee)
+    : pricing.totalAmount
   const shouldShowTieredServiceFee =
     pricing.pricingModel === 'tiered' &&
     ((formData.taskType === PRINTING_TASK_TYPE && pricing.amount > 0) ||
@@ -563,16 +669,11 @@ export default function ErrandWizardPage() {
     description.length > 0 &&
     descriptionMentionsWater(description) &&
     formData.taskType !== WATER_TASK_TYPE
-  const hasRestaurantPackagingStep = formData.taskType === 'restaurant'
-  const packagingStep = hasRestaurantPackagingStep ? 3 : -1
-  const deliveryStep = hasRestaurantPackagingStep ? 4 : 3
-  const reviewStep = hasRestaurantPackagingStep ? 5 : 4
-  const stepTitles = hasRestaurantPackagingStep
-    ? ['Choose Task', 'Details', 'Packaging', 'Delivery', 'Review']
-    : ['Choose Task', 'Details', 'Delivery', 'Review']
-  const stepIcons = hasRestaurantPackagingStep
-    ? [ShoppingBag, FileText, ShoppingBag, MapPin, CreditCard]
-    : [ShoppingBag, FileText, MapPin, CreditCard]
+  const packagingStep = -1
+  const deliveryStep = 3
+  const reviewStep = 4
+  const stepTitles = ['Choose Task', 'Details', 'Delivery', 'Review']
+  const stepIcons = [ShoppingBag, FileText, MapPin, CreditCard]
   const packagingCopy =
     packagingLanguage === 'english'
       ? {
@@ -669,22 +770,20 @@ export default function ErrandWizardPage() {
     setFormData((previous) => ({
       ...previous,
       taskType: value,
-      store: '',
-      waterBags: value === WATER_TASK_TYPE ? previous.waterBags : '',
-      noteSize: value === 'copy_notes' ? previous.noteSize : '',
-      numberOfPages:
-        value === 'copy_notes' || value === PRINTING_TASK_TYPE
-          ? previous.numberOfPages
-          : '',
-      printingServiceType:
-        value === PRINTING_TASK_TYPE ? previous.printingServiceType : '',
-      printingNeedsEditing:
-        value === PRINTING_TASK_TYPE ? previous.printingNeedsEditing : '',
-      deadline: value === 'copy_notes' ? previous.deadline : '',
-      packaging: value === 'restaurant' ? previous.packaging : '',
-      cafeInquiry: value === 'restaurant' ? previous.cafeInquiry : false,
-      restaurantTakeawayCount:
-        value === 'restaurant' ? previous.restaurantTakeawayCount : '',
+      store: value === 'restaurant' ? 'tasker_choose' : '',
+      description: '',
+      location: '',
+      waterBags: '',
+      noteSize: '',
+      numberOfPages: '',
+      printingServiceType: '',
+      printingNeedsEditing: '',
+      deadline: '',
+      packaging: '',
+      cafeInquiry: false,
+      restaurantItemPrice: '',
+      restaurantPeople: '1',
+      restaurantTakeawayCount: '',
       amount:
         value === 'copy_notes' ||
         value === WATER_TASK_TYPE ||
@@ -703,6 +802,9 @@ export default function ErrandWizardPage() {
       'deadline',
       'description',
       'amount',
+      'location',
+      'restaurantItemPrice',
+      'restaurantPeople',
       'restaurantTakeawayCount',
     ].forEach(clearError)
     setStep(2)
@@ -743,7 +845,7 @@ if (stepNumber === 2) {
       nextErrors.description = 'Use at least 5 characters.'
     }
 
-    if (!isCafeInquiry && (!Number.isFinite(restaurantFoodBudget) || restaurantFoodBudget <= 0)) {
+    if (!isMobileViewport && !isCafeInquiry && (!Number.isFinite(restaurantFoodBudget) || restaurantFoodBudget <= 0)) {
       nextErrors.restaurantItemPrice = 'Enter a valid food budget.'
     }
   }
@@ -841,7 +943,7 @@ if (stepNumber === 2) {
   }
 }
 
-if (stepNumber === packagingStep) {
+if (stepNumber === 2) {
   if (
     formData.taskType === 'restaurant' &&
     (formData.packaging === 'mixed' && formData.restaurantTakeawayCount === '')
@@ -858,6 +960,14 @@ if (stepNumber === packagingStep) {
 }
 
  if (stepNumber === deliveryStep) {
+  if (
+    formData.taskType === 'restaurant' &&
+    !isCafeInquiry &&
+    (!Number.isFinite(restaurantFoodBudget) || restaurantFoodBudget <= 0)
+  ) {
+    nextErrors.restaurantItemPrice = 'Enter a valid food budget.'
+  }
+
   if (!formData.location.trim()) {
     nextErrors.location = 'Enter the delivery location.'
   }
@@ -899,7 +1009,7 @@ if (stepNumber === packagingStep) {
               : undefined,
           restaurantTakeawayCount:
             formData.taskType === 'restaurant'
-              ? normalizedRestaurantTakeawayCount
+              ? 0
               : undefined,
           printingServiceType: formData.printingServiceType,
           printingNeedsEditing: formData.printingNeedsEditing === 'yes',
@@ -916,7 +1026,7 @@ if (stepNumber === packagingStep) {
       toast.success('Task posted successfully. Taskers can see it now.')
       setActiveOrder(createdOrder)
       setFormData({
-        taskType: '',
+        taskType: 'restaurant',
         description: '',
         amount: '',
         location: '',
@@ -933,8 +1043,12 @@ if (stepNumber === packagingStep) {
         restaurantPeople: '1',
         restaurantTakeawayCount: '',
       })
-      setStep(1)
-      router.push('/dashboard/tasks')
+      setStep(2)
+      router.push(
+        createdOrder.trackingToken
+          ? `/track/${createdOrder.trackingToken}`
+          : '/dashboard/tasks'
+      )
     } catch {
       toast.error('An error occurred while posting the task.')
     } finally {
@@ -947,10 +1061,6 @@ if (stepNumber === packagingStep) {
 
     if (!validateStep(2)) {
       setStep(2)
-      return
-    }
-    if (hasRestaurantPackagingStep && !validateStep(packagingStep)) {
-      setStep(packagingStep)
       return
     }
     if (!validateStep(deliveryStep)) {
@@ -978,9 +1088,689 @@ if (stepNumber === packagingStep) {
           ? 'Your payment has been confirmed and the task is moving. You can still book another errand below.'
           : 'This order is waiting for payment confirmation. You can open the tracker anytime and still post another task now.'
     : null
-  const showLowTaskerAvailabilityNotice = isLowTaskerAvailabilityWindow(currentTime)
+  const showLowTaskerAvailabilityNotice =
+    isLowTaskerAvailabilityWindow(currentTime) && !isTaskerAvailabilityNoticeDismissed
+  const hasTopNotices = showLowTaskerAvailabilityNotice || Boolean(activeOrder)
+  const dismissTaskerAvailabilityNotice = useCallback(() => {
+    setIsTaskerAvailabilityNoticeDismissed(true)
+  }, [])
+  const dismissNoticeOnWizardButtonClick = useCallback(
+    (event: React.MouseEvent<HTMLElement>) => {
+      if (!(event.target instanceof HTMLElement)) return
+      if (event.target.closest('button')) {
+        window.setTimeout(dismissTaskerAvailabilityNotice, 0)
+      }
+    },
+    [dismissTaskerAvailabilityNotice]
+  )
+
+  const selectedTask = taskTypes.find((item) => item.value === formData.taskType) || taskTypes[0]
+  const quickLocations = ['Amnesty Hostel', 'Girls Hostel', 'PLT', 'Library', 'NDDC Auditorium']
+  const mobileStepLabel =
+    step === 1 ? 'Choose Category' : step === 2 ? 'Describe Order' : step === 3 ? 'Quick Details' : 'Review & Place'
+
+  const renderCategoryCards = (compact = false) => (
+    <div className={compact ? 'space-y-2.5' : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-5'}>
+      {taskTypes.map((item) => {
+        const Icon = item.icon
+        const selected = formData.taskType === item.value
+        return (
+          <button
+            key={item.value}
+            type="button"
+            onClick={() => {
+              selectTaskType(item.value)
+              if (compact) {
+                setStep(2)
+              }
+            }}
+            className={`group flex ${compact ? 'w-full items-center gap-3 rounded-2xl px-3.5 py-5 text-left shadow-sm min-[390px]:py-5.5' : 'min-h-28 flex-col items-center justify-center rounded-xl p-4 text-center'} border transition ${
+              selected
+                ? compact
+                  ? 'border-blue-500 bg-blue-50 text-blue-950 shadow-sm dark:border-blue-500 dark:bg-blue-950/30 dark:text-blue-100'
+                  : 'border-blue-500 bg-blue-50 text-blue-950 shadow-sm dark:border-blue-500 dark:bg-blue-950/30 dark:text-blue-100'
+                : compact
+                  ? 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50/50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-900'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50/50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-900'
+            }`}
+          >
+            <span className={`flex ${compact ? 'h-10 w-10' : 'mb-3 h-12 w-12'} items-center justify-center rounded-xl bg-linear-to-br ${item.accent} text-white shadow-sm`}>
+              <Icon className="h-5 w-5" />
+            </span>
+            <span className={compact ? 'min-w-0 flex-1' : ''}>
+              <span className={compact ? 'block text-[0.95rem] font-black leading-tight sm:text-base' : 'block text-sm font-bold'}>
+                {item.label.replace(' Food', '').replace(' Services', '')}
+              </span>
+              <span className={compact ? 'mt-0.5 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400' : 'block text-xs text-slate-500 dark:text-slate-400'}>
+                {compact ? item.mobileDescription : item.description.split('.')[0]}
+              </span>
+            </span>
+            {selected ? <Check className={`h-4 w-4 ${compact ? 'text-blue-600' : 'text-blue-600'}`} /> : null}
+          </button>
+        )
+      })}
+      {errors.taskType ? <p className="text-sm text-red-500">{errors.taskType}</p> : null}
+    </div>
+  )
+
+  const renderStoreSelect = () =>
+    formData.taskType &&
+    formData.taskType !== 'copy_notes' &&
+    formData.taskType !== WATER_TASK_TYPE ? (
+      <div>
+        <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">
+          {formData.taskType === 'restaurant' ? 'Store/Restaurant' : 'Store'}
+        </label>
+        <select
+          name="store"
+          value={formData.store}
+          onChange={handleInputChange}
+          className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 mb-4"
+        >
+          {selectedStores.map((item) => (
+            <option key={item.value} value={item.value}>
+              {item.label}
+            </option>
+          ))}
+        </select>
+        {errors.store ? <p className="mt-2 text-sm text-red-500">{errors.store}</p> : null}
+      </div>
+    ) : null
+
+  const renderSpeechButton = (tone: 'orange' | 'emerald' = 'orange') =>
+    isSpeechSupported === true ? (
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => {
+          pauseRealtime()
+          if (isSpeechListening) {
+            stopListening()
+            return
+          }
+          startListening(formData.description)
+        }}
+        className={`h-10 rounded-full px-3 ${tone === 'orange' ? 'border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-900/60 dark:text-blue-200' : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-900/60 dark:text-emerald-200'} ${
+          isSpeechListening ? 'animate-pulse ring-4 ring-blue-500/15' : ''
+        }`}
+      >
+        {isSpeechListening ? <MicOff className="mr-2 h-4 w-4" /> : <Mic className="mr-2 h-4 w-4" />}
+        {isSpeechListening ? 'Listening' : 'Voice'}
+      </Button>
+    ) : null
+
+  const renderDetailsFields = (mobile = false) => (
+    <div className="space-y-4">
+      {mobile && formData.taskType === 'restaurant' ? null : renderStoreSelect()}
+
+      {formData.taskType === 'restaurant' ? (
+        <>
+          {false ? (
+            <button
+              type="button"
+              onClick={() => {
+                pauseRealtime()
+                setFormData((previous) => ({
+                  ...previous,
+                  cafeInquiry: !previous.cafeInquiry,
+                  description: !previous.cafeInquiry ? '' : previous.description,
+                  restaurantItemPrice: !previous.cafeInquiry ? '' : previous.restaurantItemPrice,
+                  packaging: !previous.cafeInquiry ? '' : previous.packaging,
+                  restaurantTakeawayCount: !previous.cafeInquiry ? '0' : previous.restaurantTakeawayCount,
+                }))
+                clearError('description')
+                clearError('restaurantItemPrice')
+              }}
+              className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${
+                isCafeInquiry
+                  ? 'border-blue-500 bg-blue-50 text-blue-950 dark:bg-blue-950/30 dark:text-blue-100'
+                  : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
+              }`}
+            >
+              <span className="block font-bold">Text me what is in cafe</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">
+                Adds {formatNaira(CAFE_INQUIRY_EXTRA_FEE)} if you want the tasker to check first.
+              </span>
+            </button>
+          ) : null}
+          {!isCafeInquiry ? (
+            <div>
+              {!mobile ? (
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  <label className="block text-sm font-bold text-slate-900 dark:text-slate-100">What do you need?</label>
+                  {renderSpeechButton('orange')}
+                </div>
+              ) : null}
+              <div className="relative">
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  rows={mobile ? 5 : 3}
+                  placeholder="E.g. Fried rice and chicken, no pepper"
+                  className={`w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 ${
+                    mobile ? 'pb-14 text-base font-semibold leading-relaxed' : ''
+                  }`}
+                />
+                {mobile && isSpeechSupported === true ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      pauseRealtime()
+                      if (isSpeechListening) {
+                        stopListening()
+                        return
+                      }
+                      startListening(formData.description)
+                    }}
+                    className={`absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-blue-600 text-white shadow-lg shadow-blue-500/20 transition hover:bg-blue-700 ${
+                      isSpeechListening ? 'animate-pulse ring-4 ring-blue-500/20' : ''
+                    }`}
+                    aria-label={isSpeechListening ? 'Stop listening' : 'Say your order'}
+                  >
+                    {isSpeechListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {restaurantQuickOrders.slice(0, mobile ? 4 : 6).map((quickOrder) => (
+                  <button
+                    key={quickOrder}
+                    type="button"
+                    onClick={() => {
+                      pauseRealtime()
+                      setFormData((previous) => ({
+                        ...previous,
+                        description: previous.description ? `${previous.description}, ${quickOrder}` : quickOrder,
+                      }))
+                      clearError('description')
+                    }}
+                    className="rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200"
+                  >
+                    {quickOrder}
+                  </button>
+                ))}
+              </div>
+              {errors.description ? <p className="mt-2 text-sm text-red-500">{errors.description}</p> : null}
+            </div>
+          ) : null}
+          {!isCafeInquiry && !mobile ? (
+            <div>
+              <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Food budget</label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">₦</span>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  name="restaurantItemPrice"
+                  value={formData.restaurantItemPrice}
+                  onChange={handleInputChange}
+                  placeholder="1,500"
+                  className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pl-8 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900"
+                />
+              </div>
+              {errors.restaurantItemPrice ? <p className="mt-2 text-sm text-red-500">{errors.restaurantItemPrice}</p> : null}
+            </div>
+          ) : null}
+        </>
+      ) : null}
+
+      {formData.taskType === 'shopping' ? (
+        <>
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <label className="block text-sm font-bold text-slate-900 dark:text-slate-100">Items</label>
+              {renderSpeechButton('emerald')}
+            </div>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleInputChange}
+              rows={3}
+              placeholder="E.g. Milo, biscuits, soap..."
+              className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-800 dark:bg-slate-900"
+            />
+            {errors.description ? <p className="mt-2 text-sm text-red-500">{errors.description}</p> : null}
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Shopping budget</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              name="amount"
+              value={formData.amount}
+              onChange={handleInputChange}
+              placeholder="1,500"
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-800 dark:bg-slate-900"
+            />
+            {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
+          </div>
+        </>
+      ) : null}
+
+      {formData.taskType === PRINTING_TASK_TYPE ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {[
+            { value: 'printing', label: 'Printing', price: PRINTING_PRICE_PER_PAGE },
+            { value: 'photocopying', label: 'Photocopying', price: PHOTOCOPY_PRICE_PER_PAGE },
+          ].map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => {
+                pauseRealtime()
+                setFormData((previous) => ({ ...previous, printingServiceType: option.value }))
+                clearError('printingServiceType')
+              }}
+              className={`rounded-xl border p-3 text-left text-sm ${
+                formData.printingServiceType === option.value
+                  ? 'border-sky-500 bg-sky-50 text-sky-900 dark:bg-sky-950/30 dark:text-sky-100'
+                  : 'border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900'
+              }`}
+            >
+              <span className="block font-bold">{option.label}</span>
+              <span className="text-xs text-slate-500">{formatNaira(option.price)} per page</span>
+            </button>
+          ))}
+          <input
+            type="number"
+            min="1"
+            name="numberOfPages"
+            value={formData.numberOfPages}
+            onChange={handleInputChange}
+            placeholder="Number of pages"
+            className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-sky-500 dark:border-slate-800 dark:bg-slate-900"
+          />
+          <select
+            name="printingNeedsEditing"
+            value={formData.printingNeedsEditing}
+            onChange={handleInputChange}
+            className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-sky-500 dark:border-slate-800 dark:bg-slate-900"
+          >
+            <option value="">Editing needed?</option>
+            <option value="no">No editing</option>
+            <option value="yes">Needs editing</option>
+          </select>
+          <textarea
+            name="description"
+            value={formData.description}
+            onChange={handleInputChange}
+            rows={3}
+            placeholder="Document name, color preference, paper size..."
+            className="resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-sky-500 dark:border-slate-800 dark:bg-slate-900 sm:col-span-2"
+          />
+          {(errors.printingServiceType || errors.numberOfPages || errors.printingNeedsEditing) ? (
+            <p className="text-sm text-red-500 sm:col-span-2">{errors.printingServiceType || errors.numberOfPages || errors.printingNeedsEditing}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {formData.taskType === 'copy_notes' ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <select name="noteSize" value={formData.noteSize} onChange={handleInputChange} className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-amber-500 dark:border-slate-800 dark:bg-slate-900">
+            <option value="">Note size</option>
+            <option value="small">Small - {formatNaira(250)} every 2 pages</option>
+            <option value="big">Big - {formatNaira(450)} every 2 pages</option>
+          </select>
+          <input type="number" min="1" name="numberOfPages" value={formData.numberOfPages} onChange={handleInputChange} placeholder="Pages" className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-amber-500 dark:border-slate-800 dark:bg-slate-900" />
+          <input type="datetime-local" min={getDateTimeInputValue()} name="deadline" value={formData.deadline} onChange={handleInputChange} className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-amber-500 dark:border-slate-800 dark:bg-slate-900" />
+          {(errors.noteSize || errors.numberOfPages || errors.deadline) ? (
+            <p className="text-sm text-red-500 sm:col-span-3">{errors.noteSize || errors.numberOfPages || errors.deadline}</p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {formData.taskType === WATER_TASK_TYPE ? (
+        <div>
+          <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Number of bags</label>
+          <input type="number" min="1" name="waterBags" value={formData.waterBags} onChange={handleInputChange} placeholder="How many bags?" className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-cyan-500 dark:border-slate-800 dark:bg-slate-900" />
+          <p className="mt-2 text-xs text-slate-500">Each bag is {formatNaira(WATER_BAG_PRICE)} plus {formatNaira(WATER_BAG_FEE)} fee.</p>
+          {errors.waterBags ? <p className="mt-2 text-sm text-red-500">{errors.waterBags}</p> : null}
+        </div>
+      ) : null}
+    </div>
+  )
+
+  const renderQuickDetails = () => (
+    <div className="space-y-4">
+      {formData.taskType === 'restaurant' ? (
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+            <label className="block text-sm font-black text-slate-950 dark:text-white">People</label>
+            <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              How many people are you ordering for?
+            </p>
+            <div className="mt-4 flex h-11 items-center justify-between gap-4">
+              <span className="flex h-11 min-w-12 items-center text-2xl font-black leading-none text-slate-950 dark:text-white">
+                {normalizedRestaurantPeopleCount}
+              </span>
+              <div className="flex h-11 items-center overflow-hidden rounded-full border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+                <button
+                  type="button"
+                  onClick={() => setFormData((previous) => ({ ...previous, restaurantPeople: String(Math.max(1, normalizedRestaurantPeopleCount - 1)), restaurantTakeawayCount: '' }))}
+                  className="flex h-11 w-12 items-center justify-center text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-200 dark:hover:bg-slate-900"
+                  disabled={normalizedRestaurantPeopleCount <= 1}
+                  aria-label="Reduce people count"
+                >
+                  <Minus className="h-4 w-4 stroke-[3]" />
+                </button>
+                <div className="h-5 w-px bg-slate-200 dark:bg-slate-800" />
+                <button
+                  type="button"
+                  onClick={() => setFormData((previous) => ({ ...previous, restaurantPeople: String(Math.min(RESTAURANT_MAX_PEOPLE, normalizedRestaurantPeopleCount + 1)), restaurantTakeawayCount: '' }))}
+                  className="flex h-11 w-12 items-center justify-center bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={normalizedRestaurantPeopleCount >= RESTAURANT_MAX_PEOPLE}
+                  aria-label="Increase people count"
+                >
+                  <Plus className="h-4 w-4 stroke-[3]" />
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Packaging</label>
+            <select
+              name="packaging"
+              value={formData.packaging === 'takeaway' ? 'takeaway' : 'cellophane'}
+              onChange={(event) => {
+                pauseRealtime()
+                setFormData((previous) => ({
+                  ...previous,
+                  packaging: event.target.value,
+                  restaurantTakeawayCount: '0',
+                }))
+              }}
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 dark:border-slate-800 dark:bg-slate-900"
+            >
+              <option value="cellophane">Cellophane</option>
+              <option value="takeaway">Takeaway</option>
+            </select>
+          </div>
+        </div>
+      ) : null}
+
+      {formData.taskType === 'restaurant' ? (
+        <div>
+          <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">How much will your food cost?</label>
+          <div className="relative">
+            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">₦</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              name="restaurantItemPrice"
+              value={formData.restaurantItemPrice}
+              onChange={handleInputChange}
+              placeholder="1,500"
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pl-8 text-sm font-bold outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900"
+            />
+          </div>
+          <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            Enter only the food price.
+          </p>
+          {errors.restaurantItemPrice ? <p className="mt-2 text-sm text-red-500">{errors.restaurantItemPrice}</p> : null}
+        </div>
+      ) : null}
+
+      <div>
+        <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Deliver to</label>
+        <input
+          type="text"
+          name="location"
+          value={formData.location}
+          onChange={handleInputChange}
+          placeholder="Hostel, room, block, or landmark"
+          className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900"
+        />
+        <div className="mt-2 flex flex-wrap gap-2">
+          {quickLocations.map((location) => (
+            <button key={location} type="button" onClick={() => handleLocationSelect(location)} className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:border-blue-200 hover:bg-blue-50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
+              {location}
+            </button>
+          ))}
+        </div>
+        {errors.location ? <p className="mt-2 text-sm text-red-500">{errors.location}</p> : null}
+      </div>
+    </div>
+  )
+
+  const renderOrderSummary = () => (
+    <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-900/60">
+      <div className="flex items-start justify-between gap-4">
+        <span className="text-slate-500">Order</span>
+        <span className="max-w-64 text-right font-semibold text-slate-900 dark:text-slate-100">
+          {description || selectedTask.label}
+        </span>
+      </div>
+      {selectedStoreLabel ? (
+        <div className="flex justify-between gap-4">
+          <span className="text-slate-500">Store</span>
+          <span className="font-semibold">{selectedStoreLabel}</span>
+        </div>
+      ) : null}
+      <div className="flex justify-between gap-4">
+        <span className="text-slate-500">Location</span>
+        <span className="text-right font-semibold">{formData.location || 'Not set'}</span>
+      </div>
+      {formData.taskType === 'restaurant' ? (
+        <>
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500">Person(s)</span>
+            <span className="font-semibold">{normalizedRestaurantPeopleCount}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500">Packaging</span>
+            <span className="font-semibold">{formData.packaging === 'takeaway' ? 'Takeaway' : 'Cellophane'}</span>
+          </div>
+        </>
+      ) : null}
+      <div className="border-t border-slate-200 pt-3 dark:border-slate-800">
+        <div className="flex justify-between text-xs text-slate-500">
+          <span>{pricing.pricingModel === 'water' ? 'Water and errand fee' : pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : formData.taskType === 'restaurant' ? 'Food budget' : 'Budget'}</span>
+          <span>{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span>
+        </div>
+        <div className="mt-2 flex justify-between text-xs text-slate-500">
+          <span>Service fee</span>
+          <span>{formatNaira(displayedServiceFee)}</span>
+        </div>
+        <div className="mt-3 flex items-end justify-between">
+          <span className="font-bold text-slate-900 dark:text-white">Estimated Total</span>
+          <span className="text-2xl font-black text-slate-950 dark:text-white">{formatNaira(displayedTotalAmount)}</span>
+        </div>
+      </div>
+    </div>
+  )
+
+  const renderTopNotices = () => (
+    showLowTaskerAvailabilityNotice || activeOrder ? (
+    <div className="space-y-3 px-3 pt-20 min-[390px]:px-4 lg:px-0 lg:pt-0">
+      {showLowTaskerAvailabilityNotice ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+          <p className="font-bold">Taskers may be in class right now</p>
+          <p className="mt-1">Please try again by 2:00 PM for quicker attention.</p>
+        </div>
+      ) : null}
+      {activeOrder ? (
+        <div className="rounded-xl border border-blue-100 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase text-blue-600">Active order</p>
+              <p className="text-sm font-bold text-slate-900 dark:text-white">{activeStatusLabel}</p>
+            </div>
+            <Button variant="outline" onClick={() => router.push(`/dashboard/tasks?orderId=${activeOrder._id}`)} className="h-9 rounded-lg">
+              Track
+            </Button>
+          </div>
+        </div>
+      ) : null}
+    </div>
+    ) : null
+  )
+
+  const DesktopErrandWizard = () => (
+    <section className="hidden lg:block" onClick={dismissNoticeOnWizardButtonClick}>
+      <div className="overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-xl shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-950 dark:shadow-none">
+        <div className="flex min-h-44 items-center justify-between gap-8 bg-linear-to-r from-blue-50 via-white to-cyan-50 px-8 py-8 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900">
+          <div>
+            <div className="flex items-center gap-3 text-2xl font-black text-slate-950 dark:text-white">
+              <img src="/logo.png" alt="Swiftdu" className="h-9 w-9 rounded-lg object-contain" />
+              Swiftdu
+            </div>
+            <h1 className="mt-8 text-3xl font-black tracking-tight text-slate-950 dark:text-white">What would you like to order today?</h1>
+            <p className="mt-2 text-slate-600 dark:text-slate-300">We will handle it, you relax.</p>
+          </div>
+        </div>
+
+        <div className="space-y-6 px-8 py-7">
+          <div>
+            <p className="mb-3 text-sm font-black text-slate-950 dark:text-white">1. Choose a category</p>
+            {renderCategoryCards(false)}
+          </div>
+
+          <div>
+            <p className="mb-3 text-sm font-black text-slate-950 dark:text-white">2. Tell us what you need</p>
+            {renderDetailsFields(false)}
+          </div>
+
+          <div>
+            <p className="mb-3 text-sm font-black text-slate-950 dark:text-white">3. Add quick details</p>
+            {renderQuickDetails()}
+          </div>
+
+          <div className="rounded-xl border border-blue-100 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="grid items-end gap-5 lg:grid-cols-[1fr_auto]">
+              {renderOrderSummary()}
+              <Button onClick={handleSubmit} disabled={isSubmitting} className="h-14 rounded-xl bg-blue-600 px-8 font-black text-white hover:bg-blue-700">
+                {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Posting...</> : <>Review & Place Order <ArrowRight className="ml-2 h-4 w-4" /></>}
+              </Button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-4 gap-3 text-xs">
+            {[
+              ['Fast', 'Place orders in seconds'],
+              ['Transparent', 'See pricing upfront'],
+              ['Reliable', 'Trusted taskers'],
+              ['Secure', 'Safe order tracking'],
+            ].map(([title, copy]) => (
+              <div key={title} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
+                <p className="font-black text-slate-950 dark:text-white">{title}</p>
+                <p className="mt-1 text-slate-500">{copy}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  )
+
+  const MobileErrandWizard = () => (
+    <section className="lg:hidden" onClick={dismissNoticeOnWizardButtonClick}>
+      <div className={`min-h-screen bg-transparent px-3 pb-6 min-[390px]:px-4 ${hasTopNotices ? 'pt-4' : 'pt-24'}`}>
+        <div className="mx-auto max-w-md">
+          {step === 1 ? (
+            <div>
+              <h1 className="max-w-xs text-3xl font-black leading-[1.05] tracking-normal text-slate-950 dark:text-white min-[390px]:text-[2.35rem] sm:max-w-sm sm:text-5xl">
+                What would you like to order?
+              </h1>
+              <p className="mt-3 max-w-xs text-base font-bold leading-snug text-slate-500 dark:text-slate-400 min-[390px]:text-lg">
+                Pick a category and we will handle the rest.
+              </p>
+              <div className="mt-5">{renderCategoryCards(true)}</div>
+            </div>
+          ) : null}
+
+          {step === 2 ? (
+            <div>
+              <h1 className="text-3xl font-black leading-[1.05] text-slate-950 dark:text-white min-[390px]:text-[2.35rem]">
+                {formData.taskType === 'restaurant' ? 'What do you want to eat?' : 'What do you need?'}
+              </h1>
+              {formData.taskType === 'restaurant' ? null : (
+                <p className="mt-2 text-base font-bold text-slate-500">{selectedTask.description}</p>
+              )}
+              <div className="mt-5">{renderDetailsFields(true)}</div>
+            </div>
+          ) : null}
+
+          {step === 3 ? (
+            <div>
+              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white min-[390px]:text-3xl">Add quick details</h1>
+              <div className="mt-5">{renderQuickDetails()}</div>
+            </div>
+          ) : null}
+
+          {step === 4 ? (
+            <div>
+              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white min-[390px]:text-3xl">Review your order</h1>
+              <div className="mt-5">{renderOrderSummary()}</div>
+            </div>
+          ) : null}
+        </div>
+
+        {step > 1 ? (
+          <div className="mx-auto mt-6 max-w-md">
+            {step === 2 && formData.taskType === 'restaurant' ? (
+              <div className="mb-4">{renderStoreSelect()}</div>
+            ) : null}
+            {step < 4 ? (
+            <Button
+              onClick={handleNext}
+              className="h-12 w-full rounded-xl bg-blue-600 font-black text-white hover:bg-blue-700"
+            >
+              Next
+            </Button>
+          ) : (
+            <Button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              className="h-12 w-full rounded-xl bg-blue-600 font-black text-white hover:bg-blue-700"
+            >
+              {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Posting...</> : 'Place Order'}
+            </Button>
+          )}
+          </div>
+        ) : null}
+      </div>
+    </section>
+  )
 
   if (!mounted) return null
+
+  return (
+    <div className="min-h-screen bg-blue-50 px-4 py-4 dark:bg-slate-950 md:px-8 md:py-8">
+      <div className="mx-auto max-w-7xl space-y-0 lg:space-y-5">
+        {renderTopNotices()}
+
+        {isTasker ? (
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-bold">Tasker access enabled</span>
+              <Button variant="outline" onClick={() => router.push('/tasker-dashboard')} className="h-9 rounded-lg border-emerald-200">
+                Open
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {excoDashboard ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
+            <div className="flex items-center justify-between gap-3">
+              <span className="font-bold">Executive access enabled</span>
+              <Button variant="outline" onClick={() => router.push(excoDashboard.dashboardPath)} className="h-9 rounded-lg border-amber-200">
+                Open
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
+        {DesktopErrandWizard()}
+        {MobileErrandWizard()}
+
+        {/* <div className="mx-auto max-w-4xl">
+          <ProfileCompletionCard />
+        </div> */}
+      </div>
+    </div>
+  )
 
   return (
     <div className="min-h-screen bg-linear-to-br from-slate-50 via-white to-slate-100 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
@@ -1015,7 +1805,7 @@ if (stepNumber === packagingStep) {
                   </p>
                 </div>
                 <Button
-                  onClick={() => router.push(`/dashboard/tasks?orderId=${activeOrder._id}`)}
+                  onClick={() => router.push(`/dashboard/tasks?orderId=${activeOrder!._id}`)}
                   className="h-11 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 px-4 text-white hover:from-indigo-700 hover:to-cyan-600"
                 >
                   Open Tracker
@@ -1054,14 +1844,14 @@ if (stepNumber === packagingStep) {
                     Executive access enabled
                   </p>
                   <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
-                    Open your {excoDashboard.excoRole} dashboard.
+                    Open your {excoDashboard!.excoRole} dashboard.
                   </h2>
                   <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-                    Review the metrics and decision signals for the {excoDashboard.label} role.
+                    Review the metrics and decision signals for the {excoDashboard!.label} role.
                   </p>
                 </div>
                 <Button
-                  onClick={() => router.push(excoDashboard.dashboardPath)}
+                  onClick={() => router.push(excoDashboard!.dashboardPath)}
                   className="h-11 rounded-xl bg-linear-to-r from-amber-600 to-sky-600 px-4 text-white hover:from-amber-700 hover:to-sky-700"
                 >
                   <BriefcaseBusiness className="mr-2 h-4 w-4" />
@@ -1192,7 +1982,7 @@ if (stepNumber === packagingStep) {
                 <div className="space-y-4 md:space-y-5">
                   <div>
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Errand Details</h2>
-                    <p className="mt-2 text-slate-500 dark:text-slate-400">Add the store, item notes, and budget.</p>
+                    <p className="mt-2 text-slate-500 dark:text-slate-400">Tell us what you need. Restaurant orders now stay on one simple screen.</p>
                   </div>
                   {formData.taskType &&
                   formData.taskType !== 'others' &&
@@ -1239,7 +2029,7 @@ if (stepNumber === packagingStep) {
                       </div>
                       {pricing.pricingModel === 'copy_notes' && numberOfPages > 0 ? (
                         <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 sm:col-span-2">
-                          Total is {formatNaira(pricing.totalAmount)}.
+                          Total is {formatNaira(displayedTotalAmount)}.
                         </div>
                       ) : null}
                     </div>
@@ -1372,7 +2162,7 @@ if (stepNumber === packagingStep) {
                           {printingLabel} total is {formatNaira(pricing.amount)} before SwiftDU service fee.
                           {shouldShowTieredServiceFee ? (
                             <span className="block pt-1 font-semibold">
-                              Service fee for this job is {formatNaira(pricing.serviceFee)}.
+                              Service fee for this job is {formatNaira(displayedServiceFee)}.
                             </span>
                           ) : null}
                         </div>
@@ -1388,7 +2178,7 @@ if (stepNumber === packagingStep) {
                       </p>
                       {pricing.pricingModel === 'water' && waterBags > 0 ? (
                         <div className="mt-3 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900 dark:border-cyan-900/60 dark:bg-cyan-950/30 dark:text-cyan-100">
-                          Total is {formatNaira(pricing.totalAmount)}.
+                          Total is {formatNaira(displayedTotalAmount)}.
                         </div>
                       ) : null}
                       {errors.waterBags ? <p className="mt-2 text-sm text-red-500">{errors.waterBags}</p> : null}
@@ -1413,8 +2203,8 @@ if (stepNumber === packagingStep) {
                         }}
                         className={`w-full rounded-2xl border-2 px-4 py-3 text-left transition ${
                           isCafeInquiry
-                            ? 'border-orange-500 bg-orange-50 text-orange-900 dark:bg-orange-950/30 dark:text-orange-100'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
+                            ? 'border-blue-500 bg-blue-50 text-blue-900 dark:bg-blue-950/30 dark:text-blue-100'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
                         }`}
                       >
                         <span className="block font-bold">Text me what is in cafe</span>
@@ -1425,7 +2215,7 @@ if (stepNumber === packagingStep) {
                       {!isCafeInquiry ? (
                       <div>
                         <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          <ShoppingBag className="h-4 w-4 text-orange-500" />
+                          <ShoppingBag className="h-4 w-4 text-blue-500" />
                           Order description
                         </label>
                         <textarea
@@ -1434,10 +2224,31 @@ if (stepNumber === packagingStep) {
                           onChange={handleInputChange}
                           placeholder="Describe what you want. Example: Rice and chicken, drink, snacks..."
                           rows={4}
-                          className="mt-2 w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 dark:border-slate-700 dark:bg-slate-800"
+                          className="mt-2 w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800"
                         />
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {restaurantQuickOrders.map((quickOrder) => (
+                            <button
+                              key={quickOrder}
+                              type="button"
+                              onClick={() => {
+                                pauseRealtime()
+                                setFormData((previous) => ({
+                                  ...previous,
+                                  description: previous.description
+                                    ? `${previous.description}, ${quickOrder}`
+                                    : quickOrder,
+                                }))
+                                clearError('description')
+                              }}
+                              className="rounded-full border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200"
+                            >
+                              {quickOrder}
+                            </button>
+                          ))}
+                        </div>
                         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                          Tap the microphone to say your order or type manually.
+                          Tap a popular food, use the microphone, or type manually.
                         </p>
                         {isSpeechSupported === true ? (
                           <Button
@@ -1451,8 +2262,8 @@ if (stepNumber === packagingStep) {
                               }
                               startListening(formData.description)
                             }}
-                            className={`mt-3 h-11 w-full rounded-xl border-2 border-orange-200 bg-orange-50 px-4 font-semibold text-orange-700 hover:bg-orange-100 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-200 dark:hover:bg-orange-950/50 sm:w-auto ${
-                              isSpeechListening ? 'animate-pulse ring-4 ring-orange-500/15' : ''
+                            className={`mt-3 h-11 w-full rounded-xl border-2 border-blue-200 bg-blue-50 px-4 font-semibold text-blue-700 hover:bg-blue-100 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-200 dark:hover:bg-blue-950/50 sm:w-auto ${
+                              isSpeechListening ? 'animate-pulse ring-4 ring-blue-500/15' : ''
                             }`}
                           >
                             {isSpeechListening ? (
@@ -1478,7 +2289,7 @@ if (stepNumber === packagingStep) {
                       {!isCafeInquiry ? (
                       <div>
                         <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          <Wallet className="h-4 w-4 text-orange-500" />
+                          <Wallet className="h-4 w-4 text-blue-500" />
                           Budget
                         </label>
                         <div className="relative">
@@ -1490,21 +2301,21 @@ if (stepNumber === packagingStep) {
                             value={formData.restaurantItemPrice}
                             onChange={handleInputChange}
                             placeholder="1,500"
-                            className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 pl-9 font-mono text-lg outline-none focus:border-orange-500 focus:ring-4 focus:ring-orange-500/10 dark:border-slate-700 dark:bg-slate-800"
+                            className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 pl-9 font-mono text-lg outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-700 dark:bg-slate-800"
                           />
                         </div>
                         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                           How much will the food cost?
                         </p>
-                        <p className="mt-1 text-sm font-medium text-orange-700 dark:text-orange-300 pb-2">
-                          Add only the food price here. Takeaway packs are counted in the next step.
+                        <p className="mt-1 text-sm font-medium text-blue-700 dark:text-blue-300 pb-2">
+                          Add only the food price here. If you are not sure, use &quot;Text me what is in cafe&quot; above.
                         </p>
                         {errors.restaurantItemPrice ? <p className="mt-2 text-sm text-red-500">{errors.restaurantItemPrice}</p> : null}
                       </div>
                       ) : null}
                       <div>
                         <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                          <Wallet className="h-4 w-4 text-orange-500" />
+                          <Wallet className="h-4 w-4 text-blue-500" />
                           Number of Orders
                         </label>
                         <div className="grid grid-cols-3 gap-2">
@@ -1525,8 +2336,8 @@ if (stepNumber === packagingStep) {
                               }}
                               className={`h-12 rounded-xl border-2 text-sm font-bold transition ${
                                 formData.restaurantPeople === people
-                                  ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm dark:bg-orange-950/30 dark:text-orange-200'
-                                  : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
+                                  ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:bg-blue-950/30 dark:text-blue-200'
+                                  : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-700'
                               }`}
                             >
                               {people}
@@ -1538,7 +2349,120 @@ if (stepNumber === packagingStep) {
                         </p>
                         {errors.restaurantPeople ? <p className="mt-2 text-sm text-red-500">{errors.restaurantPeople}</p> : null}
                       </div>
-                      <div className="rounded-2xl border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-900 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
+                      <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-800/60">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                              <ShoppingBag className="h-4 w-4 text-blue-500" />
+                              Packaging
+                            </label>
+                            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                              Choose it here so the restaurant order stays fast and simple.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => updatePackagingLanguage(packagingLanguage === 'english' ? 'pidgin' : 'english')}
+                            className="shrink-0 rounded-full border border-blue-200 px-3 py-1 text-xs font-semibold text-blue-700 hover:bg-blue-50 dark:border-blue-900/60 dark:text-blue-200 dark:hover:bg-blue-950/30"
+                          >
+                            {packagingCopy.languageButton}
+                          </button>
+                        </div>
+
+                        <p className="mt-4 text-sm font-medium text-slate-800 dark:text-slate-100">
+                          {normalizedRestaurantPeopleCount === 1
+                            ? packagingCopy.singleQuestion
+                            : packagingCopy.multipleQuestion}
+                        </p>
+
+                        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              pauseRealtime()
+                              setFormData((previous) => ({
+                                ...previous,
+                                packaging: 'takeaway',
+                                restaurantTakeawayCount: String(normalizedRestaurantPeopleCount),
+                              }))
+                              clearError('restaurantTakeawayCount')
+                            }}
+                            className={`rounded-xl border-2 p-3 text-left font-semibold transition ${
+                              formData.packaging === 'takeaway' ||
+                              normalizedRestaurantTakeawayCount === normalizedRestaurantPeopleCount
+                                ? 'border-blue-500 bg-blue-50 text-blue-800 dark:bg-blue-950/30 dark:text-blue-100'
+                                : 'border-slate-200 hover:border-blue-300 dark:border-slate-700 dark:hover:border-blue-700'
+                            }`}
+                          >
+                            {normalizedRestaurantPeopleCount === 1
+                              ? packagingCopy.singleTakeaway
+                              : packagingCopy.allTakeaway}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              pauseRealtime()
+                              setFormData((previous) => ({
+                                ...previous,
+                                packaging: 'cellophane',
+                                restaurantTakeawayCount: '0',
+                              }))
+                              clearError('restaurantTakeawayCount')
+                            }}
+                            className={`rounded-xl border-2 p-3 text-left font-semibold transition ${
+                              formData.packaging === 'cellophane' ||
+                              (formData.restaurantTakeawayCount === '0' && normalizedRestaurantTakeawayCount === 0)
+                                ? 'border-blue-500 bg-blue-50 text-blue-800 dark:bg-blue-950/30 dark:text-blue-100'
+                                : 'border-slate-200 hover:border-blue-300 dark:border-slate-700 dark:hover:border-blue-700'
+                            }`}
+                          >
+                            {packagingCopy.singleCellophane}
+                          </button>
+                        </div>
+
+                        {normalizedRestaurantPeopleCount > 1 ? (
+                          <div className="mt-3">
+                            <label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">
+                              {packagingCopy.takeawayCountQuestion}
+                            </label>
+                            <div className="grid grid-cols-4 gap-2">
+                              {Array.from({ length: normalizedRestaurantPeopleCount + 1 }, (_, index) => String(index)).map((count) => (
+                                <button
+                                  key={count}
+                                  type="button"
+                                  onClick={() => {
+                                    pauseRealtime()
+                                    setFormData((previous) => ({
+                                      ...previous,
+                                      packaging: Number(count) === normalizedRestaurantPeopleCount ? 'takeaway' : Number(count) === 0 ? 'cellophane' : 'mixed',
+                                      restaurantTakeawayCount: count,
+                                    }))
+                                    clearError('restaurantTakeawayCount')
+                                  }}
+                                  className={`h-11 rounded-xl border-2 text-sm font-bold transition ${
+                                    formData.restaurantTakeawayCount === count
+                                      ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-950/30 dark:text-blue-200'
+                                      : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-700'
+                                  }`}
+                                >
+                                  {count}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        <div className="mt-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-300">
+                          {packagingCopy.feeLabel}: {formatNaira(restaurantPackagingFee)}
+                          {normalizedRestaurantTakeawayCount > 0 ? (
+                            <span> ({normalizedRestaurantTakeawayCount} x {formatNaira(RESTAURANT_TAKEAWAY_FEE)})</span>
+                          ) : null}
+                        </div>
+                        {errors.restaurantTakeawayCount ? <p className="mt-2 text-sm text-red-500">{errors.restaurantTakeawayCount}</p> : null}
+                      </div>
+
+                      <div className="rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
                         <span className="block pt-1 font-semibold">
                           {isCafeInquiry
                             ? `Tasker will notify you of available food before you make a decision.`
@@ -1546,7 +2470,7 @@ if (stepNumber === packagingStep) {
                         </span>
                         {shouldShowTieredServiceFee ? (
                           <span className="block pt-1 font-semibold">
-                            Service fee for this budget is {formatNaira(pricing.serviceFee)}.
+                            Service fee for this budget is {formatNaira(displayedServiceFee)}.
                           </span>
                         ) : null}
                       </div>
@@ -1636,7 +2560,7 @@ if (stepNumber === packagingStep) {
                         Item budget is {formatNaira(shoppingBudget)} before SwiftDU service fee.
                         {shouldShowTieredServiceFee ? (
                           <span className="block pt-1 font-semibold">
-                            Service fee for this budget is {formatNaira(pricing.serviceFee)}.
+                            Service fee for this budget is {formatNaira(displayedServiceFee)}.
                           </span>
                         ) : null}
                       </div>
@@ -1684,7 +2608,7 @@ if (stepNumber === packagingStep) {
                     <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">SwiftDU adds the delivery fee to the total you will later transfer to the tasker.</p>
                     {shouldShowTieredServiceFee ? (
                       <div className="mt-3 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-semibold text-indigo-900 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
-                        Service fee for this budget is {formatNaira(pricing.serviceFee)}.
+                        Service fee for this budget is {formatNaira(displayedServiceFee)}.
                       </div>
                     ) : null}
                     {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
@@ -1710,14 +2634,14 @@ if (stepNumber === packagingStep) {
                           packagingLanguage === 'english' ? 'pidgin' : 'english'
                         )
                       }
-                      className="h-10 w-fit border-orange-200 text-orange-700 hover:bg-orange-50 dark:border-orange-900/60 dark:text-orange-200 dark:hover:bg-orange-950/30"
+                      className="h-10 w-fit border-blue-200 text-blue-700 hover:bg-blue-50 dark:border-blue-900/60 dark:text-blue-200 dark:hover:bg-blue-950/30"
                     >
                       {packagingCopy.languageButton}
                     </Button>
                   </div>
 
                   <div className="space-y-4">
-                    <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-950 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
+                    <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
                       <TypeTypingEffect
                         text={
                           normalizedRestaurantPeopleCount === 1
@@ -1744,8 +2668,8 @@ if (stepNumber === packagingStep) {
                         className={`min-h-11 rounded-full border-2 px-4 text-sm font-bold transition ${
                           normalizedRestaurantTakeawayCount === normalizedRestaurantPeopleCount &&
                           formData.packaging !== 'mixed'
-                            ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm dark:bg-orange-950/30 dark:text-orange-200'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
+                            ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:bg-blue-950/30 dark:text-blue-200'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-700'
                         }`}
                       >
                         {normalizedRestaurantPeopleCount === 1
@@ -1770,8 +2694,8 @@ if (stepNumber === packagingStep) {
                             normalizedRestaurantTakeawayCount === 0 &&
                             formData.packaging === 'Cellophane') ||
                           formData.packaging === 'mixed'
-                            ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm dark:bg-orange-950/30 dark:text-orange-200'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
+                            ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:bg-blue-950/30 dark:text-blue-200'
+                            : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-700'
                         }`}
                       >
                         {normalizedRestaurantPeopleCount === 1
@@ -1782,7 +2706,7 @@ if (stepNumber === packagingStep) {
 
                     {normalizedRestaurantPeopleCount > 1 && formData.packaging === 'mixed' ? (
                       <>
-                        <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-orange-200 bg-orange-50 px-4 py-3 text-sm text-orange-950 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
+                        <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
                           <TypeTypingEffect
                             text={packagingCopy.takeawayCountQuestion}
                             speed={25}
@@ -1807,8 +2731,8 @@ if (stepNumber === packagingStep) {
                               }}
                               className={`h-11 min-w-11 rounded-full border-2 px-4 text-sm font-bold transition ${
                                 formData.restaurantTakeawayCount === String(count)
-                                  ? 'border-orange-500 bg-orange-50 text-orange-700 shadow-sm dark:bg-orange-950/30 dark:text-orange-200'
-                                  : 'border-slate-200 bg-white text-slate-700 hover:border-orange-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-orange-700'
+                                  ? 'border-blue-500 bg-blue-50 text-blue-700 shadow-sm dark:bg-blue-950/30 dark:text-blue-200'
+                                  : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:border-blue-700'
                               }`}
                             >
                               {count}
@@ -1910,16 +2834,24 @@ if (stepNumber === packagingStep) {
                       ) : null}
                     </div>
                     <div className="space-y-3 border-t-2 border-slate-200 pt-6 dark:border-slate-700">
+                      {hasAvailableServiceFeeDiscount ? (
+                        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
+                          <p className="font-semibold">Service fee discount applied</p>
+                          <p className="mt-1">
+                            You have a discount on this order, so you won&apos;t pay the service fee.
+                          </p>
+                        </div>
+                      ) : null}
                       <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span></div>
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between text-sm"><span className="text-slate-500">Takeaway packs</span><span className="font-medium">{formatNaira(restaurantPackagingFee)}</span></div> : null}
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span><span className="font-medium">{formatNaira(pricing.serviceFee)}</span></div>
-                      <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(pricing.totalAmount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span><span className="font-medium">{formatNaira(displayedServiceFee)}</span></div>
+                      <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(displayedTotalAmount)}</span></div>
                     </div>
                   </div>
                   {formData.taskType === 'restaurant' ? (
-                    <div className="rounded-2xl border border-orange-200 bg-orange-50 p-4 text-sm text-orange-900 dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
+                    <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
                       <div className="flex items-start gap-3">
-                        <div className="rounded-full bg-orange-100 p-2 text-orange-600 dark:bg-orange-900/70 dark:text-orange-300"><Info className="h-4 w-4" /></div>
+                        <div className="rounded-full bg-blue-100 p-2 text-blue-600 dark:bg-blue-900/70 dark:text-blue-300"><Info className="h-4 w-4" /></div>
                         <p>If a tasker notices this restaurant order is for multiple people, they can update the price before you pay.</p>
                       </div>
                     </div>

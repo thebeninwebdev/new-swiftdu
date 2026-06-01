@@ -1,7 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Types } from 'mongoose'
 import { connectDB } from '@/lib/db'
 import {User} from '@/models/user'
 import { Order } from '@/models/order'
+
+function getUserLookupConditions(userId?: string | null) {
+  const conditions: Record<string, unknown>[] = []
+
+  if (userId) {
+    conditions.push({ id: userId })
+
+    if (Types.ObjectId.isValid(userId)) {
+      conditions.push({ _id: new Types.ObjectId(userId) })
+    }
+  }
+
+  return conditions
+}
 
 // ─── GET /api/admin/users ───────────────────────────────────────────────────
 // Returns paginated list of users with optional filters.
@@ -67,10 +82,42 @@ export async function GET(req: NextRequest) {
     )
 
     // Attach order counts
-    const usersWithCounts = users.map(user => ({
-      ...user,
-      dateOfBirth: user.dateOfBirth ? user.dateOfBirth.toISOString() : null,
-      orderCount: orderCountMap[user._id.toString()] || 0
+    const usersWithCounts = await Promise.all(users.map(async user => {
+      const activeDiscount = Boolean(
+        user.serviceFeeDiscountEnabled &&
+        Number(user.serviceFeeDiscountRemainingOrders || 0) > 0
+      )
+      let serviceFeeDiscountGrantedByName = user.serviceFeeDiscountGrantedByName || ''
+      let serviceFeeDiscountGrantedByPhone = user.serviceFeeDiscountGrantedByPhone || ''
+
+      if (
+        activeDiscount &&
+        user.serviceFeeDiscountGrantedByUserId &&
+        !serviceFeeDiscountGrantedByPhone
+      ) {
+        const grantorLookupConditions = getUserLookupConditions(
+          user.serviceFeeDiscountGrantedByUserId
+        )
+        const grantor = grantorLookupConditions.length
+          ? await User.findOne({ $or: grantorLookupConditions })
+              .select('name phone email')
+              .lean()
+          : null
+
+        serviceFeeDiscountGrantedByName =
+          serviceFeeDiscountGrantedByName || grantor?.name || grantor?.email || ''
+        serviceFeeDiscountGrantedByPhone =
+          typeof grantor?.phone === 'string' ? grantor.phone.trim() : ''
+      }
+
+      return {
+        ...user,
+        serviceFeeDiscountEnabled: activeDiscount,
+        serviceFeeDiscountGrantedByName,
+        serviceFeeDiscountGrantedByPhone,
+        dateOfBirth: user.dateOfBirth ? user.dateOfBirth.toISOString() : null,
+        orderCount: orderCountMap[user._id.toString()] || 0
+      }
     }))
 
     const totalUsers = await User.countDocuments(filters)

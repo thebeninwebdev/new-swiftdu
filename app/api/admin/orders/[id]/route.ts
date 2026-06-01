@@ -7,6 +7,7 @@ import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications'
+import { consumeServiceFeeDiscountForCompletedOrder } from '@/lib/service-fee-discount'
 
 // ─── PATCH /api/admin/orders/[id] ───────────────────────────────────────────
 // Update order status (cancel, complete).
@@ -91,6 +92,8 @@ export async function PATCH(
     emitOrderUpdated(order)
 
     if (previousStatus !== 'completed' && order.status === 'completed') {
+      await consumeServiceFeeDiscountForCompletedOrder(order)
+
       const pushResult = await sendPushNotification({
         audience: { userIds: [String(order.userId)] },
         title: 'Task completed',

@@ -42,6 +42,10 @@ interface Errand {
   commission?: number
   platformFee?: number
   taskerFee?: number
+  serviceFeeDiscountApplied?: boolean
+  serviceFeeDiscountGrantedByName?: string
+  serviceFeeDiscountGrantedByPhone?: string
+  discountCommissionAmount?: number
   totalAmount?: number
   dueDate?: string
   deadline?: string
@@ -74,6 +78,10 @@ interface RealtimeTaskPayload {
   commission?: number
   platformFee?: number
   taskerFee?: number
+  serviceFeeDiscountApplied?: boolean
+  serviceFeeDiscountGrantedByName?: string
+  serviceFeeDiscountGrantedByPhone?: string
+  discountCommissionAmount?: number
   totalAmount?: number
   dueDate?: string
   deadline?: string
@@ -233,6 +241,10 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
     commission: payload.commission,
     platformFee: payload.platformFee,
     taskerFee: payload.taskerFee,
+    serviceFeeDiscountApplied: payload.serviceFeeDiscountApplied,
+    serviceFeeDiscountGrantedByName: payload.serviceFeeDiscountGrantedByName,
+    serviceFeeDiscountGrantedByPhone: payload.serviceFeeDiscountGrantedByPhone,
+    discountCommissionAmount: payload.discountCommissionAmount,
     totalAmount: payload.totalAmount,
     dueDate: payload.dueDate,
     deadline: payload.deadline,
@@ -634,6 +646,13 @@ export default function TaskerDashboardPage() {
       }
 
       toast.success('Task accepted. It is now in your active tasks.')
+      if (payload.serviceFeeDiscountApplied && payload.serviceFeeDiscountGrantedByPhone) {
+        toast('Customer discount active', {
+          description: `This customer has a service fee discount. Reach out to ${payload.serviceFeeDiscountGrantedByPhone} to collect your commission${
+            payload.discountCommissionAmount ? ` of ${convertToNaira(payload.discountCommissionAmount)}` : ''
+          }.`,
+        })
+      }
       setAcceptedErrands((previous) =>
         sortErrands([payload, ...previous.filter((errand) => errand._id !== payload._id)])
       )
@@ -664,6 +683,11 @@ export default function TaskerDashboardPage() {
       timeStyle: 'short',
     }).format(new Date(value))
   }
+
+  const getTaskerEarning = (errand: Errand) =>
+    errand.serviceFeeDiscountApplied
+      ? Number(errand.discountCommissionAmount || errand.taskerFee || 0)
+      : Number(errand.taskerFee || 0)
 
   const getActiveTaskState = (errand: Errand) => {
     if (errand.isDeclinedTask) {
@@ -1000,10 +1024,22 @@ export default function TaskerDashboardPage() {
                             Earn
                           </p>
                           <p className="text-sm font-bold text-emerald-800 dark:text-emerald-200">
-                            {convertToNaira(errand.taskerFee || 0)}
+                            {convertToNaira(getTaskerEarning(errand))}
                           </p>
                         </div>
                       </div>
+
+                      {errand.serviceFeeDiscountApplied && errand.serviceFeeDiscountGrantedByPhone ? (
+                        <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+                          <div className="flex gap-2">
+                            <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-300" />
+                            <p>
+                              This customer has a discount. Reach out to {errand.serviceFeeDiscountGrantedByPhone} to collect your commission
+                              {errand.discountCommissionAmount ? ` of ${convertToNaira(errand.discountCommissionAmount)}` : ''}.
+                            </p>
+                          </div>
+                        </div>
+                      ) : null}
 
                       <div className="mt-4 grid gap-2 text-sm text-slate-600 dark:text-slate-400 sm:grid-cols-2">
                         <div className="flex items-center gap-2">
@@ -1150,7 +1186,7 @@ export default function TaskerDashboardPage() {
                         <span className="text-xs font-medium opacity-90">You Earn</span>
                       </div>
                       <p className="text-2xl font-bold">
-                        {convertToNaira(errand.taskerFee || 0)}
+                        {convertToNaira(getTaskerEarning(errand))}
                       </p>
                     </motion.div>
                     
@@ -1166,6 +1202,18 @@ export default function TaskerDashboardPage() {
                   <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed mb-4 line-clamp-2">
                     {errand.description}
                   </p>
+
+                  {errand.serviceFeeDiscountApplied && errand.serviceFeeDiscountGrantedByPhone ? (
+                    <div className="mb-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+                      <div className="flex gap-2">
+                        <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-300" />
+                        <p>
+                          Customer discount. If you accept, reach out to {errand.serviceFeeDiscountGrantedByPhone} to collect your commission
+                          {errand.discountCommissionAmount ? ` of ${convertToNaira(errand.discountCommissionAmount)}` : ''}.
+                        </p>
+                      </div>
+                    </div>
+                  ) : null}
 
                   {/* Location & Details */}
                   <div className="space-y-2 mb-4">

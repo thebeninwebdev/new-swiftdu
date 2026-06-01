@@ -14,6 +14,11 @@ export interface IOrder extends Document {
   platformFee: number;
   taskerFee: number;
   serviceFee: number;
+  serviceFeeBeforeDiscount?: number;
+  serviceFeeDiscountApplied?: boolean;
+  serviceFeeDiscountGrantedByName?: string;
+  serviceFeeDiscountGrantedByPhone?: string;
+  discountCommissionAmount?: number;
   pricingModel: 'tiered' | 'water' | 'copy_notes';
   totalAmount: number;
   location: string;
@@ -141,6 +146,22 @@ const orderSchema = new Schema<IOrder>(
       type: Number,
       required: true,
       default: 0,
+    },
+    serviceFeeBeforeDiscount: {
+      type: Number,
+      min: 0,
+    },
+    serviceFeeDiscountApplied: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    serviceFeeDiscountGrantedByName: String,
+    serviceFeeDiscountGrantedByPhone: String,
+    discountCommissionAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
     pricingModel: {
       type: String,

@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronDown, Loader2, Mail, MapPin, Phone } from "lucide-react";
+import { ChevronDown, Loader2, Lock, Mail, MapPin, Phone } from "lucide-react";
 import { toast } from "sonner";
 import { authClient } from "@/lib/auth-client";
 import {
@@ -21,10 +21,14 @@ type CompletionForm = {
   name: string;
   phone: string;
   location: string;
+  password: string;
+  confirmPassword: string;
 };
 
+type CompletionStep = RequiredProfileField | "password";
+
 const STEP_COPY: Record<
-  RequiredProfileField,
+  CompletionStep,
   {
     badge: string;
     title: string;
@@ -49,6 +53,12 @@ const STEP_COPY: Record<
     description:
       "We use this to match you faster and keep the experience local for campus users.",
   },
+  password: {
+    badge: "Password",
+    title: "Create your SwiftDU password",
+    description:
+      "You can still use Google, but a password gives you another secure way to access your account.",
+  },
 };
 
 function CompleteProfilePageContent() {
@@ -64,14 +74,20 @@ function CompleteProfilePageContent() {
     name: "",
     phone: "",
     location: "",
+    password: "",
+    confirmPassword: "",
   });
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
 
   const missingFields = getMissingRequiredProfileFields(user);
-  const steps = missingFields.map((field) => ({
+  const steps = [
+    ...missingFields,
+    ...(hasPassword === false ? (["password"] as const) : []),
+  ].map((field) => ({
     field,
     ...STEP_COPY[field],
   }));
@@ -81,6 +97,7 @@ function CompleteProfilePageContent() {
   useEffect(() => {
     if (user) {
       setForm((previous) => ({
+        ...previous,
         name: previous.name || user.name || "",
         phone: previous.phone,
         location: previous.location || user.location || "",
@@ -90,19 +107,51 @@ function CompleteProfilePageContent() {
 
   useEffect(() => {
     if (!isPending && !user) {
+      setHasPassword(null);
       router.replace("/login");
     }
   }, [isPending, router, user]);
+
+  useEffect(() => {
+    if (isPending || !user) {
+      return;
+    }
+
+    let ignore = false;
+
+    async function loadPasswordStatus() {
+      try {
+        const response = await fetch("/api/users/me/password-status", {
+          cache: "no-store",
+        });
+        const payload = await response.json();
+
+        if (!ignore) {
+          setHasPassword(response.ok ? Boolean(payload.hasPassword) : false);
+        }
+      } catch {
+        if (!ignore) {
+          setHasPassword(false);
+        }
+      }
+    }
+
+    void loadPasswordStatus();
+
+    return () => {
+      ignore = true;
+    };
+  }, [isPending, user]);
 
   useEffect(() => {
     if (!user) {
       return;
     }
 
-    if (missingFields.length === 0) {
+    if (hasPassword !== null && steps.length === 0) {
       router.replace(destination);
     }
-  }, [destination, missingFields.length, router, user]);
+  }, [destination, hasPassword, router, steps.length, user]);
 
   useEffect(() => {
     if (currentStep > Math.max(steps.length - 1, 0)) {
@@ -110,7 +159,7 @@ function CompleteProfilePageContent() {
     }
   }, [currentStep, steps.length]);
 
-  const validateStep = (field: RequiredProfileField) => {
+  const validateStep = (field: CompletionStep) => {
     switch (field) {
       case "name":
         if (!form.name.trim()) {
@@ -132,6 +181,16 @@ function CompleteProfilePageContent() {
           return "Please select your hostel or location";
         }
         return "";
+      case "password":
+        if (!form.password || form.password.length < 8) {
+          return "Password must be at least 8 characters";
+        }
+
+        if (form.password !== form.confirmPassword) {
+          return "Passwords do not match";
+        }
+
+        return "";
       default:
         return "";
     }
@@ -145,10 +204,13 @@ function CompleteProfilePageContent() {
     setForm((previous) => ({ ...previous, [name]: value }));
     setServerError("");
 
-    if (errors[name]) {
+    if (errors[name] || (name === "confirmPassword" && errors.password)) {
       setErrors((previous) => {
         const nextErrors = { ...previous };
         delete nextErrors[name];
+        if (name === "confirmPassword") {
+          delete nextErrors.password;
+        }
         return nextErrors;
       });
     }
@@ -188,14 +250,46 @@ function CompleteProfilePageContent() {
         payload.location = form.location;
       }
 
-      const { error } = await authClient.updateUser(payload);
+      if (Object.keys(payload).length > 0) {
+        const { error } = await authClient.updateUser(payload);
 
-      if (error) {
-        throw error;
+        if (error) {
+          throw error;
+        }
+      }
+
+      if (hasPassword === false) {
+        const response = await fetch("/api/auth/set-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ newPassword: form.password }),
+        });
+        const passwordPayload = await response.json().catch(() => null);
+
+        if (!response.ok) {
+          const passwordErrorCode = passwordPayload?.code;
+          const passwordErrorMessage =
+            passwordPayload?.message || passwordPayload?.error || "";
+          const passwordAlreadySet =
+            passwordErrorCode === "PASSWORD_ALREADY_SET" ||
+            passwordErrorMessage.toLowerCase().includes("already set");
+
+          if (passwordAlreadySet) {
+            setHasPassword(true);
+          } else {
+            throw new Error(
+              passwordErrorMessage ||
+                "We could not save your password right now."
+            );
+          }
+        }
       }
 
       toast.success("Your account is ready", {
-        description: "We saved the missing details from your Google sign up.",
+        description:
+          hasPassword === false
+            ? "We saved your details and password."
+            : "We saved your details.",
       });
 
       router.replace(destination);
@@ -225,7 +319,7 @@ function CompleteProfilePageContent() {
     }
   };
 
-  if (isPending || !user || !activeStep) {
+  if (isPending || !user || hasPassword === null || !activeStep) {
     return (
       <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4">
         <div className="absolute inset-0">
@@ -247,7 +341,7 @@ function CompleteProfilePageContent() {
   }
 
   const helperCountLabel =
-    missingFields.length === 1 ? "1 detail" : `${missingFields.length} details`;
+    steps.length === 1 ? "1 detail" : `${steps.length} details`;
 
   return (
     <div className="relative min-h-screen overflow-hidden bg-slate-950 px-3 py-4 sm:px-4 sm:py-6">
@@ -453,6 +547,62 @@ function CompleteProfilePageContent() {
                   </p>
                   {errors.location && (
                     <p className="text-xs text-red-600">{errors.location}</p>
+                  )}
+                </div>
+              )}
+
+              {activeStep.field === "password" && (
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="password"
+                      className="text-sm font-semibold text-slate-700"
+                    >
+                      Password
+                    </label>
+                    <div className="relative">
+                      <input
+                        id="password"
+                        name="password"
+                        type="password"
+                        autoComplete="new-password"
+                        placeholder="Create a password"
+                        value={form.password}
+                        onChange={handleChange}
+                        className={`w-full rounded-2xl border-2 bg-white px-4 py-3.5 pl-11 text-base text-slate-900 outline-none transition focus:border-indigo-600 focus:ring-4 focus:ring-indigo-100 ${
+                          errors.password ? "border-red-400 bg-red-50/60" : "border-slate-200"
+                        }`}
+                      />
+                      <Lock className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label
+                      htmlFor="confirmPassword"
+                      className="text-sm font-semibold text-slate-700"
+                    >
+                      Confirm password
+                    </label>
+                    <input
+                      id="confirmPassword"
+                      name="confirmPassword"
+                      type="password"
+                      autoComplete="new-password"
+                      placeholder="Confirm your password"
+                      value={form.confirmPassword}
+                      onChange={handleChange}
+                      className={`w-full rounded-2xl border-2 bg-white px-4 py-3.5 text-base text-slate-900 outline-none transition focus:border-indigo-600 focus:ring-4 focus:ring-indigo-100 ${
+                        errors.password ? "border-red-400 bg-red-50/60" : "border-slate-200"
+                      }`}
+                    />
+                  </div>
+
+                  <p className="text-xs text-slate-500">
+                    Use at least 8 characters. You will be able to log in with either Google or this password.
+                  </p>
+                  {errors.password && (
+                    <p className="text-xs text-red-600">{errors.password}</p>
                   )}
                 </div>
               )}

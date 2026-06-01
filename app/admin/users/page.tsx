@@ -50,6 +50,10 @@ interface User {
   lastLogin?: string
   orderCount?: number
   isSuspended?: boolean
+  serviceFeeDiscountEnabled?: boolean
+  serviceFeeDiscountGrantedByName?: string
+  serviceFeeDiscountGrantedByPhone?: string
+  serviceFeeDiscountRemainingOrders?: number
 }
 
 const formatDateOnly = (date?: string | null) =>
@@ -75,6 +79,12 @@ const calculateAge = (date?: string | null) => {
 
   return Math.max(age, 0)
 }
+
+const hasActiveServiceFeeDiscount = (user: User) =>
+  Boolean(
+    user.serviceFeeDiscountEnabled &&
+      Number(user.serviceFeeDiscountRemainingOrders || 0) > 0
+  )
 
 // Animation variants
 const containerVariants = {
@@ -202,7 +212,11 @@ export default function AdminUsersPage() {
   }, [admin, fetchUsers])
 
   // Handle user actions
-  const handleUserAction = async (userId: string, action: 'verify' | 'suspend' | 'activate') => {
+  const handleUserAction = async (
+    userId: string,
+    action: 'verify' | 'suspend' | 'activate' | 'grant-discount' | 'remove-discount',
+    discountOrderCount?: number
+  ) => {
     const targetUser = users.find((user) => user._id === userId)
 
     if (targetUser?.role?.toLowerCase() === 'admin') {
@@ -214,12 +228,22 @@ export default function AdminUsersPage() {
       const res = await fetch(`/api/admin/users/${userId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
+        body: JSON.stringify({ action, discountOrderCount }),
       })
 
       const data = await res.json()
       if (!res.ok) {
         toast.error(data.error || 'Action failed')
+        return
+      }
+
+      if (action === 'grant-discount' || action === 'remove-discount') {
+        toast.success(
+          action === 'grant-discount'
+            ? 'Service fee discount added'
+            : 'Service fee discount removed'
+        )
+        fetchUsers()
         return
       }
 
@@ -539,6 +563,11 @@ export default function AdminUsersPage() {
                                     Suspended
                                   </Badge>
                                 )}
+                                {hasActiveServiceFeeDiscount(user) && (
+                                  <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 text-xs">
+                                    {Number(user.serviceFeeDiscountRemainingOrders || 0)} discounts left
+                                  </Badge>
+                                )}
                               </div>
                               <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 text-xs md:text-sm text-muted-foreground gap-1 sm:gap-0 mt-1">
                                 <div className="flex items-center hover:text-foreground transition-colors">
@@ -567,6 +596,11 @@ export default function AdminUsersPage() {
                                 <Badge variant="outline" className="font-normal">
                                   {user.role}
                                 </Badge>
+                                {hasActiveServiceFeeDiscount(user) && (
+                                  <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700 font-normal">
+                                    {Number(user.serviceFeeDiscountRemainingOrders || 0)} left
+                                  </Badge>
+                                )}
                               </div>
                               <p className="text-xs sm:text-sm text-muted-foreground">
                                 {user.orderCount || 0} orders
@@ -612,6 +646,36 @@ export default function AdminUsersPage() {
                                     className="transition-all duration-300 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200"
                                   >
                                     <UserCheck className="w-4 h-4" />
+                                  </Button>
+                                </motion.div>
+                              )}
+                              {!isAdminUser && (
+                                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                      hasActiveServiceFeeDiscount(user)
+                                        ? handleUserAction(user._id, 'remove-discount')
+                                        : (() => {
+                                            const value = window.prompt(
+                                              'How many upcoming orders should receive this discount?',
+                                              '2'
+                                            )
+                                            const discountOrderCount = Number(value)
+
+                                            if (!value) return
+                                            if (!Number.isInteger(discountOrderCount) || discountOrderCount < 1) {
+                                              toast.error('Enter a whole number of orders')
+                                              return
+                                            }
+
+                                            void handleUserAction(user._id, 'grant-discount', discountOrderCount)
+                                          })()
+                                    }
+                                    className="transition-all duration-300 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200"
+                                  >
+                                    {hasActiveServiceFeeDiscount(user) ? 'Remove Discount' : 'Add Discount'}
                                   </Button>
                                 </motion.div>
                               )}
@@ -718,8 +782,32 @@ export default function AdminUsersPage() {
                                     {user.isSuspended && (
                                       <Badge variant="destructive">Suspended</Badge>
                                     )}
+                                    {hasActiveServiceFeeDiscount(user) && (
+                                      <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                                        {Number(user.serviceFeeDiscountRemainingOrders || 0)} discounts left
+                                      </Badge>
+                                    )}
                                   </div>
                                 </motion.div>
+
+                                {hasActiveServiceFeeDiscount(user) && (
+                                  <motion.div
+                                    className="space-y-1"
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    transition={{ delay: 0.37 }}
+                                  >
+                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Discount Contact</p>
+                                    <p className="text-sm font-medium">
+                                      {user.serviceFeeDiscountGrantedByName || 'SwiftDU team'}
+                                      {user.serviceFeeDiscountGrantedByPhone ? ` - ${user.serviceFeeDiscountGrantedByPhone}` : ''}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">
+                                      Applies to the next {Number(user.serviceFeeDiscountRemainingOrders || 0)} order
+                                      {Number(user.serviceFeeDiscountRemainingOrders || 0) === 1 ? '' : 's'}.
+                                    </p>
+                                  </motion.div>
+                                )}
 
                                 <motion.div 
                                   className="space-y-1"

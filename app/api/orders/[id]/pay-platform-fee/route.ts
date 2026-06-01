@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { Types } from 'mongoose'
 
 import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
@@ -11,6 +12,17 @@ import {
   verifyAndMarkOrderSettlementPaid,
 } from '@/lib/settlement-payment'
 import { Order } from '@/models/order'
+import { User } from '@/models/user'
+
+function getCustomerLookupConditions(userId: string) {
+  const conditions: Record<string, unknown>[] = [{ id: userId }]
+
+  if (Types.ObjectId.isValid(userId)) {
+    conditions.push({ _id: new Types.ObjectId(userId) })
+  }
+
+  return conditions
+}
 
 export async function POST(
   request: NextRequest,
@@ -55,6 +67,117 @@ export async function POST(
         { error: 'The platform settlement for this task has already been paid.' },
         { status: 400 }
       )
+    }
+
+    if (
+      !order.serviceFeeDiscountApplied &&
+      Number(order.platformFee || 0) > 0 &&
+      Number(order.serviceFee || order.commission || 0) > 0
+    ) {
+      const customerLookupConditions = getCustomerLookupConditions(String(order.userId))
+      const discountCustomer = await User.findOneAndUpdate(
+        {
+          $or: customerLookupConditions,
+          serviceFeeDiscountEnabled: true,
+          serviceFeeDiscountRemainingOrders: { $gt: 0 },
+        },
+        { $inc: { serviceFeeDiscountRemainingOrders: -1 } },
+        {
+          new: true,
+          projection:
+            'serviceFeeDiscountGrantedByUserId serviceFeeDiscountGrantedByName serviceFeeDiscountGrantedByPhone serviceFeeDiscountRemainingOrders',
+        }
+      ).lean()
+
+      if (discountCustomer) {
+        const previousServiceFee = Number(order.serviceFee || order.commission || 0)
+        const previousTaskerFee = Number(order.taskerFee || 0)
+        let serviceFeeDiscountGrantedByName =
+          discountCustomer.serviceFeeDiscountGrantedByName || undefined
+        let serviceFeeDiscountGrantedByPhone =
+          discountCustomer.serviceFeeDiscountGrantedByPhone || undefined
+
+        if (
+          discountCustomer.serviceFeeDiscountGrantedByUserId &&
+          !serviceFeeDiscountGrantedByPhone
+        ) {
+          const grantorLookupConditions = getCustomerLookupConditions(
+            String(discountCustomer.serviceFeeDiscountGrantedByUserId)
+          )
+          const grantor = grantorLookupConditions.length
+            ? await User.findOne({ $or: grantorLookupConditions })
+                .select('name phone email')
+                .lean()
+            : null
+
+          serviceFeeDiscountGrantedByName =
+            serviceFeeDiscountGrantedByName ||
+            grantor?.name ||
+            grantor?.email ||
+            undefined
+          serviceFeeDiscountGrantedByPhone =
+            typeof grantor?.phone === 'string' && grantor.phone.trim()
+              ? grantor.phone.trim()
+              : undefined
+
+          if (serviceFeeDiscountGrantedByPhone) {
+            await User.findByIdAndUpdate(discountCustomer._id, {
+              serviceFeeDiscountGrantedByName,
+              serviceFeeDiscountGrantedByPhone,
+            })
+          }
+        }
+
+        if (Number(discountCustomer.serviceFeeDiscountRemainingOrders || 0) <= 0) {
+          await User.findByIdAndUpdate(discountCustomer._id, {
+            $set: {
+              serviceFeeDiscountEnabled: false,
+              serviceFeeDiscountRemainingOrders: 0,
+            },
+            $unset: {
+              serviceFeeDiscountGrantedByUserId: '',
+              serviceFeeDiscountGrantedByName: '',
+              serviceFeeDiscountGrantedByPhone: '',
+              serviceFeeDiscountGrantedAt: '',
+            },
+          })
+        }
+
+        order.serviceFeeBeforeDiscount = previousServiceFee
+        order.serviceFeeDiscountApplied = true
+        order.serviceFeeDiscountGrantedByName = serviceFeeDiscountGrantedByName
+        order.serviceFeeDiscountGrantedByPhone = serviceFeeDiscountGrantedByPhone
+        order.discountCommissionAmount =
+          order.pricingModel === 'tiered'
+            ? previousTaskerFee || previousServiceFee
+            : previousServiceFee
+        order.commission = 0
+        order.platformFee = 0
+        order.serviceFee = 0
+        order.taskerFee = order.pricingModel === 'tiered' ? 0 : previousTaskerFee
+        order.totalAmount = Math.max(
+          0,
+          Number(order.totalAmount || 0) - previousServiceFee
+        )
+        order.settlementProvider = undefined
+        order.settlementStatus = 'not_due'
+        order.settlementReference = undefined
+        order.settlementAccessCode = undefined
+        order.settlementCheckoutUrl = undefined
+        order.settlementTransactionId = undefined
+        order.settlementInitializedAt = undefined
+        order.settlementFailureReason = undefined
+
+        await order.save()
+        await syncTaskerSettlementStatus(String(session.user.taskerId))
+        emitOrderUpdated(order)
+
+        return NextResponse.json({
+          discountApplied: true,
+          order,
+          message: 'The customer service fee discount covered this platform settlement.',
+        })
+      }
     }
 
     if (!order.platformFee || order.platformFee <= 0) {

@@ -35,6 +35,10 @@ interface ErrandDetail {
   commission: number
   platformFee: number
   taskerFee: number
+  serviceFeeDiscountApplied?: boolean
+  serviceFeeDiscountGrantedByName?: string
+  serviceFeeDiscountGrantedByPhone?: string
+  discountCommissionAmount?: number
   totalAmount: number
   noteSize?: 'small' | 'big'
   numberOfPages?: number
@@ -806,6 +810,18 @@ export default function ErrandDetailPage() {
                 Transfer summary
               </h2>
 
+              {errand.serviceFeeDiscountApplied && errand.serviceFeeDiscountGrantedByPhone ? (
+                <div className="mt-4 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950 dark:border-blue-900/60 dark:bg-blue-950/30 dark:text-blue-100">
+                  <div className="flex gap-2">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-blue-600 dark:text-blue-300" />
+                    <p>
+                      This customer has a discount. Reach out to {errand.serviceFeeDiscountGrantedByPhone} to collect your commission
+                      {errand.discountCommissionAmount ? ` of ${convertToNaira(errand.discountCommissionAmount)}` : ''}.
+                    </p>
+                  </div>
+                </div>
+              ) : null}
+
               <div className="mt-5 space-y-3">
                 <div className="rounded-2xl bg-slate-50 px-4 py-3 dark:bg-slate-950/70">
                   <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
@@ -831,7 +847,11 @@ export default function ErrandDetailPage() {
                         Your fee
                       </p>
                       <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">
-                        {convertToNaira(errand.taskerFee || 0)}
+                        {convertToNaira(
+                          errand.serviceFeeDiscountApplied
+                            ? errand.discountCommissionAmount || errand.taskerFee || 0
+                            : errand.taskerFee || 0
+                        )}
                       </p>
                     </div>
                   </div>

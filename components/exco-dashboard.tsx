@@ -481,10 +481,20 @@ type ExcoUser = {
   role: string;
   emailVerified: boolean;
   isSuspended: boolean;
+  serviceFeeDiscountEnabled: boolean;
+  serviceFeeDiscountGrantedByName: string;
+  serviceFeeDiscountGrantedByPhone: string;
+  serviceFeeDiscountRemainingOrders: number;
   dateOfBirth: string | null;
   orderCount: number;
   createdAt: string;
 };
+
+const hasActiveServiceFeeDiscount = (user: ExcoUser) =>
+  Boolean(
+    user.serviceFeeDiscountEnabled &&
+      Number(user.serviceFeeDiscountRemainingOrders || 0) > 0
+  );
 
 type ExcoOrder = {
   id: string;
@@ -645,6 +655,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
   if (role === "CFO") {
     return (
       <div className="space-y-4">
+        <UserManagementPanel title="Customer Discounts" allowSuspension={false} />
         <TaskerManagementPanel canModerate={false} />
       </div>
     );
@@ -1204,7 +1215,8 @@ function UserManagementPanel({
         statusFilter === "all" ||
         (statusFilter === "verified" && user.emailVerified) ||
         (statusFilter === "unverified" && !user.emailVerified) ||
-        (statusFilter === "suspended" && user.isSuspended);
+        (statusFilter === "suspended" && user.isSuspended) ||
+        (statusFilter === "discounted" && hasActiveServiceFeeDiscount(user));
 
       return matchesSearch && matchesRole && matchesStatus;
     });
@@ -1258,6 +1270,7 @@ function UserManagementPanel({
           <option value="verified">Verified</option>
           <option value="unverified">Unverified</option>
           <option value="suspended">Suspended</option>
+          <option value="discounted">Discounted</option>
         </select>
       </div>
       {filteredItems.length === 0 ? (
@@ -1282,6 +1295,14 @@ function UserManagementPanel({
                     {user.emailVerified ? "verified" : "unverified"}
                   </Badge>
                   {user.isSuspended ? <Badge variant="destructive">suspended</Badge> : null}
+                  {hasActiveServiceFeeDiscount(user) ? (
+                    <Badge variant="outline" className="border-blue-200 bg-blue-50 text-blue-700">
+                      service fee discount
+                      {user.serviceFeeDiscountRemainingOrders > 0
+                        ? `: ${user.serviceFeeDiscountRemainingOrders} left`
+                        : ""}
+                    </Badge>
+                  ) : null}
                 </div>
                 <p className="mt-2 text-xs text-slate-500">{user.email}</p>
                 <div className="mt-2 grid gap-1 text-xs text-slate-500 sm:grid-cols-3">
@@ -1294,6 +1315,11 @@ function UserManagementPanel({
                   <span>
                     Age {user.dateOfBirth ? `${calculateAge(user.dateOfBirth)} years` : "Not set"}
                   </span>
+                  {hasActiveServiceFeeDiscount(user) ? (
+                    <span>
+                      Discount by {user.serviceFeeDiscountGrantedByName || "SwiftDU"} - {user.serviceFeeDiscountGrantedByPhone || "No phone"} - {user.serviceFeeDiscountRemainingOrders} order{user.serviceFeeDiscountRemainingOrders === 1 ? "" : "s"} left
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap xl:justify-end">
@@ -1336,6 +1362,38 @@ function UserManagementPanel({
                     }
                   >
                     {user.isSuspended ? "Activate" : "Suspend"}
+                  </Button>
+                ) : null}
+                {user.role !== "admin" ? (
+                  <Button
+                    size="sm"
+                    variant={hasActiveServiceFeeDiscount(user) ? "outline" : "default"}
+                    disabled={Boolean(actionId)}
+                    onClick={() =>
+                      hasActiveServiceFeeDiscount(user)
+                        ? updateUser(user, { action: "remove-discount" }, "remove-discount")
+                        : (() => {
+                            const value = window.prompt(
+                              "How many upcoming orders should receive this discount?",
+                              "2"
+                            );
+                            const discountOrderCount = Number(value);
+
+                            if (!value) return;
+                            if (!Number.isInteger(discountOrderCount) || discountOrderCount < 1) {
+                              window.alert("Enter a whole number of orders");
+                              return;
+                            }
+
+                            void updateUser(
+                              user,
+                              { action: "grant-discount", discountOrderCount },
+                              "grant-discount"
+                            );
+                          })()
+                    }
+                  >
+                    {hasActiveServiceFeeDiscount(user) ? "Remove Discount" : "Add Discount"}
                   </Button>
                 ) : null}
               </div>

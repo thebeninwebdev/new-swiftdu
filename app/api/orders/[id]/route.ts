@@ -8,6 +8,7 @@ import { canCustomerCancelOrder, canTaskerCancelOrder } from '@/lib/order-status
 import { emitOrderUpdated } from '@/lib/socket';
 import { getSettlementDueAt, splitServiceFee } from '@/lib/order-finance';
 import { ensureBookedAt } from '@/lib/order-response-time';
+import { consumeServiceFeeDiscountForCompletedOrder } from '@/lib/service-fee-discount';
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
@@ -209,15 +210,31 @@ export async function PATCH(
             parsedRestaurantPeopleCount
           ),
         });
-        const settlement = splitServiceFee(pricing.serviceFee);
+        const baseSettlement = splitServiceFee(pricing.serviceFee);
+        const discountStillApplies = Boolean(order.serviceFeeDiscountApplied);
+        const settlement = discountStillApplies
+          ? {
+              serviceFee: 0,
+              platformFee: 0,
+              taskerFee: 0,
+            }
+          : baseSettlement;
 
         order.amount = pricing.amount;
         order.commission = settlement.serviceFee;
         order.platformFee = settlement.platformFee;
         order.taskerFee = settlement.taskerFee;
         order.serviceFee = settlement.serviceFee;
+        order.serviceFeeBeforeDiscount = discountStillApplies
+          ? pricing.serviceFee
+          : undefined;
+        order.discountCommissionAmount = discountStillApplies
+          ? baseSettlement.taskerFee || pricing.serviceFee
+          : 0;
         order.pricingModel = pricing.pricingModel;
-        order.totalAmount = pricing.totalAmount;
+        order.totalAmount = discountStillApplies
+          ? Math.max(0, pricing.totalAmount - pricing.serviceFee)
+          : pricing.totalAmount;
         order.restaurantPeopleCount = pricing.restaurantPeopleCount;
         order.restaurantTakeawayCount = pricing.restaurantTakeawayCount;
         order.restaurantPackagingFee = pricing.restaurantPackagingFee || 0;
@@ -492,7 +509,7 @@ export async function PATCH(
         printingNeedsEditing: nextPrintingNeedsEditing,
         cafeInquiry: nextCafeInquiry,
       });
-      const settlement =
+      const baseSettlement =
         pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'
           ? {
               serviceFee: pricing.serviceFee,
@@ -500,6 +517,15 @@ export async function PATCH(
               taskerFee: pricing.taskerFee || 0,
             }
           : splitServiceFee(pricing.serviceFee);
+      const discountStillApplies = Boolean(order.serviceFeeDiscountApplied);
+      const settlement = discountStillApplies
+        ? {
+            serviceFee: 0,
+            platformFee: 0,
+            taskerFee:
+              pricing.pricingModel === 'tiered' ? 0 : baseSettlement.taskerFee,
+          }
+        : baseSettlement;
 
       order.taskType = nextTaskType;
       order.description = nextDescription;
@@ -510,8 +536,18 @@ export async function PATCH(
       order.platformFee = settlement.platformFee;
       order.taskerFee = settlement.taskerFee;
       order.serviceFee = settlement.serviceFee;
+      order.serviceFeeBeforeDiscount = discountStillApplies
+        ? pricing.serviceFee
+        : undefined;
+      order.discountCommissionAmount = discountStillApplies
+        ? pricing.pricingModel === 'tiered'
+          ? baseSettlement.taskerFee || pricing.serviceFee
+          : pricing.serviceFee
+        : 0;
       order.pricingModel = pricing.pricingModel;
-      order.totalAmount = pricing.totalAmount;
+      order.totalAmount = discountStillApplies
+        ? Math.max(0, pricing.totalAmount - pricing.serviceFee)
+        : pricing.totalAmount;
       order.cafeInquiry = nextCafeInquiry;
       order.cafeInquiryFeePaid = false;
       order.cafeInquiryDetailsSubmitted = !nextCafeInquiry;
@@ -705,6 +741,8 @@ export async function PATCH(
     emitOrderUpdated(order);
 
     if (previousStatus !== 'completed' && order.status === 'completed') {
+      await consumeServiceFeeDiscountForCompletedOrder(order);
+
       const pushResult = await sendPushNotification({
         audience: { userIds: [String(order.userId)] },
         title: 'Task completed',

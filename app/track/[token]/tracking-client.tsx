@@ -136,6 +136,7 @@ export default function TrackingClient({ token }: { token: string }) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
@@ -208,6 +209,35 @@ export default function TrackingClient({ token }: { token: string }) {
       setError(err instanceof Error ? err.message : 'Failed to confirm payment.');
     } finally {
       setConfirming(false);
+    }
+  };
+
+  const retryOrder = async () => {
+    if (!order) {
+      return;
+    }
+
+    try {
+      setRetrying(true);
+      setMessage('');
+      setError('');
+
+      const response = await fetch(`/api/orders/${order._id}/retry`, {
+        method: 'POST',
+      });
+      const payload = await response.json();
+
+      if (!response.ok) {
+        throw new Error(payload.error || 'Failed to retry this order.');
+      }
+
+      window.location.href = payload.trackingToken
+        ? `/track/${payload.trackingToken}`
+        : '/dashboard/tasks';
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to retry this order.');
+    } finally {
+      setRetrying(false);
     }
   };
 
@@ -290,6 +320,32 @@ export default function TrackingClient({ token }: { token: string }) {
                 </div>
               </div>
             </section>
+
+            {order.status === 'cancelled' ? (
+              <section className="grid gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={retryOrder}
+                  disabled={retrying}
+                  className="flex h-12 items-center justify-center rounded-xl bg-slate-950 px-4 text-sm font-bold text-white transition hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {retrying ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Retrying...
+                    </>
+                  ) : (
+                    'Retry order'
+                  )}
+                </button>
+                <a
+                  href="/dashboard"
+                  className="flex h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 transition hover:bg-slate-50"
+                >
+                  Go home
+                </a>
+              </section>
+            ) : null}
 
             <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
               <div className="border-b border-slate-100 px-4 py-3">

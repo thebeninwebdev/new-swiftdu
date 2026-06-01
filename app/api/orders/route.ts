@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
 import { Order } from '@/models/order';
+import { User } from '@/models/user';
 import { auth } from '@/lib/auth';
 import { Review } from '@/models/review';
 import { ACTIVE_ORDER_STATUSES } from '@/lib/order-status';
@@ -20,9 +21,14 @@ import {
 } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
 import {
+  getUserLookupConditions,
+  hasActiveServiceFeeDiscountReservation,
+} from '@/lib/service-fee-discount';
+import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications';
+import { createOrderTrackingToken } from '@/lib/order-tracking';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes']);
 
@@ -245,7 +251,55 @@ export async function POST(request: NextRequest) {
       printingNeedsEditing: normalizedPrintingNeedsEditing,
     });
 
-    const settlement =
+    const customerLookupConditions = getUserLookupConditions(session.user);
+    const customerAccount = customerLookupConditions.length
+      ? await User.findOne({ $or: customerLookupConditions })
+      .select(
+        'serviceFeeDiscountEnabled serviceFeeDiscountGrantedByUserId serviceFeeDiscountGrantedByName serviceFeeDiscountGrantedByPhone serviceFeeDiscountRemainingOrders'
+      )
+      .lean()
+      : null;
+    let serviceFeeDiscountGrantedByName =
+      customerAccount?.serviceFeeDiscountGrantedByName || undefined;
+    let serviceFeeDiscountGrantedByPhone =
+      customerAccount?.serviceFeeDiscountGrantedByPhone || undefined;
+
+    if (
+      customerAccount?.serviceFeeDiscountEnabled &&
+      customerAccount?.serviceFeeDiscountGrantedByUserId &&
+      !serviceFeeDiscountGrantedByPhone
+    ) {
+      const grantorLookupConditions = getUserLookupConditions({
+        id: customerAccount.serviceFeeDiscountGrantedByUserId,
+      });
+      const grantor = grantorLookupConditions.length
+        ? await User.findOne({ $or: grantorLookupConditions })
+            .select('name phone email')
+            .lean()
+        : null;
+
+      serviceFeeDiscountGrantedByName =
+        serviceFeeDiscountGrantedByName ||
+        grantor?.name ||
+        grantor?.email ||
+        undefined;
+      serviceFeeDiscountGrantedByPhone =
+        typeof grantor?.phone === 'string' && grantor.phone.trim()
+          ? grantor.phone.trim()
+          : undefined;
+
+      if (serviceFeeDiscountGrantedByPhone) {
+        await User.findOneAndUpdate(
+          { $or: customerLookupConditions },
+          {
+            serviceFeeDiscountGrantedByName,
+            serviceFeeDiscountGrantedByPhone,
+          }
+        );
+      }
+    }
+
+    const baseSettlement =
       pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'
         ? {
             serviceFee: pricing.serviceFee,
@@ -253,11 +307,35 @@ export async function POST(request: NextRequest) {
             taskerFee: pricing.taskerFee || 0,
           }
         : splitServiceFee(pricing.serviceFee);
+    const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(session.user.id);
+    const serviceFeeDiscountApplied = Boolean(
+      customerAccount?.serviceFeeDiscountEnabled &&
+        Number(customerAccount?.serviceFeeDiscountRemainingOrders || 0) > 0 &&
+        !hasDiscountReservation &&
+        pricing.serviceFee > 0
+    );
+    const discountCommissionAmount = serviceFeeDiscountApplied
+      ? pricing.pricingModel === 'tiered'
+        ? baseSettlement.taskerFee || pricing.serviceFee
+        : pricing.serviceFee
+      : 0;
+    const settlement = serviceFeeDiscountApplied
+      ? {
+          serviceFee: 0,
+          platformFee: 0,
+          taskerFee: pricing.pricingModel === 'tiered' ? 0 : baseSettlement.taskerFee,
+        }
+      : baseSettlement;
+    const totalAmount = serviceFeeDiscountApplied
+      ? Math.max(0, pricing.totalAmount - pricing.serviceFee)
+      : pricing.totalAmount;
 
     const bookedAt = new Date();
 
     const order = new Order({
       userId: session.user.id,
+      source: 'website',
+      trackingToken: createOrderTrackingToken(),
       taskType: normalizedTaskType,
       description: normalizedDescription,
       amount: pricing.amount,
@@ -265,8 +343,17 @@ export async function POST(request: NextRequest) {
       platformFee: settlement.platformFee,
       taskerFee: settlement.taskerFee,
       serviceFee: settlement.serviceFee,
+      serviceFeeBeforeDiscount: serviceFeeDiscountApplied ? pricing.serviceFee : undefined,
+      serviceFeeDiscountApplied,
+      serviceFeeDiscountGrantedByName: serviceFeeDiscountApplied
+        ? serviceFeeDiscountGrantedByName
+        : undefined,
+      serviceFeeDiscountGrantedByPhone: serviceFeeDiscountApplied
+        ? serviceFeeDiscountGrantedByPhone
+        : undefined,
+      discountCommissionAmount,
       pricingModel: pricing.pricingModel,
-      totalAmount: pricing.totalAmount,
+      totalAmount,
       location,
       store: normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE ? undefined : store || undefined,
       itemPrice: normalizedTaskType === 'restaurant' || normalizedTaskType === 'shopping' ? parsedAmount : undefined,
@@ -315,7 +402,7 @@ export async function POST(request: NextRequest) {
       title: 'New Task Available',
       body: isCafeInquiry
         ? `Cafe inquiry in ${location} - NGN ${CAFE_INQUIRY_SERVICE_FEE.toLocaleString()} service fee`
-        : `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${pricing.totalAmount.toLocaleString()}`,
+        : `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${totalAmount.toLocaleString()}`,
       url: '/available-tasks',
       tag: `new-task-${order._id.toString()}`,
     });

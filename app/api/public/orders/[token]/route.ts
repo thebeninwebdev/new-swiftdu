@@ -68,7 +68,7 @@ export async function GET(
     await connectDB();
 
     const { token } = await params;
-    const order = await Order.findOne({ trackingToken: token, source: 'whatsapp' }).lean();
+    const order = await Order.findOne({ trackingToken: token }).lean();
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
@@ -93,7 +93,7 @@ export async function PATCH(
     await connectDB();
 
     const { token } = await params;
-    const order = await Order.findOne({ trackingToken: token, source: 'whatsapp' });
+    const order = await Order.findOne({ trackingToken: token });
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });

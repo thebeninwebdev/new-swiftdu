@@ -12,7 +12,7 @@ export async function POST(
     await connectDB();
 
     const { token } = await params;
-    const order = await Order.findOne({ trackingToken: token, source: 'whatsapp' });
+    const order = await Order.findOne({ trackingToken: token });
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });

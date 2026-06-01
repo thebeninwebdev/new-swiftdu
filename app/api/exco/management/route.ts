@@ -25,7 +25,7 @@ const RESOURCE_ACCESS: Record<Resource, ExcoRole[]> = {
   taskers: ["COO", "CFO", "CTO"],
   "dry-cleaners": ["COO"],
   reviews: ["COO"],
-  users: ["COO", "CMO", "CTO"],
+  users: ["CFO", "COO", "CMO", "CTO"],
   support: ["CTO"],
   orders: ["COO", "CTO"],
   "failed-settlements": ["CTO"],
@@ -53,6 +53,30 @@ function normalizeResource(value: string | null): Resource | null {
 
 function badResource() {
   return NextResponse.json({ error: "Invalid management resource" }, { status: 400 });
+}
+
+function getUserLookupConditions({
+  id,
+  email,
+}: {
+  id?: string | null;
+  email?: string | null;
+}) {
+  const conditions: Record<string, unknown>[] = [];
+
+  if (id) {
+    conditions.push({ id });
+
+    if (Types.ObjectId.isValid(id)) {
+      conditions.push({ _id: new Types.ObjectId(id) });
+    }
+  }
+
+  if (email) {
+    conditions.push({ email: email.trim().toLowerCase() });
+  }
+
+  return conditions;
 }
 
 async function getDryCleaners() {
@@ -182,7 +206,7 @@ async function getUsers(excoRole: ExcoRole) {
 
   const users = await User.find(filters)
     .sort({ createdAt: -1 })
-    .select("_id name email phone role emailVerified isSuspended dateOfBirth createdAt")
+    .select("_id name email phone role emailVerified isSuspended dateOfBirth createdAt serviceFeeDiscountEnabled serviceFeeDiscountGrantedByUserId serviceFeeDiscountGrantedByName serviceFeeDiscountGrantedByPhone serviceFeeDiscountRemainingOrders")
     .lean();
 
   const userIds = users.map((user) => user._id.toString());
@@ -192,7 +216,35 @@ async function getUsers(excoRole: ExcoRole) {
   ]);
   const orderCountMap = Object.fromEntries(orderCounts.map((item) => [item._id, item.count]));
 
-  return users.map((user) => ({
+  return Promise.all(users.map(async (user) => {
+    const activeDiscount = Boolean(
+      user.serviceFeeDiscountEnabled &&
+        Number(user.serviceFeeDiscountRemainingOrders || 0) > 0
+    );
+    let serviceFeeDiscountGrantedByName = user.serviceFeeDiscountGrantedByName || "";
+    let serviceFeeDiscountGrantedByPhone = user.serviceFeeDiscountGrantedByPhone || "";
+
+    if (
+      activeDiscount &&
+      user.serviceFeeDiscountGrantedByUserId &&
+      !serviceFeeDiscountGrantedByPhone
+    ) {
+      const grantorLookupConditions = getUserLookupConditions({
+        id: user.serviceFeeDiscountGrantedByUserId,
+      });
+      const grantor = grantorLookupConditions.length
+        ? await User.findOne({ $or: grantorLookupConditions })
+            .select("name phone email")
+            .lean()
+        : null;
+
+      serviceFeeDiscountGrantedByName =
+        serviceFeeDiscountGrantedByName || grantor?.name || grantor?.email || "";
+      serviceFeeDiscountGrantedByPhone =
+        typeof grantor?.phone === "string" ? grantor.phone.trim() : "";
+    }
+
+    return {
     id: user._id.toString(),
     name: user.name,
     email: user.email,
@@ -200,9 +252,14 @@ async function getUsers(excoRole: ExcoRole) {
     role: user.role,
     emailVerified: user.emailVerified,
     isSuspended: Boolean(user.isSuspended),
+    serviceFeeDiscountEnabled: activeDiscount,
+    serviceFeeDiscountGrantedByName,
+    serviceFeeDiscountGrantedByPhone,
+    serviceFeeDiscountRemainingOrders: Number(user.serviceFeeDiscountRemainingOrders || 0),
     dateOfBirth: user.dateOfBirth ? user.dateOfBirth.toISOString() : null,
     orderCount: orderCountMap[user._id.toString()] || 0,
     createdAt: user.createdAt,
+    };
   }));
 }
 
@@ -674,16 +731,23 @@ export async function PATCH(request: NextRequest) {
   }
 
   if (resource === "users") {
-    const { id, phone, action } = body as { id?: string; phone?: string; action?: string };
+    const { id, phone, action, discountOrderCount } = body as {
+      id?: string;
+      phone?: string;
+      action?: string;
+      discountOrderCount?: number;
+    };
     if (!id) return NextResponse.json({ error: "User id is required" }, { status: 400 });
     if (
       action &&
-      !["verify", "suspend", "activate"].includes(action)
+      !["verify", "suspend", "activate", "grant-discount", "remove-discount"].includes(action)
     ) {
       return NextResponse.json({ error: "Invalid user action" }, { status: 400 });
     }
 
-    const user = await User.findById(id).select("role phone emailVerified isSuspended");
+    const user = await User.findById(id).select(
+      "role phone emailVerified isSuspended serviceFeeDiscountEnabled serviceFeeDiscountGrantedByUserId serviceFeeDiscountGrantedByName serviceFeeDiscountGrantedByPhone serviceFeeDiscountGrantedAt serviceFeeDiscountRemainingOrders"
+    );
     if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
     if (user.role === "admin") {
       return NextResponse.json({ error: "Admin accounts cannot be modified" }, { status: 403 });
@@ -695,6 +759,61 @@ export async function PATCH(request: NextRequest) {
     if (action === "verify") user.emailVerified = true;
     if (action === "suspend") user.isSuspended = true;
     if (action === "activate") user.isSuspended = false;
+    if (action === "grant-discount") {
+      const normalizedDiscountOrderCount = Number(discountOrderCount);
+
+      if (
+        !Number.isInteger(normalizedDiscountOrderCount) ||
+        normalizedDiscountOrderCount < 1
+      ) {
+        return NextResponse.json(
+          { error: "Enter how many upcoming orders should receive the discount." },
+          { status: 400 }
+        );
+      }
+
+      const grantorLookupConditions = getUserLookupConditions({
+        id: access.userId,
+        email: access.email,
+      });
+      const grantor = grantorLookupConditions.length
+        ? await User.findOne({ $or: grantorLookupConditions })
+            .select("name phone email")
+            .lean()
+        : null;
+      const grantorPhone = typeof grantor?.phone === "string" ? grantor.phone.trim() : "";
+
+      if (!grantorPhone) {
+        return NextResponse.json(
+          { error: "Add a phone number to your account before granting a discount." },
+          { status: 400 }
+        );
+      }
+
+      user.serviceFeeDiscountEnabled = true;
+      user.serviceFeeDiscountGrantedByUserId = access.userId;
+      user.serviceFeeDiscountGrantedByName =
+        grantor?.name || access.email || "SwiftDU exco";
+      user.serviceFeeDiscountGrantedByPhone = grantorPhone;
+      user.serviceFeeDiscountGrantedAt = new Date();
+      user.serviceFeeDiscountRemainingOrders = normalizedDiscountOrderCount;
+    }
+    if (action === "remove-discount") {
+      await User.findByIdAndUpdate(id, {
+        $set: {
+          serviceFeeDiscountEnabled: false,
+          serviceFeeDiscountRemainingOrders: 0,
+        },
+        $unset: {
+          serviceFeeDiscountGrantedByUserId: "",
+          serviceFeeDiscountGrantedByName: "",
+          serviceFeeDiscountGrantedByPhone: "",
+          serviceFeeDiscountGrantedAt: "",
+        },
+      });
+
+      return NextResponse.json({ ok: true });
+    }
 
     await user.save();
     return NextResponse.json({ ok: true });
