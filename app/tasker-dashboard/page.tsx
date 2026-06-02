@@ -537,6 +537,7 @@ export default function TaskerDashboardPage() {
 
     const socket = acquireSharedSocket()
     const handleConnect = () => {
+      socket.emit('tasks:watch')
       void loadDashboardRef.current(false)
     }
     const handleTaskUpdate = (payload?: RealtimeTaskPayload) => {
@@ -593,6 +594,9 @@ export default function TaskerDashboardPage() {
     handleConnect()
 
     return () => {
+      if (socket.connected) {
+        socket.emit('tasks:unwatch')
+      }
       socket.off('connect', handleConnect)
       socket.off('tasks:updated', handleTaskUpdate)
       releaseSharedSocket(socket)

@@ -65,6 +65,10 @@ interface Order {
   commission: number
 }
 
+type OrderRealtimePayload = Partial<Order> & {
+  _id?: string
+}
+
 interface TaskerDetails {
   _id: string
   name: string
@@ -421,10 +425,15 @@ export default function OrdersPage() {
   const queuedReloadRef = useRef(false)
   const queuedInitialReloadRef = useRef(false)
   const socketRef = useRef<Socket | null>(null)
+  const currentOrderRef = useRef<Order | null>(null)
   const realtimeResumeTimeoutRef = useRef<number | null>(null)
   const redirectedToReviewRef = useRef<string | null>(null)
   const autoCancelledOrderRef = useRef<string | null>(null)
   const requestedOrderId = searchParams.get('orderId')
+
+  useEffect(() => {
+    currentOrderRef.current = currentOrder
+  }, [currentOrder])
 
   const disconnectSocket = useCallback(() => {
     if (realtimeResumeTimeoutRef.current) {
@@ -488,7 +497,7 @@ export default function OrdersPage() {
         let nextCurrentOrder: Order | null = null
 
         if (trackedOrderIdRef.current) {
-          const trackedResponse = await fetchWithRealtimePause(`/api/orders/${trackedOrderIdRef.current}`, {
+          const trackedResponse = await fetch(`/api/orders/${trackedOrderIdRef.current}`, {
             cache: 'no-store',
           })
 
@@ -512,7 +521,7 @@ export default function OrdersPage() {
         }
 
         if (!nextCurrentOrder) {
-          const currentResponse = await fetchWithRealtimePause('/api/orders?current=true', {
+          const currentResponse = await fetch('/api/orders?current=true', {
             cache: 'no-store',
           })
 
@@ -523,7 +532,7 @@ export default function OrdersPage() {
           nextCurrentOrder = await currentResponse.json()
         }
 
-        const recentResponse = await fetchWithRealtimePause('/api/orders?limit=8', {
+        const recentResponse = await fetch('/api/orders?limit=8', {
           cache: 'no-store',
         })
 
@@ -591,7 +600,77 @@ export default function OrdersPage() {
         }
       }
     },
-    [fetchWithRealtimePause, router]
+    [router]
+  )
+
+  const applyRealtimeOrderUpdate = useCallback(
+    (payload?: OrderRealtimePayload) => {
+      if (!payload?._id) {
+        return false
+      }
+
+      const existingOrder = currentOrderRef.current
+      const isCurrentOrder = existingOrder?._id === payload._id
+      const isTrackedOrder = trackedOrderIdRef.current === payload._id
+
+      if (!isCurrentOrder && !isTrackedOrder) {
+        setRecentOrders((previous) =>
+          previous.map((order) =>
+            order._id === payload._id ? ({ ...order, ...payload, _id: order._id } as Order) : order
+          )
+        )
+        return false
+      }
+
+      if (existingOrder && isCurrentOrder) {
+        const nextOrder = { ...existingOrder, ...payload, _id: existingOrder._id } as Order
+
+        if (!existingOrder.taskerId && nextOrder.taskerId) {
+          toast.success('A tasker accepted your order.')
+        }
+
+        if (!existingOrder.hasPaid && nextOrder.hasPaid) {
+          toast.success('Your transfer has been confirmed. Your task is now moving.')
+        }
+
+        if (!existingOrder.isDeclinedTask && Boolean(nextOrder.isDeclinedTask)) {
+          toast.error(
+            nextOrder.declinedMessage ||
+              'We could not confirm that transfer. Our team will contact you within 24 hours.'
+          )
+        }
+
+        previousSnapshotRef.current = {
+          id: nextOrder._id,
+          taskerId: nextOrder.taskerId,
+          hasPaid: nextOrder.hasPaid,
+          isDeclinedTask: nextOrder.isDeclinedTask,
+        }
+        trackedOrderIdRef.current = nextOrder._id
+        currentOrderRef.current = nextOrder
+        setCurrentOrder(nextOrder)
+        setRecentOrders((previous) =>
+          previous.map((order) =>
+            order._id === nextOrder._id ? ({ ...order, ...nextOrder } as Order) : order
+          )
+        )
+
+        if (
+          nextOrder.status === 'completed' &&
+          nextOrder.hasPaid &&
+          redirectedToReviewRef.current !== nextOrder._id
+        ) {
+          redirectedToReviewRef.current = nextOrder._id
+          toast.success('Task completed. Please rate your tasker.')
+          router.replace(`/dashboard/reviews/${nextOrder._id}`)
+        }
+
+        return true
+      }
+
+      return false
+    },
+    [router]
   )
 
   useEffect(() => {
@@ -637,9 +716,31 @@ export default function OrdersPage() {
 
     socketRef.current = socket
 
-    socket.on('order:updated', () => {
+    const watchCurrentOrder = () => {
+      const orderId = trackedOrderIdRef.current || currentOrderRef.current?._id
+      if (orderId) {
+        socket.emit('order:watch', orderId)
+      }
+    }
+
+    socket.on('connect', () => {
+      watchCurrentOrder()
       void loadOrders(false)
     })
+
+    socket.on('order:updated', (payload?: OrderRealtimePayload) => {
+      const applied = applyRealtimeOrderUpdate(payload)
+      if (!applied) {
+        void loadOrders(false)
+        return
+      }
+
+      window.setTimeout(() => {
+        void loadOrders(false)
+      }, 300)
+    })
+
+    watchCurrentOrder()
 
     return () => {
       if (socketRef.current === socket) {
@@ -649,7 +750,7 @@ export default function OrdersPage() {
 
       socket.disconnect()
     }
-  }, [disconnectSocket, loadOrders])
+  }, [applyRealtimeOrderUpdate, disconnectSocket, loadOrders])
 
   useEffect(() => {
     const orderId = currentOrder?._id

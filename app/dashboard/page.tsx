@@ -83,6 +83,10 @@ interface ActiveOrder {
   taskerId?: string | null
 }
 
+type ActiveOrderRealtimePayload = Partial<ActiveOrder> & {
+  _id?: string
+}
+
 interface TaskTypeConfig {
   value: string
   label: string
@@ -315,6 +319,7 @@ export default function ErrandWizardPage() {
     remainingOrders: number
   } | null>(null)
   const socketRef = useRef<Socket | null>(null)
+  const activeOrderRef = useRef<ActiveOrder | null>(null)
   const fetchingActiveOrderRef = useRef(false)
   const isRealtimePausedRef = useRef(false)
   const realtimeResumeTimeoutRef = useRef<number | null>(null)
@@ -339,6 +344,10 @@ export default function ErrandWizardPage() {
     restaurantTakeawayCount: '',
   })
   const sessionUserId = session?.user?.id
+
+  useEffect(() => {
+    activeOrderRef.current = activeOrder
+  }, [activeOrder])
 
   useEffect(() => {
     if (!sessionUserId) {
@@ -380,8 +389,10 @@ export default function ErrandWizardPage() {
       const response = await fetch('/api/orders?current=true')
       if (!response.ok) throw new Error('Failed to fetch current order')
       const data = await response.json()
+      activeOrderRef.current = data
       setActiveOrder(data)
     } catch {
+      activeOrderRef.current = null
       setActiveOrder(null)
     } finally {
       fetchingActiveOrderRef.current = false
@@ -391,6 +402,22 @@ export default function ErrandWizardPage() {
   const disconnectSocket = useCallback(() => {
     socketRef.current?.disconnect()
     socketRef.current = null
+  }, [])
+
+  const applyActiveOrderRealtimeUpdate = useCallback((payload?: ActiveOrderRealtimePayload) => {
+    if (!payload?._id || activeOrderRef.current?._id !== payload._id) {
+      return false
+    }
+
+    const nextOrder = {
+      ...activeOrderRef.current,
+      ...payload,
+      _id: activeOrderRef.current._id,
+    } as ActiveOrder
+
+    activeOrderRef.current = nextOrder
+    setActiveOrder(nextOrder)
+    return true
   }, [])
 
   const setRealtimePauseState = useCallback((paused: boolean) => {
@@ -534,8 +561,9 @@ export default function ErrandWizardPage() {
       socket.emit('order:watch', activeOrderId)
     })
 
-    socket.on('order:updated', (payload?: { _id?: string }) => {
-      if (!payload?._id || payload._id === activeOrderId) {
+    socket.on('order:updated', (payload?: ActiveOrderRealtimePayload) => {
+      const applied = applyActiveOrderRealtimeUpdate(payload)
+      if (!applied && (!payload?._id || payload._id === activeOrderId)) {
         void fetchCurrentOrder()
       }
     })
@@ -551,7 +579,14 @@ export default function ErrandWizardPage() {
       }
       socket.disconnect()
     }
-  }, [activeOrder?._id, disconnectSocket, fetchCurrentOrder, isRealtimePaused, mounted])
+  }, [
+    activeOrder?._id,
+    applyActiveOrderRealtimeUpdate,
+    disconnectSocket,
+    fetchCurrentOrder,
+    isRealtimePaused,
+    mounted,
+  ])
 
   useEffect(() => {
     const handleWizardBack = () => {
@@ -654,6 +689,20 @@ export default function ErrandWizardPage() {
   const hasAvailableServiceFeeDiscount = Boolean(
     serviceFeeDiscount?.hasAvailableDiscount && pricing.serviceFee > 0
   )
+  const discountRemainingOrders = Math.max(
+    0,
+    Number(serviceFeeDiscount?.remainingOrders || 0)
+  )
+  const hasAvailableAccountDiscount = Boolean(
+    serviceFeeDiscount?.hasAvailableDiscount && discountRemainingOrders > 0
+  )
+  const discountOrderLabel = `${discountRemainingOrders} order${
+    discountRemainingOrders === 1 ? '' : 's'
+  }`
+  const discountOrderPhrase =
+    discountRemainingOrders === 1
+      ? 'your next order'
+      : `your next ${discountRemainingOrders} orders`
   const displayedServiceFee = hasAvailableServiceFeeDiscount ? 0 : pricing.serviceFee
   const displayedTotalAmount = hasAvailableServiceFeeDiscount
     ? Math.max(0, pricing.totalAmount - pricing.serviceFee)
@@ -1085,6 +1134,7 @@ if (stepNumber === 2) {
     : null
   const showLowTaskerAvailabilityNotice =
     isLowTaskerAvailabilityWindow(currentTime) && !isTaskerAvailabilityNoticeDismissed
+  const shouldShowDiscountCard = hasAvailableAccountDiscount && step === 1
   const dismissTaskerAvailabilityNotice = useCallback(() => {
     setIsTaskerAvailabilityNoticeDismissed(true)
   }, [])
@@ -1097,6 +1147,20 @@ if (stepNumber === 2) {
     },
     [dismissTaskerAvailabilityNotice]
   )
+
+  const renderServiceFeeAmount = (className = 'font-medium') =>
+    hasAvailableServiceFeeDiscount ? (
+      <span className="flex items-center justify-end gap-2 text-right">
+        <span className="text-slate-400 line-through dark:text-slate-500">
+          {formatNaira(pricing.serviceFee)}
+        </span>
+        <span className="font-black text-emerald-600 dark:text-emerald-300">
+          {formatNaira(0)}
+        </span>
+      </span>
+    ) : (
+      <span className={className}>{formatNaira(displayedServiceFee)}</span>
+    )
 
   const selectedTask = taskTypes.find((item) => item.value === formData.taskType) || taskTypes[0]
   const quickLocations = ['Amnesty Hostel', 'Girls Hostel', 'PLT', 'Library', 'NDDC Auditorium']
@@ -1562,7 +1626,7 @@ if (stepNumber === 2) {
         </div>
         <div className="mt-2 flex justify-between text-xs text-slate-500">
           <span>Service fee</span>
-          <span>{formatNaira(displayedServiceFee)}</span>
+          {renderServiceFeeAmount('font-medium')}
         </div>
         <div className="mt-3 flex items-end justify-between">
           <span className="font-bold text-slate-900 dark:text-white">Estimated Total</span>
@@ -1573,12 +1637,35 @@ if (stepNumber === 2) {
   )
 
   const renderTopNotices = () => (
-    showLowTaskerAvailabilityNotice || activeOrder ? (
+    showLowTaskerAvailabilityNotice || activeOrder || shouldShowDiscountCard ? (
     <div className="space-y-3 px-3 min-[390px]:px-4 lg:px-0">
       {showLowTaskerAvailabilityNotice ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
           <p className="font-bold">Taskers may be in class right now</p>
           <p className="mt-1">Please try again by 2:00 PM for quicker attention.</p>
+        </div>
+      ) : null}
+      {shouldShowDiscountCard ? (
+        <div className="overflow-hidden rounded-2xl border border-emerald-200 bg-linear-to-r from-emerald-50 via-white to-cyan-50 px-4 py-4 text-slate-900 shadow-sm shadow-emerald-100/70 dark:border-emerald-900/60 dark:from-emerald-950/40 dark:via-slate-900 dark:to-cyan-950/30 dark:text-white dark:shadow-none">
+          <div className="flex items-start gap-3">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-600 text-white shadow-lg shadow-emerald-500/20">
+              <Wallet className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-sm font-black">Service fee discount available</p>
+                <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-xs font-black text-white">
+                  {discountOrderLabel} left
+                </span>
+              </div>
+              <p className="mt-1 text-sm font-semibold text-slate-700 dark:text-slate-200">
+                You won&apos;t pay the service fee on {discountOrderPhrase}.
+              </p>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                The discount applies automatically when you review an eligible order.
+              </p>
+            </div>
+          </div>
         </div>
       ) : null}
       {activeOrder ? (
@@ -2830,13 +2917,13 @@ if (stepNumber === 2) {
                         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
                           <p className="font-semibold">Service fee discount applied</p>
                           <p className="mt-1">
-                            You have a discount on this order, so you won&apos;t pay the service fee.
+                            You have a discount on {discountOrderPhrase}, so you won&apos;t pay the service fee for this order.
                           </p>
                         </div>
                       ) : null}
                       <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span></div>
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between text-sm"><span className="text-slate-500">Takeaway packs</span><span className="font-medium">{formatNaira(restaurantPackagingFee)}</span></div> : null}
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span><span className="font-medium">{formatNaira(displayedServiceFee)}</span></div>
+                      <div className="flex justify-between gap-4 text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span>{renderServiceFeeAmount('font-medium')}</div>
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(displayedTotalAmount)}</span></div>
                     </div>
                   </div>

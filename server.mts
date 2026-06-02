@@ -87,6 +87,16 @@ async function bootstrap() {
   })
 
   io.on('connection', (socket) => {
+    socket.on('tasks:watch', () => {
+      if (socket.data.userId) {
+        socket.join('taskers')
+      }
+    })
+
+    socket.on('tasks:unwatch', () => {
+      socket.leave('taskers')
+    })
+
     socket.on('order:watch', (orderId: string) => {
       if (typeof orderId === 'string' && orderId.trim()) {
         socket.join(`order:${orderId}`)
