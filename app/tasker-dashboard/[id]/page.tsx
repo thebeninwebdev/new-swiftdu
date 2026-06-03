@@ -54,6 +54,8 @@ interface ErrandDetail {
   store?: string
   packaging?: string
   restaurantPeopleCount?: number
+  restaurantTakeawayCount?: number
+  restaurantPackagingFee?: number
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   taskerId?: string
   taskerName?: string
@@ -117,6 +119,21 @@ function formatDeadline(dueDate?: string, deadlineDate?: string, deadlineValue?:
   }
 
   return 'Not set'
+}
+
+function formatRestaurantPackaging(errand: Pick<ErrandDetail, 'packaging' | 'restaurantTakeawayCount' | 'restaurantPeopleCount'>) {
+  const takeawayCount = Number(errand.restaurantTakeawayCount || 0)
+  const peopleCount = Number(errand.restaurantPeopleCount || 1)
+
+  if (takeawayCount > 0 && peopleCount > 1 && takeawayCount < peopleCount) {
+    return `${takeawayCount} takeaway, ${peopleCount - takeawayCount} cellophane`
+  }
+
+  if (takeawayCount > 0) {
+    return takeawayCount === 1 ? 'Takeaway pack' : `${takeawayCount} takeaway packs`
+  }
+
+  return errand.packaging || 'Cellophane'
 }
 
 function formatWhatsappPhone(phone: string) {
@@ -506,6 +523,7 @@ export default function ErrandDetailPage() {
     Number(errand.restaurantPeopleCount || 0) > 0
       ? Number(errand.restaurantPeopleCount)
       : 1
+  const restaurantPackaging = formatRestaurantPackaging(errand)
   const canUpdateRestaurantPeople =
     errand.taskType === 'restaurant' &&
     isActive &&
@@ -611,7 +629,6 @@ export default function ErrandDetailPage() {
               </p>
               <p className="mt-3 text-lg font-semibold leading-7">
                 {errand.description}
-                {errand.packaging ? ` in ${errand.packaging}` : ''}
               </p>
 
               <div className="mt-5 grid gap-3 text-sm text-slate-200 sm:grid-cols-2">
@@ -790,13 +807,13 @@ export default function ErrandDetailPage() {
                   </div>
                 </div>
 
-                {errand.packaging ? (
+                {errand.taskType === 'restaurant' ? (
                   <div className="rounded-2xl border border-slate-200 px-4 py-3 dark:border-slate-800">
                     <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">
                       Packaging
                     </p>
                     <p className="mt-2 capitalize text-sm text-slate-700 dark:text-slate-200">
-                      {errand.packaging}
+                      {restaurantPackaging}
                     </p>
                   </div>
                 ) : null}

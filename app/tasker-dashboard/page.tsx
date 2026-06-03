@@ -54,6 +54,8 @@ interface Errand {
   store?: string
   packaging?: string
   restaurantPeopleCount?: number
+  restaurantTakeawayCount?: number
+  restaurantPackagingFee?: number
   status: string
   taskerId?: string
   acceptedBy?: string
@@ -90,6 +92,8 @@ interface RealtimeTaskPayload {
   store?: string
   packaging?: string
   restaurantPeopleCount?: number
+  restaurantTakeawayCount?: number
+  restaurantPackagingFee?: number
   status?: string
   taskerId?: string
   acceptedAt?: string
@@ -253,6 +257,8 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
     store: payload.store,
     packaging: payload.packaging,
     restaurantPeopleCount: payload.restaurantPeopleCount,
+    restaurantTakeawayCount: payload.restaurantTakeawayCount,
+    restaurantPackagingFee: payload.restaurantPackagingFee,
     status: payload.status || 'pending',
     taskerId: payload.taskerId,
     acceptedAt: payload.acceptedAt,

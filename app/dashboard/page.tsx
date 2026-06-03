@@ -637,7 +637,6 @@ export default function ErrandWizardPage() {
     Number.isInteger(restaurantTakeawayCount) && restaurantTakeawayCount >= 0
       ? Math.min(restaurantTakeawayCount, normalizedRestaurantPeopleCount)
       : 0
-  const restaurantPackagingFee = 0
   const restaurantBudget = restaurantFoodBudget
   const restaurantDescription = isCafeInquiry
     ? formData.description.trim() || 'Text me what is in cafe'
@@ -678,7 +677,7 @@ export default function ErrandWizardPage() {
     taskType,
     store: formData.store,
     restaurantPeopleCount: normalizedRestaurantPeopleCount,
-    restaurantTakeawayCount: 0,
+    restaurantTakeawayCount: normalizedRestaurantTakeawayCount,
     waterBags: Number.isFinite(waterBags) ? waterBags : 0,
     noteSize: formData.noteSize,
     numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
@@ -686,6 +685,7 @@ export default function ErrandWizardPage() {
     printingNeedsEditing: formData.printingNeedsEditing === 'yes',
     cafeInquiry: isCafeInquiry,
   })
+  const restaurantPackagingFee = pricing.restaurantPackagingFee || 0
   const hasAvailableServiceFeeDiscount = Boolean(
     serviceFeeDiscount?.hasAvailableDiscount && pricing.serviceFee > 0
   )
@@ -1057,7 +1057,7 @@ if (stepNumber === 2) {
               : undefined,
           restaurantTakeawayCount:
             formData.taskType === 'restaurant'
-              ? 0
+              ? normalizedRestaurantTakeawayCount
               : undefined,
           printingServiceType: formData.printingServiceType,
           printingNeedsEditing: formData.printingNeedsEditing === 'yes',
@@ -1530,11 +1530,13 @@ if (stepNumber === 2) {
               value={formData.packaging === 'takeaway' ? 'takeaway' : 'cellophane'}
               onChange={(event) => {
                 pauseRealtime()
+                const isTakeaway = event.target.value === 'takeaway'
                 setFormData((previous) => ({
                   ...previous,
                   packaging: event.target.value,
-                  restaurantTakeawayCount: '0',
+                  restaurantTakeawayCount: isTakeaway ? String(normalizedRestaurantPeopleCount) : '0',
                 }))
+                clearError('restaurantTakeawayCount')
               }}
               className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 dark:border-slate-800 dark:bg-slate-900"
             >

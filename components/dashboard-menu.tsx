@@ -60,7 +60,24 @@ interface HeaderProfile {
   profileImage: string
 }
 
-export default function DashboardMenu() {
+interface DashboardMenuProps {
+  pageTitle?: string
+}
+
+function getDashboardPageTitle(pathname: string, pageTitle?: string) {
+  if (pageTitle) return pageTitle
+
+  const navigationItem = navigationItems.find((item) => item.href === pathname)
+  if (navigationItem) return navigationItem.label
+
+  if (pathname.startsWith('/dashboard/reviews/')) return 'Leave Review'
+  if (pathname.startsWith('/dashboard/whatsapp/')) return 'WhatsApp'
+  if (pathname === '/dashboard/profile-completion') return 'Complete Profile'
+
+  return 'Dashboard'
+}
+
+export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
   const { data: session } = authClient.useSession()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [hasNotification, setHasNotification] = useState(false)
@@ -68,10 +85,12 @@ export default function DashboardMenu() {
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null)
   const [wizardCanGoBack, setWizardCanGoBack] = useState(false)
   const [showBackHint, setShowBackHint] = useState(false)
+  const [isMobileTitleTransparent, setIsMobileTitleTransparent] = useState(false)
 
   const router = useRouter()
   const pathname = usePathname()
   const sessionUserId = session?.user?.id
+  const mobilePageTitle = getDashboardPageTitle(pathname, pageTitle)
   const userName = headerProfile?.name || session?.user?.name || 'SwiftDU user'
   const userEmail = headerProfile?.email || session?.user?.email || ''
   const userEmailName = userEmail.split('@')[0] || ''
@@ -206,17 +225,38 @@ export default function DashboardMenu() {
 
   useEffect(() => {
     if (!wizardCanGoBack) {
-      setShowBackHint(false)
-      return
+      const timeout = window.setTimeout(() => {
+        setShowBackHint(false)
+      }, 0)
+
+      return () => window.clearTimeout(timeout)
     }
 
-    setShowBackHint(true)
-    const timeout = window.setTimeout(() => {
+    const showTimeout = window.setTimeout(() => {
+      setShowBackHint(true)
+    }, 0)
+    const hideTimeout = window.setTimeout(() => {
       setShowBackHint(false)
     }, 1600)
 
-    return () => window.clearTimeout(timeout)
+    return () => {
+      window.clearTimeout(showTimeout)
+      window.clearTimeout(hideTimeout)
+    }
   }, [wizardCanGoBack])
+
+  useEffect(() => {
+    const updateMobileTitleVisibility = () => {
+      setIsMobileTitleTransparent(window.scrollY > 12)
+    }
+
+    updateMobileTitleVisibility()
+    window.addEventListener('scroll', updateMobileTitleVisibility, { passive: true })
+
+    return () => {
+      window.removeEventListener('scroll', updateMobileTitleVisibility)
+    }
+  }, [])
 
   const signOut = async () => {
     await authClient.signOut({
@@ -362,36 +402,45 @@ export default function DashboardMenu() {
       </aside>
       <div className="hidden w-72 shrink-0 lg:block" aria-hidden="true" />
     
-          {/* Mobile Menu Button */}
-          <div className="pointer-events-none fixed left-4 top-4 z-50 flex items-center gap-2 lg:hidden">
-            <button
-              type="button"
-              onClick={handleMobileMenuButton}
-              className={`pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full border shadow-lg outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                pathname === '/dashboard' && wizardCanGoBack
-                  ? 'animate-in slide-in-from-left-2 zoom-in-95 border-blue-500 bg-blue-600 text-white shadow-blue-500/25 hover:bg-blue-700'
-                  : 'border-slate-200 bg-white text-slate-950 shadow-slate-900/10 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800'
-              }`}
-              aria-label={pathname === '/dashboard' && wizardCanGoBack ? 'Go back' : isMobileMenuOpen ? 'Close menu' : 'Open menu'}
-              aria-expanded={isMobileMenuOpen}
-            >
-              {pathname === '/dashboard' && wizardCanGoBack ? (
-                <ChevronLeft className="h-6 w-6 stroke-[3] transition-transform duration-300" />
-              ) : isMobileMenuOpen ? (
-                <X className="h-5 w-5 transition-transform duration-300" />
-              ) : (
-                <span className="flex w-6 flex-col items-center gap-1.5" aria-hidden="true">
-                  <span className="h-0.5 w-4 rounded-full bg-current" />
-                  <span className="h-0.5 w-6 rounded-full bg-current" />
-                  <span className="h-0.5 w-3.5 rounded-full bg-current" />
+          {/* Mobile Header */}
+          <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-20 bg-transparent lg:hidden">
+            <div className="absolute left-4 top-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleMobileMenuButton}
+                className={`pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full border shadow-lg outline-none transition-all duration-300 focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                  pathname === '/dashboard' && wizardCanGoBack
+                    ? 'animate-in slide-in-from-left-2 zoom-in-95 border-blue-500 bg-blue-600 text-white shadow-blue-500/25 hover:bg-blue-700'
+                    : 'border-slate-200 bg-white text-slate-950 shadow-slate-900/10 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800'
+                }`}
+                aria-label={pathname === '/dashboard' && wizardCanGoBack ? 'Go back' : isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+                aria-expanded={isMobileMenuOpen}
+              >
+                {pathname === '/dashboard' && wizardCanGoBack ? (
+                  <ChevronLeft className="h-6 w-6 stroke-[3] transition-transform duration-300" />
+                ) : isMobileMenuOpen ? (
+                  <X className="h-5 w-5 transition-transform duration-300" />
+                ) : (
+                  <span className="flex w-6 flex-col items-center gap-1.5" aria-hidden="true">
+                    <span className="h-0.5 w-4 rounded-full bg-current" />
+                    <span className="h-0.5 w-6 rounded-full bg-current" />
+                    <span className="h-0.5 w-3.5 rounded-full bg-current" />
+                  </span>
+                )}
+              </button>
+              {showBackHint ? (
+                <span className="animate-in fade-in slide-in-from-left-2 rounded-full bg-blue-600 px-3 py-2 text-xs font-black text-white shadow-lg shadow-blue-500/20 duration-300">
+                  Go back
                 </span>
-              )}
-            </button>
-            {showBackHint ? (
-              <span className="animate-in fade-in slide-in-from-left-2 rounded-full bg-blue-600 px-3 py-2 text-xs font-black text-white shadow-lg shadow-blue-500/20 duration-300">
-                Go back
-              </span>
-            ) : null}
+              ) : null}
+            </div>
+            <p
+              className={`absolute left-20 right-20 top-1/2 -translate-y-1/2 truncate text-center text-base text-slate-950 transition-opacity duration-200 dark:text-white ${
+                isMobileTitleTransparent ? 'opacity-0' : 'opacity-100'
+              }`}
+            >
+              {mobilePageTitle}
+            </p>
           </div>
     
           {/* Mobile Menu Overlay */}
@@ -427,7 +476,7 @@ export default function DashboardMenu() {
                         }`}
                       >
                         <Icon className="w-5 h-5" />
-                        <span className="font-medium">{item.label}</span>
+                        <span className="">{item.label}</span>
                       </button>
                     )
                   })}
