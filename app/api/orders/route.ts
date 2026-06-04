@@ -318,13 +318,7 @@ export async function POST(request: NextRequest) {
         ? baseSettlement.taskerFee || pricing.serviceFee
         : pricing.serviceFee
       : 0;
-    const settlement = serviceFeeDiscountApplied
-      ? {
-          serviceFee: 0,
-          platformFee: 0,
-          taskerFee: pricing.pricingModel === 'tiered' ? 0 : baseSettlement.taskerFee,
-        }
-      : baseSettlement;
+    const settlement = baseSettlement;
     const totalAmount = serviceFeeDiscountApplied
       ? Math.max(0, pricing.totalAmount - pricing.serviceFee)
       : pricing.totalAmount;

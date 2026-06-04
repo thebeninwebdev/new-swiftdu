@@ -12,6 +12,7 @@ import {
   getUserLookupConditions,
   hasActiveServiceFeeDiscountReservation,
 } from '@/lib/service-fee-discount';
+import { splitServiceFee } from '@/lib/order-finance';
 import { Order } from '@/models/order';
 import { User } from '@/models/user';
 
@@ -77,17 +78,21 @@ export async function POST(
         !hasDiscountReservation &&
         fullServiceFee > 0
     );
+    const tieredSettlement = splitServiceFee(fullServiceFee);
     const discountCommissionAmount = serviceFeeDiscountApplied
       ? order.pricingModel === 'tiered'
-        ? Number(order.taskerFee || fullServiceFee)
+        ? Number(order.taskerFee || tieredSettlement.taskerFee || fullServiceFee)
         : fullServiceFee
       : 0;
-    const retriedServiceFee = serviceFeeDiscountApplied ? 0 : fullServiceFee;
-    const retriedPlatformFee = serviceFeeDiscountApplied ? 0 : Number(order.platformFee || 0);
+    const retriedServiceFee = fullServiceFee;
+    const retriedPlatformFee =
+      Number(order.platformFee || 0) ||
+      (order.pricingModel === 'tiered'
+        ? tieredSettlement.platformFee
+        : fullServiceFee);
     const retriedTaskerFee =
-      serviceFeeDiscountApplied && order.pricingModel === 'tiered'
-        ? 0
-        : Number(order.taskerFee || 0);
+      Number(order.taskerFee || 0) ||
+      (order.pricingModel === 'tiered' ? tieredSettlement.taskerFee : 0);
     const fullTotalAmount =
       Number(order.totalAmount || 0) +
       (order.serviceFeeDiscountApplied ? fullServiceFee : 0);

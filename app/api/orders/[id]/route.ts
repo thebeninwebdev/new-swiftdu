@@ -212,13 +212,7 @@ export async function PATCH(
         });
         const baseSettlement = splitServiceFee(pricing.serviceFee);
         const discountStillApplies = Boolean(order.serviceFeeDiscountApplied);
-        const settlement = discountStillApplies
-          ? {
-              serviceFee: 0,
-              platformFee: 0,
-              taskerFee: 0,
-            }
-          : baseSettlement;
+        const settlement = baseSettlement;
 
         order.amount = pricing.amount;
         order.commission = settlement.serviceFee;
@@ -518,14 +512,7 @@ export async function PATCH(
             }
           : splitServiceFee(pricing.serviceFee);
       const discountStillApplies = Boolean(order.serviceFeeDiscountApplied);
-      const settlement = discountStillApplies
-        ? {
-            serviceFee: 0,
-            platformFee: 0,
-            taskerFee:
-              pricing.pricingModel === 'tiered' ? 0 : baseSettlement.taskerFee,
-          }
-        : baseSettlement;
+      const settlement = baseSettlement;
 
       order.taskType = nextTaskType;
       order.description = nextDescription;

@@ -7,8 +7,6 @@ export const CAFE_INQUIRY_EXTRA_FEE = 100
 export const CAFE_INQUIRY_SERVICE_FEE = RESTAURANT_PERSON_FEE + CAFE_INQUIRY_EXTRA_FEE
 export const RESTAURANT_MAX_PEOPLE = 3
 export const RESTAURANT_TAKEAWAY_FEE = 200
-export const SHOPPING_RITA_STORE = 'rita'
-export const SHOPPING_NON_RITA_SERVICE_FEE = 700
 export const PRINTING_TASK_TYPE = 'printing'
 export const PRINTING_SERVICE_FEE = 500
 export const PRINTING_PRICE_PER_PAGE = 100
@@ -29,20 +27,20 @@ export const TIERED_SERVICE_FEE_RULES = [
   {
     min: 5000,
     max: 6999,
-    fee: 660,
+    fee: 700,
     label: 'N5,000 - N6,999',
   },
   {
     min: 7000,
-    max: 19999,
+    max: 9999,
     fee: 1000,
-    label: 'N7,000 - N19,999',
+    label: 'N7,000 - N9,999',
   },
   {
-    min: 20000,
+    min: 10000,
     max: null,
     fee: 2000,
-    label: 'N20,000 and above',
+    label: 'N10,000 and above',
   },
 ] as const
 
@@ -323,11 +321,7 @@ export function calculateOrderPricing(input: {
   }
 
   if (input.taskType === 'shopping') {
-    const normalizedStore = String(input.store || '').trim().toLowerCase()
-    const serviceFee =
-      normalizedStore && normalizedStore !== SHOPPING_RITA_STORE
-        ? SHOPPING_NON_RITA_SERVICE_FEE
-        : getTieredServiceFee(amount)
+    const serviceFee = getTieredServiceFee(amount)
 
     return {
       amount,
