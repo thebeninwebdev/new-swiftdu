@@ -57,6 +57,39 @@ const suspendedUserGuard = (): BetterAuthPlugin => ({
   },
 });
 
+const requiredSignupDetailsGuard = (): BetterAuthPlugin => ({
+  id: "required-signup-details-guard",
+  hooks: {
+    before: [
+      {
+        matcher: (ctx) => ctx.path === "/sign-up/email",
+        handler: createAuthMiddleware(async (ctx) => {
+          const phone =
+            typeof ctx.body?.phone === "string" ? ctx.body.phone.trim() : "";
+          const location =
+            typeof ctx.body?.location === "string"
+              ? ctx.body.location.trim()
+              : "";
+
+          if (!phone) {
+            throw APIError.from("BAD_REQUEST", {
+              code: "PHONE_REQUIRED",
+              message: "Phone number is required.",
+            });
+          }
+
+          if (!location) {
+            throw APIError.from("BAD_REQUEST", {
+              code: "LOCATION_REQUIRED",
+              message: "Location is required.",
+            });
+          }
+        }),
+      },
+    ],
+  },
+});
+
 export const auth = betterAuth({
   appName: "SwiftDU",
   emailVerification: {
@@ -187,6 +220,7 @@ export const auth = betterAuth({
     }),
     twoFactor(),
     suspendedUserGuard(),
+    requiredSignupDetailsGuard(),
   ],
 });
 

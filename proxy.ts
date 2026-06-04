@@ -5,7 +5,6 @@ import { EXCO_DASHBOARD_PATHS, getExcoDashboardPath } from '@/lib/exco-constants
 import {
   buildCompleteProfilePath,
   getSafeNextPath,
-  COMPLETE_PROFILE_PATH,
   isProfileComplete,
 } from '@/lib/profile-completion';
 
@@ -85,6 +84,12 @@ export async function proxy(request: NextRequest) {
 
   if (pathname.startsWith('/tasker-dashboard') && role !== 'tasker') {
     return NextResponse.redirect(new URL(defaultRoute, request.url));
+  }
+
+  if (!isProfileComplete(user)) {
+    return NextResponse.redirect(
+      new URL(buildCompleteProfilePath(currentPath), request.url)
+    );
   }
 
   if (isExcoDashboardRoute) {
