@@ -6,7 +6,7 @@ export const RESTAURANT_PERSON_FEE = 450
 export const CAFE_INQUIRY_EXTRA_FEE = 100
 export const CAFE_INQUIRY_SERVICE_FEE = RESTAURANT_PERSON_FEE + CAFE_INQUIRY_EXTRA_FEE
 export const RESTAURANT_MAX_PEOPLE = 3
-export const RESTAURANT_TAKEAWAY_FEE = 200
+export const RESTAURANT_TAKEAWAY_FEE = 0
 export const PRINTING_TASK_TYPE = 'printing'
 export const PRINTING_SERVICE_FEE = 500
 export const PRINTING_PRICE_PER_PAGE = 100
@@ -288,16 +288,13 @@ export function calculateOrderPricing(input: {
       input.restaurantTakeawayCount,
       restaurantPeopleCount
     )
-    const restaurantPackagingFee = calculateRestaurantPackagingFee(
-      restaurantTakeawayCount,
-      restaurantPeopleCount
-    )
+    const restaurantPackagingFee = 0
 
     if (input.cafeInquiry) {
       return {
-        amount: restaurantPackagingFee,
+        amount: 0,
         serviceFee: CAFE_INQUIRY_SERVICE_FEE,
-        totalAmount: roundNaira(CAFE_INQUIRY_SERVICE_FEE + restaurantPackagingFee),
+        totalAmount: CAFE_INQUIRY_SERVICE_FEE,
         pricingModel: 'tiered' as const,
         waterFee: 0,
         restaurantPeopleCount,
@@ -309,9 +306,9 @@ export function calculateOrderPricing(input: {
     const serviceFee = calculateRestaurantServiceFee(restaurantPeopleCount)
 
     return {
-      amount: roundNaira(amount + restaurantPackagingFee),
+      amount,
       serviceFee,
-      totalAmount: roundNaira(amount + restaurantPackagingFee + serviceFee),
+      totalAmount: roundNaira(amount + serviceFee),
       pricingModel: 'tiered' as const,
       waterFee: 0,
       restaurantPeopleCount,
@@ -372,9 +369,8 @@ export function normalizeRestaurantTakeawayCount(value?: number, peopleCount?: n
 }
 
 export function calculateRestaurantPackagingFee(takeawayCount?: number, peopleCount?: number) {
-  return roundNaira(
-    normalizeRestaurantTakeawayCount(takeawayCount, peopleCount) * RESTAURANT_TAKEAWAY_FEE
-  )
+  normalizeRestaurantTakeawayCount(takeawayCount, peopleCount)
+  return 0
 }
 
 export function calculateRestaurantServiceFee(peopleCount?: number) {

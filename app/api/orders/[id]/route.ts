@@ -201,7 +201,7 @@ export async function PATCH(
         }
 
         const pricing = calculateOrderPricing({
-          amount: Number(order.itemPrice ?? Number(order.amount || 0) - Number(order.restaurantPackagingFee || 0)),
+          amount: Number(order.itemPrice ?? order.amount ?? 0),
           taskType: order.taskType,
           store: order.store,
           restaurantPeopleCount: normalizeRestaurantPeopleCount(parsedRestaurantPeopleCount),
@@ -300,7 +300,7 @@ export async function PATCH(
         amount !== undefined
           ? Number(amount)
           : nextTaskType === 'restaurant'
-            ? Number(order.itemPrice ?? Number(order.amount || 0) - Number(order.restaurantPackagingFee || 0))
+            ? Number(order.itemPrice ?? order.amount ?? 0)
             : order.amount;
       const nextStore = store !== undefined ? store || undefined : order.store;
       const nextPackaging =

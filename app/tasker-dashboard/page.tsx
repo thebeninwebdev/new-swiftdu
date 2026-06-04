@@ -268,6 +268,31 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
   }
 }
 
+function formatRestaurantPackaging(errand: Pick<Errand, 'packaging' | 'restaurantTakeawayCount' | 'restaurantPeopleCount'>) {
+  const takeawayCount = Number(errand.restaurantTakeawayCount || 0)
+  const peopleCount = Number(errand.restaurantPeopleCount || 1)
+
+  if (takeawayCount > 0 && peopleCount > 1 && takeawayCount < peopleCount) {
+    return `${takeawayCount} takeaway, ${peopleCount - takeawayCount} cellophane`
+  }
+
+  if (takeawayCount > 0) {
+    return takeawayCount === 1 ? 'Takeaway pack' : `${takeawayCount} takeaway packs`
+  }
+
+  return errand.packaging || 'Cellophane'
+}
+
+function formatAcceptedErrandDescription(errand: Errand) {
+  const description = errand.description?.trim() || 'Task'
+
+  if (errand.taskType !== 'restaurant') {
+    return description
+  }
+
+  return `${description} - Packaging: ${formatRestaurantPackaging(errand)}`
+}
+
 export default function TaskerDashboardPage() {
   const router = useRouter()
   const { data: session, isPending: sessionPending } = authClient.useSession()
@@ -1022,7 +1047,7 @@ export default function TaskerDashboardPage() {
                             </span>
                           </div>
                           <h3 className="mt-3 line-clamp-2 text-base font-semibold leading-6 text-slate-900 dark:text-white">
-                            {errand.description}
+                            {formatAcceptedErrandDescription(errand)}
                           </h3>
                           <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                             {state.description}

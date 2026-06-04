@@ -136,6 +136,16 @@ function formatRestaurantPackaging(errand: Pick<ErrandDetail, 'packaging' | 'res
   return errand.packaging || 'Cellophane'
 }
 
+function formatErrandSummaryDescription(errand: ErrandDetail, packaging: string) {
+  const description = errand.description?.trim() || taskTypeLabels[errand.taskType] || 'Task'
+
+  if (errand.taskType !== 'restaurant' || !packaging) {
+    return description
+  }
+
+  return `${description} - Packaging: ${packaging}`
+}
+
 function formatWhatsappPhone(phone: string) {
   const digits = phone.replace(/\D/g, '')
 
@@ -524,6 +534,7 @@ export default function ErrandDetailPage() {
       ? Number(errand.restaurantPeopleCount)
       : 1
   const restaurantPackaging = formatRestaurantPackaging(errand)
+  const errandSummaryDescription = formatErrandSummaryDescription(errand, restaurantPackaging)
   const canUpdateRestaurantPeople =
     errand.taskType === 'restaurant' &&
     isActive &&
@@ -628,7 +639,7 @@ export default function ErrandDetailPage() {
                 Task summary
               </p>
               <p className="mt-3 text-lg font-semibold leading-7">
-                {errand.description}
+                {errandSummaryDescription}
               </p>
 
               <div className="mt-5 grid gap-3 text-sm text-slate-200 sm:grid-cols-2">

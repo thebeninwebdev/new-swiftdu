@@ -39,7 +39,6 @@ import {
   PRINTING_PRICE_PER_PAGE,
   PRINTING_TASK_TYPE,
   RESTAURANT_MAX_PEOPLE,
-  RESTAURANT_TAKEAWAY_FEE,
   CAFE_INQUIRY_EXTRA_FEE,
   WATER_BAG_PRICE,
   WATER_BAG_FEE,
@@ -685,7 +684,6 @@ export default function ErrandWizardPage() {
     printingNeedsEditing: formData.printingNeedsEditing === 'yes',
     cafeInquiry: isCafeInquiry,
   })
-  const restaurantPackagingFee = pricing.restaurantPackagingFee || 0
   const hasAvailableServiceFeeDiscount = Boolean(
     serviceFeeDiscount?.hasAvailableDiscount && pricing.serviceFee > 0
   )
@@ -707,6 +705,14 @@ export default function ErrandWizardPage() {
   const displayedTotalAmount = hasAvailableServiceFeeDiscount
     ? Math.max(0, pricing.totalAmount - pricing.serviceFee)
     : pricing.totalAmount
+  const restaurantPackagingNote =
+    normalizedRestaurantTakeawayCount > 0
+      ? normalizedRestaurantTakeawayCount === normalizedRestaurantPeopleCount
+        ? 'Takeaway pack'
+        : `${normalizedRestaurantTakeawayCount} takeaway, ${
+            normalizedRestaurantPeopleCount - normalizedRestaurantTakeawayCount
+          } cellophane`
+      : 'Cellophane'
   const shouldShowTieredServiceFee =
     pricing.pricingModel === 'tiered' &&
     ((formData.taskType === PRINTING_TASK_TYPE && pricing.amount > 0) ||
@@ -727,26 +733,26 @@ export default function ErrandWizardPage() {
       ? {
           subtitle: 'A quick packaging check before delivery details.',
           languageButton: 'Use Nigerian Pidgin',
-          singleQuestion: `Should this order be in takeaway or cellophane? Takeaway adds ${formatNaira(RESTAURANT_TAKEAWAY_FEE)}.`,
-          multipleQuestion: `You are ordering for ${normalizedRestaurantPeopleCount} people. Is everything in takeaway, or should some be cellophane? Takeaway is ${formatNaira(RESTAURANT_TAKEAWAY_FEE)} each.`,
+          singleQuestion: 'Should this order be in takeaway or cellophane?',
+          multipleQuestion: `You are ordering for ${normalizedRestaurantPeopleCount} people. Is everything in takeaway, or should some be cellophane?`,
           singleTakeaway: 'Takeaway',
           allTakeaway: 'Yes, all takeaway',
           singleCellophane: 'Cellophane',
           mixedPrompt: 'No, ask me',
           takeawayCountQuestion: `How many of the ${normalizedRestaurantPeopleCount} orders should be in takeaway?`,
-          feeLabel: 'Packaging fee',
+          packagingLabel: 'Packaging note',
         }
       : {
           subtitle: 'Make we quickly confirm packaging before delivery details.',
           languageButton: 'Show in English',
-          singleQuestion: `You want make dem put this food for takeaway pack or cellophane? Takeaway go add ${formatNaira(RESTAURANT_TAKEAWAY_FEE)}.`,
-          multipleQuestion: `You dey order for ${normalizedRestaurantPeopleCount} people. Make all enter takeaway pack, abi some go dey cellophane? Takeaway na ${formatNaira(RESTAURANT_TAKEAWAY_FEE)} each.`,
+          singleQuestion: 'You want make dem put this food for takeaway pack or cellophane?',
+          multipleQuestion: `You dey order for ${normalizedRestaurantPeopleCount} people. Make all enter takeaway pack, abi some go dey cellophane?`,
           singleTakeaway: 'Takeaway',
           allTakeaway: 'Yes, all takeaway',
           singleCellophane: 'Cellophane',
           mixedPrompt: 'No, ask me',
           takeawayCountQuestion: `How many from the ${normalizedRestaurantPeopleCount} orders make enter takeaway pack?`,
-          feeLabel: 'Packaging fee',
+          packagingLabel: 'Packaging note',
         }
 
   const clearError = useCallback((field: string) =>
@@ -2535,10 +2541,7 @@ if (stepNumber === 2) {
                         ) : null}
 
                         <div className="mt-3 rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:bg-slate-950/50 dark:text-slate-300">
-                          {packagingCopy.feeLabel}: {formatNaira(restaurantPackagingFee)}
-                          {normalizedRestaurantTakeawayCount > 0 ? (
-                            <span> ({normalizedRestaurantTakeawayCount} x {formatNaira(RESTAURANT_TAKEAWAY_FEE)})</span>
-                          ) : null}
+                          {packagingCopy.packagingLabel}: <span className="font-semibold">{restaurantPackagingNote}</span>
                         </div>
                         {errors.restaurantTakeawayCount ? <p className="mt-2 text-sm text-red-500">{errors.restaurantTakeawayCount}</p> : null}
                       </div>
@@ -2828,10 +2831,7 @@ if (stepNumber === 2) {
                     ) : null}
 
                     <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-200">
-                      {packagingCopy.feeLabel}: <span className="font-semibold">{formatNaira(restaurantPackagingFee)}</span>
-                      {normalizedRestaurantTakeawayCount > 0 ? (
-                        <span> ({normalizedRestaurantTakeawayCount} x {formatNaira(RESTAURANT_TAKEAWAY_FEE)})</span>
-                      ) : null}
+                      {packagingCopy.packagingLabel}: <span className="font-semibold">{restaurantPackagingNote}</span>
                     </div>
                   </div>
                 </div>
@@ -2924,7 +2924,7 @@ if (stepNumber === 2) {
                         </div>
                       ) : null}
                       <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span></div>
-                      {formData.taskType === 'restaurant' ? <div className="flex justify-between text-sm"><span className="text-slate-500">Takeaway packs</span><span className="font-medium">{formatNaira(restaurantPackagingFee)}</span></div> : null}
+                      {formData.taskType === 'restaurant' ? <div className="flex justify-between text-sm"><span className="text-slate-500">Packaging</span><span className="font-medium">{restaurantPackagingNote}</span></div> : null}
                       <div className="flex justify-between gap-4 text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span>{renderServiceFeeAmount('font-medium')}</div>
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(displayedTotalAmount)}</span></div>
                     </div>
