@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertCircle,
@@ -133,12 +133,20 @@ function isActiveOrder(order: Pick<Order, 'status'>) {
 
 function DashboardShell({ children }: { children: ReactNode }) {
   return (
-    <CompleteProfileGate>
-      <div className="min-h-screen overflow-x-hidden lg:flex">
-        <DashboardMenu pageTitle="My Tasks" />
-        {children}
-      </div>
-    </CompleteProfileGate>
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-[#f6f9fc] px-4 text-sm text-slate-500 dark:bg-slate-950 dark:text-slate-400">
+          Loading your tasks...
+        </div>
+      }
+    >
+      <CompleteProfileGate>
+        <div className="min-h-screen overflow-x-hidden lg:flex">
+          <DashboardMenu pageTitle="My Tasks" />
+          {children}
+        </div>
+      </CompleteProfileGate>
+    </Suspense>
   )
 }
 
