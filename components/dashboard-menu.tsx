@@ -16,7 +16,7 @@ const navigationItems = [
   },
   {
     label: 'My Tasks',
-    href: '/dashboard/tasks',
+    href: '/tasks',
     icon: ListTodo,
     description: 'View your errands'
   },
@@ -70,6 +70,8 @@ function getDashboardPageTitle(pathname: string, pageTitle?: string) {
   const navigationItem = navigationItems.find((item) => item.href === pathname)
   if (navigationItem) return navigationItem.label
 
+  if (pathname === '/tasks') return 'My Tasks'
+  if (pathname.startsWith('/dashboard/tasks')) return 'Track Order'
   if (pathname.startsWith('/dashboard/reviews/')) return 'Leave Review'
   if (pathname.startsWith('/dashboard/whatsapp/')) return 'WhatsApp'
   if (pathname === '/dashboard/profile-completion') return 'Complete Profile'

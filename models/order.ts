@@ -53,6 +53,17 @@ export interface IOrder extends Document {
   acceptedAt?: Date;
   paidAt?: Date;
   completedAt?: Date;
+  completionTimerStartedAt?: Date;
+  completionDueAt?: Date;
+  completionWindowMinutes?: number;
+  completionExtensionMinutes?: number;
+  completionExtendedAt?: Date;
+  completedBeforeTimer?: boolean;
+  platformFeeWaivedForFastCompletion?: boolean;
+  customerReceiptConfirmed?: boolean;
+  customerReceiptRespondedAt?: Date;
+  prematureCompletionReported?: boolean;
+  prematureCompletionReportedAt?: Date;
   cancelledAt?: Date;
   createdAt: Date;
   hasPaid: boolean;
@@ -112,7 +123,7 @@ const orderSchema = new Schema<IOrder>(
     taskType: {
       type: String,
       required: true,
-      enum: ['restaurant', 'printing', 'shopping', 'water', 'others', 'copy_notes'],
+      enum: ['restaurant', 'printing', 'shopping', 'water', 'others', 'copy_notes', 'dry_cleaning'],
     },
     description: {
       type: String,
@@ -299,6 +310,35 @@ const orderSchema = new Schema<IOrder>(
     acceptedAt: Date,
     paidAt: Date,
     completedAt: Date,
+    completionTimerStartedAt: Date,
+    completionDueAt: Date,
+    completionWindowMinutes: {
+      type: Number,
+      min: 1,
+    },
+    completionExtensionMinutes: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    completionExtendedAt: Date,
+    completedBeforeTimer: {
+      type: Boolean,
+      default: false,
+    },
+    platformFeeWaivedForFastCompletion: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    customerReceiptConfirmed: Boolean,
+    customerReceiptRespondedAt: Date,
+    prematureCompletionReported: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    prematureCompletionReportedAt: Date,
     cancelledAt: Date,
     hasPaid: {
       type: Boolean,

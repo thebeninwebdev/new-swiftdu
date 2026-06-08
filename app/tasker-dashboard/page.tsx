@@ -30,7 +30,6 @@ import { convertToNaira } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { calculateRestaurantServiceFee, RESTAURANT_MAX_PEOPLE } from '@/lib/pricing'
 
-const DASHBOARD_REFRESH_MS = 5000
 const REALTIME_REVALIDATE_DELAY_MS = 1200
 
 interface Errand {
@@ -60,6 +59,13 @@ interface Errand {
   taskerId?: string
   acceptedBy?: string
   acceptedAt?: string
+  completionTimerStartedAt?: string
+  completionDueAt?: string
+  completionWindowMinutes?: number
+  completionExtensionMinutes?: number
+  completedBeforeTimer?: boolean
+  platformFeeWaivedForFastCompletion?: boolean
+  prematureCompletionReported?: boolean
   hasPaid?: boolean
   isDeclinedTask?: boolean
   createdAt: string
@@ -97,6 +103,13 @@ interface RealtimeTaskPayload {
   status?: string
   taskerId?: string
   acceptedAt?: string
+  completionTimerStartedAt?: string
+  completionDueAt?: string
+  completionWindowMinutes?: number
+  completionExtensionMinutes?: number
+  completedBeforeTimer?: boolean
+  platformFeeWaivedForFastCompletion?: boolean
+  prematureCompletionReported?: boolean
   hasPaid?: boolean
   isDeclinedTask?: boolean
   createdAt?: string
@@ -108,6 +121,7 @@ const taskTypes = [
   { value: 'printing', label: 'Print', icon: Package, color: 'bg-sky-500' },
   { value: 'copy_notes', label: 'Copy', icon: Package, color: 'bg-amber-500' },
   { value: 'shopping', label: 'Shop', icon: Package, color: 'bg-emerald-500' },
+  { value: 'dry_cleaning', label: 'Dry Clean', icon: Package, color: 'bg-cyan-500' },
   { value: 'water', label: 'Water Bags', icon: Package, color: 'bg-cyan-500' },
   { value: 'others', label: 'Other', icon: Package, color: 'bg-slate-500' },
 ]
@@ -117,6 +131,7 @@ const taskTypeStyles: Record<string, string> = {
   printing: 'from-sky-500 to-blue-500',
   copy_notes: 'from-amber-500 to-yellow-500',
   shopping: 'from-emerald-500 to-teal-500',
+  dry_cleaning: 'from-cyan-500 to-blue-500',
   water: 'from-cyan-500 to-blue-500',
   others: 'from-slate-500 to-gray-500',
 }
@@ -126,6 +141,7 @@ const taskTypeBg: Record<string, string> = {
   printing: 'bg-sky-50 text-sky-700 border-sky-200',
   copy_notes: 'bg-amber-50 text-amber-700 border-amber-200',
   shopping: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  dry_cleaning: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   water: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   others: 'bg-slate-50 text-slate-700 border-slate-200',
 }
@@ -262,10 +278,25 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
     status: payload.status || 'pending',
     taskerId: payload.taskerId,
     acceptedAt: payload.acceptedAt,
+    completionTimerStartedAt: payload.completionTimerStartedAt,
+    completionDueAt: payload.completionDueAt,
+    completionWindowMinutes: payload.completionWindowMinutes,
+    completionExtensionMinutes: payload.completionExtensionMinutes,
+    completedBeforeTimer: payload.completedBeforeTimer,
+    platformFeeWaivedForFastCompletion: payload.platformFeeWaivedForFastCompletion,
+    prematureCompletionReported: payload.prematureCompletionReported,
     hasPaid: payload.hasPaid,
     isDeclinedTask: payload.isDeclinedTask,
     createdAt: payload.createdAt || new Date().toISOString(),
   }
+}
+
+function formatDuration(milliseconds: number) {
+  const totalSeconds = Math.max(Math.ceil(milliseconds / 1000), 0)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
 function formatRestaurantPackaging(errand: Pick<Errand, 'packaging' | 'restaurantTakeawayCount' | 'restaurantPeopleCount'>) {
@@ -309,6 +340,7 @@ export default function TaskerDashboardPage() {
   const [newTaskAlert, setNewTaskAlert] = useState(false)
   const [taskerProfile, setTaskerProfile] = useState<TaskerData | null>(null)
   const [loadingTaskerProfile, setLoadingTaskerProfile] = useState(true)
+  const [nowMs, setNowMs] = useState(() => Date.now())
 
   const fetchingRef = useRef(false)
   const queuedRefreshRef = useRef(false)
@@ -320,6 +352,12 @@ export default function TaskerDashboardPage() {
 
   const taskerId = session?.user?.taskerId ? String(session.user.taskerId) : null
   const taskerName = session?.user?.name || 'Anonymous'
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000)
+
+    return () => window.clearInterval(intervalId)
+  }, [])
 
   const triggerNewTaskAlert = useCallback(() => {
     setNewTaskAlert(true)
@@ -546,17 +584,10 @@ export default function TaskerDashboardPage() {
 
     void loadDashboard(true)
 
-    const interval = window.setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        void loadDashboard(false)
-      }
-    }, DASHBOARD_REFRESH_MS)
-
     const handleFocus = () => void loadDashboard(false)
     window.addEventListener('focus', handleFocus)
 
     return () => {
-      window.clearInterval(interval)
       window.removeEventListener('focus', handleFocus)
     }
   }, [loadDashboard, loadingTaskerProfile, sessionPending])
@@ -753,6 +784,86 @@ export default function TaskerDashboardPage() {
       label: 'Waiting',
       description: 'Awaiting transfer confirmation',
       className: 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-300 dark:ring-sky-900/60',
+    }
+  }
+
+  const getCompletionTimerState = (errand: Errand) => {
+    if (!errand.hasPaid && errand.status !== 'paid') {
+      return {
+        label: 'Timer starts after payment',
+        detail: 'Waiting for customer to tap "I\'ve paid"',
+        progress: 0,
+        className:
+          'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100',
+        barClassName: 'bg-sky-500',
+      }
+    }
+
+    const startedMs = errand.completionTimerStartedAt
+      ? new Date(errand.completionTimerStartedAt).getTime()
+      : new Date(errand.createdAt).getTime()
+
+    if (!Number.isFinite(startedMs)) {
+      return null
+    }
+
+    const windowMinutes =
+      Number(errand.completionWindowMinutes || 0) > 0
+        ? Number(errand.completionWindowMinutes)
+        : 20
+    const extensionMinutes = Number(errand.completionExtensionMinutes || 0)
+    const computedDueMs = startedMs + (windowMinutes + extensionMinutes) * 60000
+    const dueMs = errand.completionDueAt
+      ? new Date(errand.completionDueAt).getTime()
+      : computedDueMs
+    const baseWindowMs =
+      windowMinutes > 0 ? windowMinutes * 60000 : dueMs - startedMs
+    const remainingMs = dueMs - nowMs
+    const isExpired = remainingMs <= 0
+    const progress =
+      baseWindowMs > 0 && Number.isFinite(startedMs)
+        ? Math.min(100, Math.max(0, ((nowMs - startedMs) / baseWindowMs) * 100))
+        : 0
+
+    if (errand.status === 'completed') {
+      if (errand.prematureCompletionReported) {
+        return {
+          label: 'Customer reported not received',
+          detail: 'Platform fee remains payable while SwiftDU reviews it.',
+          progress: 100,
+          className:
+            'border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-100',
+          barClassName: 'bg-rose-500',
+        }
+      }
+
+      return {
+        label: errand.platformFeeWaivedForFastCompletion
+          ? 'Completed in time'
+          : 'Completed after timer',
+        detail: errand.platformFeeWaivedForFastCompletion
+          ? 'Platform settlement waived unless the customer reports an issue.'
+          : 'Normal platform settlement applies.',
+        progress: 100,
+        className: errand.platformFeeWaivedForFastCompletion
+          ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100'
+          : 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100',
+        barClassName: errand.platformFeeWaivedForFastCompletion ? 'bg-emerald-500' : 'bg-amber-500',
+      }
+    }
+
+    return {
+      label: isExpired ? 'Timer expired' : `${formatDuration(remainingMs)} left`,
+      detail: isExpired
+        ? 'Customer can add 10 minutes from their tracking page.'
+        : `${windowMinutes}${
+            extensionMinutes ? ` + ${extensionMinutes}` : ''
+          } min completion window`,
+      progress: isExpired ? 100 : progress,
+      className: isExpired
+        ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100'
+        : 'border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100',
+      barClassName: isExpired ? 'bg-amber-500' : 'bg-sky-500',
     }
   }
 
@@ -1028,6 +1139,7 @@ export default function TaskerDashboardPage() {
             <div className="grid gap-3 lg:grid-cols-2">
               {acceptedErrands.map((errand) => {
                 const state = getActiveTaskState(errand)
+                const timerState = getCompletionTimerState(errand)
 
                 return (
                   <article
@@ -1092,6 +1204,31 @@ export default function TaskerDashboardPage() {
                           </div>
                         ) : null}
                       </div>
+
+                      {timerState ? (
+                        <div className={`mt-4 rounded-2xl border px-4 py-3 ${timerState.className}`}>
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="flex items-center gap-2 text-sm font-bold">
+                                <Clock3 className="h-4 w-4 shrink-0" />
+                                <span className="truncate">{timerState.label}</span>
+                              </p>
+                              <p className="mt-1 text-xs leading-5 opacity-80">{timerState.detail}</p>
+                            </div>
+                            {errand.completionDueAt ? (
+                              <span className="shrink-0 rounded-full bg-white/75 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide dark:bg-slate-900/70">
+                                Timing
+                              </span>
+                            ) : null}
+                          </div>
+                          <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-900/80">
+                            <div
+                              className={`h-full rounded-full ${timerState.barClassName}`}
+                              style={{ width: `${timerState.progress}%` }}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
 
                       <button
                         type="button"

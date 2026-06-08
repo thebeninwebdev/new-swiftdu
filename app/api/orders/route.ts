@@ -7,6 +7,7 @@ import { auth } from '@/lib/auth';
 import { Review } from '@/models/review';
 import { ACTIVE_ORDER_STATUSES } from '@/lib/order-status';
 import { emitOrderUpdated } from '@/lib/socket';
+import { ensureCompletionTimer } from '@/lib/completion-timer';
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
@@ -18,6 +19,7 @@ import {
   RESTAURANT_MAX_PEOPLE,
   CAFE_INQUIRY_SERVICE_FEE,
   WATER_TASK_TYPE,
+  DRY_CLEANING_TASK_TYPE,
 } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
 import {
@@ -29,7 +31,7 @@ import {
   sendPushNotification,
 } from '@/lib/push-notifications';
 
-const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes']);
+const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes', DRY_CLEANING_TASK_TYPE]);
 
 export async function POST(request: NextRequest) {
   try {
@@ -217,17 +219,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (normalizedTaskType === 'shopping') {
+    if (normalizedTaskType === 'shopping' || normalizedTaskType === DRY_CLEANING_TASK_TYPE) {
       if (normalizedDescription.length < 5) {
         return NextResponse.json(
-          { error: 'Describe the items you want.' },
+          { error: normalizedTaskType === DRY_CLEANING_TASK_TYPE ? 'Describe the clothes you want cleaned.' : 'Describe the items you want.' },
           { status: 400 }
         );
       }
 
       if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
         return NextResponse.json(
-          { error: 'Enter a valid shopping budget.' },
+          { error: normalizedTaskType === DRY_CLEANING_TASK_TYPE ? 'Enter a valid dry cleaning budget.' : 'Enter a valid shopping budget.' },
           { status: 400 }
         );
       }
@@ -347,8 +349,13 @@ export async function POST(request: NextRequest) {
       pricingModel: pricing.pricingModel,
       totalAmount,
       location,
-      store: normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE ? undefined : store || undefined,
-      itemPrice: normalizedTaskType === 'restaurant' || normalizedTaskType === 'shopping' ? parsedAmount : undefined,
+      store:
+        normalizedTaskType === 'copy_notes' ||
+        normalizedTaskType === WATER_TASK_TYPE ||
+        normalizedTaskType === DRY_CLEANING_TASK_TYPE
+          ? undefined
+          : store || undefined,
+      itemPrice: normalizedTaskType === 'restaurant' || normalizedTaskType === 'shopping' || normalizedTaskType === DRY_CLEANING_TASK_TYPE ? parsedAmount : undefined,
       packaging:
         normalizedTaskType === 'restaurant'
           ? pricing.restaurantTakeawayCount && pricing.restaurantTakeawayCount > 0
@@ -478,6 +485,10 @@ export async function GET(request: NextRequest) {
       const order = await Order.findOne(query).sort({
         createdAt: -1,
       });
+      if (order && ensureCompletionTimer(order)) {
+        await order.save();
+        emitOrderUpdated(order);
+      }
       return NextResponse.json(order);
     }
 

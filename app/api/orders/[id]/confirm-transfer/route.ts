@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
 import { emitOrderUpdated } from '@/lib/socket'
+import { ensureCompletionTimer, getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { Order } from '@/models/order'
 import Tasker from '@/models/tasker'
 import { DECLINED_TRANSFER_MESSAGE } from '@/lib/tasker-access'
@@ -95,6 +96,11 @@ export async function POST(
     }
 
     if (order.hasPaid && order.paymentStatus === 'paid') {
+      if (ensureCompletionTimer(order)) {
+        await order.save()
+        emitOrderUpdated(order)
+      }
+
       return NextResponse.json({ order })
     }
 
@@ -109,6 +115,18 @@ export async function POST(
     order.paymentVerifiedAt = new Date()
     order.customerTransferredAt = new Date()
     order.paidAt = new Date()
+    order.completionTimerStartedAt = order.paidAt
+    order.completionWindowMinutes = getCompletionWindowMinutes(order.location)
+    order.completionExtensionMinutes = 0
+    order.completionDueAt = new Date(
+      order.paidAt.getTime() + order.completionWindowMinutes * 60000
+    )
+    order.completedBeforeTimer = false
+    order.platformFeeWaivedForFastCompletion = false
+    order.customerReceiptConfirmed = undefined
+    order.customerReceiptRespondedAt = undefined
+    order.prematureCompletionReported = false
+    order.prematureCompletionReportedAt = undefined
     order.paymentFailureReason = undefined
     await order.save()
 

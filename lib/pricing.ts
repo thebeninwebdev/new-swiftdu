@@ -12,6 +12,7 @@ export const PRINTING_SERVICE_FEE = 500
 export const PRINTING_PRICE_PER_PAGE = 100
 export const PHOTOCOPY_PRICE_PER_PAGE = 50
 export const COPY_NOTES_TASK_TYPE = 'copy_notes'
+export const DRY_CLEANING_TASK_TYPE = 'dry_cleaning'
 export const COPY_NOTES_SMALL_PRICE_PER_TWO_PAGES = 250
 export const COPY_NOTES_BIG_PRICE_PER_TWO_PAGES = 450
 

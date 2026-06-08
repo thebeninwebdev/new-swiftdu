@@ -59,6 +59,7 @@ const taskTypeLabels: Record<string, string> = {
   printing: 'Printing',
   copy_notes: 'Copy Notes',
   shopping: 'Shopping',
+  dry_cleaning: 'Dry Cleaning',
   water: 'Bag of Water',
   others: 'Other Errands',
 }
@@ -68,6 +69,7 @@ const taskTypeIcons: Record<string, React.ReactNode> = {
   printing: <Package className="h-4 w-4" />,
   copy_notes: <Package className="h-4 w-4" />,
   shopping: <Package className="h-4 w-4" />,
+  dry_cleaning: <Package className="h-4 w-4" />,
   water: <Package className="h-4 w-4" />,
   others: <Package className="h-4 w-4" />,
 }

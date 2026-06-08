@@ -55,6 +55,17 @@ export async function POST(
 
     order.hasPaid = false
     order.paidAt = undefined
+    order.completionTimerStartedAt = undefined
+    order.completionDueAt = undefined
+    order.completionWindowMinutes = undefined
+    order.completionExtensionMinutes = 0
+    order.completionExtendedAt = undefined
+    order.completedBeforeTimer = false
+    order.platformFeeWaivedForFastCompletion = false
+    order.customerReceiptConfirmed = undefined
+    order.customerReceiptRespondedAt = undefined
+    order.prematureCompletionReported = false
+    order.prematureCompletionReportedAt = undefined
     order.paymentStatus = 'failed'
     order.paymentVerifiedAt = undefined
     order.paymentFailureReason = DECLINED_TRANSFER_MESSAGE

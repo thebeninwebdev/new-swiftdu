@@ -7,7 +7,6 @@ import {
   AlertTriangle,
   ArrowLeft,
   Bell,
-  ChevronRight,
   LayoutDashboard,
   ListTodo,
   LogOut,
@@ -15,20 +14,12 @@ import {
   MessageSquare,
   Settings,
   Star,
-  User,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { authClient } from '@/lib/auth-client'
 import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
-import { Button } from '@/components/ui/button'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from '@/components/ui/tooltip'
 
 interface UnpaidOrder {
   _id: string
@@ -71,25 +62,25 @@ const navigation = [
     name: 'Dashboard',
     href: '/tasker-dashboard',
     icon: LayoutDashboard,
-    badge: null,
+    description: 'Overview and active tasks',
   },
   {
     name: 'Available Errands',
     href: '/tasker-dashboard?accepted=true',
     icon: ListTodo,
-    badge: null,
+    description: 'Find errands',
   },
   {
     name: 'History',
     href: '/tasker-dashboard/history',
     icon: ListTodo,
-    badge: null,
+    description: 'Completed errands',
   },
   {
     name: 'Support',
     href: '/tasker-dashboard/support',
     icon: MessageSquare,
-    badge: null,
+    description: 'Get help',
   },
 ]
 
@@ -98,11 +89,13 @@ const secondaryNavigation = [
     name: 'Profile Settings',
     href: '/tasker-dashboard/profile',
     icon: Settings,
+    description: 'Profile settings',
   },
   {
     name: 'Notifications',
     href: '/tasker-dashboard/notifications',
     icon: Bell,
+    description: 'Settlement alerts',
   },
 ]
 
@@ -111,19 +104,17 @@ export default function TaskerSidebar() {
   const router = useRouter()
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [isCollapsed, setIsCollapsed] = useState(false)
   const [user, setUser] = useState<UserType | undefined>()
   const [taskerProfile, setTaskerProfile] = useState<TaskerProfileType | undefined>()
   const [taskerStats, setTaskerStats] = useState({ completedTasks: 0, rating: 0 })
   const [unpaidOrders, setUnpaidOrders] = useState<UnpaidOrder[]>([])
   const [dismissedNotificationId, setDismissedNotificationId] = useState<string | null>(null)
+  const [isMobileTitleTransparent, setIsMobileTitleTransparent] = useState(false)
 
   const fetchTaskerStats = useCallback(async (taskerId: string) => {
     try {
       const statsRes = await fetchWithSocketPause(`/api/taskers/stats?taskerId=${taskerId}`)
-      if (!statsRes.ok) {
-        return
-      }
+      if (!statsRes.ok) return
 
       const stats = await statsRes.json()
       setTaskerStats({
@@ -138,9 +129,7 @@ export default function TaskerSidebar() {
   const fetchUnpaidOrders = useCallback(async () => {
     try {
       const unpaidRes = await fetchWithSocketPause('/api/taskers/unpaid-platform-fees')
-      if (!unpaidRes.ok) {
-        return
-      }
+      if (!unpaidRes.ok) return
 
       const { orders } = await unpaidRes.json()
       setUnpaidOrders(orders || [])
@@ -169,9 +158,7 @@ export default function TaskerSidebar() {
           taskerId,
         })
 
-        if (!taskerId) {
-          return
-        }
+        if (!taskerId) return
 
         const taskerRes = await fetchWithSocketPause(`/api/taskers?taskerId=${taskerId}&basic=true`)
         if (!taskerRes.ok) {
@@ -192,9 +179,7 @@ export default function TaskerSidebar() {
   }, [fetchTaskerStats, fetchUnpaidOrders])
 
   useEffect(() => {
-    if (!user?.taskerId) {
-      return
-    }
+    if (!user?.taskerId) return
 
     const socket = acquireSharedSocket()
     const handleTaskUpdate = () => {
@@ -222,9 +207,7 @@ export default function TaskerSidebar() {
   useEffect(() => {
     toast.dismiss(TASKER_NOTIFICATION_TOAST_ID)
 
-    if (!activeNotification) {
-      return
-    }
+    if (!activeNotification) return
 
     toast.custom(
       () => (
@@ -304,6 +287,30 @@ export default function TaskerSidebar() {
     }
   }, [activeNotification])
 
+  useEffect(() => {
+    if (!isMobileMenuOpen) return
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [isMobileMenuOpen])
+
+  useEffect(() => {
+    const updateMobileTitleVisibility = () => {
+      setIsMobileTitleTransparent(window.scrollY > 12)
+    }
+
+    updateMobileTitleVisibility()
+    window.addEventListener('scroll', updateMobileTitleVisibility, { passive: true })
+
+    return () => {
+      window.removeEventListener('scroll', updateMobileTitleVisibility)
+    }
+  }, [])
+
   const handleLogout = async () => {
     await authClient.signOut()
     toast.dismiss(TASKER_NOTIFICATION_TOAST_ID)
@@ -311,300 +318,229 @@ export default function TaskerSidebar() {
   }
 
   const notificationCount = unpaidOrders.length
+  const userName = user?.name || 'Tasker'
+  const userEmailName = user?.email?.split('@')[0] || ''
+  const isNavigationActive = (href: string) =>
+    href === '/tasker-dashboard'
+      ? pathname === href
+      : pathname === href || pathname.startsWith(`${href}/`)
 
-  const NavItem = ({
+  const handleNavigation = (href: string) => {
+    router.push(href)
+    setIsMobileMenuOpen(false)
+  }
+
+  const NavButton = ({
     item,
-    isActive,
+    mobile = false,
   }: {
-    item: (typeof navigation)[number]
-    isActive: boolean
+    item: (typeof navigation)[number] | (typeof secondaryNavigation)[number]
+    mobile?: boolean
   }) => {
     const Icon = item.icon
-
-    if (isCollapsed) {
-      return (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Link
-                href={item.href}
-                onClick={() => setIsMobileMenuOpen(false)}
-                className={`group flex items-center justify-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? 'bg-primary text-primary-foreground shadow-sm'
-                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                }`}
-              >
-                <Icon
-                  className={`h-5 w-5 shrink-0 ${
-                    isActive
-                      ? 'text-primary-foreground'
-                      : 'text-muted-foreground group-hover:text-foreground'
-                  }`}
-                />
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent side="right">{item.name}</TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      )
-    }
+    const isActive = isNavigationActive(item.href)
+    const isNotifications = item.href === '/tasker-dashboard/notifications'
 
     return (
-      <Link
-        href={item.href}
-        onClick={() => setIsMobileMenuOpen(false)}
-        className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
+      <button
+        type="button"
+        onClick={() => handleNavigation(item.href)}
+        className={`group flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left transition-all duration-300 ${
           isActive
-            ? 'bg-primary text-primary-foreground shadow-sm'
-            : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+            ? 'bg-linear-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25'
+            : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200'
         }`}
       >
-        <Icon
-          className={`h-5 w-5 shrink-0 ${
-            isActive
-              ? 'text-primary-foreground'
-              : 'text-muted-foreground group-hover:text-foreground'
-          }`}
-        />
-        <span className="flex-1">{item.name}</span>
-        {item.badge ? (
+        <span className="relative">
+          <Icon className="h-5 w-5 transition-transform group-hover:scale-110" />
+          {isNotifications && notificationCount > 0 ? (
+            <span className="absolute -right-1 -top-1 flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-red-600" />
+            </span>
+          ) : null}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{item.name}</p>
+          {!mobile ? (
+            <p className={`truncate text-xs ${isActive ? 'text-indigo-100' : 'text-slate-400'}`}>
+              {item.description}
+            </p>
+          ) : null}
+        </div>
+        {isNotifications && notificationCount > 0 ? (
           <span
-            className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-medium ${
-              isActive
-                ? 'bg-primary-foreground/20 text-primary-foreground'
-                : 'bg-primary/10 text-primary'
+            className={`ml-auto inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold ${
+              isActive ? 'bg-white/20 text-white' : 'bg-amber-500 text-white'
             }`}
           >
-            {item.badge}
+            {notificationCount > 9 ? '9+' : notificationCount}
           </span>
         ) : null}
-        {isActive ? <ChevronRight className="h-4 w-4 opacity-50" /> : null}
-      </Link>
+        {isActive && !isNotifications ? <span className="ml-auto h-1.5 w-1.5 rounded-full bg-white" /> : null}
+      </button>
     )
   }
 
   return (
     <>
-      <div className="fixed left-0 right-0 top-0 z-50 flex items-center justify-between border-b border-border bg-background/85 px-4 py-3 backdrop-blur-md lg:hidden">
-        <div className="flex items-center gap-3">
+      <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-20 bg-transparent lg:hidden">
+        <div className="absolute left-4 top-4 flex items-center gap-2">
           <button
             type="button"
             onClick={() => setIsMobileMenuOpen((previous) => !previous)}
-            className="rounded-xl p-2 transition-colors hover:bg-accent"
+            className="pointer-events-auto flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-950 shadow-lg shadow-slate-900/10 outline-none transition-all duration-300 hover:bg-slate-50 focus-visible:ring-2 focus-visible:ring-blue-500 dark:border-slate-800 dark:bg-slate-900 dark:text-white dark:hover:bg-slate-800"
             aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={isMobileMenuOpen}
           >
-            {isMobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-          </button>
-          <span className="text-base font-bold tracking-tight">ErrandHub</span>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Link
-            href="/tasker-dashboard/notifications"
-            className="relative rounded-xl p-2 transition-colors hover:bg-accent"
-            aria-label="Open notifications"
-          >
-            <Bell className="h-5 w-5" />
-            {notificationCount > 0 ? (
-              <span className="absolute right-1.5 top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
-                {notificationCount > 9 ? '9+' : notificationCount}
+            {isMobileMenuOpen ? (
+              <X className="h-5 w-5 transition-transform duration-300" />
+            ) : (
+              <span className="flex w-6 flex-col items-center gap-1.5" aria-hidden="true">
+                <span className="h-0.5 w-4 rounded-full bg-current" />
+                <span className="h-0.5 w-6 rounded-full bg-current" />
+                <span className="h-0.5 w-3.5 rounded-full bg-current" />
               </span>
-            ) : null}
-          </Link>
-          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-primary/10">
-            <User className="h-4 w-4 text-primary" />
-          </div>
+            )}
+          </button>
         </div>
+        <p
+          className={`absolute left-20 right-20 top-1/2 -translate-y-1/2 truncate text-center text-base text-slate-950 transition-opacity duration-200 dark:text-white ${
+            isMobileTitleTransparent ? 'opacity-0' : 'opacity-100'
+          }`}
+        >
+          Tasker Dashboard
+        </p>
       </div>
 
       {isMobileMenuOpen ? (
         <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-70 bg-slate-950/50 backdrop-blur-sm lg:hidden"
           onClick={() => setIsMobileMenuOpen(false)}
-        />
+        >
+          <div
+            className="absolute bottom-0 left-0 top-0 flex w-72 max-w-[85vw] animate-in flex-col overflow-y-auto bg-white shadow-2xl slide-in-from-left duration-300 dark:bg-slate-900"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mt-5 p-5">
+              <div className="min-w-0">
+                <p className="truncate text-3xl font-bold text-slate-900 dark:text-white">{userName}</p>
+                {userEmailName ? (
+                  <p className="truncate text-slate-500 dark:text-slate-400">@{userEmailName}</p>
+                ) : null}
+              </div>
+              <div className="mt-4 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <span className="flex items-center gap-1">
+                  <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
+                  {taskerStats.rating.toFixed(1)}
+                </span>
+                <span>{taskerStats.completedTasks} tasks</span>
+                <span
+                  className={`ml-auto rounded-full px-2 py-1 font-semibold ${
+                    taskerProfile?.isSettlementSuspended
+                      ? 'bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300'
+                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300'
+                  }`}
+                >
+                  {taskerProfile?.isSettlementSuspended ? 'Settlement hold' : 'Online'}
+                </span>
+              </div>
+            </div>
+
+            <nav className="flex-1 space-y-2 p-4 pb-6">
+              {[...navigation, ...secondaryNavigation].map((item) => (
+                <NavButton key={item.name} item={item} mobile />
+              ))}
+
+              <div className="pt-2">
+                <button
+                  type="button"
+                  onClick={() => handleNavigation('/dashboard')}
+                  className="w-full rounded-xl bg-linear-to-r from-emerald-500 to-teal-500 px-4 py-3 text-left text-white shadow-lg shadow-emerald-500/20 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="rounded-lg bg-white/20 p-2">
+                      <ArrowLeft className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="font-medium">User Dashboard</p>
+                      <p className="text-xs text-emerald-50">Switch to your user account</p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
+                >
+                  <LogOut className="h-5 w-5" />
+                  <span className="font-medium">Sign Out</span>
+                </button>
+              </div>
+            </nav>
+          </div>
+        </div>
       ) : null}
 
-      <aside
-        className={`fixed left-0 top-0 z-50 h-screen border-r border-border bg-card transition-all duration-300 ease-in-out ${
-          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        } ${isCollapsed ? 'lg:w-20' : 'w-72 lg:w-72'}`}
-      >
-        <div
-          className={`flex h-16 items-center border-b border-border px-4 ${
-            isCollapsed ? 'lg:justify-center' : 'justify-between'
-          }`}
-        >
-          <Link href="/tasker-dashboard" className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-linear-to-br from-primary to-primary/70 shadow-lg shadow-primary/20">
-              <ListTodo className="h-5 w-5 text-primary-foreground" />
+      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-72 shrink-0 flex-col border-r border-slate-200 bg-white/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:flex">
+        <div className="border-b border-slate-200 p-6 dark:border-slate-800">
+          <div className="flex items-center gap-3">
+            <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white shadow-lg shadow-blue-500/20">
+              <Menu className="h-5 w-5" />
             </div>
-            {!isCollapsed ? (
-              <span className="text-xl font-bold tracking-tight">ErrandHub</span>
-            ) : null}
-          </Link>
-
-          <button
-            type="button"
-            onClick={() => setIsCollapsed((previous) => !previous)}
-            className="hidden rounded-md p-1.5 transition-colors hover:bg-accent lg:flex"
-            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            <Menu
-              className={`h-4 w-4 text-muted-foreground transition-transform duration-300 ${
-                isCollapsed ? 'rotate-180' : ''
-              }`}
-            />
-          </button>
-        </div>
-
-        <div className="h-[calc(100vh-4rem)] overflow-y-auto">
-          <div className="space-y-6 p-4 pb-24">
-            {!isCollapsed ? (
-              <div className="relative overflow-hidden rounded-xl border border-primary/10 bg-linear-to-br from-primary/5 to-primary/10 p-4">
-                <div className="absolute right-0 top-0 -mr-2 -mt-2 h-16 w-16 rounded-full bg-primary/10 blur-2xl" />
-                <div className="relative flex items-center gap-3">
-                  <div className="flex h-12 w-12 items-center justify-center overflow-hidden rounded-full border-2 border-primary/20 bg-background">
-                    {taskerProfile?.profileImage ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
-                        src={taskerProfile.profileImage}
-                        alt={user?.name || 'Tasker'}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <User className="h-6 w-6 text-muted-foreground" />
-                    )}
-                  </div>
-
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold">
-                      {user?.name || 'Tasker'}
-                    </p>
-                    <div className="mt-0.5 flex items-center gap-2">
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                        {taskerStats.rating.toFixed(1)}
-                      </span>
-                      <span className="text-xs text-muted-foreground">•</span>
-                      <span className="text-xs text-muted-foreground">
-                        {taskerStats.completedTasks} tasks
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="mt-3 flex items-center justify-between border-t border-border/50 pt-3 text-xs">
-                  <span className="text-muted-foreground">Status</span>
-                  <span
-                    className={`inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-medium ${
-                      taskerProfile?.isSettlementSuspended
-                        ? 'bg-amber-500/10 text-amber-600'
-                        : 'bg-green-500/10 text-green-600'
-                    }`}
-                  >
-                    <span
-                      className={`h-1.5 w-1.5 rounded-full ${
-                        taskerProfile?.isSettlementSuspended ? 'bg-amber-500' : 'bg-green-500'
-                      }`}
-                    />
-                    {taskerProfile?.isSettlementSuspended ? 'Settlement hold' : 'Online'}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <div className="flex justify-center">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full border-2 border-primary/20 bg-primary/10">
-                  <User className="h-5 w-5 text-primary" />
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-1">
-              {!isCollapsed ? (
-                <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Menu
-                </h3>
-              ) : null}
-
-              {navigation.map((item) => (
-                <NavItem
-                  key={item.name}
-                  item={item}
-                  isActive={pathname === item.href || pathname.startsWith(`${item.href}/`)}
-                />
-              ))}
-            </div>
-
-            <div className="space-y-1 border-t border-border pt-4">
-              {!isCollapsed ? (
-                <h3 className="mb-2 px-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Settings
-                </h3>
-              ) : null}
-
-              {secondaryNavigation.map((item) => {
-                const Icon = item.icon
-                const isActive = pathname === item.href
-                const isNotifications = item.name === 'Notifications'
-
-                return (
-                  <Link
-                    key={item.name}
-                    href={item.href}
-                    className={`group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200 ${
-                      isActive
-                        ? 'bg-accent text-foreground'
-                        : 'text-muted-foreground hover:bg-accent hover:text-foreground'
-                    } ${isCollapsed ? 'justify-center' : ''}`}
-                  >
-                    <div className="relative">
-                      <Icon className="h-5 w-5 shrink-0" />
-                      {isNotifications && notificationCount > 0 ? (
-                        <span className="absolute -right-2 -top-2 flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-semibold text-white">
-                          {notificationCount > 9 ? '9+' : notificationCount}
-                        </span>
-                      ) : null}
-                    </div>
-
-                    {!isCollapsed ? <span>{item.name}</span> : null}
-                  </Link>
-                )
-              })}
+            <div className="min-w-0">
+              <h1 className="truncate text-base font-bold text-slate-900 dark:text-white">{userName}</h1>
+              <p className="truncate text-xs text-slate-500">Tasker Dashboard</p>
             </div>
           </div>
         </div>
 
-        <div className="absolute bottom-0 left-0 right-0 border-t border-border bg-card p-4">
-          <Link
-            href="/dashboard"
-            onClick={() => setIsMobileMenuOpen(false)}
-            className={`mb-2 inline-flex h-10 w-full items-center justify-center rounded-md border border-input bg-background px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground ${
-              isCollapsed ? 'px-2' : 'gap-3'
-            }`}
+        <nav className="flex-1 space-y-2 p-4">
+          {navigation.map((item) => (
+            <NavButton key={item.name} item={item} />
+          ))}
+          <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+            {secondaryNavigation.map((item) => (
+              <NavButton key={item.name} item={item} />
+            ))}
+          </div>
+        </nav>
+
+        <div className="px-4 pb-4">
+          <button
+            type="button"
+            onClick={() => handleNavigation('/dashboard')}
+            className="w-full rounded-2xl bg-linear-to-r from-emerald-500 to-teal-500 p-4 text-left text-white shadow-lg shadow-emerald-500/20 transition-transform duration-300 hover:scale-[1.01]"
           >
-            <ArrowLeft className="h-5 w-5" />
-            {!isCollapsed ? <span>User Dashboard</span> : null}
-          </Link>
-          <Button
-            variant="ghost"
+            <div className="flex items-start gap-3">
+              <div className="mt-0.5 rounded-xl bg-white/20 p-2">
+                <ArrowLeft className="h-5 w-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">User Dashboard</p>
+                <p className="mt-1 text-xs text-emerald-50">
+                  Switch back to booking tasks.
+                </p>
+              </div>
+            </div>
+          </button>
+        </div>
+
+        <div className="border-t border-slate-200 p-4 dark:border-slate-800">
+          <button
+            type="button"
             onClick={handleLogout}
-            className={`w-full justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive ${
-              isCollapsed ? 'px-2' : 'gap-3'
-            }`}
+            className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30"
           >
             <LogOut className="h-5 w-5" />
-            {!isCollapsed ? <span>Sign Out</span> : null}
-          </Button>
+            Sign Out
+          </button>
         </div>
       </aside>
-
-      <div
-        className={`hidden transition-all duration-300 lg:block ${
-          isCollapsed ? 'w-20' : 'w-72'
-        }`}
-      />
-      <div className="h-16 lg:hidden" />
+      <div className="hidden w-72 shrink-0 lg:block" aria-hidden="true" />
     </>
   )
 }

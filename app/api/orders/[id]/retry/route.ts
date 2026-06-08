@@ -45,16 +45,9 @@ export async function POST(
       );
     }
 
-    if (order.status !== 'cancelled') {
+    if (order.status !== 'cancelled' && order.status !== 'completed') {
       return NextResponse.json(
-        { error: 'Only cancelled tasks can be retried.' },
-        { status: 400 }
-      );
-    }
-
-    if (order.hasPaid || order.paymentStatus === 'paid') {
-      return NextResponse.json(
-        { error: 'Paid tasks cannot be retried from here.' },
+        { error: 'Only completed or cancelled tasks can be retried.' },
         { status: 400 }
       );
     }
@@ -133,7 +126,7 @@ export async function POST(
       restaurantPackagingFee: order.restaurantPackagingFee,
       cafeInquiry: order.cafeInquiry,
       cafeInquiryFeePaid: false,
-      cafeInquiryDetailsSubmitted: order.cafeInquiryDetailsSubmitted,
+      cafeInquiryDetailsSubmitted: order.cafeInquiry ? false : order.cafeInquiryDetailsSubmitted,
       waterBags: order.waterBags,
       waterFee: order.waterFee,
       noteSize: order.noteSize,

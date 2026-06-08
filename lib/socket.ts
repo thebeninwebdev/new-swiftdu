@@ -35,6 +35,16 @@ export type OrderSocketPayload = {
   acceptedAt?: string
   createdAt?: string
   paymentStatus?: string
+  completionTimerStartedAt?: string
+  completionDueAt?: string
+  completionWindowMinutes?: number
+  completionExtensionMinutes?: number
+  completedBeforeTimer?: boolean
+  platformFeeWaivedForFastCompletion?: boolean
+  customerReceiptConfirmed?: boolean
+  customerReceiptRespondedAt?: string
+  prematureCompletionReported?: boolean
+  prematureCompletionReportedAt?: string
 }
 
 type SocketOrderLike = {
@@ -68,6 +78,16 @@ type SocketOrderLike = {
   acceptedAt?: Date | string
   createdAt?: Date | string
   paymentStatus?: string
+  completionTimerStartedAt?: Date | string
+  completionDueAt?: Date | string
+  completionWindowMinutes?: number
+  completionExtensionMinutes?: number
+  completedBeforeTimer?: boolean
+  platformFeeWaivedForFastCompletion?: boolean
+  customerReceiptConfirmed?: boolean
+  customerReceiptRespondedAt?: Date | string
+  prematureCompletionReported?: boolean
+  prematureCompletionReportedAt?: Date | string
 }
 
 export function setSocketServer(io: SocketIOServer) {
@@ -126,6 +146,16 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     acceptedAt: serializeDate(order.acceptedAt),
     createdAt: serializeDate(order.createdAt),
     paymentStatus: order.paymentStatus,
+    completionTimerStartedAt: serializeDate(order.completionTimerStartedAt),
+    completionDueAt: serializeDate(order.completionDueAt),
+    completionWindowMinutes: order.completionWindowMinutes,
+    completionExtensionMinutes: order.completionExtensionMinutes,
+    completedBeforeTimer: order.completedBeforeTimer,
+    platformFeeWaivedForFastCompletion: order.platformFeeWaivedForFastCompletion,
+    customerReceiptConfirmed: order.customerReceiptConfirmed,
+    customerReceiptRespondedAt: serializeDate(order.customerReceiptRespondedAt),
+    prematureCompletionReported: order.prematureCompletionReported,
+    prematureCompletionReportedAt: serializeDate(order.prematureCompletionReportedAt),
   }
 }
 

@@ -27,6 +27,7 @@ const taskTypeLabels: Record<string, string> = {
   restaurant: 'Restaurant order',
   printing: 'Printing job',
   shopping: 'Shopping task',
+  dry_cleaning: 'Dry cleaning task',
   water: 'Bag of Water',
   others: 'General errand',
 }
@@ -85,7 +86,7 @@ export default function DashboardNotifications() {
     (order) => !!order.taskerId && !order.hasPaid && !order.isDeclinedTask
   )
   const openOrder = (orderId: string) => {
-    router.push(`/dashboard/tasks?orderId=${orderId}`)
+    router.push(`/dashboard/tasks/${orderId}`)
   }
 
   return (

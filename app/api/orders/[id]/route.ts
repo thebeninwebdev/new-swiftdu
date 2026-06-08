@@ -6,6 +6,7 @@ import {Order} from "@/models/order"
 import { auth } from '@/lib/auth'; 
 import { canCustomerCancelOrder, canTaskerCancelOrder } from '@/lib/order-status';
 import { emitOrderUpdated } from '@/lib/socket';
+import { ensureCompletionTimer } from '@/lib/completion-timer';
 import { getSettlementDueAt, splitServiceFee } from '@/lib/order-finance';
 import { ensureBookedAt } from '@/lib/order-response-time';
 import { consumeServiceFeeDiscountForCompletedOrder } from '@/lib/service-fee-discount';
@@ -19,13 +20,15 @@ import {
   PRINTING_TASK_TYPE,
   RESTAURANT_MAX_PEOPLE,
   WATER_TASK_TYPE,
+  DRY_CLEANING_TASK_TYPE,
 } from '@/lib/pricing';
 import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications';
 
-const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes']);
+const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes', DRY_CLEANING_TASK_TYPE]);
+const COMPLETION_EXTENSION_MINUTES = 10;
 
 export async function PATCH(
   request: NextRequest,
@@ -89,6 +92,8 @@ export async function PATCH(
       hasPaid,
       clearDeclinedTask,
       cafeInquiry,
+      extendCompletionTimer,
+      customerReceivedOrder,
     } = body;
 
     const resetDeclinedTask = () => {
@@ -98,6 +103,11 @@ export async function PATCH(
       order.declinedMessage = undefined;
       order.declinedByTaskerAt = undefined;
     };
+
+    if (ensureCompletionTimer(order)) {
+      await order.save();
+      emitOrderUpdated(order);
+    }
 
     if (clearDeclinedTask === true) {
       if (!isTaskerOwner || isUserOwner) {
@@ -122,6 +132,75 @@ export async function PATCH(
       }
 
       resetDeclinedTask();
+      await order.save();
+      emitOrderUpdated(order);
+      return NextResponse.json(order);
+    }
+
+    if (extendCompletionTimer === true) {
+      if (!isUserOwner) {
+        return NextResponse.json(
+          { error: 'Only the customer can add more completion time.' },
+          { status: 403 }
+        );
+      }
+
+      if (!order.hasPaid || !order.completionDueAt || order.status === 'completed' || order.status === 'cancelled') {
+        return NextResponse.json(
+          { error: 'This task cannot be extended right now.' },
+          { status: 400 }
+        );
+      }
+
+      if (order.completionDueAt.getTime() <= Date.now()) {
+        return NextResponse.json(
+          { error: 'Extra time can only be added before the timer runs out.' },
+          { status: 400 }
+        );
+      }
+
+      order.completionDueAt = new Date(order.completionDueAt.getTime() + COMPLETION_EXTENSION_MINUTES * 60000);
+      order.completionExtensionMinutes =
+        Number(order.completionExtensionMinutes || 0) + COMPLETION_EXTENSION_MINUTES;
+      order.completionExtendedAt = new Date();
+
+      await order.save();
+      emitOrderUpdated(order);
+      return NextResponse.json(order);
+    }
+
+    if (customerReceivedOrder !== undefined) {
+      if (!isUserOwner) {
+        return NextResponse.json(
+          { error: 'Only the customer can answer this question.' },
+          { status: 403 }
+        );
+      }
+
+      if (order.status !== 'completed') {
+        return NextResponse.json(
+          { error: 'You can answer this after the tasker marks the task complete.' },
+          { status: 400 }
+        );
+      }
+
+      const receivedOrder = Boolean(customerReceivedOrder);
+      order.customerReceiptConfirmed = receivedOrder;
+      order.customerReceiptRespondedAt = new Date();
+
+      if (!receivedOrder) {
+        order.prematureCompletionReported = true;
+        order.prematureCompletionReportedAt = order.customerReceiptRespondedAt;
+        order.platformFeeWaivedForFastCompletion = false;
+        order.completedBeforeTimer = false;
+        order.taskerHasPaid = false;
+        order.settlementStatus = 'pending';
+        order.settlementDueAt =
+          order.settlementDueAt || getSettlementDueAt(order.customerReceiptRespondedAt);
+        order.settlementFailureReason =
+          'Customer reported that the order had not been received when the tasker marked it complete.';
+      }
+
       await order.save();
       emitOrderUpdated(order);
       return NextResponse.json(order);
@@ -277,6 +356,17 @@ export async function PATCH(
         order.cafeInquiryDetailsSubmitted = true;
         order.hasPaid = false;
         order.paidAt = undefined;
+        order.completionTimerStartedAt = undefined;
+        order.completionDueAt = undefined;
+        order.completionWindowMinutes = undefined;
+        order.completionExtensionMinutes = 0;
+        order.completionExtendedAt = undefined;
+        order.completedBeforeTimer = false;
+        order.platformFeeWaivedForFastCompletion = false;
+        order.customerReceiptConfirmed = undefined;
+        order.customerReceiptRespondedAt = undefined;
+        order.prematureCompletionReported = false;
+        order.prematureCompletionReportedAt = undefined;
         order.paymentStatus = 'unpaid';
         order.paymentFailureReason = undefined;
         order.customerTransferredAt = undefined;
@@ -471,17 +561,17 @@ export async function PATCH(
         }
       }
 
-      if (nextTaskType === 'shopping') {
+      if (nextTaskType === 'shopping' || nextTaskType === DRY_CLEANING_TASK_TYPE) {
         if (nextDescription.length < 5) {
           return NextResponse.json(
-            { error: 'Describe the items you want.' },
+            { error: nextTaskType === DRY_CLEANING_TASK_TYPE ? 'Describe the clothes you want cleaned.' : 'Describe the items you want.' },
             { status: 400 }
           );
         }
 
         if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
           return NextResponse.json(
-            { error: 'Enter a valid shopping budget.' },
+            { error: nextTaskType === DRY_CLEANING_TASK_TYPE ? 'Enter a valid dry cleaning budget.' : 'Enter a valid shopping budget.' },
             { status: 400 }
           );
         }
@@ -518,7 +608,7 @@ export async function PATCH(
       order.description = nextDescription;
       order.amount = pricing.amount;
       order.itemPrice =
-        nextTaskType === 'restaurant' || nextTaskType === 'shopping' ? nextAmount : undefined;
+        nextTaskType === 'restaurant' || nextTaskType === 'shopping' || nextTaskType === DRY_CLEANING_TASK_TYPE ? nextAmount : undefined;
       order.commission = settlement.serviceFee;
       order.platformFee = settlement.platformFee;
       order.taskerFee = settlement.taskerFee;
@@ -549,6 +639,17 @@ export async function PATCH(
       order.copyNotesPages = pricing.copyNotesPages;
       order.hasPaid = false;
       order.paidAt = undefined;
+      order.completionTimerStartedAt = undefined;
+      order.completionDueAt = undefined;
+      order.completionWindowMinutes = undefined;
+      order.completionExtensionMinutes = 0;
+      order.completionExtendedAt = undefined;
+      order.completedBeforeTimer = false;
+      order.platformFeeWaivedForFastCompletion = false;
+      order.customerReceiptConfirmed = undefined;
+      order.customerReceiptRespondedAt = undefined;
+      order.prematureCompletionReported = false;
+      order.prematureCompletionReportedAt = undefined;
       order.taskerHasPaid = false;
       resetDeclinedTask();
       order.paymentProvider = 'manual_transfer';
@@ -578,7 +679,9 @@ export async function PATCH(
       order.deadlineUnit = undefined;
       if (location !== undefined) order.location = location;
       order.store =
-        nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE
+        nextTaskType === 'copy_notes' ||
+        nextTaskType === WATER_TASK_TYPE ||
+        nextTaskType === DRY_CLEANING_TASK_TYPE
           ? undefined
           : nextStore;
       order.packaging =
@@ -691,7 +794,25 @@ export async function PATCH(
 
         order.status = 'completed';
         order.completedAt = new Date();
-        if (!order.taskerHasPaid) {
+        const completedBeforeTimer =
+          Boolean(order.completionDueAt) &&
+          order.completedAt.getTime() <= order.completionDueAt.getTime();
+
+        order.completedBeforeTimer = completedBeforeTimer;
+        order.platformFeeWaivedForFastCompletion =
+          completedBeforeTimer && Number(order.platformFee || 0) > 0;
+        order.customerReceiptConfirmed = undefined;
+        order.customerReceiptRespondedAt = undefined;
+        order.prematureCompletionReported = false;
+        order.prematureCompletionReportedAt = undefined;
+
+        if (order.platformFeeWaivedForFastCompletion) {
+          order.taskerHasPaid = true;
+          order.settlementStatus = 'paid';
+          order.settlementPaidAt = order.completedAt;
+          order.settlementDueAt = undefined;
+          order.settlementFailureReason = undefined;
+        } else if (!order.taskerHasPaid) {
           order.settlementStatus = 'pending';
           order.settlementDueAt =
             order.settlementDueAt || getSettlementDueAt(order.completedAt);
@@ -854,6 +975,11 @@ export async function GET(
         { error: 'Forbidden: You do not own this order' },
         { status: 403 }
       );
+    }
+
+    if (ensureCompletionTimer(order)) {
+      await order.save();
+      emitOrderUpdated(order);
     }
 
     if (order.taskerId === session.user.taskerId && session.user.taskerId) {

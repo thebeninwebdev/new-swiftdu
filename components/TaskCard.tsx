@@ -28,6 +28,7 @@ const taskTypeColors: Record<string, string> = {
   printing: 'bg-blue-100 text-blue-800 border-blue-300',
   copy_notes: 'bg-amber-100 text-amber-800 border-amber-300',
   shopping: 'bg-green-100 text-green-800 border-green-300',
+  dry_cleaning: 'bg-cyan-100 text-cyan-800 border-cyan-300',
   water: 'bg-cyan-100 text-cyan-800 border-cyan-300',
   others: 'bg-purple-100 text-purple-800 border-purple-300',
 }
@@ -37,6 +38,7 @@ const taskTypeLabels: Record<string, string> = {
   printing: 'Printing',
   copy_notes: 'Copy Notes',
   shopping: 'Shopping',
+  dry_cleaning: 'Dry Cleaning',
   water: 'Bag of Water',
   others: 'Others',
 }

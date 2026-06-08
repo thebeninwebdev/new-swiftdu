@@ -20,6 +20,7 @@ import {
   Minus,
   Plus,
   ShieldCheck,
+  Shirt,
   ShoppingBag,
   Store,
   Wallet,
@@ -27,7 +28,6 @@ import {
 } from 'lucide-react'
 import { io, type Socket } from 'socket.io-client'
 import { toast } from 'sonner'
-
 import { Button } from '@/components/ui/button'
 import { ProfileCompletionCard } from '@/components/profile-completion-card'
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
@@ -43,12 +43,14 @@ import {
   WATER_BAG_PRICE,
   WATER_BAG_FEE,
   WATER_TASK_TYPE,
+  DRY_CLEANING_TASK_TYPE,
 } from '@/lib/pricing'
 
-const ACTIVE_ORDER_REFRESH_MS = 4000
 const REALTIME_PAUSE_MS = 1200
 const LOW_TASKER_NOTICE_RETURN_DATE = '2026-06-01'
 const PACKAGING_LANGUAGE_STORAGE_KEY = 'swiftdu:restaurant-packaging-language'
+const SERVICE_FEE_INCREASE_NOTICE =
+  'From June 14, 2026, SwiftDU service fee will increase to N600 per task.'
 
 type PackagingLanguage = 'pidgin' | 'english'
 
@@ -76,7 +78,12 @@ interface ActiveOrder {
   taskType: string
   description: string
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
+  createdAt?: string
   hasPaid?: boolean
+  completionTimerStartedAt?: string
+  completionDueAt?: string
+  completionWindowMinutes?: number
+  completionExtensionMinutes?: number
   isDeclinedTask?: boolean
   declinedMessage?: string
   taskerId?: string | null
@@ -135,6 +142,14 @@ const taskTypes: TaskTypeConfig[] = [
     accent: 'from-emerald-500 to-teal-500',
   },
   {
+    value: DRY_CLEANING_TASK_TYPE,
+    label: 'Dry Cleaning',
+    description: 'Laundry pickup, washing, ironing, and delivery.',
+    mobileDescription: 'Laundry',
+    icon: Shirt,
+    accent: 'from-cyan-500 to-blue-500',
+  },
+  {
     value: WATER_TASK_TYPE,
     label: 'Bag of Water',
     description: 'Order bags of water at a fixed per-bag price.',
@@ -181,6 +196,14 @@ function formatNaira(value: number) {
     currency: 'NGN',
     maximumFractionDigits: 0,
   }).format(value)
+}
+
+function formatDuration(milliseconds: number) {
+  const totalSeconds = Math.max(Math.ceil(milliseconds / 1000), 0)
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+
+  return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
 function parseMoneyInput(value: string) {
@@ -310,6 +333,7 @@ export default function ErrandWizardPage() {
   const [isTaskerAvailabilityNoticeDismissed, setIsTaskerAvailabilityNoticeDismissed] = useState(false)
   const [isMobileViewport, setIsMobileViewport] = useState(false)
   const [currentTime, setCurrentTime] = useState(() => new Date())
+  const [isExtendingActiveOrderTimer, setIsExtendingActiveOrderTimer] = useState(false)
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
   const [serviceFeeDiscount, setServiceFeeDiscount] = useState<{
@@ -487,7 +511,7 @@ export default function ErrandWizardPage() {
 
     const interval = window.setInterval(() => {
       setCurrentTime(new Date())
-    }, 60_000)
+    }, 1000)
 
     return () => window.clearInterval(interval)
   }, [mounted])
@@ -526,12 +550,6 @@ export default function ErrandWizardPage() {
   useEffect(() => {
     if (!mounted) return
 
-    const interval = window.setInterval(() => {
-      if (!isRealtimePausedRef.current && document.visibilityState === 'visible') {
-        void fetchCurrentOrder()
-      }
-    }, ACTIVE_ORDER_REFRESH_MS)
-
     const onFocus = () => {
       if (!isRealtimePausedRef.current && document.visibilityState === 'visible') {
         void fetchCurrentOrder()
@@ -541,7 +559,6 @@ export default function ErrandWizardPage() {
     window.addEventListener('focus', onFocus)
 
     return () => {
-      window.clearInterval(interval)
       window.removeEventListener('focus', onFocus)
     }
   }, [fetchCurrentOrder, mounted])
@@ -642,6 +659,7 @@ export default function ErrandWizardPage() {
     : formData.description.trim()
   const shoppingBudget = parseMoneyInput(formData.amount)
   const shoppingDescription = formData.description.trim()
+  const dryCleaningDescription = formData.description.trim()
   const waterBags = Number(formData.waterBags || 0)
   const numberOfPages = Number(formData.numberOfPages || 0)
   const printingLabel =
@@ -649,7 +667,7 @@ export default function ErrandWizardPage() {
   const effectiveDescription =
     formData.taskType === 'restaurant'
       ? restaurantDescription
-      : formData.taskType === 'shopping'
+      : formData.taskType === 'shopping' || formData.taskType === DRY_CLEANING_TASK_TYPE
         ? shoppingDescription
         : formData.taskType === PRINTING_TASK_TYPE
           ? [
@@ -664,7 +682,7 @@ export default function ErrandWizardPage() {
   const amount =
     formData.taskType === 'restaurant'
       ? restaurantBudget
-      : formData.taskType === 'shopping'
+      : formData.taskType === 'shopping' || formData.taskType === DRY_CLEANING_TASK_TYPE
         ? shoppingBudget
         : formData.taskType === PRINTING_TASK_TYPE
           ? 0
@@ -886,6 +904,7 @@ if (stepNumber === 2) {
     formData.taskType &&
     formData.taskType !== 'others' &&
     formData.taskType !== 'copy_notes' &&
+    formData.taskType !== DRY_CLEANING_TASK_TYPE &&
     formData.taskType !== WATER_TASK_TYPE &&
     !formData.store
   ) {
@@ -922,6 +941,18 @@ if (stepNumber === 2) {
 
     if (!Number.isFinite(shoppingBudget) || shoppingBudget <= 0) {
       nextErrors.amount = 'Enter a valid shopping budget.'
+    }
+  }
+
+  if (formData.taskType === DRY_CLEANING_TASK_TYPE) {
+    if (!dryCleaningDescription) {
+      nextErrors.description = 'Describe the clothes you want cleaned.'
+    } else if (dryCleaningDescription.length < 5) {
+      nextErrors.description = 'Use at least 5 characters.'
+    }
+
+    if (!Number.isFinite(shoppingBudget) || shoppingBudget <= 0) {
+      nextErrors.amount = 'Enter a valid dry cleaning budget.'
     }
   }
 
@@ -973,6 +1004,7 @@ if (stepNumber === 2) {
     formData.taskType !== WATER_TASK_TYPE &&
     formData.taskType !== 'restaurant' &&
     formData.taskType !== 'shopping' &&
+    formData.taskType !== DRY_CLEANING_TASK_TYPE &&
     formData.taskType !== PRINTING_TASK_TYPE
   ) {
     if (!description) {
@@ -990,6 +1022,7 @@ if (stepNumber === 2) {
     formData.taskType !== PRINTING_TASK_TYPE &&
     formData.taskType !== 'restaurant' &&
     formData.taskType !== 'shopping' &&
+    formData.taskType !== DRY_CLEANING_TASK_TYPE &&
     formData.taskType !== WATER_TASK_TYPE &&
     (formData.amount === '' || !Number.isFinite(amount) || amount < 0)
   ) {
@@ -1098,7 +1131,7 @@ if (stepNumber === 2) {
         restaurantTakeawayCount: '',
       })
       setStep(2)
-      router.push(`/dashboard/tasks?orderId=${createdOrder._id}`)
+      router.push(`/dashboard/tasks/${createdOrder._id}`)
     } catch {
       toast.error('An error occurred while posting the task.')
     } finally {
@@ -1119,6 +1152,36 @@ if (stepNumber === 2) {
     }
     await createOrder()
   }
+
+  const handleExtendActiveOrderTimer = async () => {
+    if (!activeOrder || isExtendingActiveOrderTimer) return
+
+    pauseRealtime(REALTIME_PAUSE_MS * 2)
+    setIsExtendingActiveOrderTimer(true)
+
+    try {
+      const response = await fetch(`/api/orders/${activeOrder._id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ extendCompletionTimer: true }),
+      })
+      const payload = await response.json()
+
+      if (!response.ok) {
+        toast.error(payload.error || 'Failed to add more time.')
+        return
+      }
+
+      activeOrderRef.current = payload
+      setActiveOrder(payload)
+      toast.success('Ten minutes added for your tasker.')
+    } catch {
+      toast.error('Failed to add more time.')
+    } finally {
+      setIsExtendingActiveOrderTimer(false)
+    }
+  }
+
   const activeStatusLabel = activeOrder
     ? activeOrder.status === 'pending'
       ? 'Searching for a tasker'
@@ -1138,6 +1201,52 @@ if (stepNumber === 2) {
           ? 'Your payment has been confirmed and the task is moving. You can still book another errand below.'
           : 'This order is waiting for payment confirmation. You can open the tracker anytime and still post another task now.'
     : null
+  const activeOrderCompletionStartedMs = activeOrder?.completionTimerStartedAt
+    ? new Date(activeOrder.completionTimerStartedAt).getTime()
+    : activeOrder?.createdAt
+      ? new Date(activeOrder.createdAt).getTime()
+      : NaN
+  const activeOrderCompletionWindowMinutes =
+    Number(activeOrder?.completionWindowMinutes || 0) > 0
+      ? Number(activeOrder?.completionWindowMinutes || 0)
+      : 20
+  const activeOrderCompletionExtensionMinutes = Number(
+    activeOrder?.completionExtensionMinutes || 0
+  )
+  const computedActiveOrderCompletionDueMs =
+    Number.isFinite(activeOrderCompletionStartedMs)
+      ? activeOrderCompletionStartedMs +
+        (activeOrderCompletionWindowMinutes + activeOrderCompletionExtensionMinutes) * 60000
+      : NaN
+  const activeOrderCompletionDueMs = activeOrder?.completionDueAt
+    ? new Date(activeOrder.completionDueAt).getTime()
+    : computedActiveOrderCompletionDueMs
+  const hasActiveOrderCompletionTimer =
+    Boolean(activeOrder?.hasPaid) &&
+    Number.isFinite(activeOrderCompletionDueMs) &&
+    activeOrder?.status !== 'completed' &&
+    activeOrder?.status !== 'cancelled'
+  const activeOrderCompletionRemainingMs = hasActiveOrderCompletionTimer
+    ? activeOrderCompletionDueMs - currentTime.getTime()
+    : 0
+  const activeOrderCompletionTimerExpired =
+    hasActiveOrderCompletionTimer && activeOrderCompletionRemainingMs <= 0
+  const activeOrderCompletionWindowMs =
+    activeOrderCompletionWindowMinutes > 0
+      ? activeOrderCompletionWindowMinutes * 60000
+      : activeOrderCompletionDueMs - activeOrderCompletionStartedMs
+  const activeOrderCompletionProgress =
+    hasActiveOrderCompletionTimer && activeOrderCompletionWindowMs > 0
+      ? Math.min(
+          100,
+          Math.max(
+            0,
+            ((currentTime.getTime() - activeOrderCompletionStartedMs) /
+              activeOrderCompletionWindowMs) *
+              100
+          )
+        )
+      : 0
   const showLowTaskerAvailabilityNotice =
     isLowTaskerAvailabilityWindow(currentTime) && !isTaskerAvailabilityNoticeDismissed
   const shouldShowDiscountCard = hasAvailableAccountDiscount && step === 1
@@ -1168,11 +1277,22 @@ if (stepNumber === 2) {
       <span className={className}>{formatNaira(displayedServiceFee)}</span>
     )
 
+  const renderServiceFeeIncreaseNotice = (className = '') => (
+    <div
+      className={`rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 ${className}`}
+    >
+      <div className="flex items-start gap-3">
+        <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
+        <p className="font-semibold">{SERVICE_FEE_INCREASE_NOTICE}</p>
+      </div>
+    </div>
+  )
+
   const selectedTask = taskTypes.find((item) => item.value === formData.taskType) || taskTypes[0]
   const quickLocations = ['Amnesty Hostel', 'Girls Hostel', 'PLT', 'Library', 'NDDC Auditorium']
 
   const renderCategoryCards = (compact = false) => (
-    <div className={compact ? 'space-y-2.5' : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-5'}>
+    <div className={compact ? 'space-y-2.5' : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-6'}>
       {taskTypes.map((item) => {
         const Icon = item.icon
         const selected = formData.taskType === item.value
@@ -1218,6 +1338,7 @@ if (stepNumber === 2) {
   const renderStoreSelect = () =>
     formData.taskType &&
     formData.taskType !== 'copy_notes' &&
+    formData.taskType !== DRY_CLEANING_TASK_TYPE &&
     formData.taskType !== WATER_TASK_TYPE ? (
       <div>
         <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">
@@ -1404,6 +1525,39 @@ if (stepNumber === 2) {
               onChange={handleInputChange}
               placeholder="1,500"
               className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-800 dark:bg-slate-900"
+            />
+            {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
+          </div>
+        </>
+      ) : null}
+
+      {formData.taskType === DRY_CLEANING_TASK_TYPE ? (
+        <>
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <label className="block text-sm font-bold text-slate-900 dark:text-slate-100">Clothes and instructions</label>
+              {renderSpeechButton('emerald')}
+            </div>
+            <textarea
+              name="description"
+              value={formData.description}
+              onChange={handleInputChange}
+              rows={3}
+              placeholder="E.g. 3 shirts, 2 trousers, iron only, pickup from hostel..."
+              className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-800 dark:bg-slate-900"
+            />
+            {errors.description ? <p className="mt-2 text-sm text-red-500">{errors.description}</p> : null}
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Dry cleaning budget</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              name="amount"
+              value={formData.amount}
+              onChange={handleInputChange}
+              placeholder="1,500"
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-800 dark:bg-slate-900"
             />
             {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
           </div>
@@ -1629,7 +1783,7 @@ if (stepNumber === 2) {
       ) : null}
       <div className="border-t border-slate-200 pt-3 dark:border-slate-800">
         <div className="flex justify-between text-xs text-slate-500">
-          <span>{pricing.pricingModel === 'water' ? 'Water and errand fee' : pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : formData.taskType === 'restaurant' ? 'Food budget' : 'Budget'}</span>
+          <span>{pricing.pricingModel === 'water' ? 'Water and errand fee' : pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === DRY_CLEANING_TASK_TYPE ? 'Dry cleaning budget' : 'Budget'}</span>
           <span>{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span>
         </div>
         <div className="mt-2 flex justify-between text-xs text-slate-500">
@@ -1641,12 +1795,13 @@ if (stepNumber === 2) {
           <span className="text-2xl font-black text-slate-950 dark:text-white">{formatNaira(displayedTotalAmount)}</span>
         </div>
       </div>
+      {renderServiceFeeIncreaseNotice()}
     </div>
   )
 
   const renderTopNotices = () => (
-    showLowTaskerAvailabilityNotice || activeOrder || shouldShowDiscountCard ? (
     <div className="space-y-3 px-3 min-[390px]:px-4 lg:px-0">
+      {renderServiceFeeIncreaseNotice()}
       {showLowTaskerAvailabilityNotice ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
           <p className="font-bold">Taskers may be in class right now</p>
@@ -1683,14 +1838,68 @@ if (stepNumber === 2) {
               <p className="text-xs font-bold uppercase text-blue-600">Active order</p>
               <p className="text-sm font-bold text-slate-900 dark:text-white">{activeStatusLabel}</p>
             </div>
-            <Button variant="outline" onClick={() => router.push(`/dashboard/tasks?orderId=${activeOrder._id}`)} className="h-9 rounded-lg">
+            <Button variant="outline" onClick={() => router.push(`/dashboard/tasks/${activeOrder._id}`)} className="h-9 rounded-lg">
               Track
             </Button>
           </div>
+          {hasActiveOrderCompletionTimer ? (
+            <div
+              className={`mt-3 rounded-xl border px-3 py-3 text-sm ${
+                activeOrderCompletionTimerExpired
+                  ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100'
+                  : 'border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100'
+              }`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 font-bold">
+                    <Clock className="h-4 w-4 shrink-0" />
+                    <span>
+                      {activeOrderCompletionTimerExpired
+                        ? 'Timer expired'
+                        : `${formatDuration(activeOrderCompletionRemainingMs)} left`}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-xs opacity-80">
+                    {activeOrderCompletionTimerExpired
+                      ? 'Time is up. Extra time can only be added before the timer runs out.'
+                      : `${activeOrderCompletionWindowMinutes}${
+                          activeOrderCompletionExtensionMinutes
+                            ? ` + ${activeOrderCompletionExtensionMinutes}`
+                            : ''
+                        } min completion window`}
+                  </p>
+                </div>
+                {!activeOrderCompletionTimerExpired ? (
+                  <Button
+                    type="button"
+                    onClick={() => void handleExtendActiveOrderTimer()}
+                    disabled={isExtendingActiveOrderTimer}
+                    className="h-10 shrink-0 rounded-xl bg-amber-600 px-3 text-xs font-bold text-white hover:bg-amber-700"
+                  >
+                    {isExtendingActiveOrderTimer ? 'Adding...' : 'Add 10 min'}
+                  </Button>
+                ) : null}
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-900/80">
+                <div
+                  className={`h-full rounded-full ${
+                    activeOrderCompletionTimerExpired ? 'bg-amber-500' : 'bg-sky-500'
+                  }`}
+                  style={{
+                    width: `${
+                      activeOrderCompletionTimerExpired
+                        ? 100
+                        : activeOrderCompletionProgress
+                    }%`,
+                  }}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
-    ) : null
   )
 
   const DesktopErrandWizard = () => (
@@ -1892,7 +2101,7 @@ if (stepNumber === 2) {
                   </p>
                 </div>
                 <Button
-                  onClick={() => router.push(`/dashboard/tasks?orderId=${activeOrder!._id}`)}
+                  onClick={() => router.push(`/dashboard/tasks/${activeOrder!._id}`)}
                   className="h-11 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 px-4 text-white hover:from-indigo-700 hover:to-cyan-600"
                 >
                   Open Tracker
@@ -2074,6 +2283,7 @@ if (stepNumber === 2) {
                   {formData.taskType &&
                   formData.taskType !== 'others' &&
                   formData.taskType !== 'copy_notes' &&
+                  formData.taskType !== DRY_CLEANING_TASK_TYPE &&
                   formData.taskType !== WATER_TASK_TYPE ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Store className="h-4 w-4 text-indigo-500" />Select Store</label>
@@ -2655,7 +2865,88 @@ if (stepNumber === 2) {
                       ) : null}
                     </div>
                   ) : null}
-                  {formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== PRINTING_TASK_TYPE ? (
+                  {formData.taskType === DRY_CLEANING_TASK_TYPE ? (
+                    <div className="space-y-3">
+                      <div>
+                        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <Shirt className="h-4 w-4 text-cyan-500" />
+                          Clothes and instructions
+                        </label>
+                        <textarea
+                          name="description"
+                          value={formData.description}
+                          onChange={handleInputChange}
+                          placeholder="Describe the clothes, pickup details, stains, ironing, or delivery instructions..."
+                          rows={4}
+                          className="mt-2 w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-800"
+                        />
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                          Include item count and whether you need washing, ironing, or pickup/dropoff.
+                        </p>
+                        {isSpeechSupported === true ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              pauseRealtime()
+                              if (isSpeechListening) {
+                                stopListening()
+                                return
+                              }
+                              startListening(formData.description)
+                            }}
+                            className={`mt-3 h-11 w-full rounded-xl border-2 border-cyan-200 bg-cyan-50 px-4 font-semibold text-cyan-700 hover:bg-cyan-100 dark:border-cyan-900/60 dark:bg-cyan-950/30 dark:text-cyan-200 dark:hover:bg-cyan-950/50 sm:w-auto ${
+                              isSpeechListening ? 'animate-pulse ring-4 ring-cyan-500/15' : ''
+                            }`}
+                          >
+                            {isSpeechListening ? (
+                              <>
+                                <MicOff className="mr-2 h-4 w-4" />
+                                Listening...
+                              </>
+                            ) : (
+                              <>
+                                <Mic className="mr-2 h-4 w-4" />
+                                Say your laundry request
+                              </>
+                            )}
+                          </Button>
+                        ) : null}
+                        {errors.description ? <p className="mt-2 text-sm text-red-500">{errors.description}</p> : null}
+                      </div>
+                      <div>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <Wallet className="h-4 w-4 text-cyan-500" />
+                          Dry cleaning budget
+                        </label>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">â‚¦</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            name="amount"
+                            value={formData.amount}
+                            onChange={handleInputChange}
+                            placeholder="1,500"
+                            className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 pl-9 font-mono text-lg outline-none focus:border-cyan-500 focus:ring-4 focus:ring-cyan-500/10 dark:border-slate-700 dark:bg-slate-800"
+                          />
+                        </div>
+                        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                          Estimate what the laundry service should cost before SwiftDU service fee.
+                        </p>
+                        {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
+                      </div>
+                      <div className="rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3 text-sm text-cyan-900 dark:border-cyan-900/60 dark:bg-cyan-950/30 dark:text-cyan-100">
+                        Dry cleaning budget is {formatNaira(shoppingBudget)} before SwiftDU service fee.
+                        {shouldShowTieredServiceFee ? (
+                          <span className="block pt-1 font-semibold">
+                            Service fee for this budget is {formatNaira(displayedServiceFee)}.
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
+                  {formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== DRY_CLEANING_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                         <FileText className="h-4 w-4 text-indigo-500" />
@@ -2682,7 +2973,7 @@ if (stepNumber === 2) {
                       ) : null}
                     </div>
                   ) : null}
-                  {formData.taskType !== 'copy_notes' && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== WATER_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
+                  {formData.taskType !== 'copy_notes' && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== DRY_CLEANING_TASK_TYPE && formData.taskType !== WATER_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
                   <div>
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Wallet className="h-4 w-4 text-indigo-500" />Item Budget (NGN)</label>
                     <div className="relative">
@@ -2923,9 +3214,10 @@ if (stepNumber === 2) {
                           </p>
                         </div>
                       ) : null}
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : formData.taskType === DRY_CLEANING_TASK_TYPE ? 'Dry cleaning budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span></div>
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between text-sm"><span className="text-slate-500">Packaging</span><span className="font-medium">{restaurantPackagingNote}</span></div> : null}
                       <div className="flex justify-between gap-4 text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span>{renderServiceFeeAmount('font-medium')}</div>
+                      {renderServiceFeeIncreaseNotice()}
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(displayedTotalAmount)}</span></div>
                     </div>
                   </div>

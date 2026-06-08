@@ -4,6 +4,7 @@ import Tasker from "@/models/tasker"
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { emitOrderUpdated } from '@/lib/socket'
+import { ensureCompletionTimer } from '@/lib/completion-timer'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import {
   formatPushTaskType,
@@ -58,7 +59,17 @@ export async function GET(request: NextRequest) {
     // Fetch pending orders with sorting
     const orders = await Order.find(filter)
       .sort({ [sortBy]: -1 })
-      .lean()
+
+    if (accepted === 'true') {
+      await Promise.all(
+        orders.map(async (order) => {
+          if (ensureCompletionTimer(order)) {
+            await order.save()
+            emitOrderUpdated(order)
+          }
+        })
+      )
+    }
 
     return NextResponse.json(orders, {
       headers: {
