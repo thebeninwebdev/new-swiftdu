@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertCircle, ArrowRight, CheckCircle2, Clock, CreditCard, Loader2,
   MapPin, Package, Phone, RefreshCw, Store, UserRoundX, XCircle,
-  Bike, Home, MessageCircle, ChevronRight, Banknote,
+  Bike, MessageCircle, ChevronRight, Banknote,
 } from 'lucide-react'
 import { io, type Socket } from 'socket.io-client'
 import { toast } from 'sonner'
@@ -15,6 +15,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
+import { getCompletionWindowMinutes } from '@/lib/completion-timer'
+import { canCustomerCancelOrder } from '@/lib/order-status'
 
 // ─── Types ───
 interface Order {
@@ -146,7 +148,7 @@ const getWhatsAppHref = (phone: string) => {
 }
 const getDeliveryEta = (location: string) => {
   const normalizedLocation = location.toLowerCase()
-  if (normalizedLocation.includes('amnesty hostel') || normalizedLocation.includes('girls hostel')) {
+  if (normalizedLocation.includes('amnesty') || normalizedLocation.includes('girls hostel')) {
     return '25 mins'
   }
   return '1 hour'
@@ -164,7 +166,7 @@ function getTaskerSearchMessage(elapsedMs: number) {
 function getTrackingStage(order: Order) {
   if (order.status === 'completed') return { label: 'Delivered', detail: 'Your order has reached you.', progress: 100, taskerLabel: 'Delivered' }
   if (order.hasPaid || order.status === 'paid') return { label: 'Tasker on the way', detail: 'Your tasker is moving with your order.', progress: 78, taskerLabel: 'En route' }
-  if (order.taskerId || order.status === 'in_progress') return { label: 'Tasker assigned', detail: 'Confirm payment so the delivery can keep moving.', progress: 45, taskerLabel: 'Assigned' }
+  if (order.taskerId || order.status === 'in_progress') return { label: 'Order accepted', detail: 'Your order is being prepared. Confirm payment so fulfilment can keep moving.', progress: 45, taskerLabel: 'Assigned' }
   return { label: 'Finding a tasker', detail: 'We are matching this order with an available tasker.', progress: 18, taskerLabel: 'Searching' }
 }
 
@@ -176,92 +178,227 @@ function TaskerAvatar({ tasker }: { tasker: TaskerDetails }) {
   return <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 font-bold text-white">T</div>
 }
 
-function DeliveryMap({ progress, status }: { progress: number; status: string }) {
-  const isCompleted = status === 'completed'
-  const isPaid = status === 'paid' || status === 'in_progress'
+function FulfillmentStatusCard({
+  order,
+  amount,
+  statusLabel,
+  supportHref,
+}: {
+  order: Order
+  amount: string
+  statusLabel: string
+  supportHref: string | null
+}) {
+  const stage = getTrackingStage(order)
+  const gradient = taskTypeGradients[order.taskType] || taskTypeGradients.others
+  const taskLabel = taskTypeLabels[order.taskType] || order.taskType
+  const hasConfirmedPayment = Boolean(order.hasPaid || order.paymentStatus === 'paid')
+
   return (
-    <div className="relative h-56 sm:h-64 lg:h-72 overflow-hidden rounded-2xl bg-gradient-to-b from-sky-50 to-white dark:from-slate-900 dark:to-slate-900">
-      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
-        <path d="M50,250 Q150,200 200,180 T350,150" stroke="#e2e8f0" strokeWidth="8" fill="none" strokeLinecap="round" className="dark:stroke-slate-700"/>
-        <path d="M50,250 Q150,200 200,180 T350,150" stroke="#38bdf8" strokeWidth="3" fill="none" strokeLinecap="round" 
-          className="transition-all duration-1000" style={{ strokeDasharray: 1000, strokeDashoffset: 1000 - (progress / 100) * 1000 }}/>
-        <rect x="30" y="200" width="40" height="50" rx="4" fill="#f1f5f9" className="dark:fill-slate-800"/>
-        <rect x="80" y="180" width="35" height="40" rx="4" fill="#f1f5f9" className="dark:fill-slate-800"/>
-        <rect x="320" y="120" width="50" height="60" rx="4" fill="#f1f5f9" className="dark:fill-slate-800"/>
-        <rect x="280" y="140" width="40" height="45" rx="4" fill="#f1f5f9" className="dark:fill-slate-800"/>
-        <circle cx="150" cy="220" r="8" fill="#86efac" className="dark:fill-emerald-900/50"/>
-        <circle cx="180" cy="200" r="6" fill="#86efac" className="dark:fill-emerald-900/50"/>
-        <circle cx="250" cy="170" r="7" fill="#86efac" className="dark:fill-emerald-900/50"/>
-      </svg>
-      <div className="absolute bottom-6 left-6 sm:left-10">
-        <div className="relative">
-          <div className="w-10 h-10 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg shadow-emerald-500/30">
-            <Store className="w-5 h-5 text-white" />
+    <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-slate-950/40">
+      <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-sky-950 p-6 text-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 sm:p-7">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-100 ring-1 ring-white/15">
+            {order.status === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" /> : <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-300" />}
+            {statusLabel}
+          </span>
+          <span className="text-xs font-semibold text-slate-400">#{order._id.slice(-6)}</span>
+        </div>
+        <div className="mt-7 flex items-start gap-4">
+          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${gradient} shadow-lg shadow-black/20`}>
+            {taskTypeIcons[order.taskType] || taskTypeIcons.others}
           </div>
-          <div className="absolute -bottom-5 left-1/2 -translate-x-1/2 whitespace-nowrap">
-            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 px-2 py-1 rounded-lg shadow-sm">Pickup</span>
+          <div className="min-w-0">
+            <h2 className="text-2xl font-black tracking-normal sm:text-3xl">
+              {order.status === 'completed' ? 'Order delivered' : 'Your order is being fulfilled'}
+            </h2>
+            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{stage.detail}</p>
           </div>
         </div>
       </div>
-      <div className="absolute top-10 right-6 sm:right-10">
-        <div className="relative">
-          <div className="w-10 h-10 rounded-full bg-orange-500 flex items-center justify-center shadow-lg shadow-orange-500/30">
-            <Home className="w-5 h-5 text-white" />
+
+      <div className="space-y-5 p-5 sm:p-6">
+        <div>
+          <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase text-slate-400">
+            <span>{stage.taskerLabel}</span>
+            <span>{stage.progress}%</span>
           </div>
-          <div className="absolute -top-5 left-1/2 -translate-x-1/2 whitespace-nowrap">
-            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-400 bg-white dark:bg-slate-800 px-2 py-1 rounded-lg shadow-sm">You</span>
+          <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-sky-500 via-cyan-400 to-emerald-500 transition-all duration-700"
+              style={{ width: `${stage.progress}%` }}
+            />
           </div>
         </div>
-      </div>
-      <div className="absolute top-1/2 -translate-y-1/2 transition-all duration-700 ease-linear" style={{ left: `clamp(5%, ${progress}%, 85%)` }}>
-        <div className="relative animate-bounce" style={{ animationDuration: '2s' }}>
-          <div className="w-14 h-8 bg-gradient-to-r from-sky-600 to-indigo-600 rounded-lg shadow-lg flex items-center justify-center">
-            <Package className="w-4 h-4 text-white" />
+
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/60 dark:ring-slate-800">
+            <p className="text-[11px] font-bold uppercase text-slate-400">Task</p>
+            <p className="mt-2 truncate text-sm font-black text-slate-900 dark:text-white">{taskLabel}</p>
           </div>
-          <div className="absolute -bottom-1.5 left-1 w-3 h-3 bg-slate-800 rounded-full dark:bg-slate-200 animate-spin" style={{ animationDuration: '0.5s' }}/>
-          <div className="absolute -bottom-1.5 right-1 w-3 h-3 bg-slate-800 rounded-full dark:bg-slate-200 animate-spin" style={{ animationDuration: '0.5s'}}/>
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 w-4 h-4 bg-amber-400 rounded-full"/>
+          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/60 dark:ring-slate-800">
+            <p className="text-[11px] font-bold uppercase text-slate-400">Budget</p>
+            <p className="mt-2 text-sm font-black text-slate-900 dark:text-white">{amount}</p>
+          </div>
+          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/60 dark:ring-slate-800">
+            <p className="text-[11px] font-bold uppercase text-slate-400">Payment</p>
+            <p className="mt-2 text-sm font-black text-slate-900 dark:text-white">{hasConfirmedPayment ? 'Confirmed' : 'Pending'}</p>
+          </div>
         </div>
-      </div>
-      <div className="absolute bottom-3 left-4 right-4">
-        <div className="flex items-center justify-between text-xs font-bold text-slate-500 dark:text-slate-400 mb-1.5">
-          <span>{isCompleted ? 'Delivered' : isPaid ? 'En route' : 'Searching'}</span>
-          <span>{Math.round(progress)}%</span>
-        </div>
-        <div className="h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
-          <div className="h-full rounded-full bg-gradient-to-r from-sky-500 via-cyan-400 to-emerald-500 transition-all duration-1000 ease-out" style={{ width: `${progress}%` }}/>
+
+        <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4 dark:border-sky-900/50 dark:bg-sky-950/20">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-black text-slate-900 dark:text-white">SwiftDU is handling the next step</p>
+              <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
+                Stay reachable while your tasker fulfils the order and updates you directly.
+              </p>
+            </div>
+            {supportHref ? (
+              <a href={supportHref} target="_blank" rel="noreferrer" className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-600">
+                <MessageCircle className="h-4 w-4" />
+                Chat
+              </a>
+            ) : null}
+          </div>
         </div>
       </div>
     </div>
   )
 }
 
-function DeliveryTimeline({ order }: { order: Order }) {
+function FulfillmentTimeline({ order }: { order: Order }) {
   const stages = [
-    { key: 'placed', label: 'Order Placed', desc: 'Your order was received', completed: true },
-    { key: 'assigned', label: 'Tasker Assigned', desc: 'A tasker accepted your order', completed: !!order.taskerId },
-    { key: 'paid', label: 'Payment Confirmed', desc: 'Transfer verified successfully', completed: order.hasPaid },
-    { key: 'progress', label: 'In Progress', desc: 'Tasker is handling your order', completed: order.status === 'in_progress' || order.status === 'paid', active: order.status === 'in_progress' || order.status === 'paid' },
-    { key: 'delivered', label: 'Delivered', desc: 'Order arrived at your location', completed: order.status === 'completed', active: order.status === 'completed' },
+    { key: 'placed', label: 'Order placed', desc: 'Your request has been received.', completed: true },
+    { key: 'assigned', label: 'Tasker assigned', desc: 'A tasker has accepted the order.', completed: Boolean(order.taskerId) },
+    { key: 'paid', label: 'Payment confirmed', desc: 'Your transfer has been verified.', completed: Boolean(order.hasPaid || order.paymentStatus === 'paid') },
+    {
+      key: 'fulfilling',
+      label: 'Being fulfilled',
+      desc: 'Your tasker is working on the order.',
+      completed: order.status === 'completed',
+      active: order.status === 'in_progress' || order.status === 'paid' || Boolean(order.hasPaid),
+    },
+    { key: 'delivered', label: 'Delivered', desc: 'Order has reached you.', completed: order.status === 'completed', active: order.status === 'completed' },
   ]
+
   return (
     <div className="relative">
-      <div className="absolute left-5 top-2 bottom-2 w-0.5 bg-slate-200 dark:bg-slate-700"/>
+      <div className="absolute bottom-2 left-5 top-2 w-0.5 bg-slate-200 dark:bg-slate-700" />
       <div className="space-y-5">
         {stages.map((stage) => (
           <div key={stage.key} className="relative flex items-start gap-4">
-            <div className={`relative z-10 w-10 h-10 rounded-full flex items-center justify-center shrink-0 transition-all duration-500 ${
+            <div className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all duration-300 ${
               stage.completed ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : stage.active ? 'bg-sky-500 shadow-lg shadow-sky-500/20' : 'bg-slate-200 dark:bg-slate-700'
             }`}>
-              {stage.completed ? <CheckCircle2 className="w-5 h-5 text-white" /> : stage.active ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Clock className="w-5 h-5 text-slate-400" />}
-              {stage.active && !stage.completed && <div className="absolute inset-0 rounded-full border-2 border-sky-400 animate-ping opacity-50"/>}
+              {stage.completed ? <CheckCircle2 className="h-5 w-5 text-white" /> : stage.active ? <Loader2 className="h-5 w-5 animate-spin text-white" /> : <Clock className="h-5 w-5 text-slate-400" />}
             </div>
-            <div className="flex-1 pt-1">
+            <div className="min-w-0 flex-1 pt-1">
               <p className={`font-bold ${stage.completed ? 'text-slate-900 dark:text-white' : stage.active ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-500'}`}>{stage.label}</p>
-              <p className="text-sm text-slate-500 dark:text-slate-400">{stage.desc}</p>
+              <p className="text-sm leading-5 text-slate-500 dark:text-slate-400">{stage.desc}</p>
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function AddTimePrompt({
+  remainingLabel,
+  windowLabel,
+  canAddTime,
+  isAdding,
+  onAddTime,
+}: {
+  remainingLabel: string
+  windowLabel: string
+  canAddTime: boolean
+  isAdding: boolean
+  onAddTime: () => void
+}) {
+  return (
+    <div className="mb-6 overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-lg shadow-amber-100/60 dark:border-amber-900/60 dark:bg-slate-900 dark:shadow-none">
+      <div className="grid gap-4 p-4 sm:grid-cols-[1fr_auto] sm:items-center sm:p-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+            <Clock className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-black text-slate-950 dark:text-white">Need more time for this order?</p>
+            <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
+              {canAddTime
+                ? `There is ${remainingLabel} left. Tap once to give your tasker 10 extra minutes.`
+                : 'If the task will take longer you can increase the tasker time.'}
+            </p>
+            <p className="mt-2 text-xs font-bold uppercase text-slate-400">{windowLabel}</p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          onClick={onAddTime}
+          disabled={!canAddTime || isAdding}
+          className="h-12 w-full rounded-xl bg-amber-600 px-5 text-sm font-black text-white shadow-lg shadow-amber-600/20 hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+        >
+          {isAdding ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Adding time...
+            </>
+          ) : (
+            <>
+              <Clock className="mr-2 h-4 w-4" />
+              Add 10 minutes
+            </>
+          )}
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+function CancelTaskPrompt({
+  isCancelling,
+  disabled,
+  onCancel,
+}: {
+  isCancelling: boolean
+  disabled: boolean
+  onCancel: () => void
+}) {
+  return (
+    <div className="mb-6 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-lg shadow-rose-100/60 dark:border-rose-900/60 dark:bg-slate-900 dark:shadow-none">
+      <div className="grid gap-4 p-4 sm:grid-cols-[1fr_auto] sm:items-center sm:p-5">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
+            <XCircle className="h-5 w-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-sm font-black text-slate-950 dark:text-white">Need to cancel this task?</p>
+            <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
+              You can cancel before payment is confirmed. We will stop this request and taskers will no longer see it.
+            </p>
+          </div>
+        </div>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onCancel}
+          disabled={disabled}
+          className="h-12 w-full rounded-xl border-rose-200 bg-rose-50 px-5 text-sm font-black text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:bg-rose-950/50 sm:w-auto"
+        >
+          {isCancelling ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Cancelling...
+            </>
+          ) : (
+            <>
+              <XCircle className="mr-2 h-4 w-4" />
+              Cancel this task
+            </>
+          )}
+        </Button>
       </div>
     </div>
   )
@@ -311,13 +448,16 @@ function SearchingTaskerOverlay({ order, onCancel, isCancelling, isBusy, searchM
           <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/15">
             <div className="h-full origin-left rounded-full bg-gradient-to-r from-sky-300 via-cyan-200 to-emerald-300 animate-pulse" />
           </div>
-          <div className="flex shrink-0 items-center gap-5 mt-5 justify-center">
+          <div className="mt-5 flex shrink-0 flex-col items-center gap-4 sm:flex-row sm:justify-center">
             <div className="h-20 w-20 overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/15">
               <img src={taskerImage} alt="Potential tasker" className="h-full w-full object-cover" />
             </div>
-            <button type="button" onClick={onCancel} disabled={isBusy} className="flex w-16 shrink-0 flex-col items-center gap-1 rounded-2xl bg-white/10 px-2 py-3 text-rose-100 ring-1 ring-white/15 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-50">
-              {isCancelling ? <Loader2 className="h-6 w-6 animate-spin" /> : <UserRoundX className="h-7 w-7" />}
-              <span className="text-center text-[11px] font-semibold leading-tight">Cancel task</span>
+            <button type="button" onClick={onCancel} disabled={isBusy} className="flex w-full max-w-xs shrink-0 items-center justify-center gap-3 rounded-2xl bg-rose-500 px-4 py-3 text-left text-white shadow-lg shadow-rose-950/20 ring-1 ring-white/15 transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50 sm:w-64">
+              {isCancelling ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserRoundX className="h-5 w-5" />}
+              <span className="min-w-0">
+                <span className="block text-sm font-black">{isCancelling ? 'Cancelling task...' : 'Cancel this task'}</span>
+                <span className="block text-xs font-medium text-rose-50">Stop looking for a tasker</span>
+              </span>
             </button>
           </div>
         </div>
@@ -530,72 +670,81 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const currentStage = currentOrder ? getTrackingStage(currentOrder) : null
   const currentStatus = currentOrder ? (currentOrder.isDeclinedTask ? declinedStatusConfig : statusConfig[currentOrder.status]) : null
   const isSearchingForTasker = currentOrder?.status === 'pending'
+  const canCancelCurrentOrder = currentOrder ? canCustomerCancelOrder(currentOrder) : false
   const completionStartedMs = currentOrder?.completionTimerStartedAt ? new Date(currentOrder.completionTimerStartedAt).getTime() : currentOrder?.createdAt ? new Date(currentOrder.createdAt).getTime() : NaN
-  const completionWindowMinutes = Number(currentOrder?.completionWindowMinutes || 0) > 0 ? Number(currentOrder?.completionWindowMinutes || 0) : 20
+  const locationCompletionWindowMinutes = getCompletionWindowMinutes(currentOrder?.location)
+  const savedCompletionWindowMinutes = Number(currentOrder?.completionWindowMinutes || 0)
+  const completionWindowMinutes = savedCompletionWindowMinutes > 0 ? Math.max(savedCompletionWindowMinutes, locationCompletionWindowMinutes) : locationCompletionWindowMinutes
   const completionExtensionMinutes = Number(currentOrder?.completionExtensionMinutes || 0)
   const computedCompletionDueMs = Number.isFinite(completionStartedMs) ? completionStartedMs + (completionWindowMinutes + completionExtensionMinutes) * 60000 : NaN
-  const completionDueMs = currentOrder?.completionDueAt ? new Date(currentOrder.completionDueAt).getTime() : computedCompletionDueMs
+  const savedCompletionDueMs = currentOrder?.completionDueAt ? new Date(currentOrder.completionDueAt).getTime() : NaN
+  const completionDueMs = Number.isFinite(savedCompletionDueMs) && Number.isFinite(computedCompletionDueMs) ? Math.max(savedCompletionDueMs, computedCompletionDueMs) : Number.isFinite(savedCompletionDueMs) ? savedCompletionDueMs : computedCompletionDueMs
   const hasCompletionTimer = Boolean(currentOrder?.hasPaid) && Number.isFinite(completionDueMs) && currentOrder?.status !== 'cancelled'
   const completionRemainingMs = hasCompletionTimer ? completionDueMs - nowMs : 0
   const completionTimerExpired = hasCompletionTimer && completionRemainingMs <= 0
   const completionWindowMs = completionWindowMinutes > 0 ? completionWindowMinutes * 60000 : completionDueMs - completionStartedMs
   const completionProgress = hasCompletionTimer && completionWindowMs > 0 ? Math.min(100, Math.max(0, ((nowMs - completionStartedMs) / completionWindowMs) * 100)) : 0
   const canExtendCompletionTimer = Boolean(currentOrder && currentOrder.hasPaid && currentOrder.status !== 'completed' && currentOrder.status !== 'cancelled' && !completionTimerExpired)
+  const completionRemainingLabel = completionTimerExpired ? '0:00' : formatDuration(completionRemainingMs)
+  const completionWindowLabel = `${completionWindowMinutes}${completionExtensionMinutes ? ` + ${completionExtensionMinutes}` : ''} min window`
   const shouldAskReceiptQuestion = Boolean(currentOrder?.status === 'completed' && currentOrder.hasPaid && currentOrder.customerReceiptConfirmed === undefined && !currentOrder.customerReceiptRespondedAt)
 
   return (
-    <div className="min-h-[calc(100vh-5rem)] bg-gradient-to-br from-[#58b7d4] via-[#dff3f7] to-[#ffaf7d] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
+    <div className="min-h-[calc(100vh-5rem)] bg-slate-50 dark:bg-slate-950">
       {currentOrder && isSearchingForTasker ? (
         <SearchingTaskerOverlay order={currentOrder} onCancel={requestCancelOrder} isCancelling={updatingAction === 'cancel'} isBusy={updatingAction === 'cancel' || confirmingTransfer} searchMessage={getTaskerSearchMessage(searchElapsedMs)} />
       ) : null}
-
-      {/* Navigation */}
-      <nav className="sticky top-0 z-50 bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl border-b border-white/20 dark:border-slate-800/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/20">
-                <Package className="w-5 h-5 text-white" />
-              </div>
-              <div>
-                <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">SwiftDU</h1>
-                <p className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Delivery Tracking</p>
-              </div>
-            </div>
-            <button onClick={() => void loadOrders(false)} disabled={refreshing || confirmingTransfer} className="p-2.5 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors disabled:opacity-50" aria-label="Refresh">
-              <RefreshCw className={`w-5 h-5 text-slate-600 dark:text-slate-300 ${refreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
-        </div>
-      </nav>
-
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10">
+        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-sm font-bold text-sky-600 dark:text-sky-400">Order tracking</p>
+            <h1 className="mt-1 text-2xl font-black text-slate-950 dark:text-white">Your order is being fulfilled</h1>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadOrders(false)}
+            disabled={refreshing || confirmingTransfer}
+            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+          >
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+        {error ? (
+          <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
+            {error}
+          </div>
+        ) : null}
+        {isTrackingPage && currentOrder && hasCompletionTimer && canExtendCompletionTimer ? (
+          <AddTimePrompt
+            remainingLabel={completionRemainingLabel}
+            windowLabel={completionWindowLabel}
+            canAddTime={canExtendCompletionTimer}
+            isAdding={updatingAction === 'extendTimer' || confirmingTransfer}
+            onAddTime={() => void handleExtendCompletionTimer()}
+          />
+        ) : null}
+        {isTrackingPage && currentOrder && canCancelCurrentOrder && !isSearchingForTasker ? (
+          <CancelTaskPrompt
+            isCancelling={updatingAction === 'cancel'}
+            disabled={updatingAction === 'cancel' || confirmingTransfer}
+            onCancel={requestCancelOrder}
+          />
+        ) : null}
         <div className="lg:grid lg:grid-cols-2 lg:gap-8">
 
           {/* Left Column: Active Delivery */}
           <div className="space-y-6">
             {isTrackingPage && currentOrder ? (
-              <div className="rounded-3xl bg-white dark:bg-slate-900 shadow-xl shadow-slate-200/50 dark:shadow-slate-950/50 overflow-hidden border border-slate-100 dark:border-slate-800 transition-all hover:shadow-2xl">
-                <div className="relative overflow-hidden bg-gradient-to-br from-sky-500 via-cyan-500 to-teal-500 p-6 sm:p-8 text-white">
-                  <div className="absolute inset-0 opacity-20">
-                    <div className="absolute top-0 right-0 w-64 h-64 bg-white/20 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"/>
-                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-white/10 rounded-full blur-2xl translate-y-1/2 -translate-x-1/2"/>
-                  </div>
-                  <div className="relative z-10">
-                    <div className="flex items-center justify-between mb-4">
-                      <span className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/20 backdrop-blur-sm text-xs font-bold">
-                        {currentOrder.status === 'in_progress' && <span className="w-2 h-2 rounded-full bg-emerald-300 animate-pulse"/>}
-                        {currentStatus?.label}
-                      </span>
-                      <span className="text-xs font-medium opacity-80">#{currentOrder._id.slice(-6)}</span>
-                    </div>
-                    <h2 className="text-2xl sm:text-3xl font-black mb-2">{taskTypeLabels[currentOrder.taskType] || currentOrder.taskType}</h2>
-                    <p className="text-sm opacity-90 max-w-md">{currentStage?.detail}</p>
-                  </div>
-                </div>
-                <DeliveryMap progress={currentStage?.progress || 0} status={currentOrder.status} />
+              <div className="space-y-4">
+                <FulfillmentStatusCard
+                  order={currentOrder}
+                  amount={formatCurrency(transferAmount)}
+                  statusLabel={currentStatus?.label || currentStage?.label || currentOrder.status}
+                  supportHref={whatsappHref}
+                />
                 {currentOrder.taskerId && taskerDetails ? (
-                  <div className="p-6 border-t border-slate-100 dark:border-slate-800">
+                  <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg shadow-slate-200/30 dark:border-slate-800 dark:bg-slate-900 dark:shadow-slate-950/30">
                     <div className="flex items-center gap-4">
                       <div className="relative">
                         <TaskerAvatar tasker={taskerDetails} />
@@ -621,7 +770,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
                     </div>
                   </div>
                 ) : loadingTasker ? (
-                  <div className="p-6 border-t border-slate-100 dark:border-slate-800 flex items-center gap-3">
+                  <div className="flex items-center gap-3 rounded-3xl border border-slate-100 bg-white p-5 shadow-lg shadow-slate-200/30 dark:border-slate-800 dark:bg-slate-900">
                     <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
                     <p className="text-sm text-slate-500">Loading tasker details...</p>
                   </div>
@@ -691,40 +840,42 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
                         </p>
                         <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
                           {completionTimerExpired
-                            ? 'Extra time can only be added while the countdown is still running.'
-                            : 'If your tasker needs a little more time, add 10 minutes before this timer reaches zero.'}
+                            ? 'The countdown has ended, so extra time can no longer be added.'
+                            : 'Use the add-time panel at the top of this page if your tasker needs a little more time.'}
                         </p>
-                        <p className="mt-2 text-xs font-bold uppercase tracking-wider text-slate-400">
-                          {completionWindowMinutes}
-                          {completionExtensionMinutes ? ` + ${completionExtensionMinutes}` : ''} min window
-                        </p>
+                        <p className="mt-2 text-xs font-bold uppercase tracking-wider text-slate-400">{completionWindowLabel}</p>
                       </div>
-                      {canExtendCompletionTimer ? (
-                        <Button
-                          type="button"
-                          onClick={() => void handleExtendCompletionTimer()}
-                          disabled={updatingAction === 'extendTimer' || confirmingTransfer}
-                          className="h-11 shrink-0 rounded-xl bg-amber-600 px-4 text-sm font-black text-white hover:bg-amber-700"
-                        >
-                          {updatingAction === 'extendTimer' ? (
-                            <>
-                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                              Adding...
-                            </>
-                          ) : (
-                            <>
-                              <Clock className="mr-2 h-4 w-4" />
-                              Add 10 minutes
-                            </>
-                          )}
-                        </Button>
-                      ) : null}
                     </div>
                     <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-900/80">
                       <div
                         className={`h-full rounded-full ${completionTimerExpired ? 'bg-amber-500' : 'bg-sky-500'}`}
                         style={{ width: `${completionTimerExpired ? 100 : completionProgress}%` }}
                       />
+                    </div>
+                  </div>
+                ) : null}
+                {shouldAskReceiptQuestion ? (
+                  <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/20">
+                    <p className="text-sm font-black text-slate-900 dark:text-white">Did you receive this order?</p>
+                    <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">Confirm delivery so we can close this task properly.</p>
+                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+                      <Button
+                        type="button"
+                        onClick={() => void handleReceiptAnswer(true)}
+                        disabled={updatingAction === 'receiptYes' || updatingAction === 'receiptNo' || confirmingTransfer}
+                        className="h-11 rounded-xl bg-emerald-600 px-4 text-sm font-black text-white hover:bg-emerald-700"
+                      >
+                        {updatingAction === 'receiptYes' ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Updating...</> : 'Yes, received'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => void handleReceiptAnswer(false)}
+                        disabled={updatingAction === 'receiptYes' || updatingAction === 'receiptNo' || confirmingTransfer}
+                        className="h-11 rounded-xl"
+                      >
+                        {updatingAction === 'receiptNo' ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Updating...</> : 'No, report issue'}
+                      </Button>
                     </div>
                   </div>
                 ) : null}
@@ -749,7 +900,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
             {isTrackingPage && currentOrder ? (
               <div className="rounded-3xl bg-white dark:bg-slate-900 shadow-lg shadow-slate-200/30 dark:shadow-slate-950/30 border border-slate-100 dark:border-slate-800 p-6 transition-all hover:shadow-xl">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-6">Delivery Progress</h3>
-                <DeliveryTimeline order={currentOrder} />
+                <FulfillmentTimeline order={currentOrder} />
               </div>
             ) : null}
 
@@ -806,21 +957,13 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
 
             {/* Quick Actions */}
             {isTrackingPage && currentOrder && currentOrder.taskerId ? (
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-3">
                 <a href={whatsappHref || '#'} target="_blank" rel="noreferrer" className="p-4 rounded-2xl bg-white dark:bg-slate-900 shadow-lg shadow-slate-200/30 dark:shadow-slate-950/30 border border-slate-100 dark:border-slate-800 flex flex-col items-center gap-2 text-center transition-all hover:shadow-xl hover:-translate-y-0.5">
                   <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center">
                     <Phone className="w-5 h-5 text-emerald-500" />
                   </div>
                   <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Call Tasker</span>
                 </a>
-                <button onClick={() => void handleExtendCompletionTimer()} disabled={!canExtendCompletionTimer || updatingAction === 'extendTimer'} className="p-4 rounded-2xl bg-white dark:bg-slate-900 shadow-lg shadow-slate-200/30 dark:shadow-slate-950/30 border border-slate-100 dark:border-slate-800 flex flex-col items-center gap-2 text-center transition-all hover:shadow-xl hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed">
-                  <div className="w-10 h-10 rounded-xl bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center">
-                    <Clock className="w-5 h-5 text-amber-500" />
-                  </div>
-                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300">
-                    {updatingAction === 'extendTimer' ? 'Adding...' : 'Add 10 Min'}
-                  </span>
-                </button>
               </div>
             ) : null}
           </div>

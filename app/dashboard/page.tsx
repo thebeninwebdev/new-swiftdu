@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import { ProfileCompletionCard } from '@/components/profile-completion-card'
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { authClient } from '@/lib/auth-client'
+import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
@@ -141,14 +142,14 @@ const taskTypes: TaskTypeConfig[] = [
     icon: Store,
     accent: 'from-emerald-500 to-teal-500',
   },
-  {
-    value: DRY_CLEANING_TASK_TYPE,
-    label: 'Dry Cleaning',
-    description: 'Laundry pickup, washing, ironing, and delivery.',
-    mobileDescription: 'Laundry',
-    icon: Shirt,
-    accent: 'from-cyan-500 to-blue-500',
-  },
+  // {
+  //   value: DRY_CLEANING_TASK_TYPE,
+  //   label: 'Dry Cleaning',
+  //   description: 'Laundry pickup, washing, ironing, and delivery.',
+  //   mobileDescription: 'Laundry',
+  //   icon: Shirt,
+  //   accent: 'from-cyan-500 to-blue-500',
+  // },
   {
     value: WATER_TASK_TYPE,
     label: 'Bag of Water',
@@ -1208,8 +1209,11 @@ if (stepNumber === 2) {
       : NaN
   const activeOrderCompletionWindowMinutes =
     Number(activeOrder?.completionWindowMinutes || 0) > 0
-      ? Number(activeOrder?.completionWindowMinutes || 0)
-      : 20
+      ? Math.max(
+        Number(activeOrder?.completionWindowMinutes || 0),
+        getCompletionWindowMinutes(activeOrder?.location)
+      )
+      : getCompletionWindowMinutes(activeOrder?.location)
   const activeOrderCompletionExtensionMinutes = Number(
     activeOrder?.completionExtensionMinutes || 0
   )
@@ -1218,9 +1222,16 @@ if (stepNumber === 2) {
       ? activeOrderCompletionStartedMs +
         (activeOrderCompletionWindowMinutes + activeOrderCompletionExtensionMinutes) * 60000
       : NaN
-  const activeOrderCompletionDueMs = activeOrder?.completionDueAt
+  const savedActiveOrderCompletionDueMs = activeOrder?.completionDueAt
     ? new Date(activeOrder.completionDueAt).getTime()
-    : computedActiveOrderCompletionDueMs
+    : NaN
+  const activeOrderCompletionDueMs =
+    Number.isFinite(savedActiveOrderCompletionDueMs) &&
+    Number.isFinite(computedActiveOrderCompletionDueMs)
+      ? Math.max(savedActiveOrderCompletionDueMs, computedActiveOrderCompletionDueMs)
+      : Number.isFinite(savedActiveOrderCompletionDueMs)
+        ? savedActiveOrderCompletionDueMs
+        : computedActiveOrderCompletionDueMs
   const hasActiveOrderCompletionTimer =
     Boolean(activeOrder?.hasPaid) &&
     Number.isFinite(activeOrderCompletionDueMs) &&

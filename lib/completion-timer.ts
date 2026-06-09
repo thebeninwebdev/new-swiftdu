@@ -1,4 +1,5 @@
 export const DEFAULT_COMPLETION_WINDOW_MINUTES = 20
+export const HOSTEL_COMPLETION_WINDOW_MINUTES = 25
 export const STAFF_QUARTERS_COMPLETION_WINDOW_MINUTES = 30
 
 type CompletionTimerOrder = {
@@ -28,6 +29,13 @@ export function getCompletionWindowMinutes(location?: string | null) {
     return STAFF_QUARTERS_COMPLETION_WINDOW_MINUTES
   }
 
+  if (
+    normalizedLocation.includes('amnesty') ||
+    normalizedLocation.includes('girls hostel')
+  ) {
+    return HOSTEL_COMPLETION_WINDOW_MINUTES
+  }
+
   return DEFAULT_COMPLETION_WINDOW_MINUTES
 }
 
@@ -36,7 +44,6 @@ export function ensureCompletionTimer(order: CompletionTimerOrder) {
 
   if (
     !isPaid ||
-    order.completionDueAt ||
     order.status === 'completed' ||
     order.status === 'cancelled'
   ) {
@@ -49,15 +56,34 @@ export function ensureCompletionTimer(order: CompletionTimerOrder) {
     order.paymentVerifiedAt ||
     order.customerTransferredAt ||
     new Date()
+  const locationWindowMinutes = getCompletionWindowMinutes(order.location)
+  const existingWindowMinutes = Number(order.completionWindowMinutes || 0)
+  const extensionMinutes = Number(order.completionExtensionMinutes || 0)
+
+  if (order.completionDueAt) {
+    if (existingWindowMinutes <= 0 || existingWindowMinutes < locationWindowMinutes) {
+      const nextDueAt = new Date(
+        startedAt.getTime() + (locationWindowMinutes + extensionMinutes) * 60000
+      )
+      order.completionWindowMinutes = locationWindowMinutes
+      order.completionDueAt = new Date(
+        Math.max(order.completionDueAt.getTime(), nextDueAt.getTime())
+      )
+      return true
+    }
+
+    return false
+  }
+
   const windowMinutes =
-    Number(order.completionWindowMinutes || 0) > 0
-      ? Number(order.completionWindowMinutes)
-      : getCompletionWindowMinutes(order.location)
+    existingWindowMinutes > 0
+      ? Math.max(existingWindowMinutes, locationWindowMinutes)
+      : locationWindowMinutes
 
   order.paidAt = order.paidAt || startedAt
   order.completionTimerStartedAt = startedAt
   order.completionWindowMinutes = windowMinutes
-  order.completionExtensionMinutes = order.completionExtensionMinutes || 0
+  order.completionExtensionMinutes = extensionMinutes
   order.completionDueAt = new Date(startedAt.getTime() + windowMinutes * 60000)
   order.completedBeforeTimer = false
   order.platformFeeWaivedForFastCompletion = false

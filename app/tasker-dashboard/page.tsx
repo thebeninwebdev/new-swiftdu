@@ -26,6 +26,7 @@ import { toast } from 'sonner'
 
 import { authClient } from '@/lib/auth-client'
 import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
+import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { convertToNaira } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
 import { calculateRestaurantServiceFee, RESTAURANT_MAX_PEOPLE } from '@/lib/pricing'
@@ -809,13 +810,22 @@ export default function TaskerDashboardPage() {
 
     const windowMinutes =
       Number(errand.completionWindowMinutes || 0) > 0
-        ? Number(errand.completionWindowMinutes)
-        : 20
+        ? Math.max(
+          Number(errand.completionWindowMinutes),
+          getCompletionWindowMinutes(errand.location)
+        )
+        : getCompletionWindowMinutes(errand.location)
     const extensionMinutes = Number(errand.completionExtensionMinutes || 0)
     const computedDueMs = startedMs + (windowMinutes + extensionMinutes) * 60000
-    const dueMs = errand.completionDueAt
+    const savedDueMs = errand.completionDueAt
       ? new Date(errand.completionDueAt).getTime()
-      : computedDueMs
+      : NaN
+    const dueMs =
+      Number.isFinite(savedDueMs) && Number.isFinite(computedDueMs)
+        ? Math.max(savedDueMs, computedDueMs)
+        : Number.isFinite(savedDueMs)
+          ? savedDueMs
+          : computedDueMs
     const baseWindowMs =
       windowMinutes > 0 ? windowMinutes * 60000 : dueMs - startedMs
     const remainingMs = dueMs - nowMs

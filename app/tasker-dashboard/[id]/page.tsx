@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
+import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { canTaskerCancelOrder, isCustomerPaymentConfirmed } from '@/lib/order-status'
 import { convertToNaira } from '@/lib/utils'
 import { RESTAURANT_MAX_PEOPLE } from '@/lib/pricing'
@@ -385,10 +386,13 @@ export default function ErrandDetailPage() {
 
   // Timer calculations
   const completionStartedMs = errand.completionTimerStartedAt ? new Date(errand.completionTimerStartedAt).getTime() : new Date(errand.createdAt).getTime()
-  const completionWindowMinutes = Number(errand.completionWindowMinutes || 0) > 0 ? Number(errand.completionWindowMinutes) : 20
+  const locationCompletionWindowMinutes = getCompletionWindowMinutes(errand.location)
+  const savedCompletionWindowMinutes = Number(errand.completionWindowMinutes || 0)
+  const completionWindowMinutes = savedCompletionWindowMinutes > 0 ? Math.max(savedCompletionWindowMinutes, locationCompletionWindowMinutes) : locationCompletionWindowMinutes
   const completionExtensionMinutes = Number(errand.completionExtensionMinutes || 0)
   const computedCompletionDueMs = completionStartedMs + (completionWindowMinutes + completionExtensionMinutes) * 60000
-  const completionDueMs = errand.completionDueAt ? new Date(errand.completionDueAt).getTime() : computedCompletionDueMs
+  const savedCompletionDueMs = errand.completionDueAt ? new Date(errand.completionDueAt).getTime() : NaN
+  const completionDueMs = Number.isFinite(savedCompletionDueMs) && Number.isFinite(computedCompletionDueMs) ? Math.max(savedCompletionDueMs, computedCompletionDueMs) : Number.isFinite(savedCompletionDueMs) ? savedCompletionDueMs : computedCompletionDueMs
   const hasCompletionTimer = paymentConfirmed && Number.isFinite(completionDueMs) && Number.isFinite(completionStartedMs) && errand.status !== 'cancelled'
   const completionRemainingMs = hasCompletionTimer ? completionDueMs - nowMs : 0
   const completionTimerExpired = hasCompletionTimer && completionRemainingMs <= 0
