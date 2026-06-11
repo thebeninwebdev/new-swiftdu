@@ -16,7 +16,7 @@ const navigationItems = [
   },
   {
     label: 'My Tasks',
-    href: '/tasks',
+    href: '/dashboard/tasks',
     icon: ListTodo,
     description: 'View your errands'
   },

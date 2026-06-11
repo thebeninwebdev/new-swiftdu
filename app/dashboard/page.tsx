@@ -32,7 +32,6 @@ import { Button } from '@/components/ui/button'
 import { ProfileCompletionCard } from '@/components/profile-completion-card'
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { authClient } from '@/lib/auth-client'
-import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
@@ -200,14 +199,6 @@ function formatNaira(value: number) {
   }).format(value)
 }
 
-function formatDuration(milliseconds: number) {
-  const totalSeconds = Math.max(Math.ceil(milliseconds / 1000), 0)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
-}
-
 function parseMoneyInput(value: string) {
   const normalized = value.replace(/[₦,\s]/g, '')
   if (!normalized) return 0
@@ -335,7 +326,6 @@ export default function ErrandWizardPage() {
   const [isTaskerAvailabilityNoticeDismissed, setIsTaskerAvailabilityNoticeDismissed] = useState(false)
   const [isMobileViewport, setIsMobileViewport] = useState(false)
   const [currentTime, setCurrentTime] = useState(() => new Date())
-  const [isExtendingActiveOrderTimer, setIsExtendingActiveOrderTimer] = useState(false)
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
   const [serviceFeeDiscount, setServiceFeeDiscount] = useState<{
@@ -1163,42 +1153,13 @@ if (stepNumber === 2) {
     await createOrder()
   }
 
-  const handleExtendActiveOrderTimer = async () => {
-    if (!activeOrder || isExtendingActiveOrderTimer) return
-
-    pauseRealtime(REALTIME_PAUSE_MS * 2)
-    setIsExtendingActiveOrderTimer(true)
-
-    try {
-      const response = await fetch(`/api/orders/${activeOrder._id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ extendCompletionTimer: true }),
-      })
-      const payload = await response.json()
-
-      if (!response.ok) {
-        toast.error(payload.error || 'Failed to add more time.')
-        return
-      }
-
-      activeOrderRef.current = payload
-      setActiveOrder(payload)
-      toast.success('Ten minutes added for your tasker.')
-    } catch {
-      toast.error('Failed to add more time.')
-    } finally {
-      setIsExtendingActiveOrderTimer(false)
-    }
-  }
-
   const activeStatusLabel = activeOrder
     ? activeOrder.status === 'pending'
       ? 'Searching for a tasker'
       : activeOrder.isDeclinedTask
         ? 'Payment under review'
         : activeOrder.hasPaid
-          ? 'Transfer confirmed and task in progress'
+          ? 'Go back to your current order'
           : 'Tasker assigned, payment required'
     : null
   const activeStatusDescription = activeOrder
@@ -1211,62 +1172,6 @@ if (stepNumber === 2) {
           ? 'Your payment has been confirmed and the task is moving. You can still book another errand below.'
           : 'This order is waiting for payment confirmation. You can open the tracker anytime and still post another task now.'
     : null
-  const activeOrderCompletionStartedMs = activeOrder?.completionTimerStartedAt
-    ? new Date(activeOrder.completionTimerStartedAt).getTime()
-    : activeOrder?.createdAt
-      ? new Date(activeOrder.createdAt).getTime()
-      : NaN
-  const activeOrderCompletionWindowMinutes =
-    Number(activeOrder?.completionWindowMinutes || 0) > 0
-      ? Math.max(
-        Number(activeOrder?.completionWindowMinutes || 0),
-        getCompletionWindowMinutes(activeOrder?.location)
-      )
-      : getCompletionWindowMinutes(activeOrder?.location)
-  const activeOrderCompletionExtensionMinutes = Number(
-    activeOrder?.completionExtensionMinutes || 0
-  )
-  const computedActiveOrderCompletionDueMs =
-    Number.isFinite(activeOrderCompletionStartedMs)
-      ? activeOrderCompletionStartedMs +
-        (activeOrderCompletionWindowMinutes + activeOrderCompletionExtensionMinutes) * 60000
-      : NaN
-  const savedActiveOrderCompletionDueMs = activeOrder?.completionDueAt
-    ? new Date(activeOrder.completionDueAt).getTime()
-    : NaN
-  const activeOrderCompletionDueMs =
-    Number.isFinite(savedActiveOrderCompletionDueMs) &&
-    Number.isFinite(computedActiveOrderCompletionDueMs)
-      ? Math.max(savedActiveOrderCompletionDueMs, computedActiveOrderCompletionDueMs)
-      : Number.isFinite(savedActiveOrderCompletionDueMs)
-        ? savedActiveOrderCompletionDueMs
-        : computedActiveOrderCompletionDueMs
-  const hasActiveOrderCompletionTimer =
-    Boolean(activeOrder?.hasPaid) &&
-    Number.isFinite(activeOrderCompletionDueMs) &&
-    activeOrder?.status !== 'completed' &&
-    activeOrder?.status !== 'cancelled'
-  const activeOrderCompletionRemainingMs = hasActiveOrderCompletionTimer
-    ? activeOrderCompletionDueMs - currentTime.getTime()
-    : 0
-  const activeOrderCompletionTimerExpired =
-    hasActiveOrderCompletionTimer && activeOrderCompletionRemainingMs <= 0
-  const activeOrderCompletionWindowMs =
-    activeOrderCompletionWindowMinutes > 0
-      ? activeOrderCompletionWindowMinutes * 60000
-      : activeOrderCompletionDueMs - activeOrderCompletionStartedMs
-  const activeOrderCompletionProgress =
-    hasActiveOrderCompletionTimer && activeOrderCompletionWindowMs > 0
-      ? Math.min(
-          100,
-          Math.max(
-            0,
-            ((currentTime.getTime() - activeOrderCompletionStartedMs) /
-              activeOrderCompletionWindowMs) *
-              100
-          )
-        )
-      : 0
   const showLowTaskerAvailabilityNotice =
     isLowTaskerAvailabilityWindow(currentTime) && !isTaskerAvailabilityNoticeDismissed
   const shouldShowDiscountCard = hasAvailableAccountDiscount && step === 1
@@ -1862,61 +1767,6 @@ if (stepNumber === 2) {
               Track
             </Button>
           </div>
-          {hasActiveOrderCompletionTimer ? (
-            <div
-              className={`mt-3 rounded-xl border px-3 py-3 text-sm ${
-                activeOrderCompletionTimerExpired
-                  ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100'
-                  : 'border-sky-200 bg-sky-50 text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="flex items-center gap-2 font-bold">
-                    <Clock className="h-4 w-4 shrink-0" />
-                    <span>
-                      {activeOrderCompletionTimerExpired
-                        ? 'Timer expired'
-                        : `${formatDuration(activeOrderCompletionRemainingMs)} left`}
-                    </span>
-                  </p>
-                  <p className="mt-1 text-xs opacity-80">
-                    {activeOrderCompletionTimerExpired
-                      ? 'Time is up. Extra time can only be added before the timer runs out.'
-                      : `${activeOrderCompletionWindowMinutes}${
-                          activeOrderCompletionExtensionMinutes
-                            ? ` + ${activeOrderCompletionExtensionMinutes}`
-                            : ''
-                        } min completion window`}
-                  </p>
-                </div>
-                {!activeOrderCompletionTimerExpired ? (
-                  <Button
-                    type="button"
-                    onClick={() => void handleExtendActiveOrderTimer()}
-                    disabled={isExtendingActiveOrderTimer}
-                    className="h-10 shrink-0 rounded-xl bg-amber-600 px-3 text-xs font-bold text-white hover:bg-amber-700"
-                  >
-                    {isExtendingActiveOrderTimer ? 'Adding...' : 'Add 10 min'}
-                  </Button>
-                ) : null}
-              </div>
-              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-900/80">
-                <div
-                  className={`h-full rounded-full ${
-                    activeOrderCompletionTimerExpired ? 'bg-amber-500' : 'bg-sky-500'
-                  }`}
-                  style={{
-                    width: `${
-                      activeOrderCompletionTimerExpired
-                        ? 100
-                        : activeOrderCompletionProgress
-                    }%`,
-                  }}
-                />
-              </div>
-            </div>
-          ) : null}
         </div>
       ) : null}
     </div>

@@ -15,6 +15,7 @@ import {
   Shirt
 } from 'lucide-react';
 import InstallPwaButton from "@/components/InstallPwaButton";
+import ActiveTasksHomeLink from "@/components/ActiveTasksHomeLink";
 
 // --- Components ---
 
@@ -76,6 +77,10 @@ const Hero = () => {
 
             <div className="landing-reveal landing-delay-5 mt-5 flex justify-center lg:justify-start">
               <InstallPwaButton />
+            </div>
+
+            <div className="landing-reveal landing-delay-5 mt-4 flex justify-center lg:justify-start">
+              <ActiveTasksHomeLink />
             </div>
 
             <div className="landing-reveal landing-delay-6 mt-8 flex items-center justify-center lg:justify-start gap-4 text-sm text-gray-500">

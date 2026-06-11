@@ -500,7 +500,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const requestedOrderId = trackingOrderId || legacyRequestedOrderId
 
   const [loading, setLoading] = useState(true)
-  const [refreshing, setRefreshing] = useState(false)
+  const [, setRefreshing] = useState(false)
   const [confirmingTransfer, setConfirmingTransfer] = useState(false)
   const [currentOrder, setCurrentOrder] = useState<Order | null>(null)
   const [searchElapsedMs, setSearchElapsedMs] = useState(0)
@@ -642,6 +642,15 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const whatsappHref = taskerDetails?.phone ? getWhatsAppHref(taskerDetails.phone) : null
 
   useEffect(() => { if (needsPayment) { setPaymentModalOpen(true); return } setPaymentModalOpen(false) }, [currentOrder?._id, needsPayment])
+
+  const handlePaymentModalOpenChange = (open: boolean) => {
+    if (!open && needsPayment) {
+      setPaymentModalOpen(true)
+      return
+    }
+
+    setPaymentModalOpen(open)
+  }
 
   const handleOpenOrder = (orderId: string) => { if (trackedOrderIdRef.current === orderId) return; trackedOrderIdRef.current = orderId; previousSnapshotRef.current = null; taskerOrderRef.current = null; setTaskerDetails(null); router.push(`/dashboard/tasks/${orderId}`); void loadOrders(false) }
   const handleConfirmTransfer = async () => { if (!currentOrder) return; try { setConfirmingTransfer(true); const response = await fetchWithRealtimePause(`/api/orders/${currentOrder._id}/confirm-transfer`, { method: 'POST' }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Failed to confirm the transfer.'); setCurrentOrder(payload.order); trackedOrderIdRef.current = payload.order?._id || currentOrder._id; previousSnapshotRef.current = payload.order ? { id: payload.order._id, taskerId: payload.order.taskerId, hasPaid: payload.order.hasPaid, isDeclinedTask: payload.order.isDeclinedTask } : null; setPaymentModalOpen(false); toast.success('Payment updated. Open WhatsApp and stay online for your tasker.') } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to confirm the transfer.'); void loadOrders(false) } finally { setConfirmingTransfer(false) } }
@@ -813,6 +822,37 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
                     <p className="font-bold text-slate-900 dark:text-white text-sm">{currentOrder.store || 'Not specified'}</p>
                   </div>
                 </div>
+                {canCancelCurrentOrder && !isSearchingForTasker ? (
+                  <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 dark:border-rose-900/60 dark:bg-rose-950/20">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-black text-slate-900 dark:text-white">Cancel this order</p>
+                        <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
+                          You can cancel this task before payment is confirmed.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={requestCancelOrder}
+                        disabled={updatingAction === 'cancel' || confirmingTransfer}
+                        className="h-11 w-full rounded-xl border-rose-200 bg-white px-4 text-sm font-black text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:bg-rose-950/50 sm:w-auto"
+                      >
+                        {updatingAction === 'cancel' ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Cancelling...
+                          </>
+                        ) : (
+                          <>
+                            <XCircle className="mr-2 h-4 w-4" />
+                            Cancel order
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
                 {currentOrder.hasPaid ? (
                   <div className="mt-4 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/50">
                     <div className="flex items-start gap-3">
@@ -994,8 +1034,8 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
       </Dialog>
 
       {/* Payment Dialog */}
-      <Dialog open={paymentModalOpen} onOpenChange={setPaymentModalOpen}>
-        <DialogContent className="sm:max-w-lg">
+      <Dialog open={needsPayment || paymentModalOpen} onOpenChange={handlePaymentModalOpenChange}>
+        <DialogContent className="sm:max-w-lg" showCloseButton={!needsPayment}>
           <DialogHeader>
             <DialogTitle>Transfer to your tasker</DialogTitle>
             <DialogDescription>Send <span className="font-semibold text-slate-900 dark:text-white">{formatCurrency(transferAmount)}</span> to the account below, then tap &quot;I have paid&quot;.</DialogDescription>
@@ -1037,7 +1077,13 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
             <Button onClick={() => void handleConfirmTransfer()} disabled={confirmingTransfer || !taskerDetails?.bankDetails?.accountNumber} className="h-12 rounded-xl bg-linear-to-r from-emerald-500 to-emerald-600 text-white hover:from-emerald-600 hover:to-emerald-700">
               {confirmingTransfer ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Updating order...</> : <><CreditCard className="mr-2 h-4 w-4" />I have paid</>}
             </Button>
-            <Button type="button" variant="outline" onClick={() => setPaymentModalOpen(false)} disabled={confirmingTransfer} className="h-12 rounded-xl">Close</Button>
+            {needsPayment ? (
+              <p className="text-center text-xs font-semibold text-slate-500 dark:text-slate-400">
+                Keep this open until you have made the transfer and tapped &quot;I have paid&quot;.
+              </p>
+            ) : (
+              <Button type="button" variant="outline" onClick={() => setPaymentModalOpen(false)} disabled={confirmingTransfer} className="h-12 rounded-xl">Close</Button>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>
