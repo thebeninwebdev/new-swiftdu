@@ -74,6 +74,8 @@ type OrderHistoryTab = 'ongoing' | 'completed' | 'cancelled'
 
 interface OrdersPageProps { trackingOrderId?: string }
 
+const TRACKING_REFRESH_MS = 5000
+
 // ─── Constants ───
 const taskTypeLabels: Record<string, string> = {
   restaurant: 'Food Delivery', printing: 'Printing', copy_notes: 'Copy Notes',
@@ -609,6 +611,15 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   useEffect(() => { if (!isTrackingPage) return; if (!requestedOrderId || requestedOrderId === trackedOrderIdRef.current) return; trackedOrderIdRef.current = requestedOrderId; previousSnapshotRef.current = null; taskerOrderRef.current = null; setTaskerDetails(null); void loadOrders(true) }, [isTrackingPage, loadOrders, requestedOrderId])
   useEffect(() => { const onFocus = () => { void loadOrders(false) }; window.addEventListener('focus', onFocus); return () => { window.removeEventListener('focus', onFocus) } }, [loadOrders])
   useEffect(() => {
+    if (!isTrackingPage) return
+
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void loadOrders(false)
+    }, TRACKING_REFRESH_MS)
+
+    return () => window.clearInterval(intervalId)
+  }, [isTrackingPage, loadOrders])
+  useEffect(() => {
     const socket = io({ withCredentials: true, transports: ['websocket'] }); socketRef.current = socket
     const watchCurrentOrder = () => { const orderId = trackedOrderIdRef.current || currentOrderRef.current?._id; if (orderId) socket.emit('order:watch', orderId) }
     socket.on('connect', () => { watchCurrentOrder(); void loadOrders(false) })
@@ -700,15 +711,6 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
             <p className="text-sm font-bold text-sky-600 dark:text-sky-400">Order tracking</p>
             <h1 className="mt-1 text-2xl font-black text-slate-950 dark:text-white">Your order is being fulfilled</h1>
           </div>
-          <button
-            type="button"
-            onClick={() => void loadOrders(false)}
-            disabled={refreshing || confirmingTransfer}
-            className="inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 shadow-sm transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
-            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-            Refresh
-          </button>
         </div>
         {error ? (
           <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">

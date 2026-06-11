@@ -79,6 +79,7 @@ interface ActiveOrder {
   taskType: string
   description: string
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
+  location?: string
   createdAt?: string
   hasPaid?: boolean
   completionTimerStartedAt?: string
@@ -369,9 +370,15 @@ export default function ErrandWizardPage() {
   })
   const sessionUserId = session?.user?.id
 
+
+
   useEffect(() => {
     activeOrderRef.current = activeOrder
   }, [activeOrder])
+
+  // useEffect(() => {
+  //   if(activeOrder) router.replace(`/dashboard/tasks/${activeOrder._id}`)
+  // },[activeOrder])
 
   useEffect(() => {
     if (!sessionUserId) {
@@ -790,6 +797,8 @@ export default function ErrandWizardPage() {
     },
     [clearError, pauseRealtime]
   )
+
+
 
   const handleSpeechError = useCallback((error: string) => {
     if (error === 'not-allowed' || error === 'service-not-allowed') {
