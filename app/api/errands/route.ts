@@ -14,6 +14,54 @@ import { sendWhatsAppText } from '@/lib/whatsapp/send-message'
 
 export const dynamic = 'force-dynamic'
 
+const ERRAND_LIST_FIELDS = [
+  'userId',
+  'taskType',
+  'description',
+  'amount',
+  'commission',
+  'platformFee',
+  'taskerFee',
+  'serviceFeeDiscountApplied',
+  'serviceFeeDiscountGrantedByName',
+  'serviceFeeDiscountGrantedByPhone',
+  'discountCommissionAmount',
+  'totalAmount',
+  'dueDate',
+  'deadline',
+  'deadlineDate',
+  'location',
+  'store',
+  'packaging',
+  'restaurantPeopleCount',
+  'restaurantTakeawayCount',
+  'restaurantPackagingFee',
+  'status',
+  'taskerId',
+  'acceptedBy',
+  'acceptedAt',
+  'completionTimerStartedAt',
+  'completionDueAt',
+  'completionWindowMinutes',
+  'completionExtensionMinutes',
+  'completedBeforeTimer',
+  'platformFeeWaivedForFastCompletion',
+  'prematureCompletionReported',
+  'hasPaid',
+  'isDeclinedTask',
+  'createdAt',
+].join(' ')
+
+const allowedSortFields = new Set([
+  'acceptedAt',
+  'bookedAt',
+  'createdAt',
+  'deadline',
+  'deadlineDate',
+  'dueDate',
+  'updatedAt',
+])
+
 // GET - Fetch all pending errands for taskers
 export async function GET(request: NextRequest) {
   try {
@@ -25,6 +73,10 @@ export async function GET(request: NextRequest) {
     const taskerId = request.nextUrl.searchParams.get('taskerId')
     const sortBy = request.nextUrl.searchParams.get('sortBy') || 'createdAt'
     const accepted = request.nextUrl.searchParams.get('accepted')
+    const available = request.nextUrl.searchParams.get('available')
+    const fast = request.nextUrl.searchParams.get('fast') === 'true'
+    const limit = Math.max(0, Number(request.nextUrl.searchParams.get('limit') || 0))
+    const safeSortBy = allowedSortFields.has(sortBy) ? sortBy : 'createdAt'
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filter: Record<string, any> = {}
@@ -33,6 +85,25 @@ export async function GET(request: NextRequest) {
       // Accepted errands for this tasker: in_progress or paid
       filter.taskerId = taskerId
       filter.status = { $in: ['in_progress', 'paid'] }
+    } else if (available === 'true') {
+      filter.$or = [
+        {
+          status: 'pending',
+          $or: [
+            { taskerId: { $exists: false } },
+            { taskerId: null },
+            { taskerId: '' },
+          ],
+        },
+        taskerId
+          ? {
+              status: 'in_progress',
+              taskerId: { $nin: [taskerId, null, ''] },
+            }
+          : {
+              status: 'in_progress',
+            },
+      ]
     } else if (status) {
       const statuses = status.split(',').map((s) => s.trim())
       if (statuses.length === 1) {
@@ -44,7 +115,7 @@ export async function GET(request: NextRequest) {
       filter.status = 'pending'
     }
 
-    if (taskerId) {
+    if (taskerId && accepted !== 'true' && available !== 'true') {
       filter.taskerId = taskerId
     }
 
@@ -56,11 +127,20 @@ export async function GET(request: NextRequest) {
       filter.location = { $regex: location, $options: 'i' } // Case-insensitive search
     }
 
-    // Fetch pending orders with sorting
-    const orders = await Order.find(filter)
-      .sort({ [sortBy]: -1 })
+    // Fetch only the fields the tasker dashboard cards need.
+    let ordersQuery = Order.find(filter)
+      .select(ERRAND_LIST_FIELDS)
+      .sort({ [safeSortBy]: -1 })
 
-    if (accepted === 'true') {
+    if (limit > 0) {
+      ordersQuery = ordersQuery.limit(limit)
+    }
+
+    const orders = accepted === 'true' && !fast
+      ? await ordersQuery
+      : await ordersQuery.lean()
+
+    if (accepted === 'true' && !fast) {
       await Promise.all(
         orders.map(async (order) => {
           if (ensureCompletionTimer(order)) {

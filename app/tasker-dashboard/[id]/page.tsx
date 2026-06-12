@@ -421,8 +421,8 @@ export default function ErrandDetailPage() {
         <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
           <div className="bg-gradient-to-r from-sky-500 to-indigo-600 px-5 py-4 text-white">
             <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-100">Order #{errand._id.slice(-6)}</p>
-            <h1 className="mt-1 text-2xl font-black">{taskTypeLabels[errand.taskType] || errand.taskType}</h1>
-            <p className="mt-1 text-sm text-sky-50 opacity-90">{errand.description}</p>
+            <h1 className="mt-1 text-2xl font-black">{errand.description}</h1>
+            <p className="mt-1 text-sm text-sky-50 opacity-90">{taskTypeLabels[errand.taskType] || errand.taskType}</p>
           </div>
 
           {/* ─── ABOVE THE FOLD: Timer + WhatsApp ─── */}

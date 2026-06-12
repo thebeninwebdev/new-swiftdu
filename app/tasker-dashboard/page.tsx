@@ -503,24 +503,20 @@ export default function TaskerDashboardPage() {
         const params = new URLSearchParams()
         if (taskTypeFilter !== 'all') params.append('taskType', taskTypeFilter)
         if (locationFilter.trim()) params.append('location', locationFilter.trim())
-        params.append('status', 'pending,in_progress')
-        const [availableRes, acceptedRes] = await Promise.all([
-          fetch(`/api/errands?${params.toString()}`, {
-            cache: 'no-store',
-          }),
-          fetch(`/api/errands?accepted=true&taskerId=${taskerProfile._id}`, {
-            cache: 'no-store',
-          }),
-        ])
+        params.append('available', 'true')
+        params.append('taskerId', taskerProfile._id)
+        params.append('fast', 'true')
+        params.append('limit', '80')
 
-        if (!availableRes.ok || !acceptedRes.ok) {
+        const availableRes = await fetch(`/api/errands?${params.toString()}`, {
+          cache: 'no-store',
+        })
+
+        if (!availableRes.ok) {
           throw new Error('Failed to load errands')
         }
 
-        const [availableErrands, acceptedErrands]: [Errand[], Errand[]] = await Promise.all([
-          availableRes.json(),
-          acceptedRes.json(),
-        ])
+        const availableErrands: Errand[] = await availableRes.json()
 
         const visibleAvailableErrands = availableErrands.filter(
           (errand) => String(errand.taskerId || '') !== taskerProfile._id
@@ -531,9 +527,30 @@ export default function TaskerDashboardPage() {
         }
         prevErrandsCount.current = visibleAvailableErrands.length
 
-        setAcceptedErrands(sortErrands(acceptedErrands))
         setErrands(sortErrands(visibleAvailableErrands))
         setError(null)
+
+        if (initial) {
+          setLoading(false)
+        }
+
+        try {
+          const acceptedRes = await fetch(
+            `/api/errands?accepted=true&taskerId=${taskerProfile._id}&fast=true&limit=40`,
+            {
+              cache: 'no-store',
+            }
+          )
+
+          if (!acceptedRes.ok) {
+            throw new Error('Failed to load active errands')
+          }
+
+          const acceptedErrands: Errand[] = await acceptedRes.json()
+          setAcceptedErrands(sortErrands(acceptedErrands))
+        } catch (activeErrandsError) {
+          console.warn('Failed to load active tasker errands', activeErrandsError)
+        }
       } catch (dashboardError) {
         console.error('Failed to load tasker dashboard', dashboardError)
         setError('Failed to load errands. Please try again.')
@@ -605,12 +622,17 @@ export default function TaskerDashboardPage() {
     }
     const handleTaskUpdate = (payload?: RealtimeTaskPayload) => {
       if (payload) {
+        const payloadTaskerId = String(payload.taskerId || '')
+        const belongsToCurrentTasker = payloadTaskerId === taskerProfile._id
+        const isActiveForCurrentTasker =
+          belongsToCurrentTasker &&
+          (payload.status === 'in_progress' || payload.status === 'paid')
         const isPendingAvailable =
           payload.status === 'pending' &&
           !payload.taskerId
         const isBeingFulfilled =
           payload.status === 'in_progress' &&
-          String(payload.taskerId || '') !== taskerProfile._id
+          payloadTaskerId !== taskerProfile._id
         const shouldShow =
           (isPendingAvailable || isBeingFulfilled) &&
           matchesRealtimeFilters(payload, taskTypeFilter, locationFilter)
@@ -646,6 +668,28 @@ export default function TaskerDashboardPage() {
           const sorted = sortErrands(next)
           prevErrandsCount.current = sorted.length
           return sorted
+        })
+
+        setAcceptedErrands((previous) => {
+          const currentIndex = previous.findIndex((item) => item._id === payload._id)
+
+          if (!isActiveForCurrentTasker) {
+            if (currentIndex === -1) {
+              return previous
+            }
+
+            return previous.filter((item) => item._id !== payload._id)
+          }
+
+          const nextErrand = toErrand(payload)
+
+          if (currentIndex === -1) {
+            return sortErrands([nextErrand, ...previous])
+          }
+
+          const next = [...previous]
+          next[currentIndex] = { ...next[currentIndex], ...nextErrand }
+          return sortErrands(next)
         })
       }
 
