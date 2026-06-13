@@ -4,9 +4,11 @@ import { getExcoAccess, normalizeExcoRole, type ExcoRole } from "@/lib/exco";
 import { connectDB } from "@/lib/db";
 import { AnalyticsEventModel } from "@/models/analytics";
 import {
+  EFFECTIVE_PLATFORM_FEE_EXPRESSION,
   calculateNetPlatformProfit,
   calculatePaystackSettlementFee,
   excludeCancelledOrders,
+  excludeTestOrders,
 } from "@/lib/order-finance";
 import { getApprovedExpenditureTotal } from "@/lib/expenditures";
 import { Order } from "@/models/order";
@@ -66,6 +68,9 @@ const OUTSTANDING_SETTLEMENT_STATUSES = [
   "failed",
   "overdue",
 ] as const;
+const NON_TEST_ORDER_MATCH = {
+  $or: [{ isTestOrder: false }, { isTestOrder: { $exists: false } }],
+};
 
 type CountDatum = {
   _id: string;
@@ -282,7 +287,7 @@ async function getMoneySummary(match: Record<string, unknown>) {
           totalAmount: { $sum: "$totalAmount" },
           amount: { $sum: "$amount" },
           serviceFee: { $sum: "$serviceFee" },
-          platformFee: { $sum: "$platformFee" },
+          platformFee: { $sum: EFFECTIVE_PLATFORM_FEE_EXPRESSION },
           taskerFee: { $sum: "$taskerFee" },
           waterFee: { $sum: "$waterFee" },
         },
@@ -335,6 +340,13 @@ async function getUnsettledTaskers(): Promise<UnsettledTasker[]> {
         platformFee: { $gt: 0 },
         taskerId: { $exists: true, $nin: [null, ""] },
         $and: [
+          NON_TEST_ORDER_MATCH,
+          {
+            $or: [
+              { platformFeeWaivedForFastCompletion: false },
+              { platformFeeWaivedForFastCompletion: { $exists: false } },
+            ],
+          },
           {
             $or: [{ taskerHasPaid: false }, { taskerHasPaid: { $exists: false } }],
           },
@@ -476,6 +488,7 @@ async function getActiveFinanceTasks(): Promise<ActiveFinanceTask[]> {
         status: { $in: ["in_progress", "paid"] },
         platformFee: { $gt: 0 },
         taskerId: { $exists: true, $nin: [null, ""] },
+        ...NON_TEST_ORDER_MATCH,
       },
     },
     { $sort: { acceptedAt: -1, paidAt: -1, createdAt: -1 } },
@@ -572,6 +585,7 @@ async function getCancelledFinanceOrders(since: Date): Promise<CancelledFinanceO
       $match: {
         status: "cancelled",
         createdAt: { $gte: since },
+        ...NON_TEST_ORDER_MATCH,
       },
     },
     { $sort: { cancelledAt: -1, updatedAt: -1, createdAt: -1 } },
@@ -638,7 +652,7 @@ async function getCancelledFinanceOrders(since: Date): Promise<CancelledFinanceO
 
 async function getRecentActivity(limit = 10): Promise<RecentActivity[]> {
   const [recentOrders, recentTaskers, recentReviews] = await Promise.all([
-    Order.find()
+    Order.find(NON_TEST_ORDER_MATCH)
       .sort({ createdAt: -1 })
       .limit(6)
       .select("taskType location status isDeclinedTask declinedAt updatedAt createdAt")
@@ -1094,14 +1108,14 @@ export async function GET(request: NextRequest) {
   const days = hasAnalyticsRange ? requestedAnalyticsRange.days : clampDays(request.nextUrl.searchParams.get("days"));
   const dateWindow = hasAnalyticsRange ? requestedAnalyticsRange : toDateWindow(days);
   const { since, previousSince } = dateWindow;
-  const match = {
+  const match = excludeTestOrders({
     createdAt: { $gte: since },
     status: { $ne: "cancelled" },
-  };
-  const previousMatch = {
+  });
+  const previousMatch = excludeTestOrders({
     createdAt: { $gte: previousSince, $lt: since },
     status: { $ne: "cancelled" },
-  };
+  });
 
   await connectDB();
 
@@ -1142,7 +1156,7 @@ export async function GET(request: NextRequest) {
     Order.countDocuments({ ...match, status: "completed" }),
     Order.countDocuments({ ...match, status: "pending" }),
     Order.countDocuments({ ...match, status: { $in: ["pending", "in_progress", "paid"] } }),
-    Order.countDocuments({ createdAt: { $gte: since }, status: "cancelled" }),
+    Order.countDocuments(excludeTestOrders({ createdAt: { $gte: since }, status: "cancelled" })),
     Order.countDocuments({ ...match, isDeclinedTask: true }),
     Order.countDocuments({ ...match, paymentStatus: "failed" }),
     User.countDocuments(),

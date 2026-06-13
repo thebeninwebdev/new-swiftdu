@@ -2,6 +2,10 @@ import { connectDB } from '@/lib/db';
 import {Order} from '@/models/order';
 import { NextRequest, NextResponse } from 'next/server';
 
+const NON_TEST_ORDER_MATCH = {
+  $or: [{ isTestOrder: false }, { isTestOrder: { $exists: false } }],
+};
+
 export async function GET(req: NextRequest) {
   try {
     await connectDB();
@@ -20,7 +24,7 @@ export async function GET(req: NextRequest) {
 
     const skip = (page - 1) * limit;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const query: any = { taskerId };
+    const query: any = { taskerId, ...NON_TEST_ORDER_MATCH };
 
     // Filter by status if provided
     if (status) {
@@ -39,6 +43,7 @@ export async function GET(req: NextRequest) {
     const completedOrders = await Order.countDocuments({
       taskerId,
       status: 'completed',
+      ...NON_TEST_ORDER_MATCH,
     });
 
     const totalEarnings = await Order.aggregate([
@@ -46,6 +51,7 @@ export async function GET(req: NextRequest) {
         $match: {
           taskerId,
           status: 'completed',
+          ...NON_TEST_ORDER_MATCH,
         },
       },
       {

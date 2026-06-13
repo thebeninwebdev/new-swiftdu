@@ -49,6 +49,7 @@ const ERRAND_LIST_FIELDS = [
   'prematureCompletionReported',
   'hasPaid',
   'isDeclinedTask',
+  'isTestOrder',
   'createdAt',
 ].join(' ')
 

@@ -35,6 +35,10 @@ function canAccess(resource: Resource, role: ExcoRole | null) {
   return Boolean(role && RESOURCE_ACCESS[resource].includes(role));
 }
 
+const NON_TEST_ORDER_MATCH = {
+  $or: [{ isTestOrder: false }, { isTestOrder: { $exists: false } }],
+};
+
 function normalizeResource(value: string | null): Resource | null {
   if (
     value === "taskers" ||
@@ -211,7 +215,7 @@ async function getUsers(excoRole: ExcoRole) {
 
   const userIds = users.map((user) => user._id.toString());
   const orderCounts = await Order.aggregate<{ _id: string; count: number }>([
-    { $match: { userId: { $in: userIds } } },
+    { $match: { userId: { $in: userIds }, ...NON_TEST_ORDER_MATCH } },
     { $group: { _id: "$userId", count: { $sum: 1 } } },
   ]);
   const orderCountMap = Object.fromEntries(orderCounts.map((item) => [item._id, item.count]));
@@ -280,6 +284,7 @@ async function getOrders() {
     acceptedAt?: Date | null;
     createdAt?: Date | null;
   }>([
+    { $match: NON_TEST_ORDER_MATCH },
     { $sort: { createdAt: -1 } },
     { $limit: 50 },
     {
@@ -391,7 +396,7 @@ async function getFailedSettlements() {
     paymentStatus?: string;
     settlementStatus?: string;
   }>([
-    { $match: { settlementStatus: "failed" } },
+    { $match: { settlementStatus: "failed", ...NON_TEST_ORDER_MATCH } },
     { $sort: { updatedAt: -1, createdAt: -1 } },
     { $limit: 50 },
     {

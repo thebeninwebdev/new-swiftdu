@@ -45,6 +45,7 @@ export type OrderSocketPayload = {
   customerReceiptRespondedAt?: string
   prematureCompletionReported?: boolean
   prematureCompletionReportedAt?: string
+  isTestOrder?: boolean
 }
 
 type SocketOrderLike = {
@@ -88,6 +89,7 @@ type SocketOrderLike = {
   customerReceiptRespondedAt?: Date | string
   prematureCompletionReported?: boolean
   prematureCompletionReportedAt?: Date | string
+  isTestOrder?: boolean
 }
 
 export function setSocketServer(io: SocketIOServer) {
@@ -156,6 +158,7 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     customerReceiptRespondedAt: serializeDate(order.customerReceiptRespondedAt),
     prematureCompletionReported: order.prematureCompletionReported,
     prematureCompletionReportedAt: serializeDate(order.prematureCompletionReportedAt),
+    isTestOrder: order.isTestOrder,
   }
 }
 

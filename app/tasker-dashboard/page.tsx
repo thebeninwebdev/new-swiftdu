@@ -69,6 +69,7 @@ interface Errand {
   prematureCompletionReported?: boolean
   hasPaid?: boolean
   isDeclinedTask?: boolean
+  isTestOrder?: boolean
   createdAt: string
 }
 
@@ -113,6 +114,7 @@ interface RealtimeTaskPayload {
   prematureCompletionReported?: boolean
   hasPaid?: boolean
   isDeclinedTask?: boolean
+  isTestOrder?: boolean
   createdAt?: string
 }
 
@@ -288,6 +290,7 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
     prematureCompletionReported: payload.prematureCompletionReported,
     hasPaid: payload.hasPaid,
     isDeclinedTask: payload.isDeclinedTask,
+    isTestOrder: payload.isTestOrder,
     createdAt: payload.createdAt || new Date().toISOString(),
   }
 }
@@ -1208,6 +1211,11 @@ export default function TaskerDashboardPage() {
                             <span className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-semibold ring-1 ${state.className}`}>
                               {state.label}
                             </span>
+                            {errand.isTestOrder ? (
+                              <span className="inline-flex items-center rounded-lg bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900/60">
+                                Test
+                              </span>
+                            ) : null}
                             <span className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold ${taskTypeBg[errand.taskType] || taskTypeBg.others}`}>
                               {errand.taskType}
                             </span>
@@ -1393,6 +1401,11 @@ export default function TaskerDashboardPage() {
                     {errand.status !== 'pending' ? (
                       <span className="inline-flex items-center rounded-lg bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:ring-blue-900/60">
                         Being fulfilled
+                      </span>
+                    ) : null}
+                    {errand.isTestOrder ? (
+                      <span className="inline-flex items-center rounded-lg bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:ring-amber-900/60">
+                        Test
                       </span>
                     ) : null}
                     <span className="text-xs text-slate-400 flex items-center gap-1">

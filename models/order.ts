@@ -93,6 +93,9 @@ export interface IOrder extends Document {
   settlementPaidAt?: Date;
   settlementDueAt?: Date;
   settlementFailureReason?: string;
+  isTestOrder: boolean;
+  testOrderCreatedBy?: string;
+  testOrderCreatedByRole?: string;
 }
 
 const orderSchema = new Schema<IOrder>(
@@ -390,6 +393,13 @@ const orderSchema = new Schema<IOrder>(
     settlementPaidAt: Date,
     settlementDueAt: Date,
     settlementFailureReason: String,
+    isTestOrder: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    testOrderCreatedBy: String,
+    testOrderCreatedByRole: String,
   },
   { timestamps: true }
 );
@@ -397,6 +407,7 @@ const orderSchema = new Schema<IOrder>(
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ taskerId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ taskType: 1, status: 1, createdAt: -1 });
+orderSchema.index({ isTestOrder: 1, status: 1, createdAt: -1 });
 
 
 export const Order = mongoose.models.Order || mongoose.model<IOrder>('Order', orderSchema);

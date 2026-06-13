@@ -9,17 +9,32 @@ const OUTSTANDING_SETTLEMENT_STATUSES = [
   'failed',
   'overdue',
 ] as const
+const NON_TEST_ORDER_MATCH = {
+  $or: [{ isTestOrder: false }, { isTestOrder: { $exists: false } }],
+}
+const NON_WAIVED_PLATFORM_FEE_MATCH = {
+  $or: [
+    { platformFeeWaivedForFastCompletion: false },
+    { platformFeeWaivedForFastCompletion: { $exists: false } },
+  ],
+}
 
 async function backfillSettlementMetadata(taskerId: string) {
   const orders = await Order.find({
     taskerId,
     status: 'completed',
     taskerHasPaid: false,
-    $or: [
-      { settlementDueAt: { $exists: false } },
-      { settlementDueAt: null },
-      { settlementStatus: { $exists: false } },
-      { settlementStatus: 'not_due' },
+    $and: [
+      NON_TEST_ORDER_MATCH,
+      NON_WAIVED_PLATFORM_FEE_MATCH,
+      {
+        $or: [
+          { settlementDueAt: { $exists: false } },
+          { settlementDueAt: null },
+          { settlementStatus: { $exists: false } },
+          { settlementStatus: 'not_due' },
+        ],
+      },
     ],
   })
 
@@ -47,6 +62,7 @@ export async function syncTaskerSettlementStatus(taskerId: string) {
       status: 'completed',
       taskerHasPaid: false,
       settlementStatus: 'paid',
+      $and: [NON_TEST_ORDER_MATCH, NON_WAIVED_PLATFORM_FEE_MATCH],
     },
     {
       $set: {
@@ -66,6 +82,7 @@ export async function syncTaskerSettlementStatus(taskerId: string) {
     status: 'completed',
     taskerHasPaid: false,
     settlementDueAt: { $lte: now },
+    $and: [NON_TEST_ORDER_MATCH, NON_WAIVED_PLATFORM_FEE_MATCH],
   }
 
   await Order.updateMany(overdueQuery, {
@@ -96,6 +113,7 @@ export async function getOutstandingSettlementOrders(taskerId: string) {
     status: 'completed',
     taskerHasPaid: false,
     settlementStatus: { $in: [...OUTSTANDING_SETTLEMENT_STATUSES] },
+    $and: [NON_TEST_ORDER_MATCH, NON_WAIVED_PLATFORM_FEE_MATCH],
   })
     .sort({ settlementDueAt: 1, completedAt: -1, createdAt: -1 })
     .lean()

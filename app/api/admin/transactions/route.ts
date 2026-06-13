@@ -7,7 +7,24 @@ import {
   calculateNetPlatformProfit,
   calculatePaystackSettlementFee,
   excludeCancelledOrders,
+  getEffectivePlatformFee,
 } from '@/lib/order-finance';
+
+type TransactionOrder = {
+  _id: unknown;
+  userId?: string;
+  taskerId?: string;
+  taskerName?: string;
+  totalAmount?: number;
+  commission?: number;
+  platformFee?: number;
+  platformFeeWaivedForFastCompletion?: boolean;
+  taskerFee?: number;
+  description?: string;
+  taskType?: string;
+  createdAt?: Date;
+  status?: string;
+};
 
 export async function GET(request: NextRequest) {
   try {
@@ -28,7 +45,7 @@ export async function GET(request: NextRequest) {
     const skip = (page - 1) * limit;
 
     // Build query
-    const query: any = {};
+    const query: Record<string, unknown> = {};
     if (status && status !== 'all') {
       query.status = status;
     }
@@ -48,18 +65,19 @@ export async function GET(request: NextRequest) {
 
     // Fetch user and tasker details and enrich orders
     const transactions = await Promise.all(
-      orders.map(async (order: any) => {
+      orders.map(async (order: TransactionOrder) => {
         const user = await User.findById(order.userId).select('name email').lean();
         const tasker = order.taskerId ? await Tasker.findById(order.taskerId).select('name email').lean() : null;
+        const effectivePlatformFee = getEffectivePlatformFee(order);
 
         return {
           _id: order._id,
           type: 'order_payment' as const,
           amount: order.totalAmount,
           commission: order.commission,
-          platformFee: order.platformFee,
-          paystackSettlementFee: calculatePaystackSettlementFee(order.platformFee || 0),
-          netPlatformProfit: calculateNetPlatformProfit(order.platformFee || 0),
+          platformFee: effectivePlatformFee,
+          paystackSettlementFee: calculatePaystackSettlementFee(effectivePlatformFee),
+          netPlatformProfit: calculateNetPlatformProfit(effectivePlatformFee),
           taskerFee: order.taskerFee,
           description: order.description,
           taskType: order.taskType,
@@ -81,14 +99,14 @@ export async function GET(request: NextRequest) {
       Order.find(excludeCancelledOrders()).lean(),
       Order.countDocuments(query),
     ]);
-    const totalVolume = financeOrders.reduce((sum, order: any) => sum + (order.totalAmount || 0), 0);
+    const totalVolume = financeOrders.reduce((sum, order: TransactionOrder) => sum + (order.totalAmount || 0), 0);
     const totalTransactions = financeOrders.length;
-    const totalPlatformFees = financeOrders.reduce((sum, order: any) => sum + (order.platformFee || 0), 0);
+    const totalPlatformFees = financeOrders.reduce((sum, order: TransactionOrder) => sum + getEffectivePlatformFee(order), 0);
     const totalPaystackSettlementFees = Math.round(financeOrders.reduce(
-      (sum, order: any) => sum + calculatePaystackSettlementFee(order.platformFee || 0),
+      (sum, order: TransactionOrder) => sum + calculatePaystackSettlementFee(getEffectivePlatformFee(order)),
       0
     ) * 100) / 100;
-    const totalTaskerFees = financeOrders.reduce((sum, order: any) => sum + (order.taskerFee || 0), 0);
+    const totalTaskerFees = financeOrders.reduce((sum, order: TransactionOrder) => sum + (order.taskerFee || 0), 0);
     const netRevenue = Math.round((totalPlatformFees - totalPaystackSettlementFees) * 100) / 100;
 
     const totalPages = Math.ceil(totalOrdersForQuery / limit);

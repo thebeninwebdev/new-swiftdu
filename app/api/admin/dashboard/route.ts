@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
@@ -6,9 +6,11 @@ import DryCleaner from '@/models/dry-cleaner'
 import { Order } from '@/models/order'
 import {Review} from '@/models/review'
 import {
+  EFFECTIVE_PLATFORM_FEE_EXPRESSION,
   calculateNetPlatformProfit,
   calculatePaystackSettlementFee,
   excludeCancelledOrders,
+  excludeTestOrders,
 } from '@/lib/order-finance'
 import { getApprovedExpenditureTotal } from '@/lib/expenditures'
 
@@ -16,7 +18,7 @@ import { getApprovedExpenditureTotal } from '@/lib/expenditures'
 // Returns dashboard statistics and recent activity.
 // Restricted to admin role only.
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
     // TODO: Add admin auth check
     // const session = await authClient.getSession()
@@ -27,6 +29,7 @@ export async function GET(req: NextRequest) {
 
     await connectDB()
     const financeMatch = excludeCancelledOrders()
+    const nonTestMatch = excludeTestOrders()
 
     // Get stats
     const [
@@ -44,18 +47,18 @@ export async function GET(req: NextRequest) {
     ] = await Promise.all([
       User.countDocuments(),
       Tasker.countDocuments({ isVerified: true }),
-      Order.countDocuments(),
+      Order.countDocuments(nonTestMatch),
       Order.aggregate([
-        { $match: { status: 'completed' } },
+        { $match: excludeTestOrders({ status: 'completed' }) },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
-      Order.countDocuments({ status: 'pending' }),
-      Order.countDocuments({ status: 'completed' }),
+      Order.countDocuments(excludeTestOrders({ status: 'pending' })),
+      Order.countDocuments(excludeTestOrders({ status: 'completed' })),
       Review.countDocuments(),
       Tasker.countDocuments({ isVerified: false, isRejected: false }),
       DryCleaner.countDocuments({ status: 'approved' }),
       DryCleaner.countDocuments({ status: 'pending' }),
-      Order.countDocuments({ isDeclinedTask: true })
+      Order.countDocuments(excludeTestOrders({ isDeclinedTask: true }))
     ])
 
     // Calculate gross revenue, profit, Paystack settlement fees, and total compensation.
@@ -66,7 +69,7 @@ export async function GET(req: NextRequest) {
       ]),
       Order.aggregate([
         { $match: financeMatch },
-        { $group: { _id: null, total: { $sum: "$platformFee" } } }
+        { $group: { _id: null, total: { $sum: EFFECTIVE_PLATFORM_FEE_EXPRESSION } } }
       ]),
       Order.aggregate([
         { $match: financeMatch },
@@ -83,7 +86,7 @@ export async function GET(req: NextRequest) {
     const totalCompensation = compensationAgg[0]?.total || 0
 
     // Get recent activity (last 10 items)
-    const recentOrders = await Order.find()
+    const recentOrders = await Order.find(nonTestMatch)
       .sort({ createdAt: -1 })
       .limit(5)
       .populate('taskerId', 'name')
@@ -106,7 +109,7 @@ export async function GET(req: NextRequest) {
       .limit(3)
       .lean()
 
-    const recentDeclinedOrders = await Order.find({ isDeclinedTask: true })
+    const recentDeclinedOrders = await Order.find(excludeTestOrders({ isDeclinedTask: true }))
       .sort({ declinedAt: -1, updatedAt: -1 })
       .limit(3)
       .lean()
@@ -122,7 +125,7 @@ export async function GET(req: NextRequest) {
       ...recentTaskers.map(tasker => ({
         id: tasker._id.toString(),
         type: 'tasker' as const,
-        message: `${(tasker as any).userId?.name || 'New user'} applied to be a tasker`,
+        message: `${(tasker as { userId?: { name?: string } }).userId?.name || 'New user'} applied to be a tasker`,
         timestamp: tasker.createdAt,
         status: 'pending'
       })),
@@ -136,7 +139,7 @@ export async function GET(req: NextRequest) {
       ...recentReviews.map(review => ({
         id: review._id.toString(),
         type: 'review' as const,
-        message: `${(review as any).userId?.name || 'User'} left a review`,
+        message: `${(review as { userId?: { name?: string } }).userId?.name || 'User'} left a review`,
         timestamp: review.createdAt
       })),
       ...recentDeclinedOrders.map(order => ({
