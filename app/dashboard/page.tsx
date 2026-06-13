@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
-  BriefcaseBusiness,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -101,12 +100,6 @@ interface TaskTypeConfig {
   mobileDescription: string
   icon: LucideIcon
   accent: string
-}
-
-interface ExcoDashboardAccess {
-  excoRole: string;
-  label: string;
-  dashboardPath: string;
 }
 
 const taskTypes: TaskTypeConfig[] = [
@@ -327,7 +320,6 @@ export default function ErrandWizardPage() {
   const [isMobileViewport, setIsMobileViewport] = useState(false)
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
-  const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
   const [serviceFeeDiscount, setServiceFeeDiscount] = useState<{
     hasAvailableDiscount: boolean
     hasActiveReservation: boolean
@@ -518,32 +510,6 @@ export default function ErrandWizardPage() {
     if (!mounted) return
     void fetchCurrentOrder()
   }, [fetchCurrentOrder, mounted])
-
-  useEffect(() => {
-    if (!mounted || !sessionUserId) return
-
-    async function fetchExcoDashboard() {
-      try {
-        const response = await fetch('/api/exco/me', { cache: 'no-store' })
-        if (!response.ok) return
-
-        const data = (await response.json()) as Partial<ExcoDashboardAccess>
-        if (data.excoRole && data.label && data.dashboardPath) {
-          setExcoDashboard({
-            excoRole: data.excoRole,
-            label: data.label,
-            dashboardPath: data.dashboardPath,
-          })
-        } else {
-          setExcoDashboard(null)
-        }
-      } catch {
-        setExcoDashboard(null)
-      }
-    }
-
-    void fetchExcoDashboard()
-  }, [mounted, sessionUserId])
 
   useEffect(() => {
     if (!mounted) return
@@ -1110,7 +1076,7 @@ if (stepNumber === 2) {
       }
 
       const createdOrder = await response.json()
-      toast.success('Task posted successfully. Taskers can see it now.')
+      toast.success(createdOrder.isTestOrder ? 'Training order posted successfully.' : 'Task posted successfully. Taskers can see it now.')
       setActiveOrder(createdOrder)
       setFormData({
         taskType: 'restaurant',
@@ -1178,6 +1144,7 @@ if (stepNumber === 2) {
   const dismissTaskerAvailabilityNotice = useCallback(() => {
     setIsTaskerAvailabilityNoticeDismissed(true)
   }, [])
+
   const dismissNoticeOnWizardButtonClick = useCallback(
     (event: React.MouseEvent<HTMLElement>) => {
       if (!(event.target instanceof HTMLElement)) return
@@ -1917,17 +1884,6 @@ if (stepNumber === 2) {
           </div>
         ) : null}
 
-        {excoDashboard ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-bold">Executive access enabled</span>
-              <Button variant="outline" onClick={() => router.push(excoDashboard.dashboardPath)} className="h-9 rounded-lg border-amber-200">
-                Open
-              </Button>
-            </div>
-          </div>
-        ) : null}
-
         {DesktopErrandWizard()}
         {MobileErrandWizard()}
 
@@ -1996,32 +1952,6 @@ if (stepNumber === 2) {
                   className="h-11 rounded-xl bg-linear-to-r from-emerald-600 to-teal-600 px-4 text-white hover:from-emerald-700 hover:to-teal-700"
                 >
                   Open Tasker Dashboard
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {excoDashboard ? (
-            <div className="mb-5 rounded-3xl border border-amber-200/80 bg-linear-to-r from-amber-50 via-white to-sky-50 p-4 shadow-sm dark:border-amber-900/60 dark:from-amber-950/30 dark:via-slate-900 dark:to-sky-950/30 md:mb-8 md:p-5">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-700 dark:text-amber-300">
-                    Executive access enabled
-                  </p>
-                  <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">
-                    Open your {excoDashboard!.excoRole} dashboard.
-                  </h2>
-                  <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-                    Review the metrics and decision signals for the {excoDashboard!.label} role.
-                  </p>
-                </div>
-                <Button
-                  onClick={() => router.push(excoDashboard!.dashboardPath)}
-                  className="h-11 rounded-xl bg-linear-to-r from-amber-600 to-sky-600 px-4 text-white hover:from-amber-700 hover:to-sky-700"
-                >
-                  <BriefcaseBusiness className="mr-2 h-4 w-4" />
-                  Open Executive Dashboard
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </div>

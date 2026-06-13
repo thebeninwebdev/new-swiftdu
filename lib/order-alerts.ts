@@ -3,6 +3,7 @@ import { sendTransactionalEmail } from '@/lib/email'
 import { getSupportEmailAddress } from '@/lib/email-config'
 import { getSiteUrl } from '@/lib/site'
 import { getTelegramChatIdForTask, sendTelegramMessage } from '@/lib/telegram'
+import { shouldSendOrderNotification } from '@/lib/test-orders'
 import { User } from '@/models/user'
 
 type OrderLike = {
@@ -24,6 +25,7 @@ type OrderLike = {
   taskerName?: string
   createdAt?: Date | string
   cancelledAt?: Date | string
+  isTestOrder?: boolean | null
 }
 
 type OrderAlertEvent = 'created' | 'cancelled'
@@ -475,6 +477,17 @@ export async function notifyAdminsOfOrderEvent(
 ): Promise<NotifyAdminsOfOrderEventResult> {
   const orderId = serializeId(input.order._id)
   const userId = serializeId(input.order.userId)
+
+  if (!shouldSendOrderNotification(input.order)) {
+    return {
+      recipientCount: 0,
+      deliveredCount: 0,
+      skipped: true,
+      reason: 'Test order notifications are disabled.',
+      email: createSkippedChannelResult('Test order notifications are disabled.'),
+      telegram: createSkippedChannelResult('Test order notifications are disabled.'),
+    }
+  }
 
   if (!orderId || !userId) {
     return {

@@ -46,6 +46,7 @@ export type OrderSocketPayload = {
   prematureCompletionReported?: boolean
   prematureCompletionReportedAt?: string
   isTestOrder?: boolean
+  createdInMode?: string
 }
 
 type SocketOrderLike = {
@@ -90,6 +91,7 @@ type SocketOrderLike = {
   prematureCompletionReported?: boolean
   prematureCompletionReportedAt?: Date | string
   isTestOrder?: boolean
+  createdInMode?: string
 }
 
 export function setSocketServer(io: SocketIOServer) {
@@ -159,6 +161,7 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     prematureCompletionReported: order.prematureCompletionReported,
     prematureCompletionReportedAt: serializeDate(order.prematureCompletionReportedAt),
     isTestOrder: order.isTestOrder,
+    createdInMode: order.createdInMode,
   }
 }
 
@@ -175,7 +178,10 @@ export function emitOrderUpdated(order: SocketOrderLike) {
     return
   }
 
-  io.to('taskers').emit('tasks:updated', payload)
+  io.to(payload.isTestOrder ? 'taskers:training' : 'taskers:live').emit('tasks:updated', payload)
+  if (!payload.isTestOrder) {
+    io.to('taskers').emit('tasks:updated', payload)
+  }
   io.to(`user:${payload.userId}`).emit('order:updated', payload)
   io.to(`order:${payload._id}`).emit('order:updated', payload)
 

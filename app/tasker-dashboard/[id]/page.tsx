@@ -79,6 +79,8 @@ interface ErrandDetail {
   taskerHasPaid?: boolean
   settlementStatus?: 'not_due' | 'pending' | 'initialized' | 'paid' | 'failed' | 'overdue'
   settlementDueAt?: string
+  isTestOrder?: boolean
+  createdInMode?: 'test' | 'live'
 }
 
 interface UserInfo {
@@ -108,15 +110,6 @@ const statusStyles: Record<ErrandDetail['status'], string> = {
 }
 
 // ─── Helpers ───
-const formatDate = (date: string) =>
-  new Date(date).toLocaleString('en-NG', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-
 const formatDuration = (milliseconds: number) => {
   const totalSeconds = Math.max(Math.ceil(milliseconds / 1000), 0)
   const minutes = Math.floor(totalSeconds / 60)
@@ -290,7 +283,7 @@ export default function ErrandDetailPage() {
       setErrand(payload)
       previousSnapshotRef.current = { status: payload.status, hasPaid: Boolean(payload.hasPaid), isDeclinedTask: Boolean(payload.isDeclinedTask) }
       toast.success(action === 'complete' ? 'Errand marked as completed.' : 'Errand cancelled successfully.')
-      if (action === 'complete' && payload.status === 'completed' && !payload.taskerHasPaid && payload.settlementStatus !== 'paid' && Number(payload.platformFee || 0) > 0) {
+      if (action === 'complete' && !payload.isTestOrder && payload.status === 'completed' && !payload.taskerHasPaid && payload.settlementStatus !== 'paid' && Number(payload.platformFee || 0) > 0) {
         router.replace(`/tasker-dashboard/payment/${payload._id}`)
         return
       }
@@ -378,7 +371,7 @@ export default function ErrandDetailPage() {
   const paymentConfirmed = isCustomerPaymentConfirmed(errand)
   const transferUnderReview = Boolean(errand.isDeclinedTask)
   const taskerCanCancel = canTaskerCancelOrder(errand)
-  const settlementOutstanding = errand.status === 'completed' && !errand.taskerHasPaid && errand.settlementStatus !== 'paid'
+  const settlementOutstanding = !errand.isTestOrder && errand.status === 'completed' && !errand.taskerHasPaid && errand.settlementStatus !== 'paid'
   const whatsappLink = userInfo ? getWhatsappLink(userInfo.phone, errand, userInfo.name) : ''
   const restaurantPeopleCount = Number.isInteger(Number(errand.restaurantPeopleCount || 0)) && Number(errand.restaurantPeopleCount || 0) > 0 ? Number(errand.restaurantPeopleCount) : 1
   const restaurantPackaging = formatRestaurantPackaging(errand)
@@ -416,11 +409,24 @@ export default function ErrandDetailPage() {
 
       {/* ─── Main Content ─── */}
       <div className="max-w-lg mx-auto px-4 pt-4 space-y-4">
+        {errand.isTestOrder ? (
+          <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
+            <p className="font-bold">Training Only</p>
+            <p className="mt-1">This is a test order. No real payment or settlement is required.</p>
+          </div>
+        ) : null}
 
         {/* ─── Order Header Card ─── */}
         <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
           <div className="bg-gradient-to-r from-sky-500 to-indigo-600 px-5 py-4 text-white">
-            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-100">Order #{errand._id.slice(-6)}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-100">Order #{errand._id.slice(-6)}</p>
+              {errand.isTestOrder ? (
+                <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white ring-1 ring-white/30">
+                  Test Order
+                </span>
+              ) : null}
+            </div>
             <h1 className="mt-1 text-2xl font-black">{errand.description}</h1>
             <p className="mt-1 text-sm text-sky-50 opacity-90">{taskTypeLabels[errand.taskType] || errand.taskType}</p>
           </div>

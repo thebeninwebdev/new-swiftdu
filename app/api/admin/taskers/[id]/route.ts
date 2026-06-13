@@ -88,6 +88,7 @@ export async function PATCH(
     if (action === 'approve') {
       tasker.isVerified = true
       tasker.isRejected = false
+      tasker.taskerMode = 'training'
     } else if (action === 'reject') {
       tasker.isVerified = false
       tasker.isRejected = true
@@ -119,6 +120,7 @@ export async function PATCH(
           id: tasker._id,
           isVerified: tasker.isVerified,
           isRejected: tasker.isRejected,
+          taskerMode: tasker.taskerMode,
           isSettlementSuspended: tasker.isSettlementSuspended,
           bankDetails: tasker.bankDetails,
         },

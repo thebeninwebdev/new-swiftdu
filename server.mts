@@ -87,14 +87,20 @@ async function bootstrap() {
   })
 
   io.on('connection', (socket) => {
-    socket.on('tasks:watch', () => {
+    socket.on('tasks:watch', (payload?: { taskerMode?: string }) => {
       if (socket.data.userId) {
-        socket.join('taskers')
+        const taskerMode = payload?.taskerMode === 'training' ? 'training' : 'live'
+        socket.join(taskerMode === 'training' ? 'taskers:training' : 'taskers:live')
+        if (taskerMode === 'live') {
+          socket.join('taskers')
+        }
       }
     })
 
     socket.on('tasks:unwatch', () => {
       socket.leave('taskers')
+      socket.leave('taskers:training')
+      socket.leave('taskers:live')
     })
 
     socket.on('order:watch', (orderId: string) => {

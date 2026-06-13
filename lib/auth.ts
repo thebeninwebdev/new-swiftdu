@@ -184,6 +184,18 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      isExco: {
+        type: "boolean",
+        required: false,
+        defaultValue: false,
+        input: false,
+      },
+      testOrderMode: {
+        type: "boolean",
+        required: false,
+        defaultValue: false,
+        input: false,
+      },
       excoRole: {
         type: "string",
         required: false,

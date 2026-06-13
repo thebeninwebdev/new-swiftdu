@@ -76,6 +76,7 @@ interface Errand {
 interface TaskerData {
   _id: string
   isVerified: boolean
+  taskerMode?: 'training' | 'live'
   isSettlementSuspended?: boolean
 }
 
@@ -620,7 +621,7 @@ export default function TaskerDashboardPage() {
 
     const socket = acquireSharedSocket()
     const handleConnect = () => {
-      socket.emit('tasks:watch')
+      socket.emit('tasks:watch', { taskerMode: taskerProfile.taskerMode || 'live' })
       void loadDashboardRef.current(false)
     }
     const handleTaskUpdate = (payload?: RealtimeTaskPayload) => {
@@ -636,7 +637,12 @@ export default function TaskerDashboardPage() {
         const isBeingFulfilled =
           payload.status === 'in_progress' &&
           payloadTaskerId !== taskerProfile._id
+        const payloadMatchesMode =
+          taskerProfile.taskerMode === 'training'
+            ? payload.isTestOrder === true
+            : payload.isTestOrder !== true
         const shouldShow =
+          payloadMatchesMode &&
           (isPendingAvailable || isBeingFulfilled) &&
           matchesRealtimeFilters(payload, taskTypeFilter, locationFilter)
 
@@ -719,6 +725,7 @@ export default function TaskerDashboardPage() {
     sessionPending,
     taskTypeFilter,
     taskerProfile?._id,
+    taskerProfile?.taskerMode,
     triggerNewTaskAlert,
   ])
 
@@ -1151,6 +1158,12 @@ export default function TaskerDashboardPage() {
 
       {/* Main Content */}
       <div className="mx-auto max-w-7xl px-4 py-4 md:px-6 xl:px-8">
+        {taskerProfile?.taskerMode === 'training' ? (
+          <div className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-950 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
+            <p className="font-bold">You are in Training Mode. You can only see and handle test orders.</p>
+          </div>
+        ) : null}
+
         {/* Error State */}
         <AnimatePresence>
           {error && (
@@ -1318,40 +1331,7 @@ export default function TaskerDashboardPage() {
             </p>
           </div>
         </div>
-
-        {(taskTypeFilter === 'all' || taskTypeFilter === 'restaurant') ? (
-          <div className="mb-4 rounded-3xl border border-orange-200 bg-orange-50 p-4 text-orange-950 shadow-sm dark:border-orange-900/60 dark:bg-orange-950/30 dark:text-orange-100">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-orange-100 text-orange-700 dark:bg-orange-900/70 dark:text-orange-200">
-                  <Info className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-bold">Restaurant multiple-order guide</p>
-                  <p className="mt-1 max-w-2xl text-sm text-orange-900 dark:text-orange-100">
-                    Customers can order restaurant food for up to {RESTAURANT_MAX_PEOPLE} people. If you notice the count is wrong, update the order before the customer pays.
-                  </p>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {restaurantMultipleOrderPrices.map((item) => (
-                  <div
-                    key={item.people}
-                    className="rounded-2xl border border-orange-200 bg-white px-3 py-2 text-center shadow-sm dark:border-orange-900/60 dark:bg-slate-900"
-                  >
-                    <p className="text-[10px] font-semibold uppercase text-orange-700 dark:text-orange-300">
-                      {item.people} people
-                    </p>
-                    <p className="text-sm font-bold text-slate-900 dark:text-white">
-                      {convertToNaira(item.fee)}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        ) : null}
-
+        
         {/* Empty State */}
         {errands.length === 0 ? (
           <motion.div

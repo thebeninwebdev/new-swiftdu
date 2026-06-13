@@ -19,6 +19,8 @@ export interface IUser extends Document {
   createdAt: Date;
   updatedAt: Date;
   isSuspended?: boolean;
+  isExco?: boolean;
+  testOrderMode?: boolean;
   taskerId?: string;
   dryCleanerId?: string;
   excoRole?: ExcoRole;
@@ -49,6 +51,15 @@ const UserSchema = new Schema<IUser>(
       default: false,
     },
     isSuspended: {
+      type: Boolean,
+      default: false,
+    },
+    isExco: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+    testOrderMode: {
       type: Boolean,
       default: false,
     },

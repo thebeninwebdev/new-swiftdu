@@ -8,6 +8,7 @@ import {
   sendPushNotification,
 } from '@/lib/push-notifications'
 import { consumeServiceFeeDiscountForCompletedOrder } from '@/lib/service-fee-discount'
+import { shouldSendOrderNotification } from '@/lib/test-orders'
 
 // ─── PATCH /api/admin/orders/[id] ───────────────────────────────────────────
 // Update order status (cancel, complete).
@@ -92,20 +93,24 @@ export async function PATCH(
     emitOrderUpdated(order)
 
     if (previousStatus !== 'completed' && order.status === 'completed') {
-      await consumeServiceFeeDiscountForCompletedOrder(order)
+      if (!order.isTestOrder) {
+        await consumeServiceFeeDiscountForCompletedOrder(order)
+      }
 
-      const pushResult = await sendPushNotification({
-        audience: { userIds: [String(order.userId)] },
-        title: 'Task completed',
-        body: `Your ${formatPushTaskType(
-          order.taskType
-        ).toLowerCase()} task is complete. Add a quick review.`,
-        url: `/dashboard/reviews/${order._id.toString()}`,
-        tag: `order-completed-${order._id.toString()}`,
-      })
+      if (shouldSendOrderNotification(order)) {
+        const pushResult = await sendPushNotification({
+          audience: { userIds: [String(order.userId)] },
+          title: 'Task completed',
+          body: `Your ${formatPushTaskType(
+            order.taskType
+          ).toLowerCase()} task is complete. Add a quick review.`,
+          url: `/dashboard/reviews/${order._id.toString()}`,
+          tag: `order-completed-${order._id.toString()}`,
+        })
 
-      if (pushResult.skipped || pushResult.deliveredCount < pushResult.recipientCount) {
-        console.warn('[Admin Order Complete Push Notification]:', pushResult)
+        if (pushResult.skipped || pushResult.deliveredCount < pushResult.recipientCount) {
+          console.warn('[Admin Order Complete Push Notification]:', pushResult)
+        }
       }
     }
 

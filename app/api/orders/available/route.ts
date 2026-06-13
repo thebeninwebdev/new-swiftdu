@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import {Order} from "@/models/order"
 import {auth} from '@/lib/auth'; 
+import Tasker from '@/models/tasker';
+import { getTaskerOrderModeFilter } from '@/lib/test-orders';
 
 export async function GET(request: NextRequest) {
   try {
@@ -16,9 +18,14 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const tasker = session.user.taskerId
+      ? await Tasker.findById(session.user.taskerId).select('taskerMode isVerified').lean()
+      : null;
+
     // Fetch all pending tasks that don't belong to the current user
     const availableTasks = await Order.find({
       status: 'pending',
+      ...getTaskerOrderModeFilter(tasker || undefined),
       // userId: { $ne: session.user.id }, // Exclude user's own tasks
     })
       .sort({ createdAt: -1 })

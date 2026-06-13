@@ -23,6 +23,11 @@ import {
 } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
 import {
+  getCreatedInMode,
+  shouldCreateTestOrder,
+  shouldSendOrderNotification,
+} from '@/lib/test-orders';
+import {
   getUserLookupConditions,
   hasActiveServiceFeeDiscountReservation,
 } from '@/lib/service-fee-discount';
@@ -66,6 +71,7 @@ export async function POST(request: NextRequest) {
       copyNotesPages,
       deadlineDate,
       cafeInquiry,
+      isTestOrder: requestedIsTestOrder,
     } = body;
 
     // Validation
@@ -256,10 +262,18 @@ export async function POST(request: NextRequest) {
     const customerAccount = customerLookupConditions.length
       ? await User.findOne({ $or: customerLookupConditions })
       .select(
-        'serviceFeeDiscountEnabled serviceFeeDiscountGrantedByUserId serviceFeeDiscountGrantedByName serviceFeeDiscountGrantedByPhone serviceFeeDiscountRemainingOrders'
+        'isExco excoRole testOrderMode serviceFeeDiscountEnabled serviceFeeDiscountGrantedByUserId serviceFeeDiscountGrantedByName serviceFeeDiscountGrantedByPhone serviceFeeDiscountRemainingOrders'
       )
       .lean()
       : null;
+    const isTestOrder = shouldCreateTestOrder(customerAccount || undefined);
+
+    if (requestedIsTestOrder === true && !isTestOrder) {
+      return NextResponse.json(
+        { error: 'Only EXCO accounts in test order mode can create test orders.' },
+        { status: 403 }
+      );
+    }
     let serviceFeeDiscountGrantedByName =
       customerAccount?.serviceFeeDiscountGrantedByName || undefined;
     let serviceFeeDiscountGrantedByPhone =
@@ -390,47 +404,57 @@ export async function POST(request: NextRequest) {
       paymentStatus: 'unpaid',
       taskerHasPaid: false,
       settlementStatus: 'not_due',
+      isTestOrder,
+      createdInMode: getCreatedInMode(isTestOrder),
+      testOrderCreatedBy: isTestOrder ? session.user.id : undefined,
+      testOrderCreatedByRole: isTestOrder
+        ? customerAccount?.excoRole || session.user.role || 'exco'
+        : undefined,
     });
 
     await order.save();
 
     emitOrderUpdated(order);
 
-    const taskerPushResult = await sendPushNotification({
-      audience: { roles: ['tasker'] },
-      title: 'New Task Available',
-      body: isCafeInquiry
-        ? `Cafe inquiry in ${location} - NGN ${CAFE_INQUIRY_SERVICE_FEE.toLocaleString()} service fee`
-        : `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${totalAmount.toLocaleString()}`,
-      url: '/available-tasks',
-      tag: `new-task-${order._id.toString()}`,
-    });
-
-    if (
-      taskerPushResult.skipped ||
-      taskerPushResult.deliveredCount + (taskerPushResult.expiredCount || 0) <
-        taskerPushResult.recipientCount
-    ) {
-      console.warn('[Orders POST Tasker Push Notification]:', taskerPushResult);
-    }
-
-    try {
-      const adminAlertResult = await notifyAdminsOfOrderEvent({
-        event: 'created',
-        order,
-        actorName: session.user.name || null,
-        actorEmail: session.user.email || null,
-        actorRole: 'customer',
+    if (shouldSendOrderNotification(order)) {
+      const taskerPushResult = await sendPushNotification({
+        audience: { roles: ['tasker'] },
+        title: 'New Task Available',
+        body: isCafeInquiry
+          ? `Cafe inquiry in ${location} - NGN ${CAFE_INQUIRY_SERVICE_FEE.toLocaleString()} service fee`
+          : `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${totalAmount.toLocaleString()}`,
+        url: '/available-tasks',
+        tag: `new-task-${order._id.toString()}`,
       });
 
       if (
-        adminAlertResult.skipped ||
-        adminAlertResult.deliveredCount < adminAlertResult.recipientCount
+        taskerPushResult.skipped ||
+        taskerPushResult.deliveredCount + (taskerPushResult.expiredCount || 0) <
+          taskerPushResult.recipientCount
       ) {
-        console.warn('[Orders POST Admin Notification]:', adminAlertResult);
+        console.warn('[Orders POST Tasker Push Notification]:', taskerPushResult);
       }
-    } catch (notificationError) {
-      console.error('[Orders POST Admin Notification Error]:', notificationError);
+    }
+
+    if (shouldSendOrderNotification(order)) {
+      try {
+        const adminAlertResult = await notifyAdminsOfOrderEvent({
+          event: 'created',
+          order,
+          actorName: session.user.name || null,
+          actorEmail: session.user.email || null,
+          actorRole: 'customer',
+        });
+
+        if (
+          adminAlertResult.skipped ||
+          adminAlertResult.deliveredCount < adminAlertResult.recipientCount
+        ) {
+          console.warn('[Orders POST Admin Notification]:', adminAlertResult);
+        }
+      } catch (notificationError) {
+        console.error('[Orders POST Admin Notification Error]:', notificationError);
+      }
     }
 
     return NextResponse.json(order, { status: 201 });

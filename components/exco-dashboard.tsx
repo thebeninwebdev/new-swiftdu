@@ -2735,8 +2735,6 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [marketingRange, setMarketingRange] = useState("7d");
-  const [isCreatingTestOrder, setIsCreatingTestOrder] = useState(false);
-  const [testOrderMessage, setTestOrderMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -2781,31 +2779,6 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
     if (role === "COO") return <OperationsSections data={data} />;
     return <TechnologySections data={data} />;
   }, [data, marketingRange, role]);
-
-  const createTestOrder = async () => {
-    setIsCreatingTestOrder(true);
-    setTestOrderMessage(null);
-
-    try {
-      const response = await fetch("/api/exco/test-order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const payload = await response.json();
-
-      if (!response.ok) {
-        throw new Error(payload.error || "Unable to create test order.");
-      }
-
-      setTestOrderMessage("Test order created.");
-    } catch (createError) {
-      setTestOrderMessage(
-        createError instanceof Error ? createError.message : "Unable to create test order."
-      );
-    } finally {
-      setIsCreatingTestOrder(false);
-    }
-  };
 
   if (isLoading) {
     return (
@@ -2862,14 +2835,6 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button onClick={createTestOrder} disabled={isCreatingTestOrder}>
-              {isCreatingTestOrder ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <PlusCircle className="mr-2 h-4 w-4" />
-              )}
-              Create test order
-            </Button>
             <Button variant="outline" onClick={() => router.push("/dashboard")}>
               <ArrowLeft className="mr-2 h-4 w-4" />
               User Dashboard
@@ -2879,12 +2844,6 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
             </Button>
           </div>
         </div>
-
-        {testOrderMessage ? (
-          <div className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm font-medium text-slate-700 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200">
-            {testOrderMessage}
-          </div>
-        ) : null}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
           {data.cards.map((item) => (

@@ -3,6 +3,7 @@ import { Types } from 'mongoose'
 import { Order } from '@/models/order'
 import { Review } from '@/models/review'
 import Tasker from '@/models/tasker'
+import { excludeTestOrders } from '@/lib/order-finance'
 
 export interface TaskerStats {
   completedTasks: number
@@ -18,7 +19,7 @@ interface ReviewSummary {
 
 export async function calculateTaskerStats(taskerId: string): Promise<TaskerStats> {
   const [completedTasks, reviewSummary] = await Promise.all([
-    Order.countDocuments({ taskerId, status: 'completed' }),
+    Order.countDocuments(excludeTestOrders({ taskerId, status: 'completed' })),
     Types.ObjectId.isValid(taskerId)
       ? Review.aggregate<ReviewSummary>([
           {

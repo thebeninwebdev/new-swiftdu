@@ -11,6 +11,7 @@ import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications'
+import { shouldSendOrderNotification } from '@/lib/test-orders'
 
 async function getAcceptedTaskerUserId(order: {
   acceptedBy?: string | null
@@ -134,7 +135,7 @@ export async function POST(
 
     const acceptedTaskerUserId = await getAcceptedTaskerUserId(order)
 
-    if (acceptedTaskerUserId) {
+    if (acceptedTaskerUserId && shouldSendOrderNotification(order)) {
       const taskerPushResult = await sendPushNotification({
         audience: { userIds: [acceptedTaskerUserId] },
         title: 'Customer marked transfer as paid',
@@ -149,7 +150,7 @@ export async function POST(
       ) {
         console.warn('[Confirm Transfer Tasker Push Notification]:', taskerPushResult)
       }
-    } else {
+    } else if (!acceptedTaskerUserId) {
       console.warn('[Confirm Transfer Tasker Push Notification]: skipped; accepted tasker user not found', {
         orderId: order._id.toString(),
         taskerId: order.taskerId,

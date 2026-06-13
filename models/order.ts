@@ -94,6 +94,7 @@ export interface IOrder extends Document {
   settlementDueAt?: Date;
   settlementFailureReason?: string;
   isTestOrder: boolean;
+  createdInMode: 'test' | 'live';
   testOrderCreatedBy?: string;
   testOrderCreatedByRole?: string;
 }
@@ -396,6 +397,12 @@ const orderSchema = new Schema<IOrder>(
     isTestOrder: {
       type: Boolean,
       default: false,
+      index: true,
+    },
+    createdInMode: {
+      type: String,
+      enum: ['test', 'live'],
+      default: 'live',
       index: true,
     },
     testOrderCreatedBy: String,

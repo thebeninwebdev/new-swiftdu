@@ -10,6 +10,7 @@ export interface ITasker extends Document {
 
   isVerified: boolean;
   isRejected?: boolean;
+  taskerMode?: "training" | "live";
 
   rating: number;
   completedTasks: number;
@@ -58,6 +59,12 @@ const TaskerSchema = new Schema<ITasker>(
     isRejected: {
       type: Boolean,
       default: false,
+    },
+
+    taskerMode: {
+      type: String,
+      enum: ["training", "live"],
+      index: true,
     },
 
     rating: {

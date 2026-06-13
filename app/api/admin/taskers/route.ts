@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import Tasker from '@/models/tasker'
 import {User} from '@/models/user'
+import { getTaskerMode } from '@/lib/test-orders'
 // import { authClient } from '@/lib/auth-client'
 
 // ─── GET /api/admin/taskers?status=pending|verified|rejected ─────────────────
@@ -51,6 +52,7 @@ export async function GET(req: NextRequest) {
 
     const enriched = taskers.map((t) => ({
       ...t,
+      taskerMode: getTaskerMode(t),
       user: userMap[t.userId.toString()] ?? null,
     }))
 

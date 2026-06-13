@@ -7,6 +7,7 @@ import {
   calculateNetPlatformProfit,
   calculatePaystackSettlementFee,
   excludeCancelledOrders,
+  excludeTestOrders,
   getEffectivePlatformFee,
 } from '@/lib/order-finance';
 
@@ -57,7 +58,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Get orders for transactions
-    const orders = await Order.find(query)
+    const nonTestQuery = excludeTestOrders(query);
+
+    const orders = await Order.find(nonTestQuery)
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
@@ -97,7 +100,7 @@ export async function GET(request: NextRequest) {
     // Calculate stats
     const [financeOrders, totalOrdersForQuery] = await Promise.all([
       Order.find(excludeCancelledOrders()).lean(),
-      Order.countDocuments(query),
+      Order.countDocuments(nonTestQuery),
     ]);
     const totalVolume = financeOrders.reduce((sum, order: TransactionOrder) => sum + (order.totalAmount || 0), 0);
     const totalTransactions = financeOrders.length;

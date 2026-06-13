@@ -4,6 +4,7 @@ import { calculateTaskerStats } from '@/lib/tasker-stats'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import Tasker from "@/models/tasker"
 import {User} from "@/models/user"
+import { getTaskerMode } from '@/lib/test-orders'
 
 // ─── POST /api/taskers ────────────────────────────────────────────────────────
 // Creates a new tasker profile and updates the user's role to 'tasker'.
@@ -99,6 +100,7 @@ export async function POST(req: NextRequest) {
         accountName: bankDetails.accountName.trim(),
       },
       isVerified: false,
+      taskerMode: 'training',
       rating: 0,
       completedTasks: 0,
     })
@@ -177,6 +179,7 @@ export async function GET(req: NextRequest) {
         {
           tasker: {
             ...tasker,
+            taskerMode: getTaskerMode(tasker),
             completedTasks: tasker.completedTasks || 0,
             rating: tasker.rating || 0,
           },
@@ -193,6 +196,7 @@ export async function GET(req: NextRequest) {
       {
         tasker: {
           ...tasker,
+          taskerMode: getTaskerMode(tasker),
           completedTasks: stats.completedTasks,
           rating: stats.rating,
         },

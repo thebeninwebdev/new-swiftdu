@@ -11,6 +11,11 @@ import {
   sendPushNotification,
 } from '@/lib/push-notifications'
 import { sendWhatsAppText } from '@/lib/whatsapp/send-message'
+import {
+  getTaskerMode,
+  getTaskerOrderModeFilter,
+  shouldSendOrderNotification,
+} from '@/lib/test-orders'
 
 export const dynamic = 'force-dynamic'
 
@@ -50,6 +55,7 @@ const ERRAND_LIST_FIELDS = [
   'hasPaid',
   'isDeclinedTask',
   'isTestOrder',
+  'createdInMode',
   'createdAt',
 ].join(' ')
 
@@ -78,9 +84,14 @@ export async function GET(request: NextRequest) {
     const fast = request.nextUrl.searchParams.get('fast') === 'true'
     const limit = Math.max(0, Number(request.nextUrl.searchParams.get('limit') || 0))
     const safeSortBy = allowedSortFields.has(sortBy) ? sortBy : 'createdAt'
+    const taskerForMode = taskerId
+      ? await Tasker.findById(taskerId).select('taskerMode isVerified').lean()
+      : null
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const filter: Record<string, any> = {}
+    const filter: Record<string, any> = {
+      ...getTaskerOrderModeFilter(taskerForMode || undefined),
+    }
 
     if (accepted === 'true' && taskerId) {
       // Accepted errands for this tasker: in_progress or paid
@@ -244,10 +255,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const taskerMode = getTaskerMode(tasker)
+    if (
+      (taskerMode === 'training' && order.isTestOrder !== true) ||
+      (taskerMode === 'live' && order.isTestOrder === true)
+    ) {
+      return NextResponse.json(
+        { error: 'This errand is not available in your current tasker mode.' },
+        { status: 403 }
+      )
+    }
+
     const acceptedAt = new Date()
 
     const updatedOrder = await Order.findOneAndUpdate(
-      { _id: orderId, status: 'pending' },
+      {
+        _id: orderId,
+        status: 'pending',
+        ...getTaskerOrderModeFilter(tasker),
+      },
       {
         $set: {
           acceptedBy: session.user.id,
@@ -271,21 +297,23 @@ export async function POST(request: NextRequest) {
 
     emitOrderUpdated(updatedOrder)
 
-    const pushResult = await sendPushNotification({
-      audience: { userIds: [String(updatedOrder.userId)] },
-      title: 'Your task has been accepted',
-      body: `${updatedOrder.taskerName || 'A tasker'} accepted your ${formatPushTaskType(
-        updatedOrder.taskType
-      ).toLowerCase()} task.`,
-      url: '/dashboard/tasks',
-      tag: `order-accepted-${updatedOrder._id.toString()}`,
-    })
+    if (shouldSendOrderNotification(updatedOrder)) {
+      const pushResult = await sendPushNotification({
+        audience: { userIds: [String(updatedOrder.userId)] },
+        title: 'Your task has been accepted',
+        body: `${updatedOrder.taskerName || 'A tasker'} accepted your ${formatPushTaskType(
+          updatedOrder.taskType
+        ).toLowerCase()} task.`,
+        url: '/dashboard/tasks',
+        tag: `order-accepted-${updatedOrder._id.toString()}`,
+      })
 
-    if (pushResult.skipped || pushResult.deliveredCount < pushResult.recipientCount) {
-      console.warn('[Errands Accept Push Notification]:', pushResult)
+      if (pushResult.skipped || pushResult.deliveredCount < pushResult.recipientCount) {
+        console.warn('[Errands Accept Push Notification]:', pushResult)
+      }
     }
 
-    if (updatedOrder.source === 'whatsapp' && updatedOrder.customerPhone) {
+    if (updatedOrder.source === 'whatsapp' && updatedOrder.customerPhone && shouldSendOrderNotification(updatedOrder)) {
       try {
         await sendWhatsAppText(
           updatedOrder.customerPhone,

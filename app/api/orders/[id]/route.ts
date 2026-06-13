@@ -26,6 +26,7 @@ import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications';
+import { shouldSendOrderNotification } from '@/lib/test-orders';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes', DRY_CLEANING_TASK_TYPE]);
 const COMPLETION_EXTENSION_MINUTES = 10;
@@ -849,20 +850,24 @@ export async function PATCH(
     emitOrderUpdated(order);
 
     if (previousStatus !== 'completed' && order.status === 'completed') {
-      await consumeServiceFeeDiscountForCompletedOrder(order);
+      if (!order.isTestOrder) {
+        await consumeServiceFeeDiscountForCompletedOrder(order);
+      }
 
-      const pushResult = await sendPushNotification({
-        audience: { userIds: [String(order.userId)] },
-        title: 'Task completed',
-        body: `Your ${formatPushTaskType(
-          order.taskType
-        ).toLowerCase()} task is complete. Add a quick review.`,
-        url: `/dashboard/reviews/${order._id.toString()}`,
-        tag: `order-completed-${order._id.toString()}`,
-      });
+      if (shouldSendOrderNotification(order)) {
+        const pushResult = await sendPushNotification({
+          audience: { userIds: [String(order.userId)] },
+          title: 'Task completed',
+          body: `Your ${formatPushTaskType(
+            order.taskType
+          ).toLowerCase()} task is complete. Add a quick review.`,
+          url: `/dashboard/reviews/${order._id.toString()}`,
+          tag: `order-completed-${order._id.toString()}`,
+        });
 
-      if (pushResult.skipped || pushResult.deliveredCount < pushResult.recipientCount) {
-        console.warn('[Orders Complete Push Notification]:', pushResult);
+        if (pushResult.skipped || pushResult.deliveredCount < pushResult.recipientCount) {
+          console.warn('[Orders Complete Push Notification]:', pushResult);
+        }
       }
     }
 

@@ -52,6 +52,7 @@ interface ExcoDashboardAccess {
   excoRole: string
   label: string
   dashboardPath: string
+  testOrderMode?: boolean
 }
 
 interface HeaderProfile {
@@ -84,6 +85,7 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [hasNotification, setHasNotification] = useState(false)
   const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)
+  const [isUpdatingOrderMode, setIsUpdatingOrderMode] = useState(false)
   const [headerProfile, setHeaderProfile] = useState<HeaderProfile | null>(null)
   const [wizardCanGoBack, setWizardCanGoBack] = useState(false)
   const [showBackHint, setShowBackHint] = useState(false)
@@ -189,6 +191,7 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
             excoRole: data.excoRole,
             label: data.label,
             dashboardPath: data.dashboardPath,
+            testOrderMode: data.testOrderMode === true,
           })
         } else {
           setExcoDashboard(null)
@@ -273,6 +276,36 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
     setIsMobileMenuOpen(false)
   }
 
+  const handleOrderModeToggle = async () => {
+    if (!excoDashboard || isUpdatingOrderMode) return
+
+    const nextTestOrderMode = excoDashboard.testOrderMode !== true
+    setIsUpdatingOrderMode(true)
+
+    try {
+      const response = await fetch('/api/user/test-order-mode', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ testOrderMode: nextTestOrderMode }),
+      })
+      const payload = await response.json()
+
+      if (!response.ok) {
+        return
+      }
+
+      setExcoDashboard((current) =>
+        current ? { ...current, testOrderMode: payload.testOrderMode === true } : current
+      )
+    } catch {
+      // Keep the existing mode if persistence fails.
+    } finally {
+      setIsUpdatingOrderMode(false)
+    }
+  }
+
+  const isLiveOrderMode = excoDashboard?.testOrderMode !== true
+
   const handleMobileMenuButton = () => {
     if (pathname === '/dashboard' && wizardCanGoBack) {
       window.dispatchEvent(new CustomEvent('swiftdu-wizard-back'))
@@ -334,6 +367,56 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
               </button>
             )
           })}
+
+          {excoDashboard ? (
+            <>
+              <button
+                onClick={() => handleNavigation(excoDashboard.dashboardPath)}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
+                  pathname === excoDashboard.dashboardPath
+                    ? 'bg-linear-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25'
+                    : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                <BriefcaseBusiness className="w-5 h-5 transition-transform group-hover:scale-110" />
+                <div className="text-left">
+                  <p className="font-medium text-sm">{excoDashboard.excoRole} Dashboard</p>
+                  <p className={`text-xs ${pathname === excoDashboard.dashboardPath ? 'text-indigo-100' : 'text-slate-400'}`}>
+                    Executive workspace
+                  </p>
+                </div>
+                {pathname === excoDashboard.dashboardPath && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white" />}
+              </button>
+
+              <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                      {isLiveOrderMode ? 'Live Mode' : 'Test Mode'}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      {isLiveOrderMode ? 'Orders are real transactions.' : 'Orders are training only.'}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleOrderModeToggle()}
+                    disabled={isUpdatingOrderMode}
+                    aria-label="Toggle live and test order mode"
+                    className={`relative h-7 w-12 shrink-0 rounded-full transition ${
+                      isLiveOrderMode ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'
+                    } disabled:opacity-60`}
+                  >
+                    <span
+                      className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${
+                        isLiveOrderMode ? 'left-6' : 'left-1'
+                      }`}
+                    />
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : null}
         </nav>
 
         <div className="px-4 pb-4">
@@ -371,24 +454,6 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
             </div>
           </button>
 
-          {excoDashboard ? (
-            <button
-              onClick={() => handleNavigation(excoDashboard.dashboardPath)}
-              className="mt-3 w-full rounded-2xl bg-linear-to-r from-amber-500 to-sky-500 p-4 text-left text-white shadow-lg shadow-amber-500/20 transition-transform duration-300 hover:scale-[1.01]"
-            >
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5 rounded-xl bg-white/20 p-2">
-                  <BriefcaseBusiness className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-sm font-semibold">{excoDashboard.excoRole} Dashboard</p>
-                  <p className="mt-1 text-xs text-amber-50">
-                    Open your executive workspace.
-                  </p>
-                </div>
-              </div>
-            </button>
-          ) : null}
         </div>
 
         {/* User Section */}
@@ -483,6 +548,50 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
                     )
                   })}
 
+                  {excoDashboard ? (
+                    <>
+                      <button
+                        onClick={() => handleNavigation(excoDashboard.dashboardPath)}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                          pathname === excoDashboard.dashboardPath
+                            ? 'bg-linear-to-r from-indigo-600 to-purple-600 text-white'
+                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        <BriefcaseBusiness className="w-5 h-5" />
+                        <span>{excoDashboard.excoRole} Dashboard</span>
+                      </button>
+
+                      <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                              {isLiveOrderMode ? 'Live Mode' : 'Test Mode'}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                              {isLiveOrderMode ? 'Real orders' : 'Training orders'}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void handleOrderModeToggle()}
+                            disabled={isUpdatingOrderMode}
+                            aria-label="Toggle live and test order mode"
+                            className={`relative h-7 w-12 shrink-0 rounded-full transition ${
+                              isLiveOrderMode ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'
+                            } disabled:opacity-60`}
+                          >
+                            <span
+                              className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${
+                                isLiveOrderMode ? 'left-6' : 'left-1'
+                              }`}
+                            />
+                          </button>
+                        </div>
+                      </div>
+                    </>
+                  ) : null}
+
                   <div className="pt-2">
                     <button
                       onClick={() => handleNavigation(taskerAction.href)}
@@ -517,25 +626,6 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
                     </button>
                   </div>
 
-                  {excoDashboard ? (
-                    <div className="pt-2">
-                      <button
-                        onClick={() => handleNavigation(excoDashboard.dashboardPath)}
-                        className="w-full rounded-xl bg-linear-to-r from-amber-500 to-sky-500 px-4 py-3 text-left text-white shadow-lg shadow-amber-500/20 transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          <div className="rounded-lg bg-white/20 p-2">
-                            <BriefcaseBusiness className="w-5 h-5" />
-                          </div>
-                          <div>
-                            <p className="font-medium">{excoDashboard.excoRole} Dashboard</p>
-                            <p className="text-xs text-amber-50">Open your executive workspace</p>
-                          </div>
-                        </div>
-                      </button>
-                    </div>
-                  ) : null}
-                  
                   <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
                     <button 
                       onClick={signOut}

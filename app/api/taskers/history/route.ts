@@ -1,6 +1,8 @@
 import { connectDB } from '@/lib/db';
 import {Order} from '@/models/order';
+import Tasker from '@/models/tasker';
 import { NextRequest, NextResponse } from 'next/server';
+import { getTaskerOrderModeFilter } from '@/lib/test-orders';
 
 const NON_TEST_ORDER_MATCH = {
   $or: [{ isTestOrder: false }, { isTestOrder: { $exists: false } }],
@@ -23,8 +25,9 @@ export async function GET(req: NextRequest) {
     }
 
     const skip = (page - 1) * limit;
+    const tasker = await Tasker.findById(taskerId).select('taskerMode isVerified').lean();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const query: any = { taskerId, ...NON_TEST_ORDER_MATCH };
+    const query: any = { taskerId, ...getTaskerOrderModeFilter(tasker || undefined) };
 
     // Filter by status if provided
     if (status) {

@@ -53,6 +53,21 @@ export async function POST(
       )
     }
 
+    if (order.isTestOrder) {
+      order.taskerHasPaid = true
+      order.settlementStatus = 'paid'
+      order.settlementPaidAt = order.settlementPaidAt || new Date()
+      order.settlementFailureReason = undefined
+      await order.save()
+      emitOrderUpdated(order)
+
+      return NextResponse.json({
+        simulated: true,
+        order,
+        message: 'Training order - no real payment was made.',
+      })
+    }
+
     await syncTaskerSettlementStatus(String(session.user.taskerId))
 
     if (order.status !== 'completed') {

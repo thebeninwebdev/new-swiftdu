@@ -58,6 +58,8 @@ interface Order {
   prematureCompletionReported?: boolean
   prematureCompletionReportedAt?: string
   commission: number
+  isTestOrder?: boolean
+  createdInMode?: 'test' | 'live'
 }
 
 type OrderRealtimePayload = Partial<Order> & { _id?: string }
@@ -786,6 +788,12 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
                     <p className="text-sm text-slate-500">Loading tasker details...</p>
                   </div>
                 ) : null}
+                {currentOrder.isTestOrder ? (
+                  <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
+                    <p className="font-bold">Test Order</p>
+                    <p className="mt-1">Training order - no real payment will be made.</p>
+                  </div>
+                ) : null}
               </div>
             ) : null}
 
@@ -973,6 +981,11 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
                         <div className="flex items-center gap-2">
                           <p className="font-bold text-slate-900 dark:text-white truncate">{taskTypeLabels[order.taskType] || order.taskType}</p>
                           <span className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${status.tone}`}>{status.label}</span>
+                          {order.isTestOrder ? (
+                            <span className="shrink-0 rounded-full bg-indigo-100 px-2 py-0.5 text-[10px] font-bold text-indigo-700 dark:bg-indigo-950/50 dark:text-indigo-300">
+                              Test Order
+                            </span>
+                          ) : null}
                         </div>
                         <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">{formatDate(order.createdAt)} • {formatCurrency(order.totalAmount || order.amount)}</p>
                       </div>
@@ -1038,7 +1051,13 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
         <DialogContent className="sm:max-w-lg" showCloseButton={!needsPayment}>
           <DialogHeader>
             <DialogTitle>Transfer to your tasker</DialogTitle>
-            <DialogDescription>Send <span className="font-semibold text-slate-900 dark:text-white">{formatCurrency(transferAmount)}</span> to the account below, then tap &quot;I have paid&quot;.</DialogDescription>
+            <DialogDescription>
+              {currentOrder?.isTestOrder ? (
+                <>Training order - no real payment will be made. Tap &quot;I have paid&quot; to simulate payment.</>
+              ) : (
+                <>Send <span className="font-semibold text-slate-900 dark:text-white">{formatCurrency(transferAmount)}</span> to the account below, then tap &quot;I have paid&quot;.</>
+              )}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
             <div className="rounded-2xl bg-slate-950 p-4 text-white">

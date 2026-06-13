@@ -21,6 +21,7 @@ interface Tasker {
   profileImage?: string
   isVerified: boolean
   isRejected: boolean
+  taskerMode: 'training' | 'live'
   isSettlementSuspended?: boolean
   rating: number
   completedTasks: number
@@ -146,6 +147,35 @@ export default function AdminTaskersPage() {
       setTaskers((prev) =>
         prev.map((item) =>
           item._id === tasker._id ? { ...item, bankDetails: nextBankDetails } : item
+        )
+      )
+    } catch {
+      toast.error('Something went wrong')
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const handleModeChange = async (tasker: Tasker, taskerMode: 'training' | 'live') => {
+    const label = taskerMode === 'live' ? 'Live Mode' : 'Training Mode'
+    const confirmed = window.confirm(`Move ${tasker.user?.name ?? 'this tasker'} to ${label}?`)
+
+    if (!confirmed) return
+
+    setActionLoading(`${tasker._id}-mode`)
+    try {
+      const res = await fetch(`/api/admin/taskers/${tasker._id}/mode`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ taskerMode }),
+      })
+      const data = await res.json()
+      if (!res.ok) { toast.error(data.error || 'Could not update tasker mode'); return }
+
+      toast.success(`Tasker moved to ${label}`)
+      setTaskers((prev) =>
+        prev.map((item) =>
+          item._id === tasker._id ? { ...item, taskerMode } : item
         )
       )
     } catch {
@@ -308,6 +338,12 @@ export default function AdminTaskersPage() {
                           Suspended
                         </div>
                       ) : null}
+                      <div style={{
+                        ...s.statusPill,
+                        ...(tasker.taskerMode === 'training' ? s.pillTraining : s.pillLive),
+                      }}>
+                        {tasker.taskerMode === 'training' ? 'Training Mode' : 'Live Mode'}
+                      </div>
                     </div>
                   </div>
 
@@ -330,6 +366,7 @@ export default function AdminTaskersPage() {
                         <DetailRow label="Completed Tasks" value={String(tasker.completedTasks)} />
                         <DetailRow label="Rating" value={tasker.rating > 0 ? `${tasker.rating}/5` : 'Not yet rated'} />
                         <DetailRow label="Tasker Suspension" value={tasker.isSettlementSuspended ? 'Suspended' : 'Active'} />
+                        <DetailRow label="Tasker Mode" value={tasker.taskerMode === 'training' ? 'Training Mode' : 'Live Mode'} />
                       </div>
                       <div style={s.bankEditor}>
                         <input
@@ -420,6 +457,23 @@ export default function AdminTaskersPage() {
                       {tasker.isVerified && (
                         <button
                           style={{
+                            ...s.modeBtn,
+                            ...(tasker.taskerMode === 'training' ? s.liveModeBtn : s.trainingModeBtn),
+                            ...(isActing ? s.btnDisabled : {}),
+                          }}
+                          disabled={!!isActing}
+                          onClick={() => handleModeChange(tasker, tasker.taskerMode === 'training' ? 'live' : 'training')}
+                        >
+                          {actionLoading === `${tasker._id}-mode`
+                            ? 'Switching...'
+                            : tasker.taskerMode === 'training'
+                              ? 'Move to Live Mode'
+                              : 'Move to Training Mode'}
+                        </button>
+                      )}
+                      {tasker.isVerified && (
+                        <button
+                          style={{
                             ...s.rejectBtn,
                             ...(tasker.isSettlementSuspended ? s.activateBtn : {}),
                             ...(isActing ? s.btnDisabled : {}),
@@ -498,6 +552,9 @@ const COLOR = {
   pendingDim: 'rgba(217,119,6,0.08)',
   pendingBorder: 'rgba(217,119,6,0.2)',
   pendingText: '#92400e',
+  trainingDim: 'rgba(79,70,229,0.08)',
+  trainingBorder: 'rgba(79,70,229,0.22)',
+  trainingText: '#4338ca',
 }
 
 const s: Record<string, React.CSSProperties> = {
@@ -796,6 +853,16 @@ const s: Record<string, React.CSSProperties> = {
     borderColor: COLOR.errorBorder,
     color: COLOR.error,
   },
+  pillTraining: {
+    background: COLOR.trainingDim,
+    borderColor: COLOR.trainingBorder,
+    color: COLOR.trainingText,
+  },
+  pillLive: {
+    background: COLOR.successDim,
+    borderColor: COLOR.successBorder,
+    color: COLOR.success,
+  },
   // Expand button
   expandBtn: {
     marginTop: 14,
@@ -902,6 +969,29 @@ const s: Record<string, React.CSSProperties> = {
     fontFamily: 'inherit',
     transition: 'opacity 0.15s',
     textAlign: 'center' as const,
+  },
+  modeBtn: {
+    flex: '1 1 180px',
+    padding: '8px 20px',
+    fontSize: 13,
+    fontWeight: 700,
+    borderWidth: 1,
+    borderStyle: 'solid',
+    borderRadius: 8,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    transition: 'opacity 0.15s',
+    textAlign: 'center' as const,
+  },
+  liveModeBtn: {
+    background: COLOR.successDim,
+    borderColor: COLOR.successBorder,
+    color: COLOR.success,
+  },
+  trainingModeBtn: {
+    background: COLOR.trainingDim,
+    borderColor: COLOR.trainingBorder,
+    color: COLOR.trainingText,
   },
   activateBtn: {
     background: COLOR.successDim,

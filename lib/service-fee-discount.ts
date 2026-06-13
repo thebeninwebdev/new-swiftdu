@@ -1,6 +1,7 @@
 import { Types } from 'mongoose'
 
 import { ACTIVE_ORDER_STATUSES } from '@/lib/order-status'
+import { excludeTestOrders } from '@/lib/order-finance'
 import { Order } from '@/models/order'
 import { User } from '@/models/user'
 
@@ -29,11 +30,11 @@ export function getUserLookupConditions({
 }
 
 export async function hasActiveServiceFeeDiscountReservation(userId: string) {
-  const activeDiscountedOrder = await Order.exists({
+  const activeDiscountedOrder = await Order.exists(excludeTestOrders({
     userId,
     serviceFeeDiscountApplied: true,
     status: { $in: [...ACTIVE_ORDER_STATUSES] },
-  })
+  }))
 
   return Boolean(activeDiscountedOrder)
 }
@@ -41,8 +42,9 @@ export async function hasActiveServiceFeeDiscountReservation(userId: string) {
 export async function consumeServiceFeeDiscountForCompletedOrder(order: {
   userId?: string | null
   serviceFeeDiscountApplied?: boolean
+  isTestOrder?: boolean | null
 }) {
-  if (!order.serviceFeeDiscountApplied || !order.userId) {
+  if (order.isTestOrder || !order.serviceFeeDiscountApplied || !order.userId) {
     return
   }
 

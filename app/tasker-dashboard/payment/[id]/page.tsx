@@ -29,6 +29,7 @@ interface SettlementOrder {
   settlementReference?: string
   settlementDueAt?: string
   settlementPaidAt?: string
+  isTestOrder?: boolean
 }
 
 const MAX_VERIFY_RETRIES = 12
@@ -383,6 +384,13 @@ function TaskerPaymentPageContent() {
         return
       }
 
+      if (payload.simulated && payload.order) {
+        setOrder(payload.order)
+        clearStoredPendingReference()
+        toast.success('Training order marked as test-paid.')
+        return
+      }
+
       if (!payload.checkoutUrl) {
         throw new Error('Paystack did not return a checkout link.')
       }
@@ -448,13 +456,13 @@ function TaskerPaymentPageContent() {
 
         <div className="mt-5">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-600 dark:text-amber-300">
-            Platform settlement
+            {order.isTestOrder ? 'Training settlement' : 'Platform settlement'}
           </p>
           <h1 className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">
             {convertToNaira(order.platformFee)}
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            Pay the platform fee for{' '}
+            {order.isTestOrder ? 'Training order - no real payment will be made for ' : 'Pay the platform fee for '}
             <span className="font-semibold text-slate-900 dark:text-white">
               {order.description || order.taskType}
             </span>
@@ -499,6 +507,12 @@ function TaskerPaymentPageContent() {
         {error ? (
           <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-200">
             {error}
+          </div>
+        ) : null}
+
+        {order.isTestOrder ? (
+          <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-200">
+            Training order - no real payment will be made.
           </div>
         ) : null}
 
@@ -549,7 +563,7 @@ function TaskerPaymentPageContent() {
             ) : (
               <>
                 <CreditCard className="mr-2 h-4 w-4" />
-                Pay with Paystack
+                {order.isTestOrder ? 'Mark Test-Paid' : 'Pay with Paystack'}
               </>
             )}
           </Button>

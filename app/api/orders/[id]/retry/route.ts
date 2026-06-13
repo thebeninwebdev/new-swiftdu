@@ -13,6 +13,11 @@ import {
   hasActiveServiceFeeDiscountReservation,
 } from '@/lib/service-fee-discount';
 import { splitServiceFee } from '@/lib/order-finance';
+import {
+  getCreatedInMode,
+  shouldCreateTestOrder,
+  shouldSendOrderNotification,
+} from '@/lib/test-orders';
 import { Order } from '@/models/order';
 import { User } from '@/models/user';
 
@@ -57,10 +62,11 @@ export async function POST(
     const customerAccount = customerLookupConditions.length
       ? await User.findOne({ $or: customerLookupConditions })
           .select(
-            'serviceFeeDiscountEnabled serviceFeeDiscountGrantedByUserId serviceFeeDiscountGrantedByName serviceFeeDiscountGrantedByPhone serviceFeeDiscountRemainingOrders'
+            'isExco excoRole testOrderMode serviceFeeDiscountEnabled serviceFeeDiscountGrantedByUserId serviceFeeDiscountGrantedByName serviceFeeDiscountGrantedByPhone serviceFeeDiscountRemainingOrders'
           )
           .lean()
       : null;
+    const isTestOrder = shouldCreateTestOrder(customerAccount || undefined);
     const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(session.user.id);
     const fullServiceFee = Number(
       order.serviceFeeBeforeDiscount || order.serviceFee || order.commission || 0
@@ -149,47 +155,57 @@ export async function POST(
       paymentProvider: 'manual_transfer',
       paymentStatus: 'unpaid',
       settlementStatus: 'not_due',
+      isTestOrder,
+      createdInMode: getCreatedInMode(isTestOrder),
+      testOrderCreatedBy: isTestOrder ? session.user.id : undefined,
+      testOrderCreatedByRole: isTestOrder
+        ? customerAccount?.excoRole || session.user.role || 'exco'
+        : undefined,
     });
 
     await retriedOrder.save();
 
     emitOrderUpdated(retriedOrder);
 
-    const taskerPushResult = await sendPushNotification({
-      audience: { roles: ['tasker'] },
-      title: 'New Task Available',
-      body: `${formatPushTaskType(retriedOrder.taskType)} in ${retriedOrder.location} - NGN ${Number(
-        retriedOrder.totalAmount || 0
-      ).toLocaleString()}`,
-      url: '/available-tasks',
-      tag: `new-task-${retriedOrder._id.toString()}`,
-    });
-
-    if (
-      taskerPushResult.skipped ||
-      taskerPushResult.deliveredCount + (taskerPushResult.expiredCount || 0) <
-        taskerPushResult.recipientCount
-    ) {
-      console.warn('[Orders Retry Tasker Push Notification]:', taskerPushResult);
-    }
-
-    try {
-      const adminAlertResult = await notifyAdminsOfOrderEvent({
-        event: 'created',
-        order: retriedOrder,
-        actorName: session.user.name || null,
-        actorEmail: session.user.email || null,
-        actorRole: 'customer',
+    if (shouldSendOrderNotification(retriedOrder)) {
+      const taskerPushResult = await sendPushNotification({
+        audience: { roles: ['tasker'] },
+        title: 'New Task Available',
+        body: `${formatPushTaskType(retriedOrder.taskType)} in ${retriedOrder.location} - NGN ${Number(
+          retriedOrder.totalAmount || 0
+        ).toLocaleString()}`,
+        url: '/available-tasks',
+        tag: `new-task-${retriedOrder._id.toString()}`,
       });
 
       if (
-        adminAlertResult.skipped ||
-        adminAlertResult.deliveredCount < adminAlertResult.recipientCount
+        taskerPushResult.skipped ||
+        taskerPushResult.deliveredCount + (taskerPushResult.expiredCount || 0) <
+          taskerPushResult.recipientCount
       ) {
-        console.warn('[Orders Retry Admin Notification]:', adminAlertResult);
+        console.warn('[Orders Retry Tasker Push Notification]:', taskerPushResult);
       }
-    } catch (notificationError) {
-      console.error('[Orders Retry Admin Notification Error]:', notificationError);
+    }
+
+    if (shouldSendOrderNotification(retriedOrder)) {
+      try {
+        const adminAlertResult = await notifyAdminsOfOrderEvent({
+          event: 'created',
+          order: retriedOrder,
+          actorName: session.user.name || null,
+          actorEmail: session.user.email || null,
+          actorRole: 'customer',
+        });
+
+        if (
+          adminAlertResult.skipped ||
+          adminAlertResult.deliveredCount < adminAlertResult.recipientCount
+        ) {
+          console.warn('[Orders Retry Admin Notification]:', adminAlertResult);
+        }
+      } catch (notificationError) {
+        console.error('[Orders Retry Admin Notification Error]:', notificationError);
+      }
     }
 
     return NextResponse.json(retriedOrder, { status: 201 });
