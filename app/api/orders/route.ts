@@ -20,6 +20,7 @@ import {
   CAFE_INQUIRY_SERVICE_FEE,
   WATER_TASK_TYPE,
   DRY_CLEANING_TASK_TYPE,
+  INDOMIE_TASK_TYPE,
 } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
 import {
@@ -36,7 +37,7 @@ import {
   sendPushNotification,
 } from '@/lib/push-notifications';
 
-const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes', DRY_CLEANING_TASK_TYPE]);
+const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes', DRY_CLEANING_TASK_TYPE, INDOMIE_TASK_TYPE]);
 
 export async function POST(request: NextRequest) {
   try {
@@ -62,6 +63,8 @@ export async function POST(request: NextRequest) {
       restaurantPeopleCount,
       restaurantTakeawayCount,
       waterBags,
+      indomiePacks,
+      eggCount,
       noteSize,
       numberOfPages,
       printingServiceType,
@@ -106,6 +109,10 @@ export async function POST(request: NextRequest) {
         : undefined;
     const parsedWaterBags =
       normalizedTaskType === WATER_TASK_TYPE ? Number(waterBags) : undefined;
+    const parsedIndomiePacks =
+      normalizedTaskType === INDOMIE_TASK_TYPE ? Number(indomiePacks) : undefined;
+    const parsedEggCount =
+      normalizedTaskType === INDOMIE_TASK_TYPE ? Number(eggCount) : undefined;
     const normalizedNoteSize = normalizeNoteSize(
       String(noteSize || copyNotesType || '').trim()
     );
@@ -228,14 +235,44 @@ export async function POST(request: NextRequest) {
     if (normalizedTaskType === 'shopping' || normalizedTaskType === DRY_CLEANING_TASK_TYPE) {
       if (normalizedDescription.length < 5) {
         return NextResponse.json(
-          { error: normalizedTaskType === DRY_CLEANING_TASK_TYPE ? 'Describe the clothes you want cleaned.' : 'Describe the items you want.' },
+          {
+            error:
+              normalizedTaskType === DRY_CLEANING_TASK_TYPE
+                ? 'Describe the clothes you want cleaned.'
+                : 'Describe the items you want.',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (normalizedTaskType === 'shopping' || normalizedTaskType === DRY_CLEANING_TASK_TYPE || normalizedTaskType === INDOMIE_TASK_TYPE) {
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+        return NextResponse.json(
+          {
+            error:
+              normalizedTaskType === DRY_CLEANING_TASK_TYPE
+                ? 'Enter a valid dry cleaning budget.'
+                : normalizedTaskType === INDOMIE_TASK_TYPE
+                  ? 'Enter a valid indomie budget.'
+                  : 'Enter a valid shopping budget.',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
+    if (normalizedTaskType === INDOMIE_TASK_TYPE) {
+      if (!Number.isInteger(parsedIndomiePacks) || Number(parsedIndomiePacks) < 1) {
+        return NextResponse.json(
+          { error: 'Enter how many indomie packs you want.' },
           { status: 400 }
         );
       }
 
-      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+      if (!Number.isInteger(parsedEggCount) || Number(parsedEggCount) < 0) {
         return NextResponse.json(
-          { error: normalizedTaskType === DRY_CLEANING_TASK_TYPE ? 'Enter a valid dry cleaning budget.' : 'Enter a valid shopping budget.' },
+          { error: 'Enter how many eggs you want.' },
           { status: 400 }
         );
       }
@@ -252,6 +289,8 @@ export async function POST(request: NextRequest) {
       restaurantTakeawayCount: normalizedRestaurantTakeawayCount,
       cafeInquiry: isCafeInquiry,
       waterBags: parsedWaterBags,
+      indomiePacks: parsedIndomiePacks,
+      eggCount: parsedEggCount,
       noteSize: normalizedNoteSize,
       numberOfPages: parsedNumberOfPages,
       printingServiceType: normalizedPrintingServiceType,
@@ -366,10 +405,11 @@ export async function POST(request: NextRequest) {
       store:
         normalizedTaskType === 'copy_notes' ||
         normalizedTaskType === WATER_TASK_TYPE ||
+        normalizedTaskType === INDOMIE_TASK_TYPE ||
         normalizedTaskType === DRY_CLEANING_TASK_TYPE
           ? undefined
           : store || undefined,
-      itemPrice: normalizedTaskType === 'restaurant' || normalizedTaskType === 'shopping' || normalizedTaskType === DRY_CLEANING_TASK_TYPE ? parsedAmount : undefined,
+      itemPrice: normalizedTaskType === 'restaurant' || normalizedTaskType === 'shopping' || normalizedTaskType === DRY_CLEANING_TASK_TYPE || normalizedTaskType === INDOMIE_TASK_TYPE ? parsedAmount : undefined,
       packaging:
         normalizedTaskType === 'restaurant'
           ? pricing.restaurantTakeawayCount && pricing.restaurantTakeawayCount > 0
@@ -386,6 +426,8 @@ export async function POST(request: NextRequest) {
       cafeInquiryDetailsSubmitted: !isCafeInquiry,
       waterBags: pricing.waterBags || undefined,
       waterFee: pricing.waterFee,
+      indomiePacks: normalizedTaskType === INDOMIE_TASK_TYPE ? pricing.indomiePacks : undefined,
+      eggCount: normalizedTaskType === INDOMIE_TASK_TYPE ? pricing.eggCount : undefined,
       noteSize: pricing.noteSize,
       numberOfPages: pricing.numberOfPages,
       printingServiceType: pricing.printingServiceType,
@@ -483,12 +525,29 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;
     const currentOnly = searchParams.get('current') === 'true';
     const needsReview = searchParams.get('needsReview') === 'true';
+    const taskTypeUsage = searchParams.get('taskTypeUsage') === 'true';
     const limit = Number(searchParams.get('limit') || 0);
     const statusParam = searchParams.get('status');
 
     const query: Record<string, unknown> = {
       userId: session.user.id,
     };
+
+    if (taskTypeUsage) {
+      const rows = await Order.aggregate<{ _id: string; count: number }>([
+        { $match: { userId: session.user.id } },
+        { $group: { _id: '$taskType', count: { $sum: 1 } } },
+      ]);
+      const taskTypeCounts = rows.reduce<Record<string, number>>((counts, row) => {
+        if (row._id) {
+          counts[row._id] = row.count;
+        }
+
+        return counts;
+      }, {});
+
+      return NextResponse.json({ taskTypeCounts });
+    }
 
     if (currentOnly) {
       query.status = { $in: [...ACTIVE_ORDER_STATUSES] };

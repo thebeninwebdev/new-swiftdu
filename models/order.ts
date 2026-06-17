@@ -1,4 +1,4 @@
-import mongoose, { Schema, Document } from 'mongoose';
+import mongoose, { Schema, Document, type Model } from 'mongoose';
 
 export interface IOrder extends Document {
   userId: string;
@@ -33,6 +33,8 @@ export interface IOrder extends Document {
   cafeInquiryDetailsSubmitted?: boolean;
   waterBags?: number;
   waterFee?: number;
+  indomiePacks?: number;
+  eggCount?: number;
   noteSize?: 'small' | 'big';
   numberOfPages?: number;
   printingServiceType?: 'printing' | 'photocopying';
@@ -127,7 +129,7 @@ const orderSchema = new Schema<IOrder>(
     taskType: {
       type: String,
       required: true,
-      enum: ['restaurant', 'printing', 'shopping', 'water', 'others', 'copy_notes', 'dry_cleaning'],
+      enum: ['restaurant', 'printing', 'shopping', 'water', 'others', 'copy_notes', 'dry_cleaning', 'indomie'],
     },
     description: {
       type: String,
@@ -233,6 +235,14 @@ const orderSchema = new Schema<IOrder>(
     waterFee: {
       type: Number,
       default: 0,
+      min: 0,
+    },
+    indomiePacks: {
+      type: Number,
+      min: 1,
+    },
+    eggCount: {
+      type: Number,
       min: 0,
     },
     copyNotesType: {
@@ -417,4 +427,30 @@ orderSchema.index({ taskType: 1, status: 1, createdAt: -1 });
 orderSchema.index({ isTestOrder: 1, status: 1, createdAt: -1 });
 
 
-export const Order = mongoose.models.Order || mongoose.model<IOrder>('Order', orderSchema);
+type MongooseStringSchemaPath = {
+  enumValues?: string[];
+};
+
+const existingOrderModel = mongoose.models.Order as Model<IOrder> | undefined;
+const existingTaskTypePath = existingOrderModel?.schema.path('taskType') as
+  | MongooseStringSchemaPath
+  | undefined;
+
+if (
+  existingOrderModel &&
+  existingTaskTypePath?.enumValues &&
+  !existingTaskTypePath.enumValues.includes('indomie')
+) {
+  const mutableModels = mongoose.models as unknown as Record<string, Model<IOrder> | undefined>;
+  const mutableConnectionModels = mongoose.connection.models as unknown as Record<
+    string,
+    Model<IOrder> | undefined
+  >;
+
+  delete mutableModels.Order;
+  delete mutableConnectionModels.Order;
+}
+
+export const Order =
+  (mongoose.models.Order as Model<IOrder> | undefined) ||
+  mongoose.model<IOrder>('Order', orderSchema);

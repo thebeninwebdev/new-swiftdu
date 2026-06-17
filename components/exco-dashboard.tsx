@@ -24,6 +24,7 @@ import {
   LineChart,
   Loader2,
   Megaphone,
+  Menu,
   MessageCircle,
   PlusCircle,
   ShieldAlert,
@@ -295,6 +296,44 @@ const CMO_RANGE_OPTIONS = [
   { value: "24mo", label: "Last 24 months" },
 ] as const;
 
+function getExcoSectionItems(role: ExcoRole) {
+  const analyticsLabel =
+    role === "CFO"
+      ? "Finance"
+      : role === "CMO"
+        ? "Marketing"
+        : role === "COO"
+          ? "Operations"
+          : "Technology";
+
+  return [
+    {
+      value: "overview" as const,
+      label: "Overview",
+      description: "Metrics and insights",
+      icon: Activity,
+    },
+    {
+      value: "management" as const,
+      label: "Management",
+      description: "Accounts and queues",
+      icon: BriefcaseBusiness,
+    },
+    {
+      value: "expenditures" as const,
+      label: "Expenditures",
+      description: "Approvals and spend",
+      icon: BadgeDollarSign,
+    },
+    {
+      value: "analytics" as const,
+      label: analyticsLabel,
+      description: "Role-specific detail",
+      icon: LineChart,
+    },
+  ];
+}
+
 function usePagedItems<T>(items: T[], pageSize = CFO_PAGE_SIZE) {
   const [page, setPage] = useState(1);
   const pageCount = Math.max(Math.ceil(items.length / pageSize), 1);
@@ -421,9 +460,12 @@ type ExcoTasker = {
   isVerified: boolean;
   isRejected: boolean;
   isSettlementSuspended: boolean;
+  taskerMode: "training" | "live";
   completedTasks: number;
   rating: number;
 };
+
+type ExcoDashboardSection = "overview" | "management" | "expenditures" | "analytics";
 
 type ExcoDryCleaner = {
   id: string;
@@ -531,6 +573,7 @@ type ExcoFailedSettlement = {
   createdAt: string | null;
   description: string;
   settlementFailureReason: string;
+  paymentFailureReason: string;
   paymentStatus: string;
   settlementStatus: string;
 };
@@ -676,6 +719,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
   if (role === "CMO") {
     return (
       <div className="space-y-4">
+        <TaskerManagementPanel canModerate={false} />
         <UserManagementPanel title="Audience Birthdays & Ages" allowSuspension={false} />
       </div>
     );
@@ -822,13 +866,26 @@ function TaskerManagementPanel({ canModerate }: { canModerate: boolean }) {
     }
   };
 
+  const setTaskerMode = async (tasker: ExcoTasker, taskerMode: "training" | "live") => {
+    setActionId(`${tasker.id}-mode`);
+    try {
+      await patchManagement("taskers", {
+        id: tasker.id,
+        taskerMode,
+      });
+      await reload();
+    } finally {
+      setActionId(null);
+    }
+  };
+
   return (
     <ManagementShell
       title="Tasker Management"
       description={
         canModerate
-          ? "Approve, reject, suspend, restore, or update tasker bank details."
-          : "Review taskers and update their bank details."
+          ? "Approve, reject, suspend, restore, update tasker mode, or update tasker bank details."
+          : "Review taskers, update tasker mode, and update their bank details."
       }
       isLoading={isLoading}
       error={error}
@@ -897,10 +954,34 @@ function TaskerManagementPanel({ canModerate }: { canModerate: boolean }) {
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Badge variant="outline">{tasker.isVerified ? "approved" : tasker.isRejected ? "rejected" : "pending"}</Badge>
+                  <Badge
+                    variant="outline"
+                    className={
+                      tasker.taskerMode === "training"
+                        ? "border-amber-200 bg-amber-50 text-amber-700"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-700"
+                    }
+                  >
+                    {tasker.taskerMode === "training" ? "test mode" : "live mode"}
+                  </Badge>
                   {tasker.isSettlementSuspended ? <Badge variant="destructive">suspended</Badge> : null}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:justify-end">
+                <Button
+                  size="sm"
+                  variant={tasker.taskerMode === "training" ? "default" : "outline"}
+                  disabled={Boolean(actionId)}
+                  onClick={() =>
+                    setTaskerMode(tasker, tasker.taskerMode === "training" ? "live" : "training")
+                  }
+                >
+                  {actionId === `${tasker.id}-mode`
+                    ? "Updating..."
+                    : tasker.taskerMode === "training"
+                      ? "Move to Live"
+                      : "Move to Test"}
+                </Button>
                 {canModerate && !tasker.isVerified ? (
                   <Button size="sm" onClick={() => runAction(tasker.id, "approve")} disabled={Boolean(actionId)}>
                     Approve
@@ -940,7 +1021,7 @@ function FailedSettlementsPanel() {
   const [actionId, setActionId] = useState<string | null>(null);
 
   const verifySettlement = async (order: ExcoFailedSettlement) => {
-    setActionId(order.id);
+    setActionId(`${order.id}-settlement`);
     try {
       await patchManagement("failed-settlements", {
         id: order.id,
@@ -952,13 +1033,26 @@ function FailedSettlementsPanel() {
     }
   };
 
+  const markPaymentPaid = async (order: ExcoFailedSettlement) => {
+    setActionId(`${order.id}-payment`);
+    try {
+      await patchManagement("failed-settlements", {
+        id: order.id,
+        action: "mark-payment-paid",
+      });
+      await reload();
+    } finally {
+      setActionId(null);
+    }
+  };
+
   return (
     <ManagementShell
-      title="Failed Tasker Settlements"
-      description="Review failed settlement records and manually verify transactions whose settlement status is wrong."
+      title="Failed Payments & Settlements"
+      description="Review failed payment records and manually verify transactions whose status is wrong."
       isLoading={isLoading}
       error={error}
-      emptyLabel="No failed tasker settlements found"
+      emptyLabel="No failed payments or tasker settlements found"
       hasItems={items.length > 0}
     >
       <div className="overflow-x-auto">
@@ -1019,7 +1113,11 @@ function FailedSettlementsPanel() {
                 </td>
                 <td className="py-4 pr-4">
                   <p className="max-w-[18rem] text-sm text-slate-700 dark:text-slate-200">
-                    {order.settlementFailureReason}
+                    {order.paymentStatus === "failed" && order.paymentFailureReason
+                      ? order.paymentFailureReason
+                      : order.paymentStatus === "failed"
+                        ? "Payment marked failed"
+                        : order.settlementFailureReason}
                   </p>
                 </td>
                 <td className="py-4 pr-4">
@@ -1035,30 +1133,50 @@ function FailedSettlementsPanel() {
                 </td>
                 <td className="py-4 pr-4">
                   <div className="flex flex-col gap-2">
-                    <Button
-                      size="sm"
-                      disabled={Boolean(actionId)}
-                      onClick={() => verifySettlement(order)}
-                      className="gap-2"
-                    >
-                      {actionId === order.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <CheckCircle2 className="h-4 w-4" />
-                      )}
-                      {actionId === order.id ? "Verifying..." : "Verify settlement"}
-                    </Button>
-                    <a
-                      href={`https://wa.me/2349053479802?text=${encodeURIComponent(
-                        `I have paid for SwiftDU settlement on order ${order.id}. Please verify it.`
-                      )}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex h-7 shrink-0 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[0.8rem] font-medium text-slate-900 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900"
-                    >
-                      <MessageCircle className="h-3.5 w-3.5" />
-                      I have paid
-                    </a>
+                    {order.paymentStatus === "failed" ? (
+                      <Button
+                        size="sm"
+                        disabled={Boolean(actionId)}
+                        onClick={() => markPaymentPaid(order)}
+                        className="gap-2"
+                      >
+                        {actionId === `${order.id}-payment` ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4" />
+                        )}
+                        {actionId === `${order.id}-payment` ? "Updating..." : "Mark payment paid"}
+                      </Button>
+                    ) : null}
+                    {order.settlementStatus === "failed" ? (
+                      <Button
+                        size="sm"
+                        variant={order.paymentStatus === "failed" ? "outline" : "default"}
+                        disabled={Boolean(actionId)}
+                        onClick={() => verifySettlement(order)}
+                        className="gap-2"
+                      >
+                        {actionId === `${order.id}-settlement` ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-4 w-4" />
+                        )}
+                        {actionId === `${order.id}-settlement` ? "Verifying..." : "Verify settlement"}
+                      </Button>
+                    ) : null}
+                    {order.settlementStatus === "failed" ? (
+                      <a
+                        href={`https://wa.me/2349053479802?text=${encodeURIComponent(
+                          `I have paid for SwiftDU settlement on order ${order.id}. Please verify it.`
+                        )}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-7 shrink-0 items-center justify-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 text-[0.8rem] font-medium text-slate-900 transition hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-900"
+                      >
+                        <MessageCircle className="h-3.5 w-3.5" />
+                        I have paid
+                      </a>
+                    ) : null}
                   </div>
                 </td>
               </tr>
@@ -2735,6 +2853,8 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [marketingRange, setMarketingRange] = useState("7d");
+  const [activeSection, setActiveSection] = useState<ExcoDashboardSection>("overview");
+  const sectionItems = useMemo(() => getExcoSectionItems(role), [role]);
 
   useEffect(() => {
     async function loadDashboard() {
@@ -2764,7 +2884,7 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
     void loadDashboard();
   }, [role, marketingRange]);
 
-  const section = useMemo(() => {
+  const analyticsSection = useMemo(() => {
     if (!data) return null;
     if (role === "CFO") return <FinanceSections data={data} />;
     if (role === "CMO") {
@@ -2845,17 +2965,72 @@ export default function ExcoDashboard({ role }: { role: ExcoRole }) {
           </div>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-          {data.cards.map((item) => (
-            <MetricCard key={item.label} item={item} />
-          ))}
+        <div className="grid gap-6 lg:grid-cols-[17rem_1fr]">
+          <aside className="lg:sticky lg:top-6 lg:self-start">
+            <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <div className="mb-3 flex items-center gap-2 px-2 text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                <Menu className="h-4 w-4" />
+                EXCO Menu
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
+                {sectionItems.map((item) => {
+                  const SectionIcon = item.icon;
+                  const selected = activeSection === item.value;
+
+                  return (
+                    <button
+                      key={item.value}
+                      type="button"
+                      onClick={() => setActiveSection(item.value)}
+                      className={`flex items-center gap-3 rounded-lg border px-3 py-3 text-left transition ${
+                        selected
+                          ? "border-slate-950 bg-slate-950 text-white shadow-sm dark:border-white dark:bg-white dark:text-slate-950"
+                          : "border-transparent text-slate-600 hover:border-slate-200 hover:bg-slate-50 dark:text-slate-300 dark:hover:border-slate-800 dark:hover:bg-slate-950"
+                      }`}
+                    >
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                          selected
+                            ? "bg-white/15 dark:bg-slate-950/10"
+                            : "bg-slate-100 text-slate-700 dark:bg-slate-950 dark:text-slate-300"
+                        }`}
+                      >
+                        <SectionIcon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-sm font-bold">{item.label}</span>
+                        <span
+                          className={`block truncate text-xs ${
+                            selected ? "text-slate-200 dark:text-slate-600" : "text-slate-400"
+                          }`}
+                        >
+                          {item.description}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </aside>
+
+          <main className="min-w-0 space-y-4">
+            {activeSection === "overview" ? (
+              <>
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+                  {data.cards.map((item) => (
+                    <MetricCard key={item.label} item={item} />
+                  ))}
+                </div>
+                <InsightPanel insights={data.insights} />
+              </>
+            ) : null}
+
+            {activeSection === "management" ? <ExcoManagementPanels role={role} /> : null}
+            {activeSection === "expenditures" ? <ExpenditurePanel role={role} /> : null}
+            {activeSection === "analytics" ? analyticsSection : null}
+          </main>
         </div>
-
-        <InsightPanel insights={data.insights} />
-        <ExcoManagementPanels role={role} />
-        <ExpenditurePanel role={role} />
-
-        {section}
       </div>
     </div>
   );

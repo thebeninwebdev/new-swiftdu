@@ -117,7 +117,7 @@ export async function POST(
     order.customerTransferredAt = new Date()
     order.paidAt = new Date()
     order.completionTimerStartedAt = order.paidAt
-    order.completionWindowMinutes = getCompletionWindowMinutes(order.location)
+    order.completionWindowMinutes = getCompletionWindowMinutes(order.location, order.taskType)
     order.completionExtensionMinutes = 0
     order.completionDueAt = new Date(
       order.paidAt.getTime() + order.completionWindowMinutes * 60000

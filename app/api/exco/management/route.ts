@@ -3,6 +3,7 @@ import { Types } from "mongoose";
 
 import { getExcoAccess, type ExcoRole } from "@/lib/exco";
 import { connectDB } from "@/lib/db";
+import { ensureCompletionTimer } from "@/lib/completion-timer";
 import { emitOrderUpdated } from "@/lib/socket";
 import { syncTaskerSettlementStatus } from "@/lib/tasker-settlement";
 import DryCleaner from "@/models/dry-cleaner";
@@ -22,7 +23,7 @@ type Resource =
   | "failed-settlements";
 
 const RESOURCE_ACCESS: Record<Resource, ExcoRole[]> = {
-  taskers: ["COO", "CFO", "CTO"],
+  taskers: ["CFO", "CMO", "COO", "CTO"],
   "dry-cleaners": ["COO"],
   reviews: ["COO"],
   users: ["CFO", "COO", "CMO", "CTO"],
@@ -158,6 +159,7 @@ async function getTaskers() {
     isVerified: tasker.isVerified,
     isRejected: Boolean(tasker.isRejected),
     isSettlementSuspended: Boolean(tasker.isSettlementSuspended),
+    taskerMode: tasker.taskerMode === "training" ? "training" : "live",
     bankDetails: {
       bankName: tasker.bankDetails?.bankName || "",
       accountNumber: tasker.bankDetails?.accountNumber || "",
@@ -393,10 +395,16 @@ async function getFailedSettlements() {
     acceptedAt?: Date | null;
     createdAt?: Date | null;
     settlementFailureReason?: string;
+    paymentFailureReason?: string;
     paymentStatus?: string;
     settlementStatus?: string;
   }>([
-    { $match: { settlementStatus: "failed", ...NON_TEST_ORDER_MATCH } },
+    {
+      $match: {
+        ...NON_TEST_ORDER_MATCH,
+        $or: [{ settlementStatus: "failed" }, { paymentStatus: "failed" }],
+      },
+    },
     { $sort: { updatedAt: -1, createdAt: -1 } },
     { $limit: 50 },
     {
@@ -469,8 +477,9 @@ async function getFailedSettlements() {
         acceptedAt: "$acceptedAt",
         createdAt: "$createdAt",
         settlementFailureReason: { $ifNull: ["$settlementFailureReason", "No failure reason recorded"] },
+        paymentFailureReason: { $ifNull: ["$paymentFailureReason", ""] },
         paymentStatus: { $ifNull: ["$paymentStatus", "unpaid"] },
-        settlementStatus: { $ifNull: ["$settlementStatus", "failed"] },
+        settlementStatus: { $ifNull: ["$settlementStatus", "not_due"] },
       },
     },
   ]);
@@ -493,8 +502,9 @@ async function getFailedSettlements() {
     createdAt: row.createdAt ? row.createdAt.toISOString() : null,
     description: row.orderDescription || row.taskType || "Task",
     settlementFailureReason: row.settlementFailureReason || "No failure reason recorded",
+    paymentFailureReason: row.paymentFailureReason || "",
     paymentStatus: row.paymentStatus || "unpaid",
-    settlementStatus: row.settlementStatus || "failed",
+    settlementStatus: row.settlementStatus || "not_due",
   }));
 }
 
@@ -576,17 +586,20 @@ export async function PATCH(request: NextRequest) {
   await connectDB();
 
   if (resource === "taskers") {
-    const { id, action, bankDetails } = body as {
+    const { id, action, bankDetails, taskerMode } = body as {
       id?: string;
       action?: string;
       bankDetails?: { bankName?: string; accountNumber?: string; accountName?: string };
+      taskerMode?: "training" | "live";
     };
     const hasBankDetails = bankDetails !== undefined;
+    const hasTaskerMode = taskerMode !== undefined;
 
     if (
       !id ||
       (action && !["approve", "reject", "suspend", "activate"].includes(action)) ||
-      (!action && !hasBankDetails)
+      (hasTaskerMode && taskerMode !== "training" && taskerMode !== "live") ||
+      (!action && !hasBankDetails && !hasTaskerMode)
     ) {
       return NextResponse.json({ error: "Invalid tasker action" }, { status: 400 });
     }
@@ -631,6 +644,10 @@ export async function PATCH(request: NextRequest) {
       }
 
       tasker.bankDetails = nextBankDetails;
+    }
+
+    if (hasTaskerMode) {
+      tasker.taskerMode = taskerMode;
     }
 
     await tasker.save();
@@ -703,16 +720,45 @@ export async function PATCH(request: NextRequest) {
   if (resource === "failed-settlements") {
     const { id, action } = body as { id?: string; action?: string };
 
-    if (!id || action !== "verify-settlement") {
-      return NextResponse.json({ error: "Invalid settlement action" }, { status: 400 });
+    if (!id || !["verify-settlement", "mark-payment-paid"].includes(action || "")) {
+      return NextResponse.json({ error: "Invalid payment action" }, { status: 400 });
     }
 
     if (access.excoRole !== "CTO") {
-      return NextResponse.json({ error: "Only CTO can verify failed settlements" }, { status: 403 });
+      return NextResponse.json({ error: "Only CTO can update failed payments" }, { status: 403 });
     }
 
     const order = await Order.findById(id);
     if (!order) return NextResponse.json({ error: "Order not found" }, { status: 404 });
+
+    if (action === "mark-payment-paid") {
+      if (order.paymentStatus !== "failed") {
+        return NextResponse.json(
+          { error: "Only failed payments can be marked paid here." },
+          { status: 400 }
+        );
+      }
+
+      const paidAt = new Date();
+      order.hasPaid = true;
+      order.isDeclinedTask = false;
+      order.declinedAt = undefined;
+      order.declinedReason = undefined;
+      order.declinedMessage = undefined;
+      order.declinedByTaskerAt = undefined;
+      order.paymentProvider = order.paymentProvider || "manual_transfer";
+      order.paymentStatus = "paid";
+      order.paymentVerifiedAt = paidAt;
+      order.customerTransferredAt = order.customerTransferredAt || paidAt;
+      order.paidAt = paidAt;
+      order.paymentFailureReason = undefined;
+      ensureCompletionTimer(order);
+
+      await order.save();
+      emitOrderUpdated(order);
+
+      return NextResponse.json({ ok: true });
+    }
 
     if (order.settlementStatus !== "failed") {
       return NextResponse.json(

@@ -29,9 +29,11 @@ import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '
 import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { convertToNaira } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
-import { calculateRestaurantServiceFee, RESTAURANT_MAX_PEOPLE } from '@/lib/pricing'
+import { calculateRestaurantServiceFee } from '@/lib/pricing'
+import { useVisibleInterval } from '@/hooks/use-visible-interval'
 
 const REALTIME_REVALIDATE_DELAY_MS = 1200
+const REALTIME_POLL_INTERVAL_MS = 10000
 
 interface Errand {
   _id: string
@@ -56,6 +58,8 @@ interface Errand {
   restaurantPeopleCount?: number
   restaurantTakeawayCount?: number
   restaurantPackagingFee?: number
+  indomiePacks?: number
+  eggCount?: number
   status: string
   taskerId?: string
   acceptedBy?: string
@@ -103,6 +107,8 @@ interface RealtimeTaskPayload {
   restaurantPeopleCount?: number
   restaurantTakeawayCount?: number
   restaurantPackagingFee?: number
+  indomiePacks?: number
+  eggCount?: number
   status?: string
   taskerId?: string
   acceptedAt?: string
@@ -125,6 +131,7 @@ const taskTypes = [
   { value: 'printing', label: 'Print', icon: Package, color: 'bg-sky-500' },
   { value: 'copy_notes', label: 'Copy', icon: Package, color: 'bg-amber-500' },
   { value: 'shopping', label: 'Shop', icon: Package, color: 'bg-emerald-500' },
+  { value: 'indomie', label: 'Indomie', icon: Package, color: 'bg-rose-500' },
   { value: 'dry_cleaning', label: 'Dry Clean', icon: Package, color: 'bg-cyan-500' },
   { value: 'water', label: 'Water Bags', icon: Package, color: 'bg-cyan-500' },
   { value: 'others', label: 'Other', icon: Package, color: 'bg-slate-500' },
@@ -135,6 +142,7 @@ const taskTypeStyles: Record<string, string> = {
   printing: 'from-sky-500 to-blue-500',
   copy_notes: 'from-amber-500 to-yellow-500',
   shopping: 'from-emerald-500 to-teal-500',
+  indomie: 'from-rose-500 to-amber-500',
   dry_cleaning: 'from-cyan-500 to-blue-500',
   water: 'from-cyan-500 to-blue-500',
   others: 'from-slate-500 to-gray-500',
@@ -145,48 +153,10 @@ const taskTypeBg: Record<string, string> = {
   printing: 'bg-sky-50 text-sky-700 border-sky-200',
   copy_notes: 'bg-amber-50 text-amber-700 border-amber-200',
   shopping: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+  indomie: 'bg-rose-50 text-rose-700 border-rose-200',
   dry_cleaning: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   water: 'bg-cyan-50 text-cyan-700 border-cyan-200',
   others: 'bg-slate-50 text-slate-700 border-slate-200',
-}
-
-const restaurantMultipleOrderPrices = Array.from(
-  { length: RESTAURANT_MAX_PEOPLE - 1 },
-  (_, index) => index + 2
-).map((people) => ({
-  people,
-  fee: calculateRestaurantServiceFee(people),
-}))
-
-// Animation variants
-const containerVariants: Variants = {
-  hidden: { opacity: 0 },
-  visible: {
-    opacity: 1,
-    transition: {
-      staggerChildren: 0.08,
-      delayChildren: 0.1,
-    },
-  },
-}
-
-const cardVariants: Variants = {
-  hidden: { opacity: 0, y: 30, scale: 0.95 },
-  visible: {
-    opacity: 1,
-    y: 0,
-    scale: 1,
-    transition: {
-      type: 'spring',
-      stiffness: 100,
-      damping: 15,
-    },
-  },
-  exit: {
-    opacity: 0,
-    x: -100,
-    transition: { duration: 0.3 },
-  },
 }
 
 const headerVariants: Variants = {
@@ -279,6 +249,8 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
     restaurantPeopleCount: payload.restaurantPeopleCount,
     restaurantTakeawayCount: payload.restaurantTakeawayCount,
     restaurantPackagingFee: payload.restaurantPackagingFee,
+    indomiePacks: payload.indomiePacks,
+    eggCount: payload.eggCount,
     status: payload.status || 'pending',
     taskerId: payload.taskerId,
     acceptedAt: payload.acceptedAt,
@@ -353,16 +325,14 @@ export default function TaskerDashboardPage() {
   const prevErrandsCount = useRef(0)
   const alertTimeoutRef = useRef<number | null>(null)
   const refreshTimeoutRef = useRef<number | null>(null)
-  const loadDashboardRef = useRef<(initial?: boolean) => Promise<void>>(async () => {})
+  const loadDashboardRef = useRef<
+    (initial?: boolean, options?: { silent?: boolean }) => Promise<void>
+  >(async () => {})
 
   const taskerId = session?.user?.taskerId ? String(session.user.taskerId) : null
   const taskerName = session?.user?.name || 'Anonymous'
 
-  useEffect(() => {
-    const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000)
-
-    return () => window.clearInterval(intervalId)
-  }, [])
+  useVisibleInterval(() => setNowMs(Date.now()), acceptedErrands.length > 0 ? 1000 : null)
 
   const triggerNewTaskAlert = useCallback(() => {
     setNewTaskAlert(true)
@@ -444,7 +414,9 @@ export default function TaskerDashboardPage() {
   }, [router, session?.user?.id, sessionPending, taskerId])
 
   const loadDashboard = useCallback(
-    async (initial = false) => {
+    async (initial = false, options?: { silent?: boolean }) => {
+      const silent = options?.silent === true
+
       if (sessionPending || loadingTaskerProfile) {
         return
       }
@@ -499,7 +471,7 @@ export default function TaskerDashboardPage() {
 
       if (initial) {
         setLoading(true)
-      } else {
+      } else if (!silent) {
         setRefreshing(true)
       }
 
@@ -595,7 +567,7 @@ export default function TaskerDashboardPage() {
 
     refreshTimeoutRef.current = window.setTimeout(() => {
       refreshTimeoutRef.current = null
-      void loadDashboardRef.current(false)
+      void loadDashboardRef.current(false, { silent: true })
     }, REALTIME_REVALIDATE_DELAY_MS)
   }, [])
 
@@ -623,6 +595,9 @@ export default function TaskerDashboardPage() {
     const handleConnect = () => {
       socket.emit('tasks:watch', { taskerMode: taskerProfile.taskerMode || 'live' })
       void loadDashboardRef.current(false)
+    }
+    const handleConnectError = () => {
+      scheduleDashboardRefresh()
     }
     const handleTaskUpdate = (payload?: RealtimeTaskPayload) => {
       if (payload) {
@@ -700,12 +675,18 @@ export default function TaskerDashboardPage() {
           next[currentIndex] = { ...next[currentIndex], ...nextErrand }
           return sortErrands(next)
         })
+
+        scheduleDashboardRefresh()
+        return
       }
 
-      scheduleDashboardRefresh()
+      if (!payload) {
+        scheduleDashboardRefresh()
+      }
     }
 
     socket.on('connect', handleConnect)
+    socket.on('connect_error', handleConnectError)
     socket.on('tasks:updated', handleTaskUpdate)
     handleConnect()
 
@@ -714,6 +695,7 @@ export default function TaskerDashboardPage() {
         socket.emit('tasks:unwatch')
       }
       socket.off('connect', handleConnect)
+      socket.off('connect_error', handleConnectError)
       socket.off('tasks:updated', handleTaskUpdate)
       releaseSharedSocket(socket)
     }
@@ -728,6 +710,18 @@ export default function TaskerDashboardPage() {
     taskerProfile?.taskerMode,
     triggerNewTaskAlert,
   ])
+
+  const shouldPollForTasks =
+    !sessionPending &&
+    !loadingTaskerProfile &&
+    Boolean(taskerProfile?._id) &&
+    Boolean(taskerProfile?.isVerified) &&
+    !taskerProfile?.isSettlementSuspended
+
+  useVisibleInterval(
+    () => void loadDashboardRef.current(false, { silent: true }),
+    shouldPollForTasks ? REALTIME_POLL_INTERVAL_MS : null
+  )
 
   useEffect(() => {
     return () => {
@@ -866,9 +860,9 @@ export default function TaskerDashboardPage() {
       Number(errand.completionWindowMinutes || 0) > 0
         ? Math.max(
           Number(errand.completionWindowMinutes),
-          getCompletionWindowMinutes(errand.location)
+          getCompletionWindowMinutes(errand.location, errand.taskType)
         )
-        : getCompletionWindowMinutes(errand.location)
+        : getCompletionWindowMinutes(errand.location, errand.taskType)
     const extensionMinutes = Number(errand.completionExtensionMinutes || 0)
     const computedDueMs = startedMs + (windowMinutes + extensionMinutes) * 60000
     const savedDueMs = errand.completionDueAt
@@ -1268,6 +1262,14 @@ export default function TaskerDashboardPage() {
                           <MapPin className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
                           <span className="truncate">{errand.location}</span>
                         </div>
+                        {errand.taskType === 'indomie' ? (
+                          <div className="flex items-center gap-2">
+                            <Package className="h-4 w-4 shrink-0 text-rose-500" />
+                            <span>
+                              {errand.indomiePacks || 0} indomie, {errand.eggCount || 0} egg{Number(errand.eggCount || 0) === 1 ? '' : 's'}
+                            </span>
+                          </div>
+                        ) : null}
                         <div className="flex items-center gap-2">
                           <Clock3 className="h-4 w-4 shrink-0 text-slate-400" />
                           <span>{errand.acceptedAt ? `Accepted ${formatTimeAgo(errand.acceptedAt)}` : formatTimeAgo(errand.createdAt)}</span>
@@ -1355,19 +1357,18 @@ export default function TaskerDashboardPage() {
           </motion.div>
         ) : (
           <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
+            layout
             className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3"
           >
             {errands.map((errand) => (
               <motion.article
                 key={errand._id}
-                variants={cardVariants}
-                layoutId={errand._id}
+                layout
+                initial={{ opacity: 1, y: 0, scale: 1 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
-                className="group relative h-full overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+                className="group relative z-10 h-full overflow-hidden rounded-3xl border border-slate-200 bg-white opacity-100 shadow-sm dark:border-slate-800 dark:bg-slate-900"
               >
                 {/* Top accent bar */}
                 <div className={`h-1.5 bg-linear-to-r ${taskTypeStyles[errand.taskType] || taskTypeStyles.others}`} />
@@ -1469,6 +1470,22 @@ export default function TaskerDashboardPage() {
                         <span className="capitalize">{errand.packaging}</span>
                       </motion.div>
                     )}
+
+                    {errand.taskType === 'indomie' ? (
+                      <motion.div
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: 0.1 }}
+                        className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400"
+                      >
+                        <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/30 flex items-center justify-center shrink-0">
+                          <Package className="h-4 w-4 text-rose-600 dark:text-rose-400" />
+                        </div>
+                        <span>
+                          {errand.indomiePacks || 0} indomie, {errand.eggCount || 0} egg{Number(errand.eggCount || 0) === 1 ? '' : 's'}
+                        </span>
+                      </motion.div>
+                    ) : null}
 
                     {errand.taskType === 'restaurant' && Number(errand.restaurantPeopleCount || 0) > 1 ? (
                       <motion.div

@@ -1,9 +1,11 @@
 export const DEFAULT_COMPLETION_WINDOW_MINUTES = 20
 export const HOSTEL_COMPLETION_WINDOW_MINUTES = 25
 export const STAFF_QUARTERS_COMPLETION_WINDOW_MINUTES = 30
+export const INDOMIE_COMPLETION_WINDOW_MINUTES = 60
 
 type CompletionTimerOrder = {
   status?: string
+  taskType?: string | null
   location?: string | null
   hasPaid?: boolean
   paymentStatus?: string
@@ -22,7 +24,11 @@ type CompletionTimerOrder = {
   prematureCompletionReportedAt?: Date
 }
 
-export function getCompletionWindowMinutes(location?: string | null) {
+export function getCompletionWindowMinutes(location?: string | null, taskType?: string | null) {
+  if (taskType === 'indomie') {
+    return INDOMIE_COMPLETION_WINDOW_MINUTES
+  }
+
   const normalizedLocation = String(location || '').toLowerCase()
 
   if (normalizedLocation.includes('staff quarters')) {
@@ -56,7 +62,7 @@ export function ensureCompletionTimer(order: CompletionTimerOrder) {
     order.paymentVerifiedAt ||
     order.customerTransferredAt ||
     new Date()
-  const locationWindowMinutes = getCompletionWindowMinutes(order.location)
+  const locationWindowMinutes = getCompletionWindowMinutes(order.location, order.taskType)
   const existingWindowMinutes = Number(order.completionWindowMinutes || 0)
   const extensionMinutes = Number(order.completionExtensionMinutes || 0)
 

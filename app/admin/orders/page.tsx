@@ -343,6 +343,7 @@ export default function AdminOrdersPage() {
                   <SelectItem value="printing">Printing</SelectItem>
                   <SelectItem value="copy_notes">Copy Notes</SelectItem>
                   <SelectItem value="shopping">Shopping</SelectItem>
+                  <SelectItem value="indomie">Buy Indomie</SelectItem>
                   <SelectItem value="water">Bag of Water</SelectItem>
                   <SelectItem value="others">Others</SelectItem>
                 </SelectContent>

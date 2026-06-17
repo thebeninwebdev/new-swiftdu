@@ -388,6 +388,7 @@ export function formatPushTaskType(taskType?: string) {
     copy_notes: 'Copy notes',
     shopping: 'Shopping',
     dry_cleaning: 'Dry cleaning',
+    indomie: 'Buy indomie',
     water: 'Bag of water',
     others: 'Errand',
   }

@@ -93,6 +93,7 @@ function formatTaskType(taskType?: string) {
     copy_notes: 'copy notes',
     shopping: 'shopping',
     dry_cleaning: 'dry cleaning',
+    indomie: 'buy indomie',
     water: 'bag of water',
     others: 'errand',
   }

@@ -1,6 +1,7 @@
 'use client'
 
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
@@ -31,6 +32,8 @@ import { Button } from '@/components/ui/button'
 import { ProfileCompletionCard } from '@/components/profile-completion-card'
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { authClient } from '@/lib/auth-client'
+import { useVisibleInterval } from '@/hooks/use-visible-interval'
+import { useIdleEffect } from '@/hooks/use-idle-effect'
 import {
   calculateOrderPricing,
   descriptionMentionsWater,
@@ -43,13 +46,12 @@ import {
   WATER_BAG_FEE,
   WATER_TASK_TYPE,
   DRY_CLEANING_TASK_TYPE,
+  INDOMIE_TASK_TYPE,
 } from '@/lib/pricing'
 
 const REALTIME_PAUSE_MS = 1200
 const LOW_TASKER_NOTICE_RETURN_DATE = '2026-06-01'
 const PACKAGING_LANGUAGE_STORAGE_KEY = 'swiftdu:restaurant-packaging-language'
-const SERVICE_FEE_INCREASE_NOTICE =
-  'From June 14, 2026, SwiftDU service fee will increase to N600 per task.'
 
 type PackagingLanguage = 'pidgin' | 'english'
 
@@ -70,6 +72,8 @@ interface ErrandData {
   restaurantItemPrice: string
   restaurantPeople: string
   restaurantTakeawayCount: string
+  indomiePacks: string
+  eggCount: string
 }
 
 interface ActiveOrder {
@@ -102,6 +106,19 @@ interface TaskTypeConfig {
   accent: string
 }
 
+interface TaskTypeUsageResponse {
+  taskTypeCounts?: Record<string, number>
+}
+
+interface ExcoModeResponse {
+  excoRole?: string | null
+  testOrderMode?: boolean
+}
+
+interface ExcoOrderModeChangeDetail {
+  testOrderMode?: boolean
+}
+
 const taskTypes: TaskTypeConfig[] = [
   {
     value: 'restaurant',
@@ -110,6 +127,22 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'Food & meals',
     icon: ShoppingBag,
     accent: 'from-blue-500 to-cyan-500',
+  },
+  {
+    value: 'shopping',
+    label: 'Store Shopping',
+    description: 'Groceries, toiletries, and small campus-store items.',
+    mobileDescription: 'Groceries',
+    icon: Store,
+    accent: 'from-emerald-500 to-teal-500',
+  },
+  {
+    value: INDOMIE_TASK_TYPE,
+    label: 'Buy Indomie',
+    description: 'Indomie orders with pack and egg counts.',
+    mobileDescription: 'Noodles & eggs',
+    icon: ShoppingBag,
+    accent: 'from-rose-500 to-amber-500',
   },
   {
     value: 'printing',
@@ -126,14 +159,6 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'By page',
     icon: FileText,
     accent: 'from-amber-500 to-yellow-500',
-  },
-  {
-    value: 'shopping',
-    label: 'Store Shopping',
-    description: 'Groceries, toiletries, and small campus-store items.',
-    mobileDescription: 'Groceries',
-    icon: Store,
-    accent: 'from-emerald-500 to-teal-500',
   },
   // {
   //   value: DRY_CLEANING_TASK_TYPE,
@@ -171,7 +196,6 @@ const storeOptions: Record<string, Array<{ value: string; label: string }>> = {
     { value: 'akpan', label: 'Akpan Store' },
     { value: 'mama', label: "Mama's Kitchen" },
     { value: 'golley', label: 'Golley Shop' },
-    { value: 'indomie', label: 'Indomie Spot' },
   ],
 }
 
@@ -325,6 +349,9 @@ export default function ErrandWizardPage() {
     hasActiveReservation: boolean
     remainingOrders: number
   } | null>(null)
+  const [taskTypeUsageCounts, setTaskTypeUsageCounts] = useState<Record<string, number>>({})
+  const [hasExcoDashboardAccess, setHasExcoDashboardAccess] = useState(false)
+  const [isExcoTrainingMode, setIsExcoTrainingMode] = useState(false)
   const socketRef = useRef<Socket | null>(null)
   const activeOrderRef = useRef<ActiveOrder | null>(null)
   const fetchingActiveOrderRef = useRef(false)
@@ -349,8 +376,26 @@ export default function ErrandWizardPage() {
     restaurantItemPrice: '',
     restaurantPeople: '1',
     restaurantTakeawayCount: '',
+    indomiePacks: '',
+    eggCount: '',
   })
   const sessionUserId = session?.user?.id
+
+  const sortedTaskTypes = useMemo(() => {
+    const originalIndex = new Map(taskTypes.map((item, index) => [item.value, index]))
+
+    return [...taskTypes].sort((left, right) => {
+      const usageDifference =
+        Number(taskTypeUsageCounts[right.value] || 0) -
+        Number(taskTypeUsageCounts[left.value] || 0)
+
+      if (usageDifference !== 0) {
+        return usageDifference
+      }
+
+      return Number(originalIndex.get(left.value) || 0) - Number(originalIndex.get(right.value) || 0)
+    })
+  }, [taskTypeUsageCounts])
 
 
 
@@ -362,7 +407,7 @@ export default function ErrandWizardPage() {
   //   if(activeOrder) router.replace(`/dashboard/tasks/${activeOrder._id}`)
   // },[activeOrder])
 
-  useEffect(() => {
+  useIdleEffect(() => {
     if (!sessionUserId) {
       setServiceFeeDiscount(null)
       return
@@ -393,6 +438,89 @@ export default function ErrandWizardPage() {
       ignore = true
     }
   }, [sessionUserId, activeOrder?._id, activeOrder?.status])
+
+  useIdleEffect(() => {
+    if (!sessionUserId) {
+      setTaskTypeUsageCounts({})
+      return
+    }
+
+    let ignore = false
+
+    async function loadTaskTypeUsage() {
+      try {
+        const response = await fetch('/api/orders?taskTypeUsage=true', {
+          cache: 'no-store',
+        })
+        const payload: TaskTypeUsageResponse = await response.json()
+
+        if (!ignore) {
+          setTaskTypeUsageCounts(response.ok && payload.taskTypeCounts ? payload.taskTypeCounts : {})
+        }
+      } catch {
+        if (!ignore) {
+          setTaskTypeUsageCounts({})
+        }
+      }
+    }
+
+    void loadTaskTypeUsage()
+
+    return () => {
+      ignore = true
+    }
+  }, [sessionUserId])
+
+  useIdleEffect(() => {
+    if (!sessionUserId) {
+      setHasExcoDashboardAccess(false)
+      setIsExcoTrainingMode(false)
+      return
+    }
+
+    let ignore = false
+
+    async function loadExcoMode() {
+      try {
+        const response = await fetch('/api/exco/me', {
+          cache: 'no-store',
+        })
+        const payload: ExcoModeResponse = await response.json()
+        const hasAccess = response.ok && Boolean(payload.excoRole)
+
+        if (!ignore) {
+          setHasExcoDashboardAccess(hasAccess)
+          setIsExcoTrainingMode(hasAccess && payload.testOrderMode === true)
+        }
+      } catch {
+        if (!ignore) {
+          setHasExcoDashboardAccess(false)
+          setIsExcoTrainingMode(false)
+        }
+      }
+    }
+
+    const handleModeChange = (event: Event) => {
+      const detail = (event as CustomEvent<ExcoOrderModeChangeDetail>).detail
+
+      setHasExcoDashboardAccess(true)
+      setIsExcoTrainingMode(detail?.testOrderMode === true)
+    }
+
+    const handleFocus = () => {
+      void loadExcoMode()
+    }
+
+    void loadExcoMode()
+    window.addEventListener('swiftdu-exco-order-mode-changed', handleModeChange)
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      ignore = true
+      window.removeEventListener('swiftdu-exco-order-mode-changed', handleModeChange)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, [sessionUserId])
 
   const fetchCurrentOrder = useCallback(async () => {
     if (fetchingActiveOrderRef.current) return
@@ -496,15 +624,10 @@ export default function ErrandWizardPage() {
     }
   }, [])
 
-  useEffect(() => {
-    if (!mounted) return
-
-    const interval = window.setInterval(() => {
-      setCurrentTime(new Date())
-    }, 1000)
-
-    return () => window.clearInterval(interval)
-  }, [mounted])
+  useVisibleInterval(
+    () => setCurrentTime(new Date()),
+    mounted && !isTaskerAvailabilityNoticeDismissed ? 60_000 : null
+  )
 
   useEffect(() => {
     if (!mounted) return
@@ -534,7 +657,7 @@ export default function ErrandWizardPage() {
     }
 
     const activeOrderId = activeOrder._id
-    const socket = io({ withCredentials: true, transports: ['websocket'] })
+    const socket = io({ withCredentials: true })
     socketRef.current = socket
 
     socket.on('connect', () => {
@@ -624,6 +747,9 @@ export default function ErrandWizardPage() {
   const shoppingBudget = parseMoneyInput(formData.amount)
   const shoppingDescription = formData.description.trim()
   const dryCleaningDescription = formData.description.trim()
+  const indomieDescription = formData.description.trim()
+  const indomiePacks = Number(formData.indomiePacks || 0)
+  const eggCount = Number(formData.eggCount || 0)
   const waterBags = Number(formData.waterBags || 0)
   const numberOfPages = Number(formData.numberOfPages || 0)
   const printingLabel =
@@ -631,7 +757,7 @@ export default function ErrandWizardPage() {
   const effectiveDescription =
     formData.taskType === 'restaurant'
       ? restaurantDescription
-      : formData.taskType === 'shopping' || formData.taskType === DRY_CLEANING_TASK_TYPE
+      : formData.taskType === 'shopping' || formData.taskType === DRY_CLEANING_TASK_TYPE || formData.taskType === INDOMIE_TASK_TYPE
         ? shoppingDescription
         : formData.taskType === PRINTING_TASK_TYPE
           ? [
@@ -646,7 +772,7 @@ export default function ErrandWizardPage() {
   const amount =
     formData.taskType === 'restaurant'
       ? restaurantBudget
-      : formData.taskType === 'shopping' || formData.taskType === DRY_CLEANING_TASK_TYPE
+      : formData.taskType === 'shopping' || formData.taskType === DRY_CLEANING_TASK_TYPE || formData.taskType === INDOMIE_TASK_TYPE
         ? shoppingBudget
         : formData.taskType === PRINTING_TASK_TYPE
           ? 0
@@ -660,6 +786,8 @@ export default function ErrandWizardPage() {
     restaurantPeopleCount: normalizedRestaurantPeopleCount,
     restaurantTakeawayCount: normalizedRestaurantTakeawayCount,
     waterBags: Number.isFinite(waterBags) ? waterBags : 0,
+    indomiePacks: Number.isFinite(indomiePacks) ? indomiePacks : 0,
+    eggCount: Number.isFinite(eggCount) ? eggCount : 0,
     noteSize: formData.noteSize,
     numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
     printingServiceType: formData.printingServiceType,
@@ -822,6 +950,8 @@ export default function ErrandWizardPage() {
       restaurantItemPrice: '',
       restaurantPeople: '1',
       restaurantTakeawayCount: '',
+      indomiePacks: '',
+      eggCount: '',
       amount:
         value === 'copy_notes' ||
         value === WATER_TASK_TYPE ||
@@ -844,6 +974,8 @@ export default function ErrandWizardPage() {
       'restaurantItemPrice',
       'restaurantPeople',
       'restaurantTakeawayCount',
+      'indomiePacks',
+      'eggCount',
     ].forEach(clearError)
     setStep(2)
     setErrors({})
@@ -871,6 +1003,7 @@ if (stepNumber === 2) {
     formData.taskType !== 'others' &&
     formData.taskType !== 'copy_notes' &&
     formData.taskType !== DRY_CLEANING_TASK_TYPE &&
+    formData.taskType !== INDOMIE_TASK_TYPE &&
     formData.taskType !== WATER_TASK_TYPE &&
     !formData.store
   ) {
@@ -907,6 +1040,24 @@ if (stepNumber === 2) {
 
     if (!Number.isFinite(shoppingBudget) || shoppingBudget <= 0) {
       nextErrors.amount = 'Enter a valid shopping budget.'
+    }
+  }
+
+  if (formData.taskType === INDOMIE_TASK_TYPE) {
+    if (!Number.isInteger(indomiePacks) || indomiePacks < 1) {
+      nextErrors.indomiePacks = 'Enter how many indomie packs.'
+    }
+
+    if (!Number.isInteger(eggCount) || eggCount < 0) {
+      nextErrors.eggCount = 'Enter how many eggs.'
+    }
+
+    if (indomieDescription && indomieDescription.length < 5) {
+      nextErrors.description = 'Use at least 5 characters.'
+    }
+
+    if (!Number.isFinite(shoppingBudget) || shoppingBudget <= 0) {
+      nextErrors.amount = 'Enter a valid indomie budget.'
     }
   }
 
@@ -971,6 +1122,7 @@ if (stepNumber === 2) {
     formData.taskType !== 'restaurant' &&
     formData.taskType !== 'shopping' &&
     formData.taskType !== DRY_CLEANING_TASK_TYPE &&
+    formData.taskType !== INDOMIE_TASK_TYPE &&
     formData.taskType !== PRINTING_TASK_TYPE
   ) {
     if (!description) {
@@ -989,6 +1141,7 @@ if (stepNumber === 2) {
     formData.taskType !== 'restaurant' &&
     formData.taskType !== 'shopping' &&
     formData.taskType !== DRY_CLEANING_TASK_TYPE &&
+    formData.taskType !== INDOMIE_TASK_TYPE &&
     formData.taskType !== WATER_TASK_TYPE &&
     (formData.amount === '' || !Number.isFinite(amount) || amount < 0)
   ) {
@@ -1066,6 +1219,10 @@ if (stepNumber === 2) {
               : undefined,
           printingServiceType: formData.printingServiceType,
           printingNeedsEditing: formData.printingNeedsEditing === 'yes',
+          indomiePacks:
+            formData.taskType === INDOMIE_TASK_TYPE ? indomiePacks : undefined,
+          eggCount:
+            formData.taskType === INDOMIE_TASK_TYPE ? eggCount : undefined,
         }),
       })
 
@@ -1078,6 +1235,10 @@ if (stepNumber === 2) {
       const createdOrder = await response.json()
       toast.success(createdOrder.isTestOrder ? 'Training order posted successfully.' : 'Task posted successfully. Taskers can see it now.')
       setActiveOrder(createdOrder)
+      setTaskTypeUsageCounts((previous) => ({
+        ...previous,
+        [formData.taskType]: Number(previous[formData.taskType] || 0) + 1,
+      }))
       setFormData({
         taskType: 'restaurant',
         description: '',
@@ -1095,6 +1256,8 @@ if (stepNumber === 2) {
         restaurantItemPrice: '',
         restaurantPeople: '1',
         restaurantTakeawayCount: '',
+        indomiePacks: '',
+        eggCount: '',
       })
       setStep(2)
       router.push(`/dashboard/tasks/${createdOrder._id}`)
@@ -1169,23 +1332,12 @@ if (stepNumber === 2) {
       <span className={className}>{formatNaira(displayedServiceFee)}</span>
     )
 
-  const renderServiceFeeIncreaseNotice = (className = '') => (
-    <div
-      className={`rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100 ${className}`}
-    >
-      <div className="flex items-start gap-3">
-        <Info className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-300" />
-        <p className="font-semibold">{SERVICE_FEE_INCREASE_NOTICE}</p>
-      </div>
-    </div>
-  )
-
   const selectedTask = taskTypes.find((item) => item.value === formData.taskType) || taskTypes[0]
   const quickLocations = ['Amnesty Hostel', 'Girls Hostel', 'PLT', 'Library', 'NDDC Auditorium']
 
   const renderCategoryCards = (compact = false) => (
     <div className={compact ? 'space-y-2.5' : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-6'}>
-      {taskTypes.map((item) => {
+      {sortedTaskTypes.map((item) => {
         const Icon = item.icon
         const selected = formData.taskType === item.value
         return (
@@ -1231,6 +1383,7 @@ if (stepNumber === 2) {
     formData.taskType &&
     formData.taskType !== 'copy_notes' &&
     formData.taskType !== DRY_CLEANING_TASK_TYPE &&
+    formData.taskType !== INDOMIE_TASK_TYPE &&
     formData.taskType !== WATER_TASK_TYPE ? (
       <div>
         <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">
@@ -1417,6 +1570,89 @@ if (stepNumber === 2) {
               onChange={handleInputChange}
               placeholder="1,500"
               className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 dark:border-slate-800 dark:bg-slate-900"
+            />
+            {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
+          </div>
+        </>
+      ) : null}
+
+      {formData.taskType === INDOMIE_TASK_TYPE ? (
+        <>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">How many indomie?</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="1"
+                name="indomiePacks"
+                value={formData.indomiePacks}
+                onChange={handleInputChange}
+                placeholder="2"
+                className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 dark:border-slate-800 dark:bg-slate-900"
+              />
+              {errors.indomiePacks ? <p className="mt-2 text-sm text-red-500">{errors.indomiePacks}</p> : null}
+            </div>
+            <div>
+              <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">How many eggs?</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                name="eggCount"
+                value={formData.eggCount}
+                onChange={handleInputChange}
+                placeholder="1"
+                className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 dark:border-slate-800 dark:bg-slate-900"
+              />
+              {errors.eggCount ? <p className="mt-2 text-sm text-red-500">{errors.eggCount}</p> : null}
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <label className="block text-sm font-bold text-slate-900 dark:text-slate-100">Description (optional)</label>
+            </div>
+            <div className="relative">
+              <textarea
+                name="description"
+                value={formData.description}
+                onChange={handleInputChange}
+                rows={3}
+                placeholder="E.g. spicy, no pepper, add onions..."
+                className="w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 pb-14 text-sm outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 dark:border-slate-800 dark:bg-slate-900"
+              />
+              {isSpeechSupported === true ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    pauseRealtime()
+                    if (isSpeechListening) {
+                      stopListening()
+                      return
+                    }
+                    startListening(formData.description)
+                  }}
+                  className={`absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-rose-600 text-white shadow-lg shadow-rose-500/20 transition hover:bg-rose-700 ${
+                    isSpeechListening ? 'animate-pulse ring-4 ring-rose-500/20' : ''
+                  }`}
+                  aria-label={isSpeechListening ? 'Stop listening' : 'Say your indomie instructions'}
+                >
+                  {isSpeechListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </button>
+              ) : null}
+            </div>
+            {errors.description ? <p className="mt-2 text-sm text-red-500">{errors.description}</p> : null}
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Amount</label>
+            <input
+              type="text"
+              inputMode="numeric"
+              name="amount"
+              value={formData.amount}
+              onChange={handleInputChange}
+              placeholder="1,500"
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 dark:border-slate-800 dark:bg-slate-900"
             />
             {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
           </div>
@@ -1673,9 +1909,21 @@ if (stepNumber === 2) {
           </div>
         </>
       ) : null}
+      {formData.taskType === INDOMIE_TASK_TYPE ? (
+        <>
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500">Indomie</span>
+            <span className="font-semibold">{formData.indomiePacks || '0'}</span>
+          </div>
+          <div className="flex justify-between gap-4">
+            <span className="text-slate-500">Eggs</span>
+            <span className="font-semibold">{formData.eggCount || '0'}</span>
+          </div>
+        </>
+      ) : null}
       <div className="border-t border-slate-200 pt-3 dark:border-slate-800">
         <div className="flex justify-between text-xs text-slate-500">
-          <span>{pricing.pricingModel === 'water' ? 'Water and errand fee' : pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === DRY_CLEANING_TASK_TYPE ? 'Dry cleaning budget' : 'Budget'}</span>
+          <span>{pricing.pricingModel === 'water' ? 'Water and errand fee' : pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === INDOMIE_TASK_TYPE ? 'Indomie amount' : formData.taskType === DRY_CLEANING_TASK_TYPE ? 'Dry cleaning budget' : 'Budget'}</span>
           <span>{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span>
         </div>
         <div className="mt-2 flex justify-between text-xs text-slate-500">
@@ -1687,13 +1935,27 @@ if (stepNumber === 2) {
           <span className="text-2xl font-black text-slate-950 dark:text-white">{formatNaira(displayedTotalAmount)}</span>
         </div>
       </div>
-      {renderServiceFeeIncreaseNotice()}
     </div>
   )
 
   const renderTopNotices = () => (
     <div className="space-y-3 px-3 min-[390px]:px-4 lg:px-0">
-      {renderServiceFeeIncreaseNotice()}
+      {hasExcoDashboardAccess && isExcoTrainingMode ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950 shadow-sm dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
+          <div className="flex items-start gap-3">
+            <span className="relative mt-1 flex h-3 w-3 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-red-600" />
+            </span>
+            <div>
+              <p className="font-black">Training Mode is active</p>
+              <p className="mt-1 font-semibold">
+                Orders you create here are training orders, not live customer transactions.
+              </p>
+            </div>
+          </div>
+        </div>
+      ) : null}
       {showLowTaskerAvailabilityNotice ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
           <p className="font-bold">Taskers may be in class right now</p>
@@ -1745,7 +2007,7 @@ if (stepNumber === 2) {
         <div className="flex min-h-44 items-center justify-between gap-8 bg-linear-to-r from-blue-50 via-white to-cyan-50 px-8 py-8 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900">
           <div>
             <div className="flex items-center gap-3 text-2xl font-black text-slate-950 dark:text-white">
-              <img src="/logo.png" alt="Swiftdu" className="h-9 w-9 rounded-lg object-contain" />
+              <Image src="/logo.png" alt="Swiftdu" width={36} height={36} className="rounded-lg object-contain" />
               Swiftdu
             </div>
             <h1 className="mt-8 text-3xl font-black tracking-tight text-slate-950 dark:text-white">What would you like to order today?</h1>
@@ -2046,7 +2308,7 @@ if (stepNumber === 2) {
                     <p className="mt-2 text-slate-500 dark:text-slate-400">Choose the category that fits this errand.</p>
                   </div>
                   <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-4">
-                    {taskTypes.map((item) => {
+                    {sortedTaskTypes.map((item) => {
                       const Icon = item.icon
                       const selected = formData.taskType === item.value
                       return (
@@ -2084,6 +2346,7 @@ if (stepNumber === 2) {
                   formData.taskType !== 'others' &&
                   formData.taskType !== 'copy_notes' &&
                   formData.taskType !== DRY_CLEANING_TASK_TYPE &&
+                  formData.taskType !== INDOMIE_TASK_TYPE &&
                   formData.taskType !== WATER_TASK_TYPE ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Store className="h-4 w-4 text-indigo-500" />Select Store</label>
@@ -2665,6 +2928,109 @@ if (stepNumber === 2) {
                       ) : null}
                     </div>
                   ) : null}
+                  {formData.taskType === INDOMIE_TASK_TYPE ? (
+                    <div className="space-y-3">
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                          <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            <ShoppingBag className="h-4 w-4 text-rose-500" />
+                            How many indomie?
+                          </label>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="1"
+                            name="indomiePacks"
+                            value={formData.indomiePacks}
+                            onChange={handleInputChange}
+                            placeholder="2"
+                            className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 dark:border-slate-700 dark:bg-slate-800"
+                          />
+                          {errors.indomiePacks ? <p className="mt-2 text-sm text-red-500">{errors.indomiePacks}</p> : null}
+                        </div>
+                        <div>
+                          <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                            <ShoppingBag className="h-4 w-4 text-rose-500" />
+                            How many eggs?
+                          </label>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="0"
+                            name="eggCount"
+                            value={formData.eggCount}
+                            onChange={handleInputChange}
+                            placeholder="1"
+                            className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 dark:border-slate-700 dark:bg-slate-800"
+                          />
+                          {errors.eggCount ? <p className="mt-2 text-sm text-red-500">{errors.eggCount}</p> : null}
+                        </div>
+                      </div>
+                      <div>
+                        <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <FileText className="h-4 w-4 text-rose-500" />
+                          Description (optional)
+                        </label>
+                        <div className="relative mt-2">
+                          <textarea
+                            name="description"
+                            value={formData.description}
+                            onChange={handleInputChange}
+                            placeholder="Describe how you want it. Example: spicy, no pepper, add onions..."
+                            rows={4}
+                            className="w-full resize-none rounded-xl border-2 border-slate-200 bg-white px-4 py-3 pb-14 outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 dark:border-slate-700 dark:bg-slate-800"
+                          />
+                          {isSpeechSupported === true ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                pauseRealtime()
+                                if (isSpeechListening) {
+                                  stopListening()
+                                  return
+                                }
+                                startListening(formData.description)
+                              }}
+                              className={`absolute bottom-3 right-3 flex h-10 w-10 items-center justify-center rounded-full bg-rose-600 text-white shadow-lg shadow-rose-500/20 transition hover:bg-rose-700 ${
+                                isSpeechListening ? 'animate-pulse ring-4 ring-rose-500/20' : ''
+                              }`}
+                              aria-label={isSpeechListening ? 'Stop listening' : 'Say your indomie instructions'}
+                            >
+                              {isSpeechListening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                            </button>
+                          ) : null}
+                        </div>
+                        {errors.description ? <p className="mt-2 text-sm text-red-500">{errors.description}</p> : null}
+                      </div>
+                      <div>
+                        <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                          <Wallet className="h-4 w-4 text-rose-500" />
+                          Amount
+                        </label>
+                        <div className="relative">
+                          <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">â‚¦</span>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            name="amount"
+                            value={formData.amount}
+                            onChange={handleInputChange}
+                            placeholder="1,500"
+                            className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 pl-9 font-mono text-lg outline-none focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 dark:border-slate-700 dark:bg-slate-800"
+                          />
+                        </div>
+                        {errors.amount ? <p className="mt-2 text-sm text-red-500">{errors.amount}</p> : null}
+                      </div>
+                      <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-100">
+                        Amount is {formatNaira(shoppingBudget)} before SwiftDU service fee.
+                        {shouldShowTieredServiceFee ? (
+                          <span className="block pt-1 font-semibold">
+                            Service fee for this amount is {formatNaira(displayedServiceFee)}.
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  ) : null}
                   {formData.taskType === DRY_CLEANING_TASK_TYPE ? (
                     <div className="space-y-3">
                       <div>
@@ -2746,7 +3112,7 @@ if (stepNumber === 2) {
                       </div>
                     </div>
                   ) : null}
-                  {formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== DRY_CLEANING_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
+                  {formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== DRY_CLEANING_TASK_TYPE && formData.taskType !== INDOMIE_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                         <FileText className="h-4 w-4 text-indigo-500" />
@@ -2773,7 +3139,7 @@ if (stepNumber === 2) {
                       ) : null}
                     </div>
                   ) : null}
-                  {formData.taskType !== 'copy_notes' && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== DRY_CLEANING_TASK_TYPE && formData.taskType !== WATER_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
+                  {formData.taskType !== 'copy_notes' && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== DRY_CLEANING_TASK_TYPE && formData.taskType !== INDOMIE_TASK_TYPE && formData.taskType !== WATER_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
                   <div>
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Wallet className="h-4 w-4 text-indigo-500" />Item Budget (NGN)</label>
                     <div className="relative">
@@ -2985,6 +3351,12 @@ if (stepNumber === 2) {
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">People</span><span className="text-right text-slate-900 dark:text-slate-100">{normalizedRestaurantPeopleCount}</span></div> : null}
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Packaging</span><span className="text-right text-slate-900 dark:text-slate-100">{normalizedRestaurantTakeawayCount > 0 ? `${normalizedRestaurantTakeawayCount} takeaway${normalizedRestaurantTakeawayCount === 1 ? '' : 's'}` : 'Cellophane'}</span></div> : null}
                       {formData.taskType === WATER_TASK_TYPE ? <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Water bags</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.waterBags}</span></div> : null}
+                      {formData.taskType === INDOMIE_TASK_TYPE ? (
+                        <>
+                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Indomie</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.indomiePacks}</span></div>
+                          <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Eggs</span><span className="text-right text-slate-900 dark:text-slate-100">{formData.eggCount || '0'}</span></div>
+                        </>
+                      ) : null}
                       {formData.taskType === PRINTING_TASK_TYPE ? (
                         <>
                           <div className="flex justify-between gap-6 border-t border-slate-200 pt-3 dark:border-slate-700"><span className="text-slate-500">Service</span><span className="text-right text-slate-900 dark:text-slate-100">{printingLabel}</span></div>
@@ -3014,10 +3386,9 @@ if (stepNumber === 2) {
                           </p>
                         </div>
                       ) : null}
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : formData.taskType === DRY_CLEANING_TASK_TYPE ? 'Dry cleaning budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : formData.taskType === INDOMIE_TASK_TYPE ? 'Indomie amount' : formData.taskType === DRY_CLEANING_TASK_TYPE ? 'Dry cleaning budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span></div>
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between text-sm"><span className="text-slate-500">Packaging</span><span className="font-medium">{restaurantPackagingNote}</span></div> : null}
                       <div className="flex justify-between gap-4 text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span>{renderServiceFeeAmount('font-medium')}</div>
-                      {renderServiceFeeIncreaseNotice()}
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(displayedTotalAmount)}</span></div>
                     </div>
                   </div>

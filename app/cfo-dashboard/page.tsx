@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
-import ExcoDashboard from "@/components/exco-dashboard";
+import { ExcoDashboardLoader } from "@/components/exco-dashboard-loader";
 import { getExcoAccess } from "@/lib/exco";
 
 export const metadata: Metadata = {
@@ -16,5 +16,5 @@ export default async function CfoDashboardPage() {
   if (!access.isAuthenticated) redirect("/login");
   if (access.excoRole !== "CFO") redirect("/dashboard");
 
-  return <ExcoDashboard role="CFO" />;
+  return <ExcoDashboardLoader role="CFO" />;
 }

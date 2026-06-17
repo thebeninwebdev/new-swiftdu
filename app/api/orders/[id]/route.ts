@@ -21,6 +21,7 @@ import {
   RESTAURANT_MAX_PEOPLE,
   WATER_TASK_TYPE,
   DRY_CLEANING_TASK_TYPE,
+  INDOMIE_TASK_TYPE,
 } from '@/lib/pricing';
 import {
   formatPushTaskType,
@@ -28,7 +29,7 @@ import {
 } from '@/lib/push-notifications';
 import { shouldSendOrderNotification } from '@/lib/test-orders';
 
-const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes', DRY_CLEANING_TASK_TYPE]);
+const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes', DRY_CLEANING_TASK_TYPE, INDOMIE_TASK_TYPE]);
 const COMPLETION_EXTENSION_MINUTES = 10;
 
 export async function PATCH(
@@ -82,6 +83,8 @@ export async function PATCH(
       restaurantPeopleCount,
       restaurantTakeawayCount,
       waterBags,
+      indomiePacks,
+      eggCount,
       noteSize,
       numberOfPages,
       printingServiceType,
@@ -218,6 +221,8 @@ export async function PATCH(
       restaurantPeopleCount !== undefined ||
       restaurantTakeawayCount !== undefined ||
       waterBags !== undefined ||
+      indomiePacks !== undefined ||
+      eggCount !== undefined ||
       noteSize !== undefined ||
       numberOfPages !== undefined ||
       deadline !== undefined ||
@@ -237,6 +242,8 @@ export async function PATCH(
         store === undefined &&
         packaging === undefined &&
         waterBags === undefined &&
+        indomiePacks === undefined &&
+        eggCount === undefined &&
         noteSize === undefined &&
         numberOfPages === undefined &&
         deadline === undefined &&
@@ -386,7 +393,7 @@ export async function PATCH(
       const nextTaskType = taskType !== undefined ? String(taskType) : order.taskType;
       const nextCafeInquiry = nextTaskType === 'restaurant' && cafeInquiry === true;
       const nextDescription =
-        description !== undefined ? String(description).trim() : order.description;
+        description !== undefined ? String(description).trim() : order.description || '';
       const nextAmount =
         amount !== undefined
           ? Number(amount)
@@ -425,6 +432,18 @@ export async function PATCH(
           : order.taskType === WATER_TASK_TYPE
             ? Number(order.waterBags || 0)
             : undefined;
+      const nextIndomiePacks =
+        nextTaskType === INDOMIE_TASK_TYPE
+          ? indomiePacks !== undefined
+            ? Number(indomiePacks)
+            : Number(order.indomiePacks || 0)
+          : undefined;
+      const nextEggCount =
+        nextTaskType === INDOMIE_TASK_TYPE
+          ? eggCount !== undefined
+            ? Number(eggCount)
+            : Number(order.eggCount || 0)
+          : undefined;
       const nextNoteSize = normalizeNoteSize(
         noteSize !== undefined
           ? String(noteSize)
@@ -460,7 +479,7 @@ export async function PATCH(
           : deadlineDate !== undefined
             ? new Date(String(deadlineDate).trim())
             : order.taskType === 'copy_notes' && (order.dueDate || order.deadline || order.deadlineDate)
-            ? new Date(order.dueDate || order.deadline || order.deadlineDate)
+            ? new Date((order.dueDate || order.deadline || order.deadlineDate) as Date)
             : undefined;
 
       if (
@@ -565,14 +584,44 @@ export async function PATCH(
       if (nextTaskType === 'shopping' || nextTaskType === DRY_CLEANING_TASK_TYPE) {
         if (nextDescription.length < 5) {
           return NextResponse.json(
-            { error: nextTaskType === DRY_CLEANING_TASK_TYPE ? 'Describe the clothes you want cleaned.' : 'Describe the items you want.' },
+            {
+              error:
+                nextTaskType === DRY_CLEANING_TASK_TYPE
+                  ? 'Describe the clothes you want cleaned.'
+                  : 'Describe the items you want.',
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      if (nextTaskType === 'shopping' || nextTaskType === DRY_CLEANING_TASK_TYPE || nextTaskType === INDOMIE_TASK_TYPE) {
+        if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+          return NextResponse.json(
+            {
+              error:
+                nextTaskType === DRY_CLEANING_TASK_TYPE
+                  ? 'Enter a valid dry cleaning budget.'
+                  : nextTaskType === INDOMIE_TASK_TYPE
+                    ? 'Enter a valid indomie budget.'
+                    : 'Enter a valid shopping budget.',
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      if (nextTaskType === INDOMIE_TASK_TYPE) {
+        if (!Number.isInteger(nextIndomiePacks) || Number(nextIndomiePacks) < 1) {
+          return NextResponse.json(
+            { error: 'Enter how many indomie packs you want.' },
             { status: 400 }
           );
         }
 
-        if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
+        if (!Number.isInteger(nextEggCount) || Number(nextEggCount) < 0) {
           return NextResponse.json(
-            { error: nextTaskType === DRY_CLEANING_TASK_TYPE ? 'Enter a valid dry cleaning budget.' : 'Enter a valid shopping budget.' },
+            { error: 'Enter how many eggs you want.' },
             { status: 400 }
           );
         }
@@ -588,6 +637,8 @@ export async function PATCH(
         restaurantPeopleCount: nextRestaurantPeopleCount,
         restaurantTakeawayCount: nextRestaurantTakeawayCount,
         waterBags: nextWaterBags,
+        indomiePacks: nextIndomiePacks,
+        eggCount: nextEggCount,
         noteSize: nextNoteSize,
         numberOfPages: nextNumberOfPages,
         printingServiceType: nextPrintingServiceType,
@@ -609,7 +660,7 @@ export async function PATCH(
       order.description = nextDescription;
       order.amount = pricing.amount;
       order.itemPrice =
-        nextTaskType === 'restaurant' || nextTaskType === 'shopping' || nextTaskType === DRY_CLEANING_TASK_TYPE ? nextAmount : undefined;
+        nextTaskType === 'restaurant' || nextTaskType === 'shopping' || nextTaskType === DRY_CLEANING_TASK_TYPE || nextTaskType === INDOMIE_TASK_TYPE ? nextAmount : undefined;
       order.commission = settlement.serviceFee;
       order.platformFee = settlement.platformFee;
       order.taskerFee = settlement.taskerFee;
@@ -631,6 +682,8 @@ export async function PATCH(
       order.cafeInquiryDetailsSubmitted = !nextCafeInquiry;
       order.waterBags = pricing.waterBags || undefined;
       order.waterFee = pricing.waterFee;
+      order.indomiePacks = nextTaskType === INDOMIE_TASK_TYPE ? pricing.indomiePacks : undefined;
+      order.eggCount = nextTaskType === INDOMIE_TASK_TYPE ? pricing.eggCount : undefined;
       order.noteSize = pricing.noteSize;
       order.numberOfPages = pricing.numberOfPages;
       order.printingServiceType = pricing.printingServiceType;
@@ -682,6 +735,7 @@ export async function PATCH(
       order.store =
         nextTaskType === 'copy_notes' ||
         nextTaskType === WATER_TASK_TYPE ||
+        nextTaskType === INDOMIE_TASK_TYPE ||
         nextTaskType === DRY_CLEANING_TASK_TYPE
           ? undefined
           : nextStore;
@@ -795,9 +849,10 @@ export async function PATCH(
 
         order.status = 'completed';
         order.completedAt = new Date();
-        const completedBeforeTimer =
-          Boolean(order.completionDueAt) &&
-          order.completedAt.getTime() <= order.completionDueAt.getTime();
+        const completionDueAt = order.completionDueAt;
+        const completedBeforeTimer = completionDueAt
+          ? order.completedAt.getTime() <= completionDueAt.getTime()
+          : false;
 
         order.completedBeforeTimer = completedBeforeTimer;
         order.platformFeeWaivedForFastCompletion =

@@ -43,6 +43,7 @@ const taskTypeLabels: Record<string, string> = {
   printing: 'Printing',
   copy_notes: 'Copy Notes',
   shopping: 'Shopping',
+  indomie: 'Buy Indomie',
   dry_cleaning: 'Dry Cleaning',
   water: 'Bag of Water',
   others: 'General Errand',

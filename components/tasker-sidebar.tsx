@@ -20,6 +20,7 @@ import { toast } from 'sonner'
 
 import { authClient } from '@/lib/auth-client'
 import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
+import { useIdleEffect } from '@/hooks/use-idle-effect'
 
 interface UnpaidOrder {
   _id: string
@@ -138,7 +139,7 @@ export default function TaskerSidebar() {
     }
   }, [])
 
-  useEffect(() => {
+  useIdleEffect(() => {
     const fetchTaskerProfileAndStats = async () => {
       try {
         const { data } = await authClient.getSession()

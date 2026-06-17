@@ -13,6 +13,7 @@ export const PRINTING_PRICE_PER_PAGE = 100
 export const PHOTOCOPY_PRICE_PER_PAGE = 50
 export const COPY_NOTES_TASK_TYPE = 'copy_notes'
 export const DRY_CLEANING_TASK_TYPE = 'dry_cleaning'
+export const INDOMIE_TASK_TYPE = 'indomie'
 export const COPY_NOTES_SMALL_PRICE_PER_TWO_PAGES = 250
 export const COPY_NOTES_BIG_PRICE_PER_TWO_PAGES = 450
 
@@ -97,6 +98,8 @@ export interface PricingResult {
   restaurantPeopleCount?: number
   restaurantTakeawayCount?: number
   restaurantPackagingFee?: number
+  indomiePacks?: number
+  eggCount?: number
 }
 
 export interface CopyNotesPricingInput {
@@ -194,6 +197,8 @@ export function calculateOrderPricing(input: {
   printingServiceType?: string
   printingNeedsEditing?: boolean
   cafeInquiry?: boolean
+  indomiePacks?: number
+  eggCount?: number
 }) {
   const amount = roundNaira(input.amount)
 
@@ -327,6 +332,22 @@ export function calculateOrderPricing(input: {
       totalAmount: roundNaira(amount + serviceFee),
       pricingModel: 'tiered' as const,
       waterFee: 0,
+    } satisfies PricingResult
+  }
+
+  if (input.taskType === INDOMIE_TASK_TYPE) {
+    const serviceFee = getTieredServiceFee(amount)
+    const indomiePacks = Number(input.indomiePacks || 0)
+    const eggCount = Number(input.eggCount || 0)
+
+    return {
+      amount,
+      serviceFee,
+      totalAmount: roundNaira(amount + serviceFee),
+      pricingModel: 'tiered' as const,
+      waterFee: 0,
+      indomiePacks: Number.isFinite(indomiePacks) ? indomiePacks : 0,
+      eggCount: Number.isFinite(eggCount) ? eggCount : 0,
     } satisfies PricingResult
   }
 

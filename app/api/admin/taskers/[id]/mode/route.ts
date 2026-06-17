@@ -23,7 +23,7 @@ export async function PATCH(
       (session?.user as { excoRole?: string | null } | undefined)?.excoRole
     )
 
-    if (!session?.user || (session.user.role !== 'admin' && excoRole !== 'COO')) {
+    if (!session?.user || (session.user.role !== 'admin' && !excoRole)) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 

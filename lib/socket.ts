@@ -32,6 +32,8 @@ export type OrderSocketPayload = {
   restaurantPeopleCount?: number
   restaurantTakeawayCount?: number
   restaurantPackagingFee?: number
+  indomiePacks?: number
+  eggCount?: number
   acceptedAt?: string
   createdAt?: string
   paymentStatus?: string
@@ -77,6 +79,8 @@ type SocketOrderLike = {
   restaurantPeopleCount?: number
   restaurantTakeawayCount?: number
   restaurantPackagingFee?: number
+  indomiePacks?: number
+  eggCount?: number
   acceptedAt?: Date | string
   createdAt?: Date | string
   paymentStatus?: string
@@ -147,6 +151,8 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     restaurantPeopleCount: order.restaurantPeopleCount,
     restaurantTakeawayCount: order.restaurantTakeawayCount,
     restaurantPackagingFee: order.restaurantPackagingFee,
+    indomiePacks: order.indomiePacks,
+    eggCount: order.eggCount,
     acceptedAt: serializeDate(order.acceptedAt),
     createdAt: serializeDate(order.createdAt),
     paymentStatus: order.paymentStatus,

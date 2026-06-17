@@ -85,7 +85,7 @@ export async function GET(req: NextRequest) {
     // Get tasker details
     const taskerIds = orders
       .map(o => o.taskerId)
-      .filter(id => id)
+      .filter((id): id is NonNullable<typeof id> => Boolean(id))
       .map(id => id.toString())
 
     const taskers = await Tasker.find({ _id: { $in: taskerIds } })

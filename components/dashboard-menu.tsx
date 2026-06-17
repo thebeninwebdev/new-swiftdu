@@ -4,6 +4,7 @@ import {useState, useEffect} from 'react'
 import {useRouter, usePathname} from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
 import {ChevronLeft, LogOut, PlusCircle, ListTodo, User, Bell, UserPlus, Star, BriefcaseBusiness, Shirt, Menu, X} from 'lucide-react'
+import { useIdleEffect } from '@/hooks/use-idle-effect'
 
 
 // Navigation items configuration
@@ -114,7 +115,7 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
       }
 
   // Notification check: any active order that needs attention
-  useEffect(() => {
+  useIdleEffect(() => {
     async function fetchNotifications() {
       try {
         const [activeRes, reviewsRes] = await Promise.all([
@@ -140,10 +141,10 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
         setHasNotification(false)
       }
     }
-    fetchNotifications()
+    void fetchNotifications()
   }, [])
 
-  useEffect(() => {
+  useIdleEffect(() => {
     if (!sessionUserId) return
 
     let isMounted = true
@@ -177,7 +178,7 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
     }
   }, [sessionUserId])
 
-  useEffect(() => {
+  useIdleEffect(() => {
     if (!sessionUserId) return
 
     async function fetchExcoDashboard() {
@@ -294,8 +295,14 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
         return
       }
 
+      const nextMode = payload.testOrderMode === true
       setExcoDashboard((current) =>
-        current ? { ...current, testOrderMode: payload.testOrderMode === true } : current
+        current ? { ...current, testOrderMode: nextMode } : current
+      )
+      window.dispatchEvent(
+        new CustomEvent('swiftdu-exco-order-mode-changed', {
+          detail: { testOrderMode: nextMode },
+        })
       )
     } catch {
       // Keep the existing mode if persistence fails.
@@ -391,9 +398,17 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
               <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                      {isLiveOrderMode ? 'Live Mode' : 'Test Mode'}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      {!isLiveOrderMode ? (
+                        <span className="relative flex h-2.5 w-2.5 shrink-0">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600" />
+                        </span>
+                      ) : null}
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                        {isLiveOrderMode ? 'Live Mode' : 'Training Mode'}
+                      </p>
+                    </div>
                     <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                       {isLiveOrderMode ? 'Orders are real transactions.' : 'Orders are training only.'}
                     </p>
@@ -402,7 +417,7 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
                     type="button"
                     onClick={() => void handleOrderModeToggle()}
                     disabled={isUpdatingOrderMode}
-                    aria-label="Toggle live and test order mode"
+                    aria-label="Toggle live and training order mode"
                     className={`relative h-7 w-12 shrink-0 rounded-full transition ${
                       isLiveOrderMode ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'
                     } disabled:opacity-60`}
@@ -565,9 +580,17 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
                       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
                         <div className="flex items-center justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                              {isLiveOrderMode ? 'Live Mode' : 'Test Mode'}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              {!isLiveOrderMode ? (
+                                <span className="relative flex h-2.5 w-2.5 shrink-0">
+                                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600" />
+                                </span>
+                              ) : null}
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {isLiveOrderMode ? 'Live Mode' : 'Training Mode'}
+                              </p>
+                            </div>
                             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                               {isLiveOrderMode ? 'Real orders' : 'Training orders'}
                             </p>
@@ -576,7 +599,7 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
                             type="button"
                             onClick={() => void handleOrderModeToggle()}
                             disabled={isUpdatingOrderMode}
-                            aria-label="Toggle live and test order mode"
+                            aria-label="Toggle live and training order mode"
                             className={`relative h-7 w-12 shrink-0 rounded-full transition ${
                               isLiveOrderMode ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-700'
                             } disabled:opacity-60`}

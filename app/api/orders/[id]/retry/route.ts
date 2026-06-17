@@ -135,6 +135,8 @@ export async function POST(
       cafeInquiryDetailsSubmitted: order.cafeInquiry ? false : order.cafeInquiryDetailsSubmitted,
       waterBags: order.waterBags,
       waterFee: order.waterFee,
+      indomiePacks: order.indomiePacks,
+      eggCount: order.eggCount,
       noteSize: order.noteSize,
       numberOfPages: order.numberOfPages,
       printingServiceType: order.printingServiceType,

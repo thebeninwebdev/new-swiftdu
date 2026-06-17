@@ -23,6 +23,7 @@ import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { canTaskerCancelOrder, isCustomerPaymentConfirmed } from '@/lib/order-status'
 import { convertToNaira } from '@/lib/utils'
 import { RESTAURANT_MAX_PEOPLE } from '@/lib/pricing'
+import { useVisibleInterval } from '@/hooks/use-visible-interval'
 
 const DETAIL_REFRESH_MS = 5000
 
@@ -56,6 +57,8 @@ interface ErrandDetail {
   restaurantPeopleCount?: number
   restaurantTakeawayCount?: number
   restaurantPackagingFee?: number
+  indomiePacks?: number
+  eggCount?: number
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   taskerId?: string
   taskerName?: string
@@ -96,6 +99,7 @@ const taskTypeLabels: Record<string, string> = {
   printing: 'Printing',
   copy_notes: 'Copy Notes',
   shopping: 'Shopping',
+  indomie: 'Buy Indomie',
   dry_cleaning: 'Dry Cleaning',
   water: 'Bag of Water',
   others: 'General Errand',
@@ -196,10 +200,7 @@ export default function ErrandDetailPage() {
   const fetchingRef = useRef(false)
   const queuedRefreshRef = useRef(false)
 
-  useEffect(() => {
-    const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000)
-    return () => window.clearInterval(intervalId)
-  }, [])
+  useVisibleInterval(() => setNowMs(Date.now()), errand ? 1000 : null)
 
   const loadErrand = useCallback(async (initial = false) => {
     if (!errandId) return
@@ -241,11 +242,12 @@ export default function ErrandDetailPage() {
 
   useEffect(() => { void loadErrand(true) }, [loadErrand])
 
-  useEffect(() => {
-    if (!errandId) return
-    const interval = window.setInterval(() => { if (document.visibilityState === 'visible') void loadErrand(false) }, DETAIL_REFRESH_MS)
-    return () => window.clearInterval(interval)
-  }, [errandId, loadErrand])
+  useVisibleInterval(
+    () => {
+      if (errandId) void loadErrand(false)
+    },
+    errandId ? DETAIL_REFRESH_MS : null
+  )
 
   useEffect(() => {
     if (!errandId) return
@@ -379,7 +381,7 @@ export default function ErrandDetailPage() {
 
   // Timer calculations
   const completionStartedMs = errand.completionTimerStartedAt ? new Date(errand.completionTimerStartedAt).getTime() : new Date(errand.createdAt).getTime()
-  const locationCompletionWindowMinutes = getCompletionWindowMinutes(errand.location)
+  const locationCompletionWindowMinutes = getCompletionWindowMinutes(errand.location, errand.taskType)
   const savedCompletionWindowMinutes = Number(errand.completionWindowMinutes || 0)
   const completionWindowMinutes = savedCompletionWindowMinutes > 0 ? Math.max(savedCompletionWindowMinutes, locationCompletionWindowMinutes) : locationCompletionWindowMinutes
   const completionExtensionMinutes = Number(errand.completionExtensionMinutes || 0)
@@ -508,6 +510,25 @@ export default function ErrandDetailPage() {
                 </div>
               </div>
             )}
+
+            {errand.taskType === 'indomie' ? (
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center gap-2 rounded-xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 p-3">
+                  <Store className="h-4 w-4 text-rose-600 dark:text-rose-400 shrink-0" />
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-rose-600 dark:text-rose-400">Indomie</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">{errand.indomiePacks || 0}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 p-3">
+                  <Wallet className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  <div>
+                    <p className="text-[10px] font-bold uppercase text-amber-600 dark:text-amber-400">Eggs</p>
+                    <p className="text-sm font-bold text-slate-900 dark:text-white">{errand.eggCount || 0}</p>
+                  </div>
+                </div>
+              </div>
+            ) : null}
 
             {/* Payment Status */}
             <div className={`flex items-center gap-3 rounded-xl p-3 ${

@@ -11,7 +11,6 @@ const DEFAULT_API_SOCKET_PAUSE_MS = 1200
 function createSharedSocket() {
   return io({
     withCredentials: true,
-    transports: ['websocket'],
   })
 }
 

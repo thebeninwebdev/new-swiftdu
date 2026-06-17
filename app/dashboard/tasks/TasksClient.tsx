@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
+import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertCircle, ArrowRight, CheckCircle2, Clock, CreditCard, Loader2,
@@ -17,6 +18,7 @@ import {
 } from '@/components/ui/dialog'
 import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { canCustomerCancelOrder } from '@/lib/order-status'
+import { useVisibleInterval } from '@/hooks/use-visible-interval'
 
 // ─── Types ───
 interface Order {
@@ -81,40 +83,23 @@ const TRACKING_REFRESH_MS = 5000
 // ─── Constants ───
 const taskTypeLabels: Record<string, string> = {
   restaurant: 'Food Delivery', printing: 'Printing', copy_notes: 'Copy Notes',
-  shopping: 'Shopping', dry_cleaning: 'Dry Cleaning', water: 'Bag of Water', others: 'General Errand',
+  shopping: 'Shopping', indomie: 'Buy Indomie', dry_cleaning: 'Dry Cleaning', water: 'Bag of Water', others: 'General Errand',
 }
 
 const taskTypeIcons: Record<string, React.ReactNode> = {
   restaurant: <Store className="h-4 w-4" />, printing: <Package className="h-4 w-4" />,
   copy_notes: <Package className="h-4 w-4" />, shopping: <Package className="h-4 w-4" />,
-  dry_cleaning: <Package className="h-4 w-4" />, water: <Package className="h-4 w-4" />,
+  indomie: <Package className="h-4 w-4" />, dry_cleaning: <Package className="h-4 w-4" />, water: <Package className="h-4 w-4" />,
   others: <Package className="h-4 w-4" />,
 }
 
 const taskTypeGradients: Record<string, string> = {
   restaurant: 'from-orange-400 to-red-500', printing: 'from-violet-400 to-purple-600',
   copy_notes: 'from-blue-400 to-indigo-600', shopping: 'from-amber-400 to-orange-500',
+  indomie: 'from-rose-400 to-amber-500',
   dry_cleaning: 'from-cyan-400 to-teal-600', water: 'from-sky-400 to-blue-600',
   others: 'from-slate-400 to-slate-600',
 }
-
-const taskerSearchImages = [
-  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1527980965255-d3b416303d12?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1531123897727-8f129e1688ce?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1544723795-3fb6469f5b39?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1547425260-76bcadfb4f2c?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1552058544-f2b08422138a?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1607746882042-944635dfe10e?auto=format&fit=crop&w=360&q=80',
-  'https://images.unsplash.com/photo-1624561172888-ac93c696e10c?auto=format&fit=crop&w=360&q=80',
-]
 
 const statusConfig: Record<Order['status'], { label: string; tone: string; icon: React.ReactNode }> = {
   pending: { label: 'Finding tasker', tone: 'bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300', icon: <Clock className="h-3.5 w-3.5" /> },
@@ -177,7 +162,31 @@ function getTrackingStage(order: Order) {
 // ─── Sub-components ───
 function TaskerAvatar({ tasker }: { tasker: TaskerDetails }) {
   if (tasker.profileImage) {
-    return <img src={tasker.profileImage} alt="Tasker profile" className="h-12 w-12 rounded-xl object-cover ring-2 ring-white dark:ring-slate-800" />
+    const canOptimizeImage =
+      tasker.profileImage.startsWith('/') ||
+      tasker.profileImage.startsWith('https://res.cloudinary.com/')
+
+    if (!canOptimizeImage) {
+      return (
+        <div
+          role="img"
+          aria-label="Tasker profile"
+          className="h-12 w-12 rounded-xl bg-cover bg-center ring-2 ring-white dark:ring-slate-800"
+          style={{ backgroundImage: `url("${tasker.profileImage}")` }}
+        />
+      )
+    }
+
+    return (
+      <Image
+        src={tasker.profileImage}
+        alt="Tasker profile"
+        width={48}
+        height={48}
+        sizes="48px"
+        className="h-12 w-12 rounded-xl object-cover ring-2 ring-white dark:ring-slate-800"
+      />
+    )
   }
   return <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 font-bold text-white">T</div>
 }
@@ -432,12 +441,6 @@ function MobileBottomSheet({ order, onChat }: { order: Order; onChat: () => void
 function SearchingTaskerOverlay({ order, onCancel, isCancelling, isBusy, searchMessage }: {
   order: Order; onCancel: () => void; isCancelling: boolean; isBusy: boolean; searchMessage: string
 }) {
-  const [taskerImageIndex, setTaskerImageIndex] = useState(() => Math.floor(Math.random() * taskerSearchImages.length))
-  const taskerImage = taskerSearchImages[taskerImageIndex]
-  useEffect(() => {
-    const imageInterval = window.setInterval(() => setTaskerImageIndex((current) => (current + 1) % taskerSearchImages.length), 500)
-    return () => window.clearInterval(imageInterval)
-  }, [])
   return (
     <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-sm md:items-center md:justify-center md:p-6">
       <div className="w-full max-w-lg overflow-hidden rounded-t-[2rem] border border-white/70 bg-white shadow-2xl shadow-slate-950/25 dark:border-slate-800 dark:bg-slate-900 md:rounded-[2rem]">
@@ -453,8 +456,8 @@ function SearchingTaskerOverlay({ order, onCancel, isCancelling, isBusy, searchM
             <div className="h-full origin-left rounded-full bg-gradient-to-r from-sky-300 via-cyan-200 to-emerald-300 animate-pulse" />
           </div>
           <div className="mt-5 flex shrink-0 flex-col items-center gap-4 sm:flex-row sm:justify-center">
-            <div className="h-20 w-20 overflow-hidden rounded-2xl bg-white/10 ring-1 ring-white/15">
-              <img src={taskerImage} alt="Potential tasker" className="h-full w-full object-cover" />
+            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
+              <Bike className="h-9 w-9 text-cyan-200" />
             </div>
             <button type="button" onClick={onCancel} disabled={isBusy} className="flex w-full max-w-xs shrink-0 items-center justify-center gap-3 rounded-2xl bg-rose-500 px-4 py-3 text-left text-white shadow-lg shadow-rose-950/20 ring-1 ring-white/15 transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50 sm:w-64">
               {isCancelling ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserRoundX className="h-5 w-5" />}
@@ -530,7 +533,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
 
   useEffect(() => { currentOrderRef.current = currentOrder }, [currentOrder])
   useEffect(() => { if (!trackingOrderId && legacyRequestedOrderId) router.replace(`/dashboard/tasks/${legacyRequestedOrderId}`) }, [legacyRequestedOrderId, router, trackingOrderId])
-  useEffect(() => { const intervalId = window.setInterval(() => setNowMs(Date.now()), 1000); return () => window.clearInterval(intervalId) }, [])
+  useVisibleInterval(() => setNowMs(Date.now()), currentOrder ? 1000 : null)
 
   const disconnectSocket = useCallback(() => {
     if (realtimeResumeTimeoutRef.current) { window.clearTimeout(realtimeResumeTimeoutRef.current); realtimeResumeTimeoutRef.current = null }
@@ -612,17 +615,14 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   useEffect(() => { void loadOrders(true) }, [loadOrders])
   useEffect(() => { if (!isTrackingPage) return; if (!requestedOrderId || requestedOrderId === trackedOrderIdRef.current) return; trackedOrderIdRef.current = requestedOrderId; previousSnapshotRef.current = null; taskerOrderRef.current = null; setTaskerDetails(null); void loadOrders(true) }, [isTrackingPage, loadOrders, requestedOrderId])
   useEffect(() => { const onFocus = () => { void loadOrders(false) }; window.addEventListener('focus', onFocus); return () => { window.removeEventListener('focus', onFocus) } }, [loadOrders])
+  useVisibleInterval(
+    () => {
+      if (isTrackingPage) void loadOrders(false)
+    },
+    isTrackingPage ? TRACKING_REFRESH_MS : null
+  )
   useEffect(() => {
-    if (!isTrackingPage) return
-
-    const intervalId = window.setInterval(() => {
-      if (document.visibilityState === 'visible') void loadOrders(false)
-    }, TRACKING_REFRESH_MS)
-
-    return () => window.clearInterval(intervalId)
-  }, [isTrackingPage, loadOrders])
-  useEffect(() => {
-    const socket = io({ withCredentials: true, transports: ['websocket'] }); socketRef.current = socket
+    const socket = io({ withCredentials: true }); socketRef.current = socket
     const watchCurrentOrder = () => { const orderId = trackedOrderIdRef.current || currentOrderRef.current?._id; if (orderId) socket.emit('order:watch', orderId) }
     socket.on('connect', () => { watchCurrentOrder(); void loadOrders(false) })
     socket.on('order:updated', (payload?: OrderRealtimePayload) => { const applied = applyRealtimeOrderUpdate(payload); if (!applied) { void loadOrders(false); return } window.setTimeout(() => { void loadOrders(false) }, 300) })
@@ -663,7 +663,15 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const requestCancelOrder = useCallback(() => { if (!currentOrder || updatingAction === 'cancel' || confirmingTransfer) return; setCancelConfirmOpen(true) }, [confirmingTransfer, currentOrder, updatingAction])
   const confirmCancelOrder = useCallback(() => { setCancelConfirmOpen(false); void handleCancelOrder() }, [handleCancelOrder])
 
-  useEffect(() => { if (!currentOrder || currentOrder.status !== 'pending') { setSearchElapsedMs(0); return } const startedAt = new Date(currentOrder.createdAt).getTime(); if (!Number.isFinite(startedAt)) { setSearchElapsedMs(0); return } const updateElapsed = () => { setSearchElapsedMs(Math.max(Date.now() - startedAt, 0)) }; updateElapsed(); const intervalId = window.setInterval(updateElapsed, 1000); return () => window.clearInterval(intervalId) }, [currentOrder, currentOrder?._id, currentOrder?.createdAt, currentOrder?.status])
+  useVisibleInterval(() => {
+    if (!currentOrder || currentOrder.status !== 'pending') {
+      setSearchElapsedMs(0)
+      return
+    }
+
+    const startedAt = new Date(currentOrder.createdAt).getTime()
+    setSearchElapsedMs(Number.isFinite(startedAt) ? Math.max(Date.now() - startedAt, 0) : 0)
+  }, currentOrder?.status === 'pending' ? 1000 : null)
   useEffect(() => { if (!currentOrder || currentOrder.status !== 'pending') return; if (searchElapsedMs < 7 * 60000) return; if (autoCancelledOrderRef.current === currentOrder._id) return; autoCancelledOrderRef.current = currentOrder._id; toast.error('No tasker accepted within 7 minutes, so the request was cancelled.'); void handleCancelOrder() }, [currentOrder, handleCancelOrder, searchElapsedMs])
 
   if (loading) {
@@ -694,7 +702,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const isSearchingForTasker = currentOrder?.status === 'pending'
   const canCancelCurrentOrder = currentOrder ? canCustomerCancelOrder(currentOrder) : false
   const completionStartedMs = currentOrder?.completionTimerStartedAt ? new Date(currentOrder.completionTimerStartedAt).getTime() : currentOrder?.createdAt ? new Date(currentOrder.createdAt).getTime() : NaN
-  const locationCompletionWindowMinutes = getCompletionWindowMinutes(currentOrder?.location)
+  const locationCompletionWindowMinutes = getCompletionWindowMinutes(currentOrder?.location, currentOrder?.taskType)
   const savedCompletionWindowMinutes = Number(currentOrder?.completionWindowMinutes || 0)
   const completionWindowMinutes = savedCompletionWindowMinutes > 0 ? Math.max(savedCompletionWindowMinutes, locationCompletionWindowMinutes) : locationCompletionWindowMinutes
   const completionExtensionMinutes = Number(currentOrder?.completionExtensionMinutes || 0)

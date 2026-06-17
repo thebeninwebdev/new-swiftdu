@@ -41,6 +41,8 @@ const ERRAND_LIST_FIELDS = [
   'restaurantPeopleCount',
   'restaurantTakeawayCount',
   'restaurantPackagingFee',
+  'indomiePacks',
+  'eggCount',
   'status',
   'taskerId',
   'acceptedBy',
@@ -88,9 +90,10 @@ export async function GET(request: NextRequest) {
       ? await Tasker.findById(taskerId).select('taskerMode isVerified').lean()
       : null
 
+    // Keep the mode filter in $and so later available-task $or clauses cannot replace it.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filter: Record<string, any> = {
-      ...getTaskerOrderModeFilter(taskerForMode || undefined),
+      $and: [getTaskerOrderModeFilter(taskerForMode || undefined)],
     }
 
     if (accepted === 'true' && taskerId) {
