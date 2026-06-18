@@ -13,12 +13,16 @@ const PUBLIC_ROUTES = [
   '/about-us',
   '/contact-us',
   '/login',
+  '/operations-suspended',
   '/password',
   '/password/reset',
   '/reset-password',
   '/signup',
   '/terms',
 ];
+
+const OPERATIONS_SUSPENDED = true;
+const OPERATIONS_SUSPENDED_PATH = '/operations-suspended';
 
 const EXCO_DASHBOARD_ROUTES = Object.values(EXCO_DASHBOARD_PATHS);
 const AUTH_ROUTES = ['/login', '/signup'];
@@ -41,6 +45,10 @@ function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const currentPath = `${pathname}${search}`;
+
+  if (OPERATIONS_SUSPENDED && pathname !== OPERATIONS_SUSPENDED_PATH) {
+    return NextResponse.redirect(new URL(OPERATIONS_SUSPENDED_PATH, request.url));
+  }
 
   const session = await auth.api.getSession({
     headers: request.headers,
@@ -109,20 +117,6 @@ export async function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    '/',
-    // '/about-us',
-    // '/contact-us',
-    '/login',
-    // '/password/:path*',
-    // '/reset-password',
-    '/signup',
-    // '/terms',
-    '/dashboard/:path*',
-    '/tasker-dashboard/:path*',
-    '/cfo-dashboard/:path*',
-    '/cmo-dashboard/:path*',
-    '/coo-dashboard/:path*',
-    '/cto-dashboard/:path*',
-    '/admin/:path*',
+    '/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)',
   ],
 };

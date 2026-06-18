@@ -12,6 +12,7 @@ const HIDDEN_CHROME_PREFIXES = [
   "/dashboard",
   "/tasks",
   "/login",
+  "/operations-suspended",
   "/signup",
   "/dry-cleaner-signup",
   "/tasker-dashboard",
