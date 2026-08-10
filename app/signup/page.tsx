@@ -145,6 +145,44 @@ export default function SignUpPage() {
     setLoading(true);
     try {
       const normalizedEmail = form.email.trim().toLowerCase();
+      const activationResponse = await fetch("/api/tasker-onboarding/request-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+      const activation = await activationResponse.json().catch(() => ({}));
+
+      if (!activationResponse.ok) {
+        if (activation.activationRequired) {
+          throw new Error(
+            "Your Tasker account needs activation, but we could not send the secure link. Please try again shortly."
+          );
+        }
+        throw new Error(activation.error || "We could not check this email right now.");
+      }
+
+      if (activation.activationRequired) {
+        const message =
+          "Your approved Tasker account needs secure activation. Check your email for a private link to create a password or connect your existing account.";
+        setServerError(message);
+        toast.success("Check your email to activate your Tasker account");
+        return;
+      }
+
+      if (activation.nextAction === "login") {
+        setServerError(
+          "A SwiftDU account already exists for this email. Sign in with your password instead of creating another account."
+        );
+        return;
+      }
+
+      if (activation.nextAction === "google") {
+        setServerError(
+          "This email is connected to a Google account. Continue with Google to use the same SwiftDU account."
+        );
+        return;
+      }
+
       const { error: signUpError } = await authClient.signUp.email({
         name: `${form.firstName} ${form.lastName}`,
         email: normalizedEmail,

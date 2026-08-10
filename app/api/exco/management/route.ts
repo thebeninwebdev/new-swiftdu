@@ -6,6 +6,7 @@ import { connectDB } from "@/lib/db";
 import { ensureCompletionTimer } from "@/lib/completion-timer";
 import { emitOrderUpdated } from "@/lib/socket";
 import { syncTaskerSettlementStatus } from "@/lib/tasker-settlement";
+import { issueTaskerOnboardingLink } from "@/lib/tasker-onboarding";
 import DryCleaner from "@/models/dry-cleaner";
 import { Order } from "@/models/order";
 import { Review } from "@/models/review";
@@ -142,7 +143,7 @@ async function getTaskers() {
     .limit(40)
     .lean();
 
-  const userIds = taskers.map((tasker) => tasker.userId);
+  const userIds = taskers.flatMap((tasker) => tasker.userId ? [tasker.userId] : []);
   const users = await User.find({ _id: { $in: userIds } })
     .select("_id name email")
     .lean();
@@ -151,11 +152,19 @@ async function getTaskers() {
 
   return taskers.map((tasker) => ({
     id: tasker._id.toString(),
-    name: userMap[tasker.userId.toString()]?.name || "Unknown tasker",
-    email: userMap[tasker.userId.toString()]?.email || "",
+    name: tasker.userId
+      ? userMap[tasker.userId.toString()]?.name || tasker.fullName || "Unknown tasker"
+      : tasker.fullName || "Tasker applicant",
+    email: tasker.userId
+      ? userMap[tasker.userId.toString()]?.email || tasker.email || ""
+      : tasker.email || "",
     phone: tasker.phone,
     location: tasker.location,
     studentId: tasker.studentId,
+    level: tasker.level || "",
+    availability: tasker.availability || [],
+    motivation: tasker.motivation || "",
+    motivationOther: tasker.motivationOther || "",
     isVerified: tasker.isVerified,
     isRejected: Boolean(tasker.isRejected),
     isSettlementSuspended: Boolean(tasker.isSettlementSuspended),
@@ -608,12 +617,16 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Only COO can change tasker approval status" }, { status: 403 });
     }
 
-    const tasker = await Tasker.findById(id);
+    const tasker = await Tasker.findById(id).select(
+      "+onboardingTokenHash +onboardingTokenExpiresAt +onboardingEmailSentAt +onboardingTokenUsedAt"
+    );
     if (!tasker) return NextResponse.json({ error: "Tasker not found" }, { status: 404 });
 
+    const wasApproved = tasker.isVerified && !tasker.isRejected;
     if (action === "approve") {
       tasker.isVerified = true;
       tasker.isRejected = false;
+      tasker.taskerMode = "training";
     } else if (action === "reject") {
       tasker.isVerified = false;
       tasker.isRejected = true;
@@ -651,7 +664,28 @@ export async function PATCH(request: NextRequest) {
     }
 
     await tasker.save();
-    return NextResponse.json({ ok: true });
+    let onboardingEmailSent = false;
+    let onboardingEmailError = false;
+    if (action === "approve" && !tasker.accountLinkedAt) {
+      const hasActiveToken = Boolean(
+        wasApproved &&
+          tasker.onboardingTokenHash &&
+          !tasker.onboardingTokenUsedAt &&
+          tasker.onboardingTokenExpiresAt &&
+          tasker.onboardingTokenExpiresAt.getTime() > Date.now()
+      );
+
+      if (!hasActiveToken) {
+        try {
+          const delivery = await issueTaskerOnboardingLink(tasker);
+          onboardingEmailSent = delivery.sent;
+        } catch (emailError) {
+          onboardingEmailError = true;
+          console.error("[Exco tasker approval email]", emailError);
+        }
+      }
+    }
+    return NextResponse.json({ ok: true, onboardingEmailSent, onboardingEmailError });
   }
 
   if (resource === "dry-cleaners") {

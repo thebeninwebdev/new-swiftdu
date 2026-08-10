@@ -3,8 +3,13 @@ import { connectDB } from '@/lib/db'
 import { calculateTaskerStats } from '@/lib/tasker-stats'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import Tasker from "@/models/tasker"
-import {User} from "@/models/user"
 import { getTaskerMode } from '@/lib/test-orders'
+import { sendTransactionalEmail } from '@/lib/email'
+import TaskerApplicationConfirmationEmail from '@/emails/taskerApplicationConfirmationEmail'
+import { createElement } from 'react'
+import { auth } from '@/lib/auth'
+import { isValidEmail, normalizeEmail } from '@/lib/email-normalization'
+import { User } from '@/models/user'
 
 // ─── POST /api/taskers ────────────────────────────────────────────────────────
 // Creates a new tasker profile and updates the user's role to 'tasker'.
@@ -15,33 +20,57 @@ export async function POST(req: NextRequest) {
     await connectDB()
 
     const body = await req.json()
+    const session = await auth.api.getSession({ headers: req.headers })
+    const userId = session?.user?.id || null
 
     const {
-      userId,
+      firstName,
+      lastName,
+      email,
       phone,
       location,
       studentId,
+      level,
+      availability,
+      motivation,
+      motivationOther,
       profileImage,
       profileImagePublicId,
-      bankDetails,
     } = body
 
     // ── Required field validation ──────────────────────────────────────────
 
-    if (!userId || !phone || !location || !studentId) {
+    const normalizedEmail = normalizeEmail(email)
+    const normalizedFirstName = String(firstName || '').trim()
+    const normalizedLastName = String(lastName || '').trim()
+    const normalizedFullName = `${normalizedFirstName} ${normalizedLastName}`.trim()
+
+    if (
+      !normalizedFirstName ||
+      !normalizedLastName ||
+      !isValidEmail(normalizedEmail) ||
+      !phone ||
+      !location ||
+      !studentId ||
+      !level ||
+      !motivation
+    ) {
       return NextResponse.json(
-        { error: 'Missing required fields: userId, phone, location, studentId' },
+        { error: 'Complete all required contact, student, and work preference fields.' },
         { status: 400 }
       )
     }
 
-    if (
-      !bankDetails?.bankName ||
-      !bankDetails?.accountNumber ||
-      !bankDetails?.accountName
-    ) {
+    if (!Array.isArray(availability) || availability.length === 0) {
       return NextResponse.json(
-        { error: 'Missing required bank details: bankName, accountNumber, accountName' },
+        { error: 'Select at least one time when you can usually work.' },
+        { status: 400 }
+      )
+    }
+
+    if (motivation === 'Other' && !String(motivationOther || '').trim()) {
+      return NextResponse.json(
+        { error: 'Tell us why you want to become a SwiftDU tasker.' },
         { status: 400 }
       )
     }
@@ -55,20 +84,13 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // ── Account number validation (10-digit NUBAN) ─────────────────────────
-
-    if (!/^\d{10}$/.test(bankDetails.accountNumber)) {
-      return NextResponse.json(
-        { error: 'Account number must be exactly 10 digits.' },
-        { status: 400 }
-      )
-    }
-
     // ── Duplicate checks ───────────────────────────────────────────────────
 
-    const [existingByUser, existingByPhone] = await Promise.all([
-      Tasker.findOne({ userId }),
+    const [existingByUser, existingByPhone, existingByEmail, matchingUser] = await Promise.all([
+      userId ? Tasker.findOne({ userId }) : null,
       Tasker.findOne({ phone }),
+      Tasker.findOne({ email: normalizedEmail }),
+      User.findOne({ email: normalizedEmail }).select('role taskerId').lean(),
     ])
 
     if (existingByUser) {
@@ -85,19 +107,42 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    if (existingByEmail) {
+      return NextResponse.json(
+        { error: 'An application has already been submitted with this email address.' },
+        { status: 409 }
+      )
+    }
+
+    if (matchingUser?.role === 'tasker' || matchingUser?.taskerId) {
+      return NextResponse.json(
+        { error: 'This email already belongs to an active SwiftDU Tasker account.' },
+        { status: 409 }
+      )
+    }
+
     // ── Create tasker ──────────────────────────────────────────────────────
 
     const tasker = await Tasker.create({
-      userId,
+      firstName: normalizedFirstName,
+      lastName: normalizedLastName,
+      fullName: normalizedFullName,
+      email: normalizedEmail,
       phone,
       location,
       studentId,
+      level: String(level).trim(),
+      availability: availability.map((item: unknown) => String(item).trim()).filter(Boolean),
+      motivation: String(motivation).trim(),
+      ...(motivation === 'Other' && {
+        motivationOther: String(motivationOther).trim(),
+      }),
       ...(profileImage && { profileImage }),
       ...(profileImagePublicId && { profileImagePublicId }),
       bankDetails: {
-        bankName: bankDetails.bankName.trim(),
-        accountNumber: bankDetails.accountNumber.trim(),
-        accountName: bankDetails.accountName.trim(),
+        bankName: '',
+        accountNumber: '',
+        accountName: '',
       },
       isVerified: false,
       taskerMode: 'training',
@@ -107,25 +152,28 @@ export async function POST(req: NextRequest) {
 
     // ── Update user role and assign taskerId ──────────────────────────────
 
-    const updatedUser = await User.findByIdAndUpdate(
-      userId,
-      { 
-        role: 'tasker', 
-        taskerId: tasker._id 
-      },
-      { new: true }
-    )
-
-    if (!updatedUser) {
-      return NextResponse.json(
-        { error: `Failed to update user with tasker role. User not found: ${userId}` },
-        { status: 500 }
-      )
+    let confirmationEmailSent = false
+    try {
+      await sendTransactionalEmail({
+        to: normalizedEmail,
+        subject: 'We received your SwiftDU tasker application',
+        react: createElement(TaskerApplicationConfirmationEmail, {
+          name: normalizedFirstName,
+        }),
+        tags: [
+          { name: 'email_type', value: 'tasker_application_confirmation' },
+          { name: 'auth_flow', value: 'tasker_application' },
+        ],
+      })
+      confirmationEmailSent = true
+    } catch (emailError) {
+      console.error('[POST /api/taskers] confirmation email failed', emailError)
     }
 
     return NextResponse.json(
       {
         message: 'Tasker profile created successfully.',
+        confirmationEmailSent,
         tasker: {
           id: tasker._id,
           userId: tasker.userId,

@@ -86,6 +86,12 @@ export default function VerifyCodesPage() {
 
     toast.success("Verified! Welcome to SwiftDu.");
     const { data } = await authClient.getSession();
+    const onboardingCallback = sessionStorage.getItem("swiftdu-post-2fa-callback");
+    if (onboardingCallback) {
+      sessionStorage.removeItem("swiftdu-post-2fa-callback");
+      window.location.assign(onboardingCallback);
+      return;
+    }
     router.push(getPostAuthRedirect(data?.user));
   };
 

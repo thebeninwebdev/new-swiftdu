@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
 import { normalizeExcoRole } from '@/lib/exco-constants'
 import Tasker from '@/models/tasker'
+import { issueTaskerOnboardingLink } from '@/lib/tasker-onboarding'
 
 export async function PATCH(
   req: NextRequest,
@@ -79,11 +80,15 @@ export async function PATCH(
       }
     }
 
-    const tasker = await Tasker.findById(id)
+    const tasker = await Tasker.findById(id).select(
+      '+onboardingTokenHash +onboardingTokenExpiresAt +onboardingEmailSentAt +onboardingTokenUsedAt'
+    )
 
     if (!tasker) {
       return NextResponse.json({ error: 'Tasker not found.' }, { status: 404 })
     }
+
+    const wasApproved = tasker.isVerified && !tasker.isRejected
 
     if (action === 'approve') {
       tasker.isVerified = true
@@ -106,6 +111,28 @@ export async function PATCH(
 
     await tasker.save()
 
+    let onboardingEmailSent = false
+    let onboardingEmailError = false
+    if (action === 'approve' && !tasker.accountLinkedAt) {
+      const hasActiveToken = Boolean(
+        wasApproved &&
+          tasker.onboardingTokenHash &&
+          !tasker.onboardingTokenUsedAt &&
+          tasker.onboardingTokenExpiresAt &&
+          tasker.onboardingTokenExpiresAt.getTime() > Date.now()
+      )
+
+      if (!hasActiveToken) {
+        try {
+          const delivery = await issueTaskerOnboardingLink(tasker)
+          onboardingEmailSent = delivery.sent
+        } catch (emailError) {
+          onboardingEmailError = true
+          console.error('[PATCH /api/admin/taskers/[id]] approval email failed', emailError)
+        }
+      }
+    }
+
     return NextResponse.json(
       {
         message:
@@ -124,6 +151,8 @@ export async function PATCH(
           isSettlementSuspended: tasker.isSettlementSuspended,
           bankDetails: tasker.bankDetails,
         },
+        onboardingEmailSent,
+        onboardingEmailError,
       },
       { status: 200 }
     )

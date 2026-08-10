@@ -3,7 +3,7 @@ import { connectDB } from '@/lib/db'
 import Tasker from '@/models/tasker'
 import {User} from '@/models/user'
 import { getTaskerMode } from '@/lib/test-orders'
-// import { authClient } from '@/lib/auth-client'
+import { auth } from '@/lib/auth'
 
 // ─── GET /api/admin/taskers?status=pending|verified|rejected ─────────────────
 // Returns all tasker profiles joined with user name + email.
@@ -11,6 +11,11 @@ import { getTaskerMode } from '@/lib/test-orders'
 
 export async function GET(req: NextRequest) {
   try {
+    const session = await auth.api.getSession({ headers: req.headers })
+    if (!session?.user || session.user.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+    }
+
     // ── Auth guard ─────────────────────────────────────────────────────────
     // const session = await authClient.getSession()
     // const user = session?.data?.user
@@ -41,7 +46,7 @@ export async function GET(req: NextRequest) {
       .lean()
 
     // Attach user name + email to each tasker
-    const userIds = taskers.map((t) => t.userId)
+    const userIds = taskers.flatMap((tasker) => tasker.userId ? [tasker.userId] : [])
     const users = await User.find({ _id: { $in: userIds } })
       .select('_id name email')
       .lean()
@@ -53,7 +58,13 @@ export async function GET(req: NextRequest) {
     const enriched = taskers.map((t) => ({
       ...t,
       taskerMode: getTaskerMode(t),
-      user: userMap[t.userId.toString()] ?? null,
+      user: t.userId
+        ? userMap[t.userId.toString()] ?? null
+        : {
+            _id: '',
+            name: t.fullName || 'Tasker applicant',
+            email: t.email || '',
+          },
     }))
 
     return NextResponse.json({ taskers: enriched }, { status: 200 })

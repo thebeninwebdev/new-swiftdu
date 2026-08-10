@@ -18,6 +18,10 @@ interface Tasker {
   phone: string
   location: string
   studentId: string
+  level?: string
+  availability?: string[]
+  motivation?: string
+  motivationOther?: string
   profileImage?: string
   isVerified: boolean
   isRejected: boolean
@@ -102,7 +106,13 @@ export default function AdminTaskersPage() {
       const data = await res.json()
       if (!res.ok) { toast.error(data.error || 'Action failed'); return }
 
-      toast.success(
+      if (action === 'approve' && data.onboardingEmailError) {
+        toast.warning('Tasker approved, but the onboarding email could not be sent.')
+      } else if (action === 'approve' && data.onboardingEmailSent) {
+        toast.success('Tasker approved and onboarding email sent')
+      }
+
+      if (!(action === 'approve' && (data.onboardingEmailError || data.onboardingEmailSent))) toast.success(
         action === 'approve'
           ? 'Tasker approved'
           : action === 'reject'
@@ -359,7 +369,20 @@ export default function AdminTaskersPage() {
                   {isExpanded && (
                     <div style={s.details}>
                       <div style={s.detailsGrid}>
-                        <DetailRow label="Student ID" value={tasker.studentId} />
+                        <DetailRow label="Matric Number" value={tasker.studentId} />
+                        <DetailRow label="Level" value={tasker.level || 'Not provided'} />
+                        <DetailRow
+                          label="Usually Available"
+                          value={tasker.availability?.join(', ') || 'Not provided'}
+                        />
+                        <DetailRow
+                          label="Why SwiftDU"
+                          value={
+                            tasker.motivation === 'Other'
+                              ? tasker.motivationOther || 'Other'
+                              : tasker.motivation || 'Not provided'
+                          }
+                        />
                         <DetailRow label="Bank" value={tasker.bankDetails.bankName} />
                         <DetailRow label="Account Number" value={tasker.bankDetails.accountNumber} />
                         <DetailRow label="Account Name" value={tasker.bankDetails.accountName} />

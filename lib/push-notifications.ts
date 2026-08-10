@@ -169,11 +169,12 @@ async function getApprovedTaskerUserIds() {
   const taskers = await Tasker.find({
     isVerified: true,
     isRejected: { $ne: true },
+    userId: { $exists: true, $ne: null },
   })
     .select('userId')
     .lean<Array<{ userId: { toString(): string } }>>()
 
-  return taskers.map((tasker) => tasker.userId.toString())
+  return taskers.flatMap((tasker) => tasker.userId ? [tasker.userId.toString()] : [])
 }
 
 async function getSubscriptionsForAudience(audience: PushAudience) {

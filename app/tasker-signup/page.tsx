@@ -37,17 +37,14 @@ export default function SignUpPage() {
                 </div>
                 <h1 className='text-white leading-none'
                  style={{
-                    fontFamily: "'Playfair Display', Georgia, serif",
-                    fontSize: 'clamp(3rem, 14vw, 5.5rem)',
+                    fontFamily: "'DM Sans', Arial, sans-serif",
+                    fontSize: 'clamp(2.75rem, 12vw, 5.25rem)',
                     fontWeight: 800,
                     letterSpacing: "-0.02em",
                  }}>
-                    Be your <br/>
-                    <span 
-                        className='italic'
-                        style={{color: 'transparent', WebkitTextStroke: '1.5px white'}}>
-                            own boss.
-                        </span>
+                    <span className='block'>Join the</span>
+                    <span className='block'>swiftDU</span>
+                    <span className='block'>community</span>
                  </h1>
                  <p className='text-white/60 text-base leading-relaxed max-w-xs'
                  style={{fontFamily: "'DM Sans', sans-serif"}}

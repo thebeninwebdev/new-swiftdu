@@ -18,14 +18,18 @@ const PUBLIC_ROUTES = [
   '/password/reset',
   '/reset-password',
   '/signup',
+  '/tasker-signup',
+  '/tasker/onboarding',
   '/terms',
 ];
 
-const OPERATIONS_SUSPENDED = true;
-const OPERATIONS_SUSPENDED_PATH = '/operations-suspended';
-
 const EXCO_DASHBOARD_ROUTES = Object.values(EXCO_DASHBOARD_PATHS);
 const AUTH_ROUTES = ['/login', '/signup'];
+const OPERATIONS_SUSPENDED_PATH = '/operations-suspended';
+
+function isTaskerSignupRoute(pathname: string) {
+  return pathname === '/tasker-signup' || pathname.startsWith('/tasker-signup/');
+}
 
 function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) {
   const excoDashboardPath = getExcoDashboardPath(excoRole);
@@ -46,8 +50,13 @@ export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const currentPath = `${pathname}${search}`;
 
-  if (OPERATIONS_SUSPENDED && pathname !== OPERATIONS_SUSPENDED_PATH) {
-    return NextResponse.redirect(new URL(OPERATIONS_SUSPENDED_PATH, request.url));
+  if (
+    pathname !== OPERATIONS_SUSPENDED_PATH &&
+    !isTaskerSignupRoute(pathname)
+  ) {
+    return NextResponse.redirect(
+      new URL(OPERATIONS_SUSPENDED_PATH, request.url)
+    );
   }
 
   const session = await auth.api.getSession({

@@ -2,6 +2,7 @@
 
 import { type FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import {
   Area,
   AreaChart,
@@ -638,6 +639,8 @@ async function patchManagement(resource: string, body: Record<string, unknown>) 
   if (!response.ok) {
     throw new Error(payload.error || "Action failed.");
   }
+
+  return payload;
 }
 
 function dryCleanerPriceLabel(doesNotWash: boolean | undefined, value: string) {
@@ -846,7 +849,12 @@ function TaskerManagementPanel({ canModerate }: { canModerate: boolean }) {
   const runAction = async (id: string, action: "approve" | "reject" | "suspend" | "activate") => {
     setActionId(`${id}-${action}`);
     try {
-      await patchManagement("taskers", { id, action });
+      const result = await patchManagement("taskers", { id, action });
+      if (action === "approve" && result.onboardingEmailError) {
+        toast.warning("Tasker approved, but the onboarding email could not be sent.");
+      } else if (action === "approve" && result.onboardingEmailSent) {
+        toast.success("Tasker approved and onboarding email sent.");
+      }
       await reload();
     } finally {
       setActionId(null);

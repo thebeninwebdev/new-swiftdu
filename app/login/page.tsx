@@ -183,8 +183,36 @@ function LoginContent() {
 
     setLoading(true);
     try {
+      const normalizedEmail = form.email.trim().toLowerCase();
+      const activationResponse = await fetch("/api/tasker-onboarding/request-link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+      const activation = await activationResponse.json().catch(() => ({}));
+
+      if (activation.activationRequired) {
+        if (!activationResponse.ok) {
+          throw new Error(
+            "Your Tasker account needs activation, but we could not send the secure link. Please try again shortly."
+          );
+        }
+        setServerError(
+          "Your approved Tasker account needs secure activation. Check your email for a private link to continue."
+        );
+        toast.success("Check your email to activate your Tasker account");
+        return;
+      }
+
+      if (activation.nextAction === "google") {
+        setServerError(
+          "This email is connected to Google and does not have a password yet. Continue with Google below."
+        );
+        return;
+      }
+
       const { data, error } = await authClient.signIn.email({
-        email: form.email,
+        email: normalizedEmail,
         password: form.password,
       });
 
