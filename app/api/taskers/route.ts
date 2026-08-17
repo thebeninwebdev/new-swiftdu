@@ -10,6 +10,7 @@ import { createElement } from 'react'
 import { auth } from '@/lib/auth'
 import { isValidEmail, normalizeEmail } from '@/lib/email-normalization'
 import { User } from '@/models/user'
+import { Types } from 'mongoose'
 
 // ─── POST /api/taskers ────────────────────────────────────────────────────────
 // Creates a new tasker profile and updates the user's role to 'tasker'.
@@ -90,7 +91,7 @@ export async function POST(req: NextRequest) {
       userId ? Tasker.findOne({ userId }) : null,
       Tasker.findOne({ phone }),
       Tasker.findOne({ email: normalizedEmail }),
-      User.findOne({ email: normalizedEmail }).select('role taskerId').lean(),
+      User.findOne({ email: normalizedEmail }).select('_id role taskerId').lean(),
     ])
 
     if (existingByUser) {
@@ -114,10 +115,31 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    if (matchingUser?.role === 'tasker' || matchingUser?.taskerId) {
-      return NextResponse.json(
-        { error: 'This email already belongs to an active SwiftDU Tasker account.' },
-        { status: 409 }
+    const hasTaskerUserMetadata = matchingUser?.role === 'tasker' || Boolean(matchingUser?.taskerId)
+    if (hasTaskerUserMetadata && matchingUser) {
+      const linkedTaskerQueries = [
+        { userId: matchingUser._id },
+        ...(matchingUser.taskerId && Types.ObjectId.isValid(String(matchingUser.taskerId))
+          ? [{ _id: matchingUser.taskerId }]
+          : []),
+      ]
+      const linkedTasker = linkedTaskerQueries.length
+        ? await Tasker.findOne({ $or: linkedTaskerQueries }).select('_id').lean()
+        : null
+
+      if (linkedTasker) {
+        return NextResponse.json(
+          { error: 'This email already belongs to an active SwiftDU Tasker account.' },
+          { status: 409 }
+        )
+      }
+
+      await User.updateOne(
+        { _id: matchingUser._id },
+        {
+          $set: { role: 'user' },
+          $unset: { taskerId: 1 },
+        }
       )
     }
 
