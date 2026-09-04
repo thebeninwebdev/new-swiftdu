@@ -18,7 +18,7 @@ export default function OfflinePage() {
       <div className="mx-auto flex min-h-[calc(100vh-6rem)] max-w-xl items-center">
         <section className="w-full rounded-[2rem] border border-slate-200/70 bg-white/90 p-8 shadow-[0_24px_60px_rgba(15,23,42,0.12)] backdrop-blur-sm sm:p-10">
           <Image
-            src="/logo.png"
+            src="/logo.png?v=20260826"
             alt="Swiftdu"
             width={150}
             height={44}

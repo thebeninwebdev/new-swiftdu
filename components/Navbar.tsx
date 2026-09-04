@@ -1,88 +1,534 @@
-import { Menu } from "lucide-react";
+"use client";
 
 import Image from "next/image";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
+const navLinks = [
+  {
+    label: "Home",
+    href: "/",
+  },
+  {
+    label: "About us",
+    href: "/about-us",
+  },
+  {
+    label: "Contact us",
+    href: "/contact-us",
+  },
+];
 
 export const Navbar = () => {
+  const pathname = usePathname();
+
+  const [isOpen, setIsOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  const [scrolled, setScrolled] = useState(false);
+
+  // Navbar entrance animation
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      setMounted(true);
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  // Subtle navbar state after scrolling
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 12);
+    };
+
+    handleScroll();
+
+    window.addEventListener("scroll", handleScroll, {
+      passive: true,
+    });
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, []);
+
+  // Close mobile nav when route changes
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setIsOpen(false));
+    return () => cancelAnimationFrame(frame);
+  }, [pathname]);
+
+  // Prevent page scrolling while mobile menu is open
+  useEffect(() => {
+    document.body.style.overflow = isOpen ? "hidden" : "";
+
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [isOpen]);
+
   return (
-    <nav className="fixed top-0 left-0 right-0 z-50 bg-white/80 md:py-2 backdrop-blur-md border-b border-gray-100">
-      <input id="mobile-nav-toggle" type="checkbox" className="peer sr-only" aria-hidden="true" />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
-          {/* Logo */}
-          <Link href="/" className="shrink-0 cursor-pointer">
-            <Image
-              src="/logo.png"
-              alt="Swiftdu"
-              width={342}
-              height={63}
-              className="h-10 w-auto object-contain"
-              priority
+   <header
+  className={`
+    fixed inset-x-0 top-0 z-50
+    ${
+      scrolled
+        ? "bg-white/95 shadow-[0_1px_20px_rgba(0,0,0,0.04)] backdrop-blur-xl"
+        : "bg-white"
+    }
+  `}
+>
+<nav
+  className={`
+    mx-auto flex h-[84px] max-w-[1440px]
+    items-center justify-between
+    px-5 sm:px-7 lg:px-10 xl:px-14
+
+    transition-all duration-700
+    ease-[cubic-bezier(0.22,1,0.36,1)]
+
+    ${
+      mounted
+        ? "translate-y-0 opacity-100"
+        : "-translate-y-5 opacity-0"
+    }
+  `}
+>
+        {/* ========================================
+            Logo
+        ========================================= */}
+        <Link
+          href="/"
+          onClick={() => setIsOpen(false)}
+          className="
+            group relative z-50 shrink-0
+            transition-transform duration-500
+            ease-[cubic-bezier(0.22,1,0.36,1)]
+            hover:-translate-y-[1px]
+          "
+        >
+          <Image
+            src="/logo.png?v=20260826"
+            alt="SwiftDU"
+            width={342}
+            height={63}
+            priority
+            className="
+              h-9 w-auto object-contain
+              transition-transform duration-500
+              ease-[cubic-bezier(0.22,1,0.36,1)]
+              group-hover:scale-[1.025]
+              md:h-10
+            "
+          />
+        </Link>
+
+        {/* ========================================
+            Desktop navigation
+        ========================================= */}
+        <div
+          className="
+            absolute left-1/2 hidden
+            -translate-x-1/2
+            items-center gap-9
+            lg:flex xl:gap-11
+          "
+        >
+          {navLinks.map((link) => {
+            const active =
+              link.href === "/"
+                ? pathname === "/"
+                : pathname.startsWith(link.href);
+
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                className="
+                  group relative
+                  py-3
+                  text-[15px] font-medium
+                  tracking-[-0.01em]
+                  text-[#171717]
+                "
+              >
+                {/* Visible text */}
+                <span
+                  className="
+                    relative z-10 inline-block
+                    transition-all duration-300
+                    ease-[cubic-bezier(0.22,1,0.36,1)]
+                    group-hover:-translate-y-[1px]
+                    group-hover:text-black
+                  "
+                >
+                  {link.label}
+                </span>
+
+                {/* Skillex-style subtle line movement */}
+                <span
+                  className={`
+                    absolute bottom-[7px] left-0
+                    h-[1px] w-full
+                    origin-left bg-[#171717]
+
+                    transition-transform duration-500
+                    ease-[cubic-bezier(0.22,1,0.36,1)]
+
+                    ${
+                      active
+                        ? "scale-x-100"
+                        : "scale-x-0 group-hover:scale-x-100"
+                    }
+                  `}
+                />
+              </Link>
+            );
+          })}
+        </div>
+
+        {/* ========================================
+            Desktop actions
+        ========================================= */}
+        <div className="hidden items-center gap-7 lg:flex">
+          {/* Login */}
+          <Link
+            href="/login"
+            className="
+              group relative
+              py-3
+              text-[15px] font-medium
+              tracking-[-0.01em]
+              text-[#171717]
+            "
+          >
+            <span
+              className="
+                relative z-10 inline-block
+                transition-transform duration-300
+                ease-[cubic-bezier(0.22,1,0.36,1)]
+                group-hover:-translate-y-[1px]
+              "
+            >
+              Log in
+            </span>
+
+            <span
+              className="
+                absolute bottom-[7px] left-0
+                h-[1px] w-full
+                origin-left scale-x-0
+                bg-[#171717]
+
+                transition-transform duration-500
+                ease-[cubic-bezier(0.22,1,0.36,1)]
+
+                group-hover:scale-x-100
+              "
             />
           </Link>
 
-          {/* Desktop Menu */}
-          <div className="hidden md:flex items-center space-x-8">
-            <Link href="/" className="text-gray-600 hover:text-indigo-600 font-medium transition-colors">Home</Link>
-            <Link href="/about-us" className="text-gray-600 hover:text-indigo-600 font-medium transition-colors">About us</Link>
-            <Link href="/contact-us" className="text-gray-600 hover:text-indigo-600 font-medium transition-colors">Contact us</Link>
-            <Link 
-              href="/login" 
-              className="bg-gray-900 text-white px-8 py-2 rounded-full font-medium hover:bg-gray-800 transition-all transform hover:scale-105"
-            >
-              Log in
-            </Link>
-            <Link 
-              href="/signup" 
-              className="bg-gray-900 text-white px-5 py-2 rounded-full font-medium hover:bg-gray-800 transition-all transform hover:scale-105"
-            >
-              Get Started
-            </Link>
-            <Link 
-              href="/dry-cleaner-signup/signup" 
-              className="bg-cyan-600 text-white px-5 py-2 rounded-full font-medium hover:bg-cyan-700 transition-all transform hover:scale-105"
-            >
-              Dry Cleaner
-            </Link>
+          {/* ========================================
+              Animated primary CTA
+
+              Black -> SwiftDU blue
+              Text moves out / new text moves in
+          ========================================= */}
+          <Link
+            href="/signup"
+            className="
+              group relative
+              isolate
+              flex h-[48px]
+              min-w-[132px]
+              items-center justify-center
+              overflow-hidden
+              rounded-full
+              bg-[#151515]
+              px-7
+
+              text-[15px] font-medium
+              text-white
+
+              transition-transform duration-500
+              ease-[cubic-bezier(0.22,1,0.36,1)]
+
+              hover:-translate-y-[2px]
+              active:translate-y-0
+            "
+          >
+            {/* Animated background */}
+            <span
+              className="
+                absolute inset-0 -z-10
+                translate-y-[105%]
+                rounded-[inherit]
+                bg-indigo-600
+
+                transition-transform duration-[550ms]
+                ease-[cubic-bezier(0.22,1,0.36,1)]
+
+                group-hover:translate-y-0
+              "
+            />
+
+            {/* Text window */}
+            <span className="relative h-[21px] overflow-hidden">
+              {/* Original */}
+              <span
+                className="
+                  block
+                  transition-transform duration-[500ms]
+                  ease-[cubic-bezier(0.22,1,0.36,1)]
+
+                  group-hover:-translate-y-full
+                "
+              >
+                Get Started
+              </span>
+
+              {/* Incoming duplicate */}
+              <span
+                className="
+                  absolute left-0 top-full
+                  whitespace-nowrap
+
+                  transition-transform duration-[500ms]
+                  ease-[cubic-bezier(0.22,1,0.36,1)]
+
+                  group-hover:-translate-y-full
+                "
+              >
+                Get Started
+              </span>
+            </span>
+          </Link>
+        </div>
+
+        {/* ========================================
+            Animated mobile hamburger
+        ========================================= */}
+        <button
+          type="button"
+          onClick={() => setIsOpen((current) => !current)}
+          aria-expanded={isOpen}
+          aria-label={isOpen ? "Close navigation" : "Open navigation"}
+          className="
+            relative z-50
+            flex h-11 w-11
+            items-center justify-center
+            rounded-full
+            lg:hidden
+          "
+        >
+          <span className="relative block h-5 w-6">
+            {/* top line */}
+            <span
+              className={`
+                absolute left-0 top-[5px]
+                h-[1.5px] w-6
+                rounded-full bg-[#171717]
+
+                transition-all duration-500
+                ease-[cubic-bezier(0.22,1,0.36,1)]
+
+                ${
+                  isOpen
+                    ? "translate-y-[4.5px] rotate-45"
+                    : "translate-y-0 rotate-0"
+                }
+              `}
+            />
+
+            {/* bottom line */}
+            <span
+              className={`
+                absolute left-0 top-[14px]
+                h-[1.5px] w-6
+                rounded-full bg-[#171717]
+
+                transition-all duration-500
+                ease-[cubic-bezier(0.22,1,0.36,1)]
+
+                ${
+                  isOpen
+                    ? "-translate-y-[4.5px] -rotate-45"
+                    : "translate-y-0 rotate-0"
+                }
+              `}
+            />
+          </span>
+        </button>
+      </nav>
+
+      {/* ========================================
+          Mobile menu
+      ========================================= */}
+<div
+  aria-hidden={!isOpen}
+  inert={!isOpen ? true : undefined}
+  className={`
+    fixed inset-x-0 bottom-0 top-[84px]
+    z-[999]
+    bg-white
+    lg:hidden
+
+    transition-[opacity,transform] ease-out
+
+    ${
+      isOpen
+        ? "translate-y-0 opacity-100 pointer-events-auto duration-300"
+        : "translate-y-2 opacity-0 pointer-events-none duration-200"
+    }
+  `}
+>
+        <div
+          className="
+            mx-auto flex h-full max-w-7xl
+            flex-col
+            px-5 pb-8 pt-8
+            sm:px-7
+          "
+        >
+          {/* Mobile navigation links */}
+          <div className="flex flex-col">
+            {navLinks.map((link, index) => {
+              const active =
+                link.href === "/"
+                  ? pathname === "/"
+                  : pathname.startsWith(link.href);
+
+              return (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  onClick={() => setIsOpen(false)}
+                  style={{
+                    transitionDelay: isOpen
+                      ? `${100 + index * 70}ms`
+                      : "0ms",
+                  }}
+                  className={`
+                    group
+                    flex items-center justify-between
+                    border-b border-black/[0.08]
+                    py-5
+
+                    text-[clamp(2rem,8vw,3.2rem)]
+                    font-medium
+                    leading-none
+                    tracking-[-0.045em]
+                    text-[#171717]
+
+                    transition-all duration-700
+                    ease-[cubic-bezier(0.22,1,0.36,1)]
+
+                    ${
+                      isOpen
+                        ? "translate-y-0 opacity-100"
+                        : "translate-y-0 opacity-100"
+                    }
+                  `}
+                >
+                  <span>{link.label}</span>
+
+                  <span
+                    className={`
+                      h-2.5 w-2.5 rounded-full
+                      transition-all duration-500
+
+                      ${
+                        active
+                          ? "scale-100 bg-indigo-600"
+                          : "scale-0 bg-indigo-600 group-hover:scale-100"
+                      }
+                    `}
+                  />
+                </Link>
+              );
+            })}
           </div>
 
-          {/* Mobile Menu Button */}
-          <div className="md:hidden flex items-center">
-            <label htmlFor="mobile-nav-toggle" className="cursor-pointer text-gray-600 hover:text-gray-900">
-              <Menu className="h-6 w-6" />
-              <span className="sr-only">Toggle navigation</span>
-            </label>
+          {/* Bottom mobile actions */}
+          <div
+            className={`
+              mt-auto
+              transition-all delay-300 duration-700
+              ease-[cubic-bezier(0.22,1,0.36,1)]
+
+              ${
+                isOpen
+                  ? "translate-y-0 opacity-100"
+                  : "translate-y-0 opacity-100"
+              }
+            `}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <Link
+                href="/login"
+                onClick={() => setIsOpen(false)}
+                className="
+                  text-[16px] font-medium
+                  text-[#171717]
+                  underline-offset-4
+                  hover:underline
+                "
+              >
+                Log in
+              </Link>
+
+              <Link
+                href="/dry-cleaner-signup/signup"
+                onClick={() => setIsOpen(false)}
+                className="
+                  text-sm text-black/45
+                  transition-colors duration-300
+                  hover:text-black
+                "
+              >
+                Become a service partner
+              </Link>
+            </div>
+
+            {/* Mobile CTA */}
+            <Link
+              href="/signup"
+              onClick={() => setIsOpen(false)}
+              className="
+                group relative
+                flex h-[60px] w-full
+                items-center justify-center
+                overflow-hidden
+                rounded-full
+                bg-[#151515]
+
+                text-base font-medium
+                text-white
+
+                active:scale-[0.98]
+              "
+            >
+              <span
+                className="
+                  absolute inset-0
+                  translate-y-full
+                  bg-indigo-600
+
+                  transition-transform duration-500
+                  ease-[cubic-bezier(0.22,1,0.36,1)]
+
+                  group-hover:translate-y-0
+                "
+              />
+
+              <span className="relative z-10">
+                Get Started
+              </span>
+            </Link>
           </div>
         </div>
       </div>
-
-      {/* Mobile Menu */}
-      <div className="max-h-0 overflow-hidden border-b border-gray-100 bg-white opacity-0 transition-[max-height,opacity] duration-200 ease-out peer-checked:max-h-96 peer-checked:opacity-100 md:hidden">
-        <div className="px-4 pt-2 pb-6 space-y-2">
-          <Link href="/" className="block px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md">Home</Link>
-          <Link href="/about-us" className="block px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md">About us</Link>
-          <Link href="/contact-us" className="block px-3 py-2 text-base font-medium text-gray-700 hover:bg-gray-50 rounded-md">Contact us</Link>
-          <Link 
-            href="/login" 
-            className="block w-full mt-4 text-indigo-600 border-2 border-indigo-600 px-5 py-3 rounded-lg font-medium text-center"
-          >
-            Log in
-          </Link>
-          <Link 
-            href="/signup" 
-            className="block w-full mt-4 bg-indigo-600 text-white px-5 py-3 rounded-lg font-medium text-center"
-          >
-            Get Started
-          </Link>
-          <Link 
-            href="/dry-cleaner-signup/signup" 
-            className="block w-full mt-3 bg-cyan-600 text-white px-5 py-3 rounded-lg font-medium text-center"
-          >
-            Sign up as Dry Cleaner
-          </Link>
-        </div>
-      </div>
-    </nav>
+    </header>
   );
 };

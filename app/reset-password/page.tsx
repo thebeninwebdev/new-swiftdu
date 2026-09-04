@@ -91,7 +91,7 @@ import { toast } from "sonner";
             <div className="relative flex items-center justify-center gap-x-3">
               <Link href="/">
                 <Image
-                  src="/logo.png"
+                  src="/logo.png?v=20260826"
                   alt="logo"
                   width={342}
                   height={63}

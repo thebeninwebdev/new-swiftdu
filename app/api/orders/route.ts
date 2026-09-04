@@ -36,6 +36,7 @@ import {
   formatPushTaskType,
   sendPushNotification,
 } from '@/lib/push-notifications';
+import { isProfileComplete } from '@/lib/profile-completion';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes', DRY_CLEANING_TASK_TYPE, INDOMIE_TASK_TYPE]);
 
@@ -49,6 +50,20 @@ export async function POST(request: NextRequest) {
 
     if (!session || !session.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // Customer operational details are required to place an order, not to authenticate.
+    // Privileged/test-order behavior remains governed by the existing authorization below.
+    if (session.user.role === 'user') {
+      const profile = await User.findById(session.user.id)
+        .select('name gender phone location defaultLocation')
+        .lean();
+      if (!profile || !isProfileComplete(profile)) {
+        return NextResponse.json(
+          { error: 'Complete your profile before placing an order.', code: 'PROFILE_INCOMPLETE', completeProfileURL: '/complete-profile' },
+          { status: 403 }
+        );
+      }
     }
 
     const body = await request.json();

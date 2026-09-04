@@ -5,6 +5,8 @@ import clientPromise, { connectDB } from "./db";
 import { User } from "@/models/user";
 import { twoFactor } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
+import { magicLink } from "better-auth/plugins";
+import { AuthEmailRateLimit } from "@/models/auth-email-rate-limit";
 
 const client = await clientPromise;
 const db = client.db();
@@ -27,7 +29,8 @@ const suspendedUserGuard = (): BetterAuthPlugin => ({
   hooks: {
     before: [
       {
-        matcher: (ctx) => ctx.path === "/sign-in/email",
+        matcher: (ctx) =>
+          ctx.path === "/sign-in/email" || ctx.path === "/sign-in/magic-link",
         handler: createAuthMiddleware(async (ctx) => {
           const email =
             typeof ctx.body?.email === "string"
@@ -54,6 +57,42 @@ const suspendedUserGuard = (): BetterAuthPlugin => ({
         }),
       },
     ],
+  },
+});
+
+const magicLinkEmailGuard = (): BetterAuthPlugin => ({
+  id: "magic-link-email-guard",
+  hooks: {
+    before: [{
+      matcher: (ctx) => ctx.path === "/sign-in/magic-link",
+      handler: createAuthMiddleware(async (ctx) => {
+        const email = typeof ctx.body?.email === "string" ? ctx.body.email.trim().toLowerCase() : "";
+        if (!email) return;
+
+        await connectDB();
+        const now = new Date();
+        const hourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+        const cooldownAgo = new Date(now.getTime() - 60 * 1000);
+        const existing = await AuthEmailRateLimit.findOne({ email }).lean();
+
+        if (existing?.lastSentAt && existing.lastSentAt > cooldownAgo) {
+          throw APIError.from("TOO_MANY_REQUESTS", { code: "MAGIC_LINK_COOLDOWN", message: "Please wait 60 seconds before requesting another link." });
+        }
+        if (existing?.windowStartedAt && existing.windowStartedAt > hourAgo && existing.sendCount >= 5) {
+          throw APIError.from("TOO_MANY_REQUESTS", { code: "MAGIC_LINK_HOURLY_LIMIT", message: "Too many sign-in links requested. Please try again later." });
+        }
+
+        if (!existing || existing.windowStartedAt <= hourAgo) {
+          await AuthEmailRateLimit.findOneAndUpdate(
+            { email },
+            { $set: { windowStartedAt: now, lastSentAt: now, sendCount: 1, expiresAt: new Date(now.getTime() + 2 * 60 * 60 * 1000) } },
+            { upsert: true }
+          );
+        } else {
+          await AuthEmailRateLimit.updateOne({ email }, { $set: { lastSentAt: now, expiresAt: new Date(now.getTime() + 2 * 60 * 60 * 1000) }, $inc: { sendCount: 1 } });
+        }
+      }),
+    }],
   },
 });
 
@@ -164,6 +203,7 @@ export const auth = betterAuth({
         type: "string",
         required: false,
       },
+      defaultLocation: { type: "string", required: false },
       profileImage: {
         type: "string",
         required: false,
@@ -180,9 +220,12 @@ export const auth = betterAuth({
         type: "date",
         required: false,
       },
+      birthdayDay: { type: "number", required: false },
+      birthdayMonth: { type: "number", required: false },
       taskerId: {
         type: "string",
         required: false,
+        input: false,
       },
       isExco: {
         type: "boolean",
@@ -225,6 +268,28 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    magicLink({
+      expiresIn: 15 * 60,
+      storeToken: "hashed",
+      rateLimit: { window: 60, max: 5 },
+      sendMagicLink: async ({ email, url }) => {
+        if (process.env.AUTH_SEND_REAL_EMAILS === "false") {
+          if (process.env.NODE_ENV === "production") throw new Error("AUTH_SEND_REAL_EMAILS=false is not allowed in production.");
+          console.info("[magic-link:development]", { email, url });
+          return;
+        }
+        const [{ default: MagicLinkEmail }, { sendTransactionalEmail }] = await Promise.all([
+          import("@/emails/magicLinkEmail"),
+          import("./email"),
+        ]);
+        await sendTransactionalEmail({
+          to: email,
+          subject: "Your secure SwiftDU sign-in link",
+          react: MagicLinkEmail({ url }),
+          tags: [{ name: "email_type", value: "magic_link" }, { name: "auth_flow", value: "sign_in" }],
+        });
+      },
+    }),
     passkey({
       rpID: appURL.hostname,
       rpName: "SwiftDU",
@@ -232,6 +297,7 @@ export const auth = betterAuth({
     }),
     twoFactor(),
     suspendedUserGuard(),
+    magicLinkEmailGuard(),
     requiredSignupDetailsGuard(),
   ],
 });

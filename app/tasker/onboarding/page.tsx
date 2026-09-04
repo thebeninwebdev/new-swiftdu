@@ -174,7 +174,7 @@ function TaskerOnboardingContent() {
       <section className="relative z-10 w-full max-w-md overflow-hidden rounded-[28px] border border-white/15 bg-white shadow-2xl">
         <div className="border-b border-slate-100 px-6 py-6">
           <Link href="/" className="inline-flex">
-            <Image src="/logo.png" alt="SwiftDU" width={132} height={46} className="h-10 w-auto object-contain" />
+            <Image src="/logo.png?v=20260826" alt="SwiftDU" width={132} height={46} className="h-10 w-auto object-contain" />
           </Link>
           <p className="mt-5 text-xs font-bold uppercase tracking-[0.2em] text-blue-600">Tasker onboarding</p>
           <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">

@@ -15,6 +15,33 @@ const withPWA = require("next-pwa")({
 
 const nextConfig: NextConfig = {
   images: {
+    localPatterns: [
+      {
+        pathname: "/logo.png",
+        search: "?v=20260826",
+      },
+      {
+        pathname: "/sign-up.jpg",
+      },
+      {
+        pathname: "/sign-up.png",
+      },
+      {
+        pathname: "/support.jpeg",
+      },
+      {
+        pathname: "/earn.jpeg",
+      },
+      {
+        pathname: "/learn.jpeg",
+      },
+      {
+        pathname: "/tasker-signup.jpg",
+      },
+      {
+        pathname: "/Western_Delta_University.jpg",
+      },
+    ],
     remotePatterns: [
       {
         protocol: "https",

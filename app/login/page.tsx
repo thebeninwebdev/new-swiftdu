@@ -463,7 +463,7 @@ function LoginContent() {
           <div style={{ textAlign: "center", marginBottom: "28px" }}>
             <div className="flex-center gap-x-3 relative">
             <Link href="/">
-            <Image src={"/logo.png"} alt="logo" width={342} height={63} className="object-contain w-28"/>
+            <Image src={"/logo.png?v=20260826"} alt="logo" width={342} height={63} className="object-contain w-28"/>
             </Link>
           </div>
           </div>

@@ -1,582 +1,323 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { authClient } from "@/lib/auth-client";
-import {
-  getPostAuthRedirect,
-  normalizePhoneNumber,
-} from "@/lib/profile-completion";
-import Link from "next/link";
 import Image from "next/image";
-import { toast } from "sonner";
-import { Eye, EyeOff, Loader2, ChevronDown, Mail, MapPin } from "lucide-react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { FormEvent, useEffect, useState } from "react";
+import { ArrowLeft, Loader2, Mail, CheckCircle2 } from "lucide-react";
+import { authClient } from "@/lib/auth-client";
 
-const COUNTRY_CODES = [
-  { code: "NG", dial: "+234", flag: "🇳🇬" },
-  { code: "US", dial: "+1", flag: "🇺🇸" },
-  { code: "GB", dial: "+44", flag: "🇬🇧" },
-  { code: "CA", dial: "+1", flag: "🇨🇦" },
-  { code: "AU", dial: "+61", flag: "🇦🇺" },
-  { code: "DE", dial: "+49", flag: "🇩🇪" },
-  { code: "FR", dial: "+33", flag: "🇫🇷" },
-  { code: "ES", dial: "+34", flag: "🇪🇸" },
-];
-
-const LOCATIONS = [
-  { value: "", label: "Select your hostel / location", disabled: true },
-  { value: "Amnesty", label: "Amnesty" },
-  { value: "Girls Hostel", label: "Girls Hostel" },
-  { value: "Law Hall", label: "Law Hall" },
-  { value: "Staff Quarters", label: "Staff Quarters" },
-];
+const COOLDOWN = 60;
 
 export default function SignUpPage() {
-  const [form, setForm] = useState({
-    firstName: "",
-    lastName: "",
-    email: "",
-    phone: "",
-    location: "",
-    password: "",
-    confirmPassword: "",
-  });
-  const [countryDial, setCountryDial] = useState(COUNTRY_CODES[0]);
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [email, setEmail] = useState("");
+  const [sentTo, setSentTo] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [serverError, setServerError] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [touched, setTouched] = useState<Record<string, boolean>>({});
-  const router = useRouter();
-  const { data: session } = authClient.useSession();
+  const [error, setError] = useState("");
+  const [seconds, setSeconds] = useState(0);
 
   useEffect(() => {
-    if (session?.user) {
-      router.replace(getPostAuthRedirect(session.user));
-    }
-  }, [session?.user, router]);
+    if (seconds <= 0) return;
 
-  const validate = () => {
-    const e: Record<string, string> = {};
-    if (!form.firstName.trim()) e.firstName = "First name is required";
-    if (!form.lastName.trim()) e.lastName = "Last name is required";
-    if (!form.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email))
-      e.email = "Please enter a valid email address";
-    if (!form.phone.trim()) e.phone = "Phone number is required";
-    if (!form.location) e.location = "Please select your location";
-    if (!form.password || form.password.length < 8)
-      e.password = "Password must be at least 8 characters";
-    if (form.password !== form.confirmPassword)
-      e.confirmPassword = "Passwords do not match";
-    return e;
-  };
+    const timer = window.setInterval(() => {
+      setSeconds((value) => Math.max(0, value - 1));
+    }, 1000);
 
-  const validateField = (name: keyof typeof form, value: string) => {
-    const e: Record<string, string> = {};
-    switch (name) {
-      case "firstName":
-        if (!value.trim()) e.firstName = "First name is required";
-        break;
-      case "lastName":
-        if (!value.trim()) e.lastName = "Last name is required";
-        break;
-      case "email":
-        if (!value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
-          e.email = "Please enter a valid email address";
-        break;
-      case "phone":
-        if (!value.trim()) e.phone = "Phone number is required";
-        break;
-      case "location":
-        if (!value) e.location = "Please select your location";
-        break;
-      case "password":
-        if (!value || value.length < 8)
-          e.password = "Password must be at least 8 characters";
-        if (form.confirmPassword && value !== form.confirmPassword)
-          e.confirmPassword = "Passwords do not match";
-        break;
-      case "confirmPassword":
-        if (value !== form.password)
-          e.confirmPassword = "Passwords do not match";
-        break;
-    }
-    return e;
-  };
+    return () => window.clearInterval(timer);
+  }, [seconds]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
-    
-    if (touched[name]) {
-      const fieldErrors = validateField(name as keyof typeof form, value);
-      setErrors((prev) => ({ ...prev, ...fieldErrors }));
-      if (!fieldErrors[name]) {
-        setErrors((prev) => {
-          const newErrors = { ...prev };
-          delete newErrors[name];
-          return newErrors;
-        });
-      }
-    }
-    setServerError("");
-  };
+  async function sendLink(event?: FormEvent) {
+    event?.preventDefault();
 
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement | HTMLSelectElement>) => {
-    const { name, value } = e.target;
-    setTouched((prev) => ({ ...prev, [name]: true }));
-    const fieldErrors = validateField(name as keyof typeof form, value);
-    setErrors((prev) => ({ ...prev, ...fieldErrors }));
-  };
+    const normalized = email.trim().toLowerCase();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const allTouched = Object.keys(form).reduce((acc, key) => ({ ...acc, [key]: true }), {});
-    setTouched(allTouched);
-    
-    const validationErrors = validate();
-    if (Object.keys(validationErrors).length) {
-      setErrors(validationErrors);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      setError("Enter a valid email address.");
       return;
     }
-    
+
     setLoading(true);
-    try {
-      const normalizedEmail = form.email.trim().toLowerCase();
-      const activationResponse = await fetch("/api/tasker-onboarding/request-link", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalizedEmail }),
-      });
-      const activation = await activationResponse.json().catch(() => ({}));
+    setError("");
 
-      if (!activationResponse.ok) {
-        if (activation.activationRequired) {
-          throw new Error(
-            "Your Tasker account needs activation, but we could not send the secure link. Please try again shortly."
-          );
-        }
-        throw new Error(activation.error || "We could not check this email right now.");
-      }
+    const { error: authError } = await authClient.signIn.magicLink({
+      email: normalized,
+      callbackURL: "/dashboard",
+      newUserCallbackURL: "/complete-profile",
+      errorCallbackURL: "/signup?magicLinkError=true",
+    });
 
-      if (activation.activationRequired) {
-        const message =
-          "Your approved Tasker account needs secure activation. Check your email for a private link to create a password or connect your existing account.";
-        setServerError(message);
-        toast.success("Check your email to activate your Tasker account");
-        return;
-      }
+    setLoading(false);
 
-      if (activation.nextAction === "login") {
-        setServerError(
-          "A SwiftDU account already exists for this email. Sign in with your password instead of creating another account."
-        );
-        return;
-      }
-
-      if (activation.nextAction === "google") {
-        setServerError(
-          "This email is connected to a Google account. Continue with Google to use the same SwiftDU account."
-        );
-        return;
-      }
-
-      const { error: signUpError } = await authClient.signUp.email({
-        name: `${form.firstName} ${form.lastName}`,
-        email: normalizedEmail,
-        password: form.password,
-        phone: normalizePhoneNumber(countryDial.dial, form.phone),
-        location: form.location,
-      });
-
-      if (signUpError) {
-        throw signUpError;
-      }
-
-      const { error: verificationError } = await authClient.sendVerificationEmail({
-        email: normalizedEmail,
-        callbackURL: "/login",
-      });
-
-      if (verificationError) {
-        const message =
-          "Your account was created, but we couldn't send the verification email right now. Please try signing up again with the same email in a moment to resend it.";
-        setServerError(message);
-        toast.error("Account created, but email delivery failed", {
-          description: "We couldn't send your verification link right now.",
-        });
-        return;
-      }
-      
-      toast.success("Verify your email", {
-        description: "We sent a verification link to your email.",
-        action: {
-          label: "Open Gmail",
-          onClick: () => window.open("https://mail.google.com", "_blank"),
-        },
-      });
-
-      setForm({
-        firstName: "",
-        lastName: "",
-        email: "",
-        phone: "",
-        location: "",
-        password: "",
-        confirmPassword: "",
-      });
-      setTouched({});
-    } catch (err: unknown) {
-      setServerError(
-        err instanceof Error
-          ? err.message
-          : "Something went wrong. Please try again."
+    if (authError) {
+      setError(
+        authError.message || "We could not send the link. Please try again."
       );
-    } finally {
-      setLoading(false);
+      return;
     }
-  };
 
-  const handleGoogleSignIn = async () => {
-    setServerError("");
+    setSentTo(normalized);
+    setSeconds(COOLDOWN);
+  }
+
+  async function google() {
     setGoogleLoading(true);
+    setError("");
 
-    try {
-      const { error } = await authClient.signIn.social({
-        provider: "google",
-        callbackURL: "/signup/complete-profile",
-        newUserCallbackURL: "/signup/complete-profile",
-        errorCallbackURL: "/signup",
-      });
+    const { error: authError } = await authClient.signIn.social({
+      provider: "google",
+      callbackURL: "/dashboard",
+      newUserCallbackURL: "/complete-profile",
+      errorCallbackURL: "/signup",
+    });
 
-      if (error) {
-        throw error;
-      }
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error
-          ? err.message
-          : "Google sign up failed. Please try again.";
-
-      setServerError(message);
-      toast.error("Google sign up failed", {
-        description: message,
-      });
-    } finally {
+    if (authError) {
+      setError(authError.message || "Google sign-in failed.");
       setGoogleLoading(false);
     }
-  };
-
-  const inputClasses = (error?: string, isSelect = false) => `
-    w-full px-4 py-3 text-sm sm:text-base
-    border-2 rounded-xl transition-all duration-200 ease-out
-    focus:outline-none focus:ring-4 focus:ring-opacity-20
-    ${error 
-      ? "border-red-400 bg-red-50/50 focus:border-red-500 focus:ring-red-500" 
-      : "border-gray-200 focus:border-indigo-600 focus:ring-indigo-600 hover:border-indigo-300"
-    }
-    ${isSelect ? "appearance-none cursor-pointer bg-white" : "bg-white"}
-    placeholder:text-gray-400 text-gray-900
-  `;
+  }
 
   return (
-    <div className="min-h-screen relative flex items-center justify-center p-3 sm:p-4 lg:p-6">
-      {/* Background Image */}
-      <div className="absolute inset-0 z-0">
-        <Image
-          src="/sign-up.jpg"
-          alt="Background"
-          fill
-          className="object-cover object-center"
-          priority
-        />
-        <div className="absolute inset-0 bg-black/70" />
-      </div>
-
-      {/* Main Card - No Header/Footer */}
-      <div className="relative z-10 w-full max-w-md overflow-hidden rounded-2xl border border-white/60 bg-white/92 backdrop-blur-xl shadow-[0_24px_80px_rgba(79,70,229,0.18)] sm:rounded-3xl">
-        <div className="px-6 pt-5 sm:px-8 sm:pt-6">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-sm font-bold text-indigo-600 transition-colors hover:text-indigo-700"
-          >
-            <span aria-hidden="true">←</span>
-            Back to home
-          </Link>
-        </div>
-        {/* Logo Only - No Header Section */}
-        <div className="px-6 sm:px-8 pt-3 sm:pt-4 pb-2 flex justify-center">
-          <Link href="/" className="inline-block hover:opacity-80 transition-opacity">
-            <Image 
-              src="/logo.png" 
-              alt="SwiftDU" 
-              width={140} 
-              height={50} 
-              className="object-contain h-12 w-auto"
+    <main className="min-h-screen bg-[#f6f7fb] px-4 py-6 sm:px-6 lg:px-8">
+      <div className="mx-auto flex min-h-[calc(100vh-3rem)] max-w-6xl items-center justify-center">
+        <div className="grid w-full overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-[0_30px_80px_rgba(15,23,42,0.12)] lg:grid-cols-2">
+          {/* IMAGE PANEL */}
+          <section className="relative hidden min-h-[720px] overflow-hidden lg:block">
+            <div
+              role="img"
+              aria-label="SwiftDU community"
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: "url('/sign-up.png')" }}
             />
-          </Link>
-        </div>
 
-        {/* Form Content */}
-        <div className="px-5 sm:px-8 py-4 sm:py-6">
-          {/* Server Error */}
-          {serverError && (
-            <div className="mb-4 p-3 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2 animate-in slide-in-from-top-2">
-              <div className="w-4 h-4 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0 mt-0.5">
-                <span className="text-white text-[10px]">!</span>
-              </div>
-              <p className="text-xs sm:text-sm text-red-700">{serverError}</p>
-            </div>
-          )}
+            <div className="absolute inset-0 bg-gradient-to-br from-[#4f2bd6]/90 via-[#6b46e8]/78 to-[#8b5cf6]/65" />
+            <div className="absolute inset-0 bg-black/15" />
 
-          <form onSubmit={handleSubmit} noValidate className="space-y-4">
-            {/* Name Row */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <input
-                  id="firstName"
-                  name="firstName"
-                  type="text"
-                  autoComplete="given-name"
-                  placeholder="First Name"
-                  value={form.firstName}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  className={inputClasses(errors.firstName)}
+            <div className="relative z-10 flex h-full flex-col justify-between p-10 xl:p-12">
+              <Link href="/" className="inline-flex w-fit">
+                <Image
+                  src="/logo.png?v=20260826"
+                  alt="SwiftDU"
+                  width={150}
+                  height={48}
+                  className="h-11 w-auto object-contain brightness-0 invert"
                 />
-                {errors.firstName && (
-                  <p className="text-[10px] sm:text-xs text-red-600">{errors.firstName}</p>
-                )}
-              </div>
+              </Link>
 
-              <div className="space-y-1">
-                <input
-                  id="lastName"
-                  name="lastName"
-                  type="text"
-                  autoComplete="family-name"
-                  placeholder="Last Name"
-                  value={form.lastName}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  className={inputClasses(errors.lastName)}
-                />
-                {errors.lastName && (
-                  <p className="text-[10px] sm:text-xs text-red-600">{errors.lastName}</p>
-                )}
-              </div>
-            </div>
+              <div className="max-w-md mb-16">
 
-            {/* Email */}
-            <div className="space-y-1">
-              <div className="relative">
-                <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
-                  placeholder="Email Address"
-                  value={form.email}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  className={inputClasses(errors.email)}
-                />
-                <Mail className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400 pointer-events-none" />
-              </div>
-              {errors.email && (
-                <p className="text-[10px] sm:text-xs text-red-600">{errors.email}</p>
-              )}
-            </div>
+                <h2 className="text-5xl font-semibold leading-tight text-white xl:text-5xl">
+                  Join the campus community that gets things done.
+                </h2>
 
-            {/* Phone */}
-            <div className="space-y-1">
-              <div className="flex gap-2">
-                <div className="relative flex-shrink-0">
-                  <select
-                    value={countryDial.code}
-                    onChange={(e) => {
-                      const found = COUNTRY_CODES.find((c) => c.code === e.target.value);
-                      if (found) setCountryDial(found);
-                    }}
-                    className={`${inputClasses(undefined, true)} w-[85px] sm:w-[100px] pr-6 text-center text-xs sm:text-sm`}
-                  >
-                    {COUNTRY_CODES.map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.flag} {c.dial}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 sm:w-4 sm:h-4 text-gray-500 pointer-events-none" />
-                </div>
-                <input
-                  id="phone"
-                  name="phone"
-                  type="tel"
-                  autoComplete="tel"
-                  placeholder="Phone Number"
-                  value={form.phone}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  className={inputClasses(errors.phone)}
-                />
-              </div>
-              {errors.phone && (
-                <p className="text-[10px] sm:text-xs text-red-600">{errors.phone}</p>
-              )}
-              <p className="text-[10px] sm:text-xs text-gray-500">
-                Use a number that is active on WhatsApp so taskers and support can reach you quickly.
-              </p>
-            </div>
-
-            {/* Location */}
-            <div className="space-y-1">
-              <div className="relative">
-                <select
-                  id="location"
-                  name="location"
-                  value={form.location}
-                  onChange={handleChange}
-                  onBlur={handleBlur}
-                  className={inputClasses(errors.location, true)}
-                >
-                  {LOCATIONS.map((loc) => (
-                    <option key={loc.value} value={loc.value} disabled={loc.disabled}>
-                      {loc.label}
-                    </option>
-                  ))}
-                </select>
-                <MapPin className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 sm:w-5 sm:h-5 text-gray-400 pointer-events-none" />
-              </div>
-              {errors.location && (
-                <p className="text-[10px] sm:text-xs text-red-600">{errors.location}</p>
-              )}
-            </div>
-
-            {/* Password Row - Responsive: stacked on mobile, side-by-side on sm+ */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1">
-                <div className="relative">
-                  <input
-                    id="password"
-                    name="password"
-                    type={showPassword ? "text" : "password"}
-                    autoComplete="new-password"
-                    placeholder="Password"
-                    value={form.password}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    className={inputClasses(errors.password)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
-                  >
-                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {errors.password && (
-                  <p className="text-[10px] sm:text-xs text-red-600">{errors.password}</p>
-                )}
-              </div>
-
-              <div className="space-y-1">
-                <div className="relative">
-                  <input
-                    id="confirmPassword"
-                    name="confirmPassword"
-                    type={showConfirmPassword ? "text" : "password"}
-                    autoComplete="new-password"
-                    placeholder="Confirm Password"
-                    value={form.confirmPassword}
-                    onChange={handleChange}
-                    onBlur={handleBlur}
-                    className={inputClasses(errors.confirmPassword)}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors p-1"
-                  >
-                    {showConfirmPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                </div>
-                {errors.confirmPassword && (
-                  <p className="text-[10px] sm:text-xs text-red-600">{errors.confirmPassword}</p>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-3">
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-200" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase tracking-[0.18em] text-gray-400">
-                  <span className="bg-white px-3">Or continue with</span>
+                <div className="mt-8 inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-sm text-white/90 backdrop-blur">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Fast, simple and secure
                 </div>
               </div>
+            </div>
+          </section>
 
-              <button
-                type="button"
-                onClick={handleGoogleSignIn}
-                disabled={loading || googleLoading}
-                className="flex w-full items-center justify-center gap-3 rounded-full border border-gray-200 bg-white px-6 py-3 text-sm font-semibold text-gray-700 shadow-sm transition-all duration-200 ease-out hover:-translate-y-0.5 hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 sm:text-base"
+          {/* AUTH PANEL */}
+          <section className="flex min-h-[720px] items-center bg-white px-6 py-10 sm:px-10 lg:px-12 xl:px-16">
+            <div className="mx-auto w-full max-w-md">
+              <Link
+                href="/"
+                className="mb-8 inline-flex items-center gap-2 text-sm font-medium text-slate-500 transition hover:text-indigo-600 lg:hidden"
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-                  <path
-                    fill="#EA4335"
-                    d="M12 10.2v3.9h5.5c-.2 1.3-1.5 3.9-5.5 3.9-3.3 0-6-2.7-6-6s2.7-6 6-6c1.9 0 3.2.8 3.9 1.5l2.7-2.6C16.9 3.2 14.7 2.2 12 2.2a9.8 9.8 0 1 0 0 19.6c5.6 0 9.3-3.9 9.3-9.4 0-.6-.1-1.1-.2-1.5H12Z"
-                  />
-                  <path
-                    fill="#4285F4"
-                    d="M3.9 7.4 7.1 9.8c.9-2.1 2.8-3.6 4.9-3.6 1.9 0 3.2.8 3.9 1.5l2.7-2.6C16.9 3.2 14.7 2.2 12 2.2c-3.7 0-7 2.1-8.1 5.2Z"
-                  />
-                  <path
-                    fill="#FBBC05"
-                    d="M12 21.8c2.6 0 4.8-.9 6.4-2.5l-3-2.4c-.8.6-1.9 1.1-3.4 1.1-3.9 0-5.2-2.6-5.5-3.9L3.4 16.4c1.1 3.2 4.4 5.4 8.6 5.4Z"
-                  />
-                  <path
-                    fill="#34A853"
-                    d="M3.4 16.4 6.5 14c-.2-.6-.4-1.3-.4-2s.1-1.4.4-2L3.4 7.4A9.8 9.8 0 0 0 2.2 12c0 1.6.4 3.1 1.2 4.4Z"
-                  />
-                </svg>
-                <span>{googleLoading ? "Connecting to Google..." : "Continue with Google"}</span>
-              </button>
-            </div>
+                <ArrowLeft className="h-4 w-4" />
+                Back to home
+              </Link>
 
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={loading || googleLoading}
-              className="mt-2 flex w-full items-center justify-center gap-2 rounded-full bg-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-indigo-200 transition-all duration-200 ease-out hover:-translate-y-0.5 hover:bg-indigo-700 hover:shadow-xl disabled:cursor-not-allowed disabled:opacity-60 sm:text-base"
-            >
-              {loading ? (
+              {!sentTo ? (
                 <>
-                  <Loader2 className="w-4 h-4 sm:w-5 sm:h-5 animate-spin" />
-                  <span>Creating account...</span>
+                  <div>
+                    <Link href="/" className="inline-flex lg:hidden">
+                      <Image
+                        src="/logo.png?v=20260826"
+                        alt="SwiftDU"
+                        width={150}
+                        height={54}
+                        className="h-11 w-auto object-contain"
+                      />
+                    </Link>
+
+                    <h1 className="sr-only lg:not-sr-only lg:mt-4 lg:text-3xl lg:font-bold lg:tracking-tight lg:text-slate-950 xl:text-4xl">
+                      Join SwiftDU
+                    </h1>
+
+                    <p className="mt-3 text-sm leading-6 text-slate-500 sm:text-base">
+                      Your campus, one account.
+                    </p>
+                  </div>
+
+                  <form onSubmit={sendLink} className="mt-8">
+                    <label
+                      htmlFor="email"
+                      className="mb-2.5 block text-sm font-semibold text-slate-700"
+                    >
+                      Email address
+                    </label>
+
+                    <div className="relative">
+                      <input
+                        id="email"
+                        type="email"
+                        autoComplete="email"
+                        value={email}
+                        onChange={(event) => {
+                          setEmail(event.target.value);
+                          setError("");
+                        }}
+                        placeholder="student@email.com"
+                        className="h-14 w-full rounded-xl border border-slate-300 bg-white px-4 pr-12 text-[15px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-600 focus:ring-4 focus:ring-indigo-600/10"
+                      />
+                      <Mail className="absolute right-4 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400" />
+                    </div>
+
+                    {error && (
+                      <div className="mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+                        {error}
+                      </div>
+                    )}
+
+                    <button
+                      type="submit"
+                      disabled={loading || googleLoading}
+                      className="mt-6 flex h-14 w-full items-center justify-center rounded-xl bg-indigo-600 px-5 font-semibold text-white shadow-sm transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {loading && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      )}
+                      Continue with email
+                    </button>
+                  </form>
+
+                  <div className="my-6 flex items-center gap-4">
+                    <div className="h-px flex-1 bg-slate-200" />
+                    <span className="text-xs font-medium uppercase tracking-[0.16em] text-slate-400">
+                      or
+                    </span>
+                    <div className="h-px flex-1 bg-slate-200" />
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={google}
+                    disabled={loading || googleLoading}
+                    className="flex h-14 w-full items-center justify-center gap-3 rounded-xl border border-slate-300 bg-white px-5 font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {googleLoading ? (
+                      <Loader2 className="h-5 w-5 animate-spin" />
+                    ) : (
+                      <GoogleIcon />
+                    )}
+                    Continue with Google
+                  </button>
+
+                  <p className="mt-8 text-sm leading-6 text-slate-500">
+                    By continuing, you agree to SwiftDU&apos;s{" "}
+                    <Link
+                      href="/terms"
+                      className="font-medium text-slate-800 underline underline-offset-2"
+                    >
+                      Terms
+                    </Link>{" "}
+                    and{" "}
+                    <Link
+                      href="/privacy"
+                      className="font-medium text-slate-800 underline underline-offset-2"
+                    >
+                      Privacy Policy
+                    </Link>
+                    .
+                  </p>
                 </>
               ) : (
-                <span>Create Account</span>
-              )}
-            </button>
+                <div>
+                  <div className="flex h-14 w-14 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
+                    <Mail className="h-6 w-6" />
+                  </div>
 
-            {/* Login Link - Compact */}
-            <p className="text-center text-xs sm:text-sm text-gray-600 pt-2">
-              Already have an account?{" "}
-              <Link 
-                href="/login" 
-                className="font-semibold text-indigo-600 transition-colors hover:text-purple-600"
-              >
-                Log in
-              </Link>
-            </p>
-          </form>
+                  <h1 className="mt-6 text-3xl font-bold tracking-tight text-slate-950">
+                    Check your email
+                  </h1>
+
+                  <p className="mt-4 text-base leading-7 text-slate-500">
+                    We sent a secure sign-in link to
+                  </p>
+
+                  <p className="mt-1 break-all font-semibold text-slate-900">
+                    {sentTo}
+                  </p>
+
+                  <p className="mt-4 text-sm leading-6 text-slate-500">
+                    Open the link in your email to continue to SwiftDU.
+                  </p>
+
+                  {error && (
+                    <div className="mt-6 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
+                      {error}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => void sendLink()}
+                    disabled={loading || seconds > 0}
+                    className="mt-8 flex h-14 w-full items-center justify-center rounded-xl bg-indigo-600 px-5 font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Sending...
+                      </>
+                    ) : seconds > 0 ? (
+                      `Resend link in ${seconds}s`
+                    ) : (
+                      "Resend link"
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSentTo("");
+                      setError("");
+                      setSeconds(0);
+                    }}
+                    className="mt-5 text-sm font-semibold text-indigo-600 transition hover:text-indigo-700"
+                  >
+                    Use a different email
+                  </button>
+                </div>
+              )}
+            </div>
+          </section>
         </div>
       </div>
+    </main>
+  );
+}
 
-    </div>
+function GoogleIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="#4285F4"
+        d="M21.6 12.23c0-.71-.06-1.4-.18-2.07H12v3.91h5.38a4.6 4.6 0 0 1-2 3.02v2.52h3.24c1.9-1.75 2.98-4.33 2.98-7.38Z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 22c2.7 0 4.97-.9 6.63-2.43l-3.24-2.52c-.9.6-2.05.96-3.39.96-2.61 0-4.82-1.76-5.61-4.13H3.05v2.6A10 10 0 0 0 12 22Z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M6.39 13.88A6.02 6.02 0 0 1 6.08 12c0-.65.11-1.28.31-1.88v-2.6H3.05A10 10 0 0 0 2 12c0 1.61.39 3.13 1.05 4.48l3.34-2.6Z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.99c1.47 0 2.79.5 3.83 1.5l2.87-2.87A9.62 9.62 0 0 0 12 2a10 10 0 0 0-8.95 5.52l3.34 2.6C7.18 7.75 9.39 5.99 12 5.99Z"
+      />
+    </svg>
   );
 }

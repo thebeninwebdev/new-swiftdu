@@ -5,6 +5,13 @@ import { DeferredAppScripts } from "@/components/DeferredAppScripts";
 import { Footer } from "@/components/Footer";
 import { Navbar } from "@/components/Navbar";
 import { adsenseAccount, siteUrl } from "@/lib/site";
+import { Manrope } from "next/font/google";
+
+const manrope = Manrope({
+  subsets: ["latin"],
+  display: "swap",
+  weight: ["400", "500", "600", "700", "800"],
+});
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -86,7 +93,7 @@ export default function RootLayout({
         <meta name="google-adsense-account" content={adsenseAccount} />
       </head>
       <body
-        className="antialiased tracking-wide"
+        className={`${manrope.className} antialiased tracking-wide`}
       >
         <ChromeVisibility>
           <Navbar />

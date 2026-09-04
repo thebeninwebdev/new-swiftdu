@@ -46,7 +46,23 @@ const publicPageCaching = {
   },
 }
 
+const brandAssetCaching = {
+  urlPattern: ({ url }) =>
+    url.origin === self.origin &&
+    ['/logo.png', '/pwa-192x192.png', '/pwa-512x512.png', '/apple-icon.png'].includes(url.pathname),
+  handler: 'NetworkFirst',
+  options: {
+    cacheName: 'brand-assets-v2',
+    networkTimeoutSeconds: 3,
+    expiration: {
+      maxEntries: 8,
+      maxAgeSeconds: 7 * 24 * 60 * 60,
+    },
+  },
+}
+
 module.exports = [
+  brandAssetCaching,
   ...defaultRuntimeCaching.filter(({ options }) =>
     STATIC_CACHE_NAMES_TO_KEEP.has(options?.cacheName)
   ),

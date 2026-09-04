@@ -2007,7 +2007,7 @@ if (stepNumber === 2) {
         <div className="flex min-h-44 items-center justify-between gap-8 bg-linear-to-r from-blue-50 via-white to-cyan-50 px-8 py-8 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900">
           <div>
             <div className="flex items-center gap-3 text-2xl font-black text-slate-950 dark:text-white">
-              <Image src="/logo.png" alt="Swiftdu" width={36} height={36} className="rounded-lg object-contain" />
+              <Image src="/logo.png?v=20260826" alt="Swiftdu" width={36} height={36} className="rounded-lg object-contain" />
               Swiftdu
             </div>
             <h1 className="mt-8 text-3xl font-black tracking-tight text-slate-950 dark:text-white">What would you like to order today?</h1>
