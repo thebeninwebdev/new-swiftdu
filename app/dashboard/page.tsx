@@ -28,7 +28,11 @@ import {
 } from 'lucide-react'
 import { io, type Socket } from 'socket.io-client'
 import { toast } from 'sonner'
+import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
+import { OrderFlowProgress, OrderMascot } from '@/components/order-mascot'
+import { SERVICE_MESSAGES } from '@/components/swifty/swifty-messages'
+import type { SwiftyInteraction } from '@/components/swifty/swifty-config'
 import { ProfileCompletionCard } from '@/components/profile-completion-card'
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { authClient } from '@/lib/auth-client'
@@ -337,6 +341,8 @@ export default function ErrandWizardPage() {
   const [step, setStep] = useState(1)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submissionFailed, setSubmissionFailed] = useState(false)
+  const [mascotInteraction, setMascotInteraction] = useState<SwiftyInteraction>('greet')
   const [isRealtimePaused, setIsRealtimePaused] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [packagingLanguage, setPackagingLanguage] = useState<PackagingLanguage>('pidgin')
@@ -933,6 +939,8 @@ export default function ErrandWizardPage() {
 
   const selectTaskType = (value: string) => {
     pauseRealtime()
+    setSubmissionFailed(false)
+    setMascotInteraction('acknowledge')
     setFormData((previous) => ({
       ...previous,
       taskType: value,
@@ -989,6 +997,7 @@ export default function ErrandWizardPage() {
 
   const handleEditStep = (nextStep: number) => {
     pauseRealtime()
+    setMascotInteraction(nextStep === 1 ? 'rest' : nextStep === 3 ? 'guide' : nextStep === 4 ? 'check' : 'consider')
     setStep(nextStep)
   }
 
@@ -1186,19 +1195,29 @@ if (stepNumber === 2) {
   const handleNext = () => {
     pauseRealtime()
     if (!validateStep(step)) return
-    setStep((previous) => previous + 1)
+    setStep((previous) => {
+      const next = previous + 1
+      setMascotInteraction(next === 3 ? 'guide' : next === 4 ? 'check' : 'consider')
+      return next
+    })
     setErrors({})
   }
 
   const handleBack = () => {
     pauseRealtime()
-    setStep((previous) => previous - 1)
+    setStep((previous) => {
+      const next = previous - 1
+      setMascotInteraction(next === 1 ? 'rest' : next === 3 ? 'guide' : 'consider')
+      return next
+    })
     setErrors({})
   }
 
   const createOrder = async () => {
     pauseRealtime(REALTIME_PAUSE_MS * 2)
 
+    setSubmissionFailed(false)
+    setMascotInteraction('scan')
     setIsSubmitting(true)
     try {
       const response = await fetch('/api/orders', {
@@ -1228,6 +1247,8 @@ if (stepNumber === 2) {
 
       if (!response.ok) {
         const error = await response.json()
+        setSubmissionFailed(true)
+        setMascotInteraction('apologize')
         toast.error(error.error || 'Failed to submit task.')
         return
       }
@@ -1262,6 +1283,8 @@ if (stepNumber === 2) {
       setStep(2)
       router.push(`/dashboard/tasks/${createdOrder._id}`)
     } catch {
+      setSubmissionFailed(true)
+      setMascotInteraction('apologize')
       toast.error('An error occurred while posting the task.')
     } finally {
       setIsSubmitting(false)
@@ -1333,10 +1356,22 @@ if (stepNumber === 2) {
     )
 
   const selectedTask = taskTypes.find((item) => item.value === formData.taskType) || taskTypes[0]
+  const wizardMood = isSubmitting ? 'searching' : submissionFailed ? 'error' : step === 1 ? 'idle' : 'thinking'
+  const wizardMessage = isSubmitting
+    ? 'Finding you a Tasker...'
+    : submissionFailed
+      ? 'Something went wrong. Please try again.'
+      : step === 1
+        ? 'Hi! What can I help you with today?'
+        : step === 2
+          ? SERVICE_MESSAGES[formData.taskType] || 'Tell me a little more about it.'
+          : step === 3
+            ? 'Where should we bring it?'
+            : 'One quick check. Everything look right?'
   const quickLocations = ['Amnesty Hostel', 'Girls Hostel', 'PLT', 'Library', 'NDDC Auditorium']
 
   const renderCategoryCards = (compact = false) => (
-    <div className={compact ? 'space-y-2.5' : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-6'}>
+    <div className={compact ? 'grid grid-cols-2 gap-3' : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3'}>
       {sortedTaskTypes.map((item) => {
         const Icon = item.icon
         const selected = formData.taskType === item.value
@@ -1350,7 +1385,7 @@ if (stepNumber === 2) {
                 setStep(2)
               }
             }}
-            className={`group flex ${compact ? 'w-full items-center gap-3 rounded-2xl px-3.5 py-5 text-left shadow-sm min-[390px]:py-5.5' : 'min-h-28 flex-col items-center justify-center rounded-xl p-4 text-center'} border transition ${
+            className={`group flex ${compact ? 'min-h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl px-3 py-4 text-center shadow-sm' : 'min-h-24 items-center gap-3 rounded-2xl p-4 text-left'} border transition active:scale-[0.98] ${
               selected
                 ? compact
                   ? 'border-blue-500 bg-blue-50 text-blue-950 shadow-sm dark:border-blue-500 dark:bg-blue-950/30 dark:text-blue-100'
@@ -1360,10 +1395,10 @@ if (stepNumber === 2) {
                   : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50/50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-900'
             }`}
           >
-            <span className={`flex ${compact ? 'h-10 w-10' : 'mb-3 h-12 w-12'} items-center justify-center rounded-xl bg-linear-to-br ${item.accent} text-white shadow-sm`}>
+            <span className={`flex ${compact ? 'h-11 w-11' : 'h-12 w-12'} shrink-0 items-center justify-center rounded-2xl ${selected ? 'bg-[#5b3df5] text-white' : 'bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300'}`}>
               <Icon className="h-5 w-5" />
             </span>
-            <span className={compact ? 'min-w-0 flex-1' : ''}>
+            <span className={compact ? 'min-w-0' : 'min-w-0 flex-1'}>
               <span className={compact ? 'block text-[0.95rem] font-black leading-tight sm:text-base' : 'block text-sm font-bold'}>
                 {item.label.replace(' Food', '').replace(' Services', '')}
               </span>
@@ -2003,55 +2038,41 @@ if (stepNumber === 2) {
 
   const DesktopErrandWizard = () => (
     <section className="hidden lg:block" onClick={dismissNoticeOnWizardButtonClick}>
-      <div className="overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-xl shadow-blue-100/50 dark:border-slate-800 dark:bg-slate-950 dark:shadow-none">
-        <div className="flex min-h-44 items-center justify-between gap-8 bg-linear-to-r from-blue-50 via-white to-cyan-50 px-8 py-8 dark:from-slate-900 dark:via-slate-950 dark:to-slate-900">
-          <div>
-            <div className="flex items-center gap-3 text-2xl font-black text-slate-950 dark:text-white">
-              <Image src="/logo.png?v=20260826" alt="Swiftdu" width={36} height={36} className="rounded-lg object-contain" />
-              Swiftdu
+      <div className="mx-auto max-w-4xl overflow-hidden rounded-[2rem] border border-indigo-100 bg-white shadow-[0_28px_80px_-36px_rgba(79,70,229,0.3)] dark:border-slate-800 dark:bg-slate-950">
+        <header className="flex items-center justify-between border-b border-slate-100 px-8 py-5 dark:border-slate-800">
+          <div className="flex items-center">
+            <Image src="/logo.png?v=20260826" alt="SwiftDU" width={76} height={76} className="h-16 w-16 rounded-xl object-contain xl:h-19 xl:w-19" />
+          </div>
+          <div className="text-center">
+            <p className="text-sm font-black text-slate-900 dark:text-white">{stepTitles[step - 1]}</p>
+            <OrderFlowProgress step={step} />
+          </div>
+          <span className="w-28" aria-hidden="true" />
+        </header>
+
+        <div className="p-8 sm:p-10">
+          <div className="mb-8 flex items-center justify-center rounded-3xl bg-linear-to-r from-[#f7f5ff] to-[#f4f7ff] px-7 py-5 dark:from-indigo-950/30 dark:to-slate-900">
+            <OrderMascot
+              mood={wizardMood}
+              interaction={mascotInteraction}
+              size={step === 4 ? 'sm' : 'md'}
+              message={wizardMessage}
+            />
+          </div>
+
+          <div className="flex flex-col">
+            <AnimatePresence mode="wait">
+              <motion.div key={step} initial={{ opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -18 }} transition={{ duration: 0.24 }} className="flex-1">
+                {step === 1 ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Choose a service</h1><p className="mt-2 text-slate-500">Select the errand you need help with.</p><div className="mt-6">{renderCategoryCards(false)}</div></> : null}
+                {step === 2 ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Order details</h1><div className="mt-6">{renderDetailsFields(false)}</div></> : null}
+                {step === 3 ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Delivery location</h1><p className="mt-2 text-slate-500">Pick a familiar campus location or enter a precise one.</p><div className="mt-6">{renderQuickDetails()}</div></> : null}
+                {step === 4 ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Order summary</h1><p className="mt-2 text-slate-500">Check your items, location and total.</p><div className="mt-6">{renderOrderSummary()}</div></> : null}
+              </motion.div>
+            </AnimatePresence>
+            <div className="mt-8 flex gap-3 border-t border-slate-100 pt-5 dark:border-slate-800">
+              {step > 1 ? <Button variant="outline" onClick={handleBack} className="h-12 rounded-xl px-6"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button> : null}
+              {step < 4 ? <Button onClick={handleNext} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">Continue<ChevronRight className="ml-2 h-4 w-4" /></Button> : <Button onClick={handleSubmit} disabled={isSubmitting} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Placing order...</> : <>Place order · {formatNaira(displayedTotalAmount)}<ArrowRight className="ml-2 h-4 w-4" /></>}</Button>}
             </div>
-            <h1 className="mt-8 text-3xl font-black tracking-tight text-slate-950 dark:text-white">What would you like to order today?</h1>
-            <p className="mt-2 text-slate-600 dark:text-slate-300">We will handle it, you relax.</p>
-          </div>
-        </div>
-
-        <div className="space-y-6 px-8 py-7">
-          <div>
-            <p className="mb-3 text-sm font-black text-slate-950 dark:text-white">1. Choose a category</p>
-            {renderCategoryCards(false)}
-          </div>
-
-          <div>
-            <p className="mb-3 text-sm font-black text-slate-950 dark:text-white">2. Tell us what you need</p>
-            {renderDetailsFields(false)}
-          </div>
-
-          <div>
-            <p className="mb-3 text-sm font-black text-slate-950 dark:text-white">3. Add quick details</p>
-            {renderQuickDetails()}
-          </div>
-
-          <div className="rounded-xl border border-blue-100 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <div className="grid items-end gap-5 lg:grid-cols-[1fr_auto]">
-              {renderOrderSummary()}
-              <Button onClick={handleSubmit} disabled={isSubmitting} className="h-14 rounded-xl bg-blue-600 px-8 font-black text-white hover:bg-blue-700">
-                {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Posting...</> : <>Review & Place Order <ArrowRight className="ml-2 h-4 w-4" /></>}
-              </Button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-4 gap-3 text-xs">
-            {[
-              ['Fast', 'Place orders in seconds'],
-              ['Transparent', 'See pricing upfront'],
-              ['Reliable', 'Trusted taskers'],
-              ['Secure', 'Safe order tracking'],
-            ].map(([title, copy]) => (
-              <div key={title} className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-900">
-                <p className="font-black text-slate-950 dark:text-white">{title}</p>
-                <p className="mt-1 text-slate-500">{copy}</p>
-              </div>
-            ))}
           </div>
         </div>
       </div>
@@ -2062,23 +2083,24 @@ if (stepNumber === 2) {
     <section className="lg:hidden" onClick={dismissNoticeOnWizardButtonClick}>
       <div className="min-h-screen bg-transparent px-3 pb-6 pt-4 min-[390px]:px-4">
         <div className="mx-auto max-w-md">
+          <div className="relative mb-5 flex items-center justify-center">
+            <div className="text-center"><p className="mb-2 text-xs font-black text-slate-900 dark:text-white">{stepTitles[step - 1]}</p><OrderFlowProgress step={step} /></div>
+            <span className="absolute right-0 text-xs font-bold text-slate-400">{step}/4</span>
+          </div>
+          <OrderMascot mood={wizardMood} interaction={mascotInteraction} size={step === 4 ? 'sm' : 'md'} message={wizardMessage} compactSpeech className="mb-6" />
+          <AnimatePresence mode="wait">
+          <motion.div key={step} initial={{ opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -18 }} transition={{ duration: 0.22 }}>
           {step === 1 ? (
             <div>
-              <h1 className="max-w-xs text-3xl font-black leading-[1.05] tracking-normal text-slate-950 dark:text-white min-[390px]:text-[2.35rem] sm:max-w-sm sm:text-5xl">
-                What would you like to order?
-              </h1>
-              <p className="mt-3 max-w-xs text-base font-bold leading-snug text-slate-500 dark:text-slate-400 min-[390px]:text-lg">
-                Pick a category and we will handle the rest.
-              </p>
+              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white">Choose a service</h1>
+              <p className="mt-2 text-sm font-medium text-slate-500 dark:text-slate-400">Select the errand you need help with.</p>
               <div className="mt-5">{renderCategoryCards(true)}</div>
             </div>
           ) : null}
 
           {step === 2 ? (
             <div>
-              <h1 className="text-3xl font-black leading-[1.05] text-slate-950 dark:text-white min-[390px]:text-[2.35rem]">
-                {formData.taskType === 'restaurant' ? 'What do you want to eat?' : 'What do you need?'}
-              </h1>
+              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white">Order details</h1>
               {formData.taskType === 'restaurant' ? null : (
                 <p className="mt-2 text-base font-bold text-slate-500">{selectedTask.description}</p>
               )}
@@ -2088,17 +2110,19 @@ if (stepNumber === 2) {
 
           {step === 3 ? (
             <div>
-              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white min-[390px]:text-3xl">Add quick details</h1>
+              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white">Delivery location</h1>
               <div className="mt-5">{renderQuickDetails()}</div>
             </div>
           ) : null}
 
           {step === 4 ? (
             <div>
-              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white min-[390px]:text-3xl">Review your order</h1>
+              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white">Order summary</h1>
               <div className="mt-5">{renderOrderSummary()}</div>
             </div>
           ) : null}
+          </motion.div>
+          </AnimatePresence>
         </div>
 
         {step > 1 ? (

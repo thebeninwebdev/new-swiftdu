@@ -19,6 +19,7 @@ import {
 import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { canCustomerCancelOrder } from '@/lib/order-status'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
+import { OrderMascot } from '@/components/order-mascot'
 
 // ─── Types ───
 interface Order {
@@ -206,6 +207,8 @@ function FulfillmentStatusCard({
   const gradient = taskTypeGradients[order.taskType] || taskTypeGradients.others
   const taskLabel = taskTypeLabels[order.taskType] || order.taskType
   const hasConfirmedPayment = Boolean(order.hasPaid || order.paymentStatus === 'paid')
+  const mascotMood = order.status === 'completed' ? 'success' : order.isDeclinedTask ? 'warning' : hasConfirmedPayment ? 'moving' : order.taskerId ? 'matched' : 'searching'
+  const mascotInteraction = mascotMood === 'success' ? 'complete' : mascotMood === 'matched' ? 'celebrate' : mascotMood === 'moving' ? 'travel' : mascotMood === 'warning' ? 'attention' : 'scan'
 
   return (
     <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-slate-950/40">
@@ -218,6 +221,7 @@ function FulfillmentStatusCard({
           <span className="text-xs font-semibold text-slate-400">#{order._id.slice(-6)}</span>
         </div>
         <div className="mt-7 flex items-start gap-4">
+          <OrderMascot mood={mascotMood} interaction={mascotInteraction} size="sm" />
           <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${gradient} shadow-lg shadow-black/20`}>
             {taskTypeIcons[order.taskType] || taskTypeIcons.others}
           </div>
@@ -225,6 +229,7 @@ function FulfillmentStatusCard({
             <h2 className="text-2xl font-black tracking-normal sm:text-3xl">
               {order.status === 'completed' ? 'Order delivered' : 'Your order is being fulfilled'}
             </h2>
+            {order.status === 'completed' ? <p className="mt-2 text-sm font-semibold text-violet-200">Your order supported another student.</p> : null}
             <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{stage.detail}</p>
           </div>
         </div>
@@ -442,28 +447,22 @@ function SearchingTaskerOverlay({ order, onCancel, isCancelling, isBusy, searchM
   order: Order; onCancel: () => void; isCancelling: boolean; isBusy: boolean; searchMessage: string
 }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-sm md:items-center md:justify-center md:p-6">
-      <div className="w-full max-w-lg overflow-hidden rounded-t-[2rem] border border-white/70 bg-white shadow-2xl shadow-slate-950/25 dark:border-slate-800 dark:bg-slate-900 md:rounded-[2rem]">
-        <div className="relative bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950 px-5 pb-5 pt-5 text-white">
+    <div className="fixed inset-0 z-50 flex items-end bg-[#21175f]/35 backdrop-blur-md md:items-center md:justify-center md:p-6">
+      <div className="w-full max-w-lg overflow-hidden rounded-t-[2rem] border border-white/70 bg-white shadow-2xl shadow-indigo-950/25 dark:border-slate-800 dark:bg-slate-900 md:rounded-[2rem]">
+        <div className="relative bg-linear-to-b from-[#f6f4ff] to-white px-5 pb-6 pt-5 text-center dark:from-indigo-950/40 dark:to-slate-900">
           <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-white/25 md:hidden" />
-          <div className="flex flex-col">
-            <div className="min-w-0 flex-1">
-              <h2 className="mt-2 text-2xl font-bold tracking-normal">Finding tasker</h2>
-              <p className="mt-2 text-sm leading-6 text-slate-200">{searchMessage}</p>
-            </div>
-          </div>
-          <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/15">
-            <div className="h-full origin-left rounded-full bg-gradient-to-r from-sky-300 via-cyan-200 to-emerald-300 animate-pulse" />
+          <OrderMascot mood="searching" interaction="scan" size="lg" />
+          <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950 dark:text-white">Finding you a Tasker...</h2>
+          <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500 dark:text-slate-300">{searchMessage}. We&apos;ve notified nearby Taskers—this usually doesn&apos;t take long.</p>
+          <div className="mx-auto mt-5 h-1.5 max-w-xs overflow-hidden rounded-full bg-indigo-100 dark:bg-white/15">
+            <div className="h-full origin-left rounded-full bg-linear-to-r from-[#5b3df5] to-[#8069ff] animate-pulse" />
           </div>
           <div className="mt-5 flex shrink-0 flex-col items-center gap-4 sm:flex-row sm:justify-center">
-            <div className="flex h-20 w-20 items-center justify-center rounded-2xl bg-white/10 ring-1 ring-white/15">
-              <Bike className="h-9 w-9 text-cyan-200" />
-            </div>
-            <button type="button" onClick={onCancel} disabled={isBusy} className="flex w-full max-w-xs shrink-0 items-center justify-center gap-3 rounded-2xl bg-rose-500 px-4 py-3 text-left text-white shadow-lg shadow-rose-950/20 ring-1 ring-white/15 transition hover:bg-rose-600 disabled:cursor-not-allowed disabled:opacity-50 sm:w-64">
+            <button type="button" onClick={onCancel} disabled={isBusy} className="flex w-full max-w-xs shrink-0 items-center justify-center gap-3 rounded-2xl border border-rose-200 bg-white px-4 py-3 text-left text-rose-600 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 sm:w-64">
               {isCancelling ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserRoundX className="h-5 w-5" />}
               <span className="min-w-0">
                 <span className="block text-sm font-black">{isCancelling ? 'Cancelling task...' : 'Cancel this task'}</span>
-                <span className="block text-xs font-medium text-rose-50">Stop looking for a tasker</span>
+                <span className="block text-xs font-medium text-rose-400">Stop looking for a Tasker</span>
               </span>
             </button>
           </div>
@@ -732,8 +731,9 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
           </div>
         </div>
         {error ? (
-          <div className="mb-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
-            {error}
+          <div className="mb-6 flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
+            <OrderMascot mood="error" interaction="apologize" size="sm" />
+            <div><p className="font-black">Something went wrong</p><p className="mt-1 font-medium">{error}</p></div>
           </div>
         ) : null}
         {isTrackingPage && currentOrder && hasCompletionTimer && canExtendCompletionTimer ? (
@@ -942,9 +942,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
 
             {isTrackingPage && !currentOrder ? (
               <div className="flex flex-col items-center justify-center rounded-3xl border border-white/80 bg-white/95 px-6 py-12 text-center shadow-2xl shadow-slate-950/10 dark:border-slate-800 dark:bg-slate-900">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
-                  <Package className="h-8 w-8 text-slate-400" />
-                </div>
+                <OrderMascot mood="warning" interaction="attention" size="lg" />
                 <h2 className="mt-4 text-lg font-bold text-slate-900 dark:text-white">No active orders</h2>
                 <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-slate-400">Book a new task to get started.</p>
                 <Button onClick={() => router.push('/dashboard')} className="mt-6 h-11 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-6 text-white hover:from-sky-700 hover:to-indigo-700">Book a Task<ArrowRight className="ml-2 h-4 w-4" /></Button>

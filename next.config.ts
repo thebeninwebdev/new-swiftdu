@@ -17,6 +17,9 @@ const nextConfig: NextConfig = {
   images: {
     localPatterns: [
       {
+        pathname: "/mascot/**",
+      },
+      {
         pathname: "/logo.png",
         search: "?v=20260826",
       },
