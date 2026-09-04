@@ -194,7 +194,7 @@ export const Navbar = () => {
         <div className="hidden items-center gap-7 lg:flex">
           {/* Login */}
           <Link
-            href="/login"
+            href="/auth"
             className="
               group relative
               py-3
@@ -236,7 +236,7 @@ export const Navbar = () => {
               Text moves out / new text moves in
           ========================================= */}
           <Link
-            href="/signup"
+            href="/auth"
             className="
               group relative
               isolate
@@ -466,7 +466,7 @@ export const Navbar = () => {
           >
             <div className="mb-4 flex items-center justify-between">
               <Link
-                href="/login"
+                href="/auth"
                 onClick={() => setIsOpen(false)}
                 className="
                   text-[16px] font-medium
@@ -493,7 +493,7 @@ export const Navbar = () => {
 
             {/* Mobile CTA */}
             <Link
-              href="/signup"
+              href="/auth"
               onClick={() => setIsOpen(false)}
               className="
                 group relative

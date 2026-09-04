@@ -85,7 +85,7 @@ export default function AdminSidebar() {
   const handleSignOut = async () => {
     await authClient.signOut({
       fetchOptions: {
-        onSuccess: () => router.push('/login'),
+        onSuccess: () => router.push('/auth'),
       },
     })
   }

@@ -148,7 +148,7 @@ function TaskerOnboardingContent() {
       });
       if (signInError) {
         toast.success("Your Tasker account is ready. Sign in to continue.");
-        router.replace(`/login?callbackUrl=${encodeURIComponent("/tasker-dashboard")}`);
+        router.replace(`/auth?next=${encodeURIComponent("/tasker-dashboard")}`);
         return;
       }
       toast.success("Welcome to SwiftDU Tasker training.");
@@ -243,7 +243,7 @@ function TaskerOnboardingContent() {
                   {busy ? "Connecting to Google..." : "Continue with Google"}
                 </button>
               ) : (
-                <Link href={`/login?callbackUrl=${encodeURIComponent(`/tasker/onboarding?token=${token}`)}`} className="block w-full rounded-full bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white">Sign in to continue</Link>
+                <Link href={`/auth?next=${encodeURIComponent(`/tasker/onboarding?token=${token}`)}`} className="block w-full rounded-full bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white">Sign in to continue</Link>
               )}
             </div>
           )}

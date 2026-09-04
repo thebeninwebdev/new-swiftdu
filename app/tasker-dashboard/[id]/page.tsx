@@ -208,7 +208,7 @@ export default function ErrandDetailPage() {
     fetchingRef.current = true
     try {
       const errandRes = await fetchWithSocketPause(`/api/orders/${errandId}`, { cache: 'no-store' })
-      if (errandRes.status === 401) { router.push('/login'); return }
+      if (errandRes.status === 401) { router.push('/auth'); return }
       if (!errandRes.ok) throw new Error('Failed to fetch errand details')
       const errandData: ErrandDetail = await errandRes.json()
       setErrand(errandData)

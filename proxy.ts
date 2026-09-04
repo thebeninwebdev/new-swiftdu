@@ -6,6 +6,7 @@ const PUBLIC_ROUTES = [
   '/',
   '/about-us',
   '/contact-us',
+  '/auth',
   '/login',
   '/password',
   '/password/reset',
@@ -62,9 +63,9 @@ export async function proxy(request: NextRequest) {
   );
 
   if (!user) {
-    const loginUrl = new URL('/login', request.url);
-    loginUrl.searchParams.set('callbackUrl', currentPath);
-    return NextResponse.redirect(loginUrl);
+    const authUrl = new URL('/auth', request.url);
+    authUrl.searchParams.set('next', currentPath);
+    return NextResponse.redirect(authUrl);
   }
 
   if (pathname.startsWith('/admin') && role !== 'admin') {

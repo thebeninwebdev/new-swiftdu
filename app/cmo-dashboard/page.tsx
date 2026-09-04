@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 export default async function CmoDashboardPage() {
   const access = await getExcoAccess(await headers());
 
-  if (!access.isAuthenticated) redirect("/login");
+  if (!access.isAuthenticated) redirect("/auth");
   if (access.excoRole !== "CMO") redirect("/dashboard");
 
   return <ExcoDashboardLoader role="CMO" />;

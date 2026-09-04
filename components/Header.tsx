@@ -38,7 +38,7 @@ export default function Header() {
 
     const signOut = async () => {
       await authClient.signOut({
-        fetchOptions: { onSuccess: () => router.push('/login') }
+        fetchOptions: { onSuccess: () => router.push('/auth') }
       })
     }
 
@@ -80,7 +80,7 @@ export default function Header() {
             {userData?.user ? 
             <button className="p-0" onClick={() => {signOut()}}><LogOut className="w-4 h-4"/></button>
             :
-            <Link href="/auth/login"><LogIn className="w-4 h-4"/></Link>
+            <Link href="/auth"><LogIn className="w-4 h-4"/></Link>
             }
             {!isMobile && !isTablet &&<Link
               href="/search"

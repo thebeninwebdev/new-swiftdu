@@ -11,6 +11,7 @@ const HIDDEN_CHROME_PREFIXES = [
   "/cto-dashboard",
   "/dashboard",
   "/tasks",
+  "/auth",
   "/login",
   "/signup",
   "/complete-profile",

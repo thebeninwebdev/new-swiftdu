@@ -32,7 +32,7 @@ const services: ServiceCard[] = [
     image: "/support.png",
     icon: ShoppingBag,
     buttonText: "Post a task",
-    link: "/signup",
+    link: "/auth",
   },
   {
     id: 1,
@@ -188,7 +188,7 @@ function Hero() {
               className="mt-8 flex max-w-[500px] flex-col gap-3 sm:flex-row"
             >
               <Link
-                href="/signup"
+                href="/auth"
                 className="group inline-flex min-h-14 items-center justify-center gap-2 rounded-full bg-gradient-to-br from-indigo-600 to-purple-600 px-7 text-sm font-semibold text-white shadow-lg shadow-indigo-600/20 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-indigo-600/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-600 focus-visible:ring-offset-2 sm:text-base"
               >
                 Post a task
@@ -374,7 +374,7 @@ function Hero() {
               return (
                 <Link
                   key={service.id}
-                  href="/signup"
+                  href="/auth"
                   className="relative h-[440px] min-w-[82vw] snap-center overflow-hidden rounded-[20px] bg-[#ddd]"
                 >
                   <div

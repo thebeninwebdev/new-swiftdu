@@ -121,7 +121,7 @@ function TaskerPaymentPageContent() {
       })
 
       if (response.status === 401) {
-        router.push('/login')
+        router.push('/auth')
         return
       }
 

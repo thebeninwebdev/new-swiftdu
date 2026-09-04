@@ -353,7 +353,7 @@ export default function TaskerDashboardPage() {
     }
 
     if (!session?.user?.id) {
-      router.push('/login')
+      router.push('/auth')
       return
     }
 
@@ -422,7 +422,7 @@ export default function TaskerDashboardPage() {
       }
 
       if (!session?.user?.id) {
-        router.push('/login')
+        router.push('/auth')
         return
       }
 

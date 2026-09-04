@@ -158,13 +158,13 @@ export default function AdminOrdersPage() {
       try {
         const { data, error } = await authClient.getSession()
         if (error || !data?.user) {
-          router.push('/login')
+          router.push('/auth')
           return
         }
         // TODO: Add admin role check
         setAdmin(data.user)
       } catch {
-        router.push('/login')
+        router.push('/auth')
       } finally {
         setIsLoading(false)
       }

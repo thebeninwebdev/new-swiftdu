@@ -139,7 +139,7 @@ function WhatsAppRegistrationContent() {
                   </Button>
                 ) : (
                   <Link
-                    href={`/login?callbackUrl=${encodeURIComponent(`/dashboard/whatsapp/register?token=${token}`)}`}
+                    href={`/auth?next=${encodeURIComponent(`/dashboard/whatsapp/register?token=${token}`)}`}
                     className={buttonVariants({ size: 'lg', className: 'w-full' })}
                   >
                     Log in to SwiftDU first

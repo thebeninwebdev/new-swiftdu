@@ -52,8 +52,11 @@ export function CompleteProfileForm() {
   useEffect(() => { stepRef.current = step; }, [step]);
 
   useEffect(() => {
-    if (!isPending && !session?.user) router.replace("/login");
-  }, [isPending, router, session?.user]);
+    if (!isPending && !session?.user) {
+      const next = search.get("next");
+      router.replace(next ? `/auth?next=${encodeURIComponent(next)}` : "/auth");
+    }
+  }, [isPending, router, search, session?.user]);
 
   useEffect(() => {
     if (!session?.user) return;

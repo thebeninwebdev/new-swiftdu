@@ -49,7 +49,7 @@ export default function AvailableTasksPage() {
       if (!response.ok) {
         if (response.status === 401) {
           toast.error('Please log in to view available tasks')
-          router.push('/login')
+          router.push('/auth')
           return
         }
         throw new Error('Failed to fetch tasks')

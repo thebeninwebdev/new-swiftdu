@@ -10,6 +10,8 @@ import { AuthEmailRateLimit } from "@/models/auth-email-rate-limit";
 
 const client = await clientPromise;
 const db = client.db();
+const THIRTY_DAYS_IN_SECONDS = 60 * 60 * 24 * 30;
+const ONE_DAY_IN_SECONDS = 60 * 60 * 24;
 const appBaseURL =
   process.env.NEXT_PUBLIC_BASE_URL?.trim() ||
   process.env.BETTER_AUTH_URL?.trim() ||
@@ -131,6 +133,11 @@ const requiredSignupDetailsGuard = (): BetterAuthPlugin => ({
 
 export const auth = betterAuth({
   appName: "SwiftDU",
+  baseURL: appURL.origin,
+  session: {
+    expiresIn: THIRTY_DAYS_IN_SECONDS,
+    updateAge: ONE_DAY_IN_SECONDS,
+  },
   emailVerification: {
     sendVerificationEmail: async ({ user, url }) => {
       const [{ default: verifyEmail }, { sendTransactionalEmail }] =
