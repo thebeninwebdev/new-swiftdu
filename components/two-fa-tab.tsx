@@ -93,12 +93,12 @@ export function TwoFATab() {
       return;
     }
 
-    if (data?.method === "totp" && data.totpURI) {
-      setTotpURI(data.totpURI);
-      setBackupCodes(data.backupCodes ?? []);
-      setStep("qr");
-      toast.success("Password confirmed");
-    }
+if (data && "totpURI" in data && data.totpURI) {
+  setTotpURI(data.totpURI);
+  setBackupCodes(data.backupCodes ?? []);
+  setStep("qr");
+  toast.success("Password confirmed");
+}
   };
 
   // ── Step 2: verify the 6-digit TOTP code ─────────────────────────────────
