@@ -23,6 +23,8 @@ const pageNavigation = {
   urlPattern: ({ request, url }) =>
     request.mode === 'navigate' && self.origin === url.origin && !url.pathname.startsWith('/api/'),
   handler: 'NetworkOnly',
+  // next-pwa adds its offline fallback plugin to this options object.
+  options: {},
 }
 
 const brandAssetCaching = {

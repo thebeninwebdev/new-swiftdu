@@ -79,7 +79,7 @@ export async function syncTaskerSettlementStatus(taskerId: string) {
   const now = new Date()
   const overdueQuery = {
     taskerId,
-    status: 'completed',
+    status: 'completed' as const,
     taskerHasPaid: false,
     settlementDueAt: { $lte: now },
     $and: [NON_TEST_ORDER_MATCH, NON_WAIVED_PLATFORM_FEE_MATCH],

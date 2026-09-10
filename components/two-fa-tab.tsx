@@ -93,7 +93,7 @@ export function TwoFATab() {
       return;
     }
 
-    if (data?.totpURI) {
+    if (data?.method === "totp" && data.totpURI) {
       setTotpURI(data.totpURI);
       setBackupCodes(data.backupCodes ?? []);
       setStep("qr");
