@@ -169,7 +169,7 @@ const Hero = () => {
           className="flex flex-col sm:flex-row gap-4 justify-center"
         >
           <Link
-            href="/signup"
+            href="/auth"
             className="group px-8 py-4 bg-white text-indigo-900 rounded-full font-bold text-lg hover:bg-yellow-400 transition-all duration-300 flex items-center justify-center gap-2"
           >
             Join Our Movement
@@ -587,7 +587,7 @@ const CTASection = () => {
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Link
-                  href="/signup"
+                  href="/auth"
                   className="group px-8 py-4 bg-white text-indigo-600 rounded-full font-bold text-lg hover:bg-yellow-400 hover:text-indigo-900 transition-all duration-300 flex items-center justify-center gap-2"
                 >
                   Sign Up Now

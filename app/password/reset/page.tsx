@@ -67,11 +67,11 @@ export default function ForgotPasswordPage() {
             <div className="relative flex items-center justify-center gap-x-3">
               <Link href="/">
                 <Image
-                  src="/logo.png"
-                  alt="logo"
-                  width={342}
-                  height={63}
-                  className="w-28 object-contain"
+                  src="/logo.png?v=swiftdu-symbol-v1"
+                  alt="SwiftDU"
+                  width={512}
+                  height={512}
+                  className="h-11 w-11 object-contain"
                 />
               </Link>
             </div>
@@ -141,7 +141,7 @@ export default function ForgotPasswordPage() {
           <p className="mt-4 text-center text-sm text-gray-500">
             Don&apos;t have an account?{" "}
             <Link
-              href="/signup"
+              href="/auth"
               className="font-semibold text-[#1a6640] hover:underline"
             >
               Sign up

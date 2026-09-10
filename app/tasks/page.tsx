@@ -170,7 +170,7 @@ export default function TasksPage() {
       const response = await fetch('/api/orders', { cache: 'no-store' })
 
       if (response.status === 401) {
-        router.push('/login')
+        router.push('/auth')
         return
       }
 

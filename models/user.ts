@@ -4,17 +4,20 @@ export type ExcoRole = "CFO" | "CMO" | "COO" | "CTO";
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
 
 export interface IUser extends Document {
-  name: string;
+  name?: string;
   email: string;
   emailVerified: boolean;
   password?: string;
   role: "user" | "admin" | "tasker";
   phone?: string;
   location?: string;
+  defaultLocation?: string;
   profileImage?: string;
   profileImagePublicId?: string;
   gender?: Gender;
   dateOfBirth?: Date;
+  birthdayDay?: number;
+  birthdayMonth?: number;
   twoFactorEnabled: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -36,7 +39,7 @@ const UserSchema = new Schema<IUser>(
   {
     name: {
       type: String,
-      required: true,
+      required: false,
       trim: true,
     },
     email: {
@@ -79,6 +82,10 @@ const UserSchema = new Schema<IUser>(
       type: String,
       required: false,
     },
+    defaultLocation: {
+      type: String,
+      required: false,
+    },
     profileImage: {
       type: String,
       required: false,
@@ -94,6 +101,18 @@ const UserSchema = new Schema<IUser>(
     },
     dateOfBirth: {
       type: Date,
+      required: false,
+    },
+    birthdayDay: {
+      type: Number,
+      min: 1,
+      max: 31,
+      required: false,
+    },
+    birthdayMonth: {
+      type: Number,
+      min: 1,
+      max: 12,
       required: false,
     },
     twoFactorEnabled: {

@@ -1,4 +1,5 @@
 'use client'
+import { cafeStatusLabels, type CafeInquiryFields } from '@/lib/cafe-inquiry'
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
@@ -22,7 +23,8 @@ import {
   MessageCircle
 } from 'lucide-react'
 
-interface Order {
+interface Order extends CafeInquiryFields {
+  cafeInquiry?: boolean
   _id: string
   source?: 'website' | 'whatsapp'
   customerPhone?: string
@@ -158,13 +160,13 @@ export default function AdminOrdersPage() {
       try {
         const { data, error } = await authClient.getSession()
         if (error || !data?.user) {
-          router.push('/login')
+          router.push('/auth')
           return
         }
         // TODO: Add admin role check
         setAdmin(data.user)
       } catch {
-        router.push('/login')
+        router.push('/auth')
       } finally {
         setIsLoading(false)
       }
@@ -609,6 +611,7 @@ export default function AdminOrdersPage() {
                       <div className="mt-4">
                         <p className="text-sm font-medium text-muted-foreground mb-2">Description</p>
                         <p className="text-sm bg-muted/50 p-3 rounded-lg">{order.description}</p>
+                        {order.cafeInquiry && <div className="rounded-lg border border-indigo-200 p-3 text-sm"><strong>Cafe check · {order.store}</strong><p>{order.cafeInquiryStatus ? cafeStatusLabels[order.cafeInquiryStatus] : 'Legacy cafe inquiry'}</p><p>Options: {order.cafeAvailableItems?.map(item => item.name + ' (₦' + item.price + ')').join(', ') || 'None sent'}</p><p>Choice: {order.cafeSelectedItems?.map(item => item.quantity + ' × ' + item.name).join(', ') || 'Awaiting choice'}</p></div>}
                       </div>
 
                       {order.isDeclinedTask ? (

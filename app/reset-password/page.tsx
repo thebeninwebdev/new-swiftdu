@@ -52,7 +52,7 @@ import { toast } from "sonner";
       toast.error(error.message);
     } else {
       toast.success("Password reset successfully");
-      router.push("/login");
+      router.push("/auth");
     }
 
     setLoading(false);
@@ -91,11 +91,11 @@ import { toast } from "sonner";
             <div className="relative flex items-center justify-center gap-x-3">
               <Link href="/">
                 <Image
-                  src="/logo.png"
-                  alt="logo"
-                  width={342}
-                  height={63}
-                  className="w-28 object-contain"
+                  src="/logo.png?v=swiftdu-symbol-v1"
+                  alt="SwiftDU"
+                  width={512}
+                  height={512}
+                  className="h-11 w-11 object-contain"
                 />
               </Link>
             </div>
@@ -209,7 +209,7 @@ import { toast } from "sonner";
           <p className="mt-4 text-center text-sm text-gray-500">
             Remember your password?{" "}
             <Link
-              href="/login"
+              href="/auth"
               className="font-semibold text-[#1a6640] hover:underline"
             >
               Log in

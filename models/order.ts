@@ -1,6 +1,7 @@
+import type { CafeInquiryFields } from '@/lib/cafe-inquiry'
 import mongoose, { Schema, Document, type Model } from 'mongoose';
 
-export interface IOrder extends Document {
+export interface IOrder extends Document, CafeInquiryFields {
   userId: string;
   trackingToken?: string;
   source?: 'website' | 'whatsapp';
@@ -29,6 +30,8 @@ export interface IOrder extends Document {
   restaurantTakeawayCount?: number;
   restaurantPackagingFee?: number;
   cafeInquiry?: boolean;
+  cafeOptionsSentAt?: Date;
+  cafeSelectionSubmittedAt?: Date;
   cafeInquiryFeePaid?: boolean;
   cafeInquiryDetailsSubmitted?: boolean;
   waterBags?: number;
@@ -220,6 +223,12 @@ const orderSchema = new Schema<IOrder>(
       default: false,
       index: true,
     },
+    cafeInquiryStatus: { type: String, enum: ['waiting_for_tasker', 'tasker_assigned', 'checking_cafe', 'awaiting_customer_choice', 'unavailable', 'ready_for_payment', 'completed'] },
+    cafeAvailableItems: { type: [{ _id: false, id: String, name: String, price: Number }], default: [] },
+    cafeSelectedItems: { type: [{ _id: false, itemId: String, name: String, price: Number, quantity: Number }], default: [] },
+    cafeOptionsVersion: { type: Number, default: 0 },
+    cafeOptionsSentAt: Date,
+    cafeSelectionSubmittedAt: Date,
     cafeInquiryFeePaid: {
       type: Boolean,
       default: false,
@@ -439,7 +448,7 @@ const existingTaskTypePath = existingOrderModel?.schema.path('taskType') as
 if (
   existingOrderModel &&
   existingTaskTypePath?.enumValues &&
-  !existingTaskTypePath.enumValues.includes('indomie')
+  (!existingTaskTypePath.enumValues.includes('indomie') || !existingOrderModel.schema.path('cafeInquiryStatus'))
 ) {
   const mutableModels = mongoose.models as unknown as Record<string, Model<IOrder> | undefined>;
   const mutableConnectionModels = mongoose.connection.models as unknown as Record<

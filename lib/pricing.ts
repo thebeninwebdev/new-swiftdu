@@ -2,8 +2,8 @@ export const WATER_TASK_TYPE = 'water'
 export const WATER_BAG_PRICE = 750
 export const WATER_BAG_FEE = 450
 export const WATER_PLATFORM_FEE_RATE = 0.24
-export const RESTAURANT_PERSON_FEE = 450
-export const CAFE_INQUIRY_EXTRA_FEE = 100
+export const RESTAURANT_PERSON_FEE = 600
+export const CAFE_INQUIRY_EXTRA_FEE = 50
 export const CAFE_INQUIRY_SERVICE_FEE = RESTAURANT_PERSON_FEE + CAFE_INQUIRY_EXTRA_FEE
 export const RESTAURANT_MAX_PEOPLE = 3
 export const RESTAURANT_TAKEAWAY_FEE = 0
@@ -70,7 +70,7 @@ export const RESTAURANT_SINGLE_ORDER_SERVICE_FEE_RULES = [
 ] as const
 
 export const RESTAURANT_SERVICE_FEE_BY_PEOPLE_COUNT: Record<number, number> = {
-  1: 450,
+  1: RESTAURANT_PERSON_FEE,
   2: 700,
   3: 1050,
 }
@@ -296,20 +296,7 @@ export function calculateOrderPricing(input: {
     )
     const restaurantPackagingFee = 0
 
-    if (input.cafeInquiry) {
-      return {
-        amount: 0,
-        serviceFee: CAFE_INQUIRY_SERVICE_FEE,
-        totalAmount: CAFE_INQUIRY_SERVICE_FEE,
-        pricingModel: 'tiered' as const,
-        waterFee: 0,
-        restaurantPeopleCount,
-        restaurantTakeawayCount,
-        restaurantPackagingFee,
-      } satisfies PricingResult
-    }
-
-    const serviceFee = calculateRestaurantServiceFee(restaurantPeopleCount)
+    const serviceFee = calculateRestaurantServiceFee(restaurantPeopleCount) + (input.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)
 
     return {
       amount,

@@ -1,5 +1,5 @@
 import { createAuthClient } from "better-auth/react";
-import {inferAdditionalFields, twoFactorClient} from "better-auth/client/plugins"
+import {inferAdditionalFields, magicLinkClient, twoFactorClient} from "better-auth/client/plugins"
 import { passkeyClient } from "@better-auth/passkey/client";
 
 export const authClient = createAuthClient({
@@ -17,10 +17,11 @@ export const authClient = createAuthClient({
             type: "string",
             required: false,
         },
-        location: {
+      location: {
             type: "string",
             required: false,
-        },
+      },
+        defaultLocation: { type: "string", required: false },
         profileImage: {
           type: "string",
           required: false,
@@ -37,9 +38,12 @@ export const authClient = createAuthClient({
           type: "date",
           required: false,
         },
+        birthdayDay: { type: "number", required: false },
+        birthdayMonth: { type: "number", required: false },
         taskerId: {
           type: "string",
           required: false,
+          input: false,
         },
         excoRole: {
           type: "string",
@@ -49,6 +53,7 @@ export const authClient = createAuthClient({
 }
     }),
     passkeyClient(),
+    magicLinkClient(),
     twoFactorClient(),
   ]
 });

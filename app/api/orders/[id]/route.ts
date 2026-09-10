@@ -12,6 +12,7 @@ import { ensureBookedAt } from '@/lib/order-response-time';
 import { consumeServiceFeeDiscountForCompletedOrder } from '@/lib/service-fee-discount';
 import {
   calculateOrderPricing,
+  CAFE_INQUIRY_EXTRA_FEE,
   descriptionMentionsWater,
   normalizeRestaurantPeopleCount,
   normalizeRestaurantTakeawayCount,
@@ -232,6 +233,9 @@ export async function PATCH(
       || printingNeedsEditing !== undefined ||
       cafeInquiry !== undefined
     ) {
+      if (order.cafeInquiryStatus) {
+        return NextResponse.json({ error: 'Use the cafe selection action for this request. Cancel and repost to change the cafe or delivery.' }, { status: 409 });
+      }
       const isOnlyRestaurantPeopleUpdate =
         restaurantPeopleCount !== undefined &&
         taskType === undefined &&
@@ -391,7 +395,7 @@ export async function PATCH(
       }
 
       const nextTaskType = taskType !== undefined ? String(taskType) : order.taskType;
-      const nextCafeInquiry = nextTaskType === 'restaurant' && cafeInquiry === true;
+      const nextCafeInquiry = nextTaskType === 'restaurant' && (cafeInquiry === undefined ? order.cafeInquiry === true : cafeInquiry === true);
       const nextDescription =
         description !== undefined ? String(description).trim() : order.description || '';
       const nextAmount =
@@ -629,13 +633,13 @@ export async function PATCH(
 
       const pricing = calculateOrderPricing({
         amount:
-          nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE
+          nextCafeInquiry || nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE
             ? 0
             : nextAmount,
         taskType: nextTaskType,
         store: nextStore,
-        restaurantPeopleCount: nextRestaurantPeopleCount,
-        restaurantTakeawayCount: nextRestaurantTakeawayCount,
+        restaurantPeopleCount: nextCafeInquiry ? 1 : nextRestaurantPeopleCount,
+        restaurantTakeawayCount: nextCafeInquiry ? 0 : nextRestaurantTakeawayCount,
         waterBags: nextWaterBags,
         indomiePacks: nextIndomiePacks,
         eggCount: nextEggCount,
@@ -657,9 +661,9 @@ export async function PATCH(
       const settlement = baseSettlement;
 
       order.taskType = nextTaskType;
-      order.description = nextDescription;
+      order.description = nextCafeInquiry ? 'Text me what is in cafe' : nextDescription;
       order.amount = pricing.amount;
-      order.itemPrice =
+      order.itemPrice = nextCafeInquiry ? 0 :
         nextTaskType === 'restaurant' || nextTaskType === 'shopping' || nextTaskType === DRY_CLEANING_TASK_TYPE || nextTaskType === INDOMIE_TASK_TYPE ? nextAmount : undefined;
       order.commission = settlement.serviceFee;
       order.platformFee = settlement.platformFee;
@@ -670,14 +674,18 @@ export async function PATCH(
         : undefined;
       order.discountCommissionAmount = discountStillApplies
         ? pricing.pricingModel === 'tiered'
-          ? baseSettlement.taskerFee || pricing.serviceFee
+          ? nextCafeInquiry ? splitServiceFee(pricing.serviceFee - CAFE_INQUIRY_EXTRA_FEE).taskerFee : baseSettlement.taskerFee || pricing.serviceFee
           : pricing.serviceFee
         : 0;
       order.pricingModel = pricing.pricingModel;
       order.totalAmount = discountStillApplies
-        ? Math.max(0, pricing.totalAmount - pricing.serviceFee)
+        ? Math.max(0, pricing.totalAmount - pricing.serviceFee + (nextCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
         : pricing.totalAmount;
       order.cafeInquiry = nextCafeInquiry;
+      order.cafeInquiryStatus = nextCafeInquiry ? 'waiting_for_tasker' : undefined;
+      order.cafeAvailableItems = [];
+      order.cafeSelectedItems = [];
+      order.cafeOptionsVersion = 0;
       order.cafeInquiryFeePaid = false;
       order.cafeInquiryDetailsSubmitted = !nextCafeInquiry;
       order.waterBags = pricing.waterBags || undefined;
@@ -847,6 +855,10 @@ export async function PATCH(
           );
         }
 
+        if (order.cafeInquiryStatus && order.cafeInquiryStatus !== 'ready_for_payment') {
+          return NextResponse.json({ error: 'Food selection is not complete.' }, { status: 409 });
+        }
+        if (order.cafeInquiryStatus) order.cafeInquiryStatus = 'completed';
         order.status = 'completed';
         order.completedAt = new Date();
         const completionDueAt = order.completionDueAt;
@@ -875,6 +887,7 @@ export async function PATCH(
           order.settlementFailureReason = undefined;
         }
       } else if (status === 'in_progress' || status === 'pending') {
+        if (order.cafeInquiryStatus) return NextResponse.json({ error: 'Use the cafe check actions to continue.' }, { status: 409 });
         if (!isTaskerOwner) {
           return NextResponse.json(
             { error: 'Only the assigned tasker can change this order status' },

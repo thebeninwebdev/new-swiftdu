@@ -315,7 +315,7 @@ export default function TaskerSidebar() {
   const handleLogout = async () => {
     await authClient.signOut()
     toast.dismiss(TASKER_NOTIFICATION_TOAST_ID)
-    router.push('/login')
+    router.push('/auth')
   }
 
   const notificationCount = unpaidOrders.length

@@ -9,6 +9,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
 
 interface Task {
+  cafeInquiry?: boolean
   _id: string
   taskType: string
   description: string
@@ -49,7 +50,7 @@ export default function AvailableTasksPage() {
       if (!response.ok) {
         if (response.status === 401) {
           toast.error('Please log in to view available tasks')
-          router.push('/login')
+          router.push('/auth')
           return
         }
         throw new Error('Failed to fetch tasks')
@@ -181,6 +182,7 @@ export default function AvailableTasksPage() {
                 id={task._id}
                 taskType={task.taskType}
                 description={task.description}
+                cafeInquiry={task.cafeInquiry}
                 amount={task.amount}
                 totalAmount={task.totalAmount}
                 dueDate={task.dueDate}

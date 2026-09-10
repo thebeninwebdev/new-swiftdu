@@ -148,7 +148,7 @@ function TaskerOnboardingContent() {
       });
       if (signInError) {
         toast.success("Your Tasker account is ready. Sign in to continue.");
-        router.replace(`/login?callbackUrl=${encodeURIComponent("/tasker-dashboard")}`);
+        router.replace(`/auth?next=${encodeURIComponent("/tasker-dashboard")}`);
         return;
       }
       toast.success("Welcome to SwiftDU Tasker training.");
@@ -174,7 +174,7 @@ function TaskerOnboardingContent() {
       <section className="relative z-10 w-full max-w-md overflow-hidden rounded-[28px] border border-white/15 bg-white shadow-2xl">
         <div className="border-b border-slate-100 px-6 py-6">
           <Link href="/" className="inline-flex">
-            <Image src="/logo.png" alt="SwiftDU" width={132} height={46} className="h-10 w-auto object-contain" />
+            <Image src="/logo.png?v=swiftdu-symbol-v1" alt="SwiftDU" width={512} height={512} className="h-10 w-auto object-contain" />
           </Link>
           <p className="mt-5 text-xs font-bold uppercase tracking-[0.2em] text-blue-600">Tasker onboarding</p>
           <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950">
@@ -243,7 +243,7 @@ function TaskerOnboardingContent() {
                   {busy ? "Connecting to Google..." : "Continue with Google"}
                 </button>
               ) : (
-                <Link href={`/login?callbackUrl=${encodeURIComponent(`/tasker/onboarding?token=${token}`)}`} className="block w-full rounded-full bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white">Sign in to continue</Link>
+                <Link href={`/auth?next=${encodeURIComponent(`/tasker/onboarding?token=${token}`)}`} className="block w-full rounded-full bg-blue-600 px-4 py-3 text-center text-sm font-semibold text-white">Sign in to continue</Link>
               )}
             </div>
           )}

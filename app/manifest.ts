@@ -21,17 +21,17 @@ export default function manifest(): MetadataRoute.Manifest {
     id: siteUrl,
     icons: [
       {
-        src: "/pwa-192x192.png",
+        src: "/pwa-192x192.png?v=swiftdu-symbol-v1",
         sizes: "192x192",
         type: "image/png",
       },
       {
-        src: "/pwa-512x512.png",
+        src: "/pwa-512x512.png?v=swiftdu-symbol-v1",
         sizes: "512x512",
         type: "image/png",
       },
       {
-        src: "/apple-icon.png",
+        src: "/apple-icon.png?v=swiftdu-symbol-v1",
         sizes: "256x256",
         type: "image/png",
       },

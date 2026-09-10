@@ -71,12 +71,12 @@ export default function AdminDryCleanersPage() {
       try {
         const { data, error } = await authClient.getSession();
         if (error || !data?.user) {
-          router.push("/login");
+          router.push("/auth");
           return;
         }
         setAdmin(data.user);
       } catch {
-        router.push("/login");
+        router.push("/auth");
       } finally {
         setIsLoading(false);
       }

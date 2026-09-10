@@ -1,6 +1,6 @@
-const SWIFTDU_NOTIFICATION_ICON = '/pwa-512x512.png'
-const SWIFTDU_NOTIFICATION_BADGE = '/pwa-192x192.png'
-const SWIFTDU_NOTIFICATION_IMAGE = '/logo.png'
+const SWIFTDU_NOTIFICATION_ICON = '/pwa-512x512.png?v=swiftdu-symbol-v1'
+const SWIFTDU_NOTIFICATION_BADGE = '/pwa-192x192.png?v=swiftdu-symbol-v1'
+const SWIFTDU_NOTIFICATION_IMAGE = '/logo.png?v=swiftdu-symbol-v1'
 
 function getNotificationAssetUrl(path) {
   return new URL(path, self.location.origin).href

@@ -61,11 +61,11 @@ export default function AdminTaskersPage() {
     const checkAuth = async () => {
       try {
         const { data, error } = await authClient.getSession()
-        if (error || !data?.user) { router.push('/login'); return }
+        if (error || !data?.user) { router.push('/auth'); return }
         // if (data.user.role !== 'admin') { router.push('/'); return }
         setAdmin(data.user)
       } catch {
-        router.push('/login')
+        router.push('/auth')
       } finally {
         setIsLoading(false)
       }

@@ -17,38 +17,35 @@ const STATIC_CACHE_NAMES_TO_KEEP = new Set([
   'cross-origin',
 ])
 
-const publicPageCaching = {
-  urlPattern: ({ request, url }) => {
-    if (request.mode !== 'navigate') return false
-    if (self.origin !== url.origin) return false
+// Page navigation must reach the server so operational redirects cannot be bypassed
+// by a cached public page. The existing offline fallback handles network failures.
+const pageNavigation = {
+  urlPattern: ({ request, url }) =>
+    request.mode === 'navigate' && self.origin === url.origin && !url.pathname.startsWith('/api/'),
+  handler: 'NetworkOnly',
+  // next-pwa adds its offline fallback plugin to this options object.
+  options: {},
+}
 
-    const pathname = url.pathname
-
-    if (
-      pathname.startsWith('/api/') ||
-      pathname.startsWith('/admin') ||
-      pathname.startsWith('/dashboard') ||
-      pathname.startsWith('/tasker-dashboard')
-    ) {
-      return false
-    }
-
-    return true
-  },
+const brandAssetCaching = {
+  urlPattern: ({ url }) =>
+    url.origin === self.origin &&
+    ['/logo.png', '/pwa-192x192.png', '/pwa-512x512.png', '/apple-icon.png'].includes(url.pathname),
   handler: 'NetworkFirst',
   options: {
-    cacheName: 'public-pages',
+    cacheName: 'brand-assets-symbol-v1',
+    networkTimeoutSeconds: 3,
     expiration: {
-      maxEntries: 32,
-      maxAgeSeconds: 24 * 60 * 60,
+      maxEntries: 8,
+      maxAgeSeconds: 7 * 24 * 60 * 60,
     },
-    networkTimeoutSeconds: 2,
   },
 }
 
 module.exports = [
+  brandAssetCaching,
   ...defaultRuntimeCaching.filter(({ options }) =>
     STATIC_CACHE_NAMES_TO_KEEP.has(options?.cacheName)
   ),
-  publicPageCaching,
+  pageNavigation,
 ]

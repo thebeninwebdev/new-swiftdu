@@ -1,4 +1,6 @@
 'use client'
+import { CafeInquiryPanel } from '@/components/cafe-inquiry'
+import type { CafeInquiryFields } from '@/lib/cafe-inquiry'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
@@ -28,9 +30,11 @@ import { useVisibleInterval } from '@/hooks/use-visible-interval'
 const DETAIL_REFRESH_MS = 5000
 
 // ─── Types ───
-interface ErrandDetail {
+interface ErrandDetail extends CafeInquiryFields {
   _id: string
   userId: string
+  cafeInquiry?: boolean
+  cafeInquiryDetailsSubmitted?: boolean
   taskType: string
   description: string
   amount: number
@@ -208,7 +212,7 @@ export default function ErrandDetailPage() {
     fetchingRef.current = true
     try {
       const errandRes = await fetchWithSocketPause(`/api/orders/${errandId}`, { cache: 'no-store' })
-      if (errandRes.status === 401) { router.push('/login'); return }
+      if (errandRes.status === 401) { router.push('/auth'); return }
       if (!errandRes.ok) throw new Error('Failed to fetch errand details')
       const errandData: ErrandDetail = await errandRes.json()
       setErrand(errandData)
@@ -377,7 +381,7 @@ export default function ErrandDetailPage() {
   const whatsappLink = userInfo ? getWhatsappLink(userInfo.phone, errand, userInfo.name) : ''
   const restaurantPeopleCount = Number.isInteger(Number(errand.restaurantPeopleCount || 0)) && Number(errand.restaurantPeopleCount || 0) > 0 ? Number(errand.restaurantPeopleCount) : 1
   const restaurantPackaging = formatRestaurantPackaging(errand)
-  const canUpdateRestaurantPeople = errand.taskType === 'restaurant' && isActive && !paymentConfirmed && !transferUnderReview
+  const canUpdateRestaurantPeople = errand.taskType === 'restaurant' && !errand.cafeInquiryStatus && isActive && !paymentConfirmed && !transferUnderReview
 
   // Timer calculations
   const completionStartedMs = errand.completionTimerStartedAt ? new Date(errand.completionTimerStartedAt).getTime() : new Date(errand.createdAt).getTime()
@@ -411,6 +415,7 @@ export default function ErrandDetailPage() {
 
       {/* ─── Main Content ─── */}
       <div className="max-w-lg mx-auto px-4 pt-4 space-y-4">
+        {errand.cafeInquiryStatus && <CafeInquiryPanel order={errand} tasker onUpdated={() => { void loadErrand(false) }} />}
         {errand.isTestOrder ? (
           <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
             <p className="font-bold">Training Only</p>
@@ -429,7 +434,7 @@ export default function ErrandDetailPage() {
                 </span>
               ) : null}
             </div>
-            <h1 className="mt-1 text-2xl font-black">{errand.description}</h1>
+            <h1 className="mt-1 text-2xl font-black">{errand.cafeInquiry && !errand.cafeInquiryDetailsSubmitted ? 'Cafe check request' : errand.description}</h1>
             <p className="mt-1 text-sm text-sky-50 opacity-90">{taskTypeLabels[errand.taskType] || errand.taskType}</p>
           </div>
 
@@ -501,7 +506,7 @@ export default function ErrandDetailPage() {
             </div>
 
             {/* Packaging (for restaurant) */}
-            {errand.taskType === 'restaurant' && (
+            {errand.taskType === 'restaurant' && (!errand.cafeInquiryStatus || errand.cafeInquiryDetailsSubmitted) && (
               <div className="flex items-center gap-2 rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/50 p-3">
                 <Wallet className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
                 <div>
@@ -545,7 +550,7 @@ export default function ErrandDetailPage() {
               </div>
               <div>
                 <p className="text-sm font-bold text-slate-900 dark:text-white">
-                  {transferUnderReview ? 'Transfer under review' : paymentConfirmed ? 'Payment confirmed' : 'Awaiting payment'}
+                  {transferUnderReview ? 'Transfer under review' : paymentConfirmed ? 'Payment confirmed' : errand.cafeInquiryStatus && !errand.cafeInquiryDetailsSubmitted ? 'Cafe check in progress' : 'Awaiting payment'}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   {transferUnderReview

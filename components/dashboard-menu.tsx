@@ -266,7 +266,7 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
 
   const signOut = async () => {
     await authClient.signOut({
-      fetchOptions: { onSuccess: () => router.push('/login') }
+      fetchOptions: { onSuccess: () => router.push('/auth') }
     })
   }
 
