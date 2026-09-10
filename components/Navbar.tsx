@@ -109,10 +109,10 @@ export const Navbar = () => {
           "
         >
           <Image
-            src="/logo.png?v=20260826"
+            src="/logo.png?v=swiftdu-symbol-v1"
             alt="SwiftDU"
-            width={342}
-            height={63}
+            width={512}
+            height={512}
             priority
             className="
               h-9 w-auto object-contain

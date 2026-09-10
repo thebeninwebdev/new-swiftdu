@@ -10,6 +10,7 @@ import { emitOrderUpdated } from '@/lib/socket';
 import { ensureCompletionTimer } from '@/lib/completion-timer';
 import {
   calculateOrderPricing,
+  CAFE_INQUIRY_EXTRA_FEE,
   descriptionMentionsWater,
   normalizeRestaurantPeopleCount,
   normalizeRestaurantTakeawayCount,
@@ -37,6 +38,7 @@ import {
   sendPushNotification,
 } from '@/lib/push-notifications';
 import { isProfileComplete } from '@/lib/profile-completion';
+import { canCreateOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes', DRY_CLEANING_TASK_TYPE, INDOMIE_TASK_TYPE]);
 
@@ -103,18 +105,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const parsedAmount = Number(amount);
     const normalizedDescription = String(description || '').trim();
     const normalizedTaskType = String(taskType || '').trim();
     const isCafeInquiry = normalizedTaskType === 'restaurant' && cafeInquiry === true;
+    const parsedAmount = isCafeInquiry ? 0 : Number(amount);
+    if (isCafeInquiry && (typeof store !== 'string' || !store.trim() || typeof location !== 'string' || !location.trim())) {
+      return NextResponse.json({ error: 'Choose a cafe and delivery location.' }, { status: 400 });
+    }
     const parsedRestaurantPeopleCount =
-      normalizedTaskType === 'restaurant' ? Number(restaurantPeopleCount || 1) : undefined;
+      normalizedTaskType === 'restaurant' ? Number(isCafeInquiry ? 1 : restaurantPeopleCount || 1) : undefined;
     const normalizedRestaurantPeopleCount =
       normalizedTaskType === 'restaurant'
         ? normalizeRestaurantPeopleCount(parsedRestaurantPeopleCount)
         : undefined;
     const parsedRestaurantTakeawayCount =
-      normalizedTaskType === 'restaurant' ? Number(restaurantTakeawayCount || 0) : undefined;
+      normalizedTaskType === 'restaurant' ? Number(isCafeInquiry ? 0 : restaurantTakeawayCount || 0) : undefined;
     const normalizedRestaurantTakeawayCount =
       normalizedTaskType === 'restaurant'
         ? normalizeRestaurantTakeawayCount(
@@ -328,6 +333,10 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       );
     }
+    if (!canCreateOrder(isTestOrder)) {
+      return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 });
+    }
+
     let serviceFeeDiscountGrantedByName =
       customerAccount?.serviceFeeDiscountGrantedByName || undefined;
     let serviceFeeDiscountGrantedByPhone =
@@ -385,12 +394,12 @@ export async function POST(request: NextRequest) {
     );
     const discountCommissionAmount = serviceFeeDiscountApplied
       ? pricing.pricingModel === 'tiered'
-        ? baseSettlement.taskerFee || pricing.serviceFee
+        ? isCafeInquiry ? splitServiceFee(pricing.serviceFee - CAFE_INQUIRY_EXTRA_FEE).taskerFee : baseSettlement.taskerFee || pricing.serviceFee
         : pricing.serviceFee
       : 0;
     const settlement = baseSettlement;
     const totalAmount = serviceFeeDiscountApplied
-      ? Math.max(0, pricing.totalAmount - pricing.serviceFee)
+      ? Math.max(0, pricing.totalAmount - pricing.serviceFee + (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
       : pricing.totalAmount;
 
     const bookedAt = new Date();
@@ -399,7 +408,7 @@ export async function POST(request: NextRequest) {
       userId: session.user.id,
       source: 'website',
       taskType: normalizedTaskType,
-      description: normalizedDescription,
+      description: isCafeInquiry ? 'Text me what is in cafe' : normalizedDescription,
       amount: pricing.amount,
       commission: settlement.serviceFee,
       platformFee: settlement.platformFee,
@@ -425,7 +434,7 @@ export async function POST(request: NextRequest) {
           ? undefined
           : store || undefined,
       itemPrice: normalizedTaskType === 'restaurant' || normalizedTaskType === 'shopping' || normalizedTaskType === DRY_CLEANING_TASK_TYPE || normalizedTaskType === INDOMIE_TASK_TYPE ? parsedAmount : undefined,
-      packaging:
+      packaging: isCafeInquiry ? undefined :
         normalizedTaskType === 'restaurant'
           ? pricing.restaurantTakeawayCount && pricing.restaurantTakeawayCount > 0
             ? pricing.restaurantTakeawayCount === pricing.restaurantPeopleCount
@@ -437,6 +446,7 @@ export async function POST(request: NextRequest) {
       restaurantTakeawayCount: pricing.restaurantTakeawayCount,
       restaurantPackagingFee: pricing.restaurantPackagingFee || 0,
       cafeInquiry: isCafeInquiry,
+      cafeInquiryStatus: isCafeInquiry ? 'waiting_for_tasker' : undefined,
       cafeInquiryFeePaid: false,
       cafeInquiryDetailsSubmitted: !isCafeInquiry,
       waterBags: pricing.waterBags || undefined,

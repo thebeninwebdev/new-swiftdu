@@ -21,7 +21,7 @@ const nextConfig: NextConfig = {
       },
       {
         pathname: "/logo.png",
-        search: "?v=20260826",
+        search: "?v=swiftdu-symbol-v1",
       },
       {
         pathname: "/sign-up.jpg",

@@ -12,6 +12,7 @@ import {
   getUserLookupConditions,
   hasActiveServiceFeeDiscountReservation,
 } from '@/lib/service-fee-discount';
+import { CAFE_INQUIRY_SERVICE_FEE, CAFE_INQUIRY_EXTRA_FEE } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
 import {
   getCreatedInMode,
@@ -20,6 +21,7 @@ import {
 } from '@/lib/test-orders';
 import { Order } from '@/models/order';
 import { User } from '@/models/user';
+import { canCreateOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
 
 export async function POST(
   request: NextRequest,
@@ -67,8 +69,12 @@ export async function POST(
           .lean()
       : null;
     const isTestOrder = shouldCreateTestOrder(customerAccount || undefined);
+    if (!canCreateOrder(isTestOrder)) {
+      return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 });
+    }
+
     const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(session.user.id);
-    const fullServiceFee = Number(
+    const fullServiceFee = order.cafeInquiry ? CAFE_INQUIRY_SERVICE_FEE : Number(
       order.serviceFeeBeforeDiscount || order.serviceFee || order.commission || 0
     );
     const serviceFeeDiscountApplied = Boolean(
@@ -80,23 +86,23 @@ export async function POST(
     const tieredSettlement = splitServiceFee(fullServiceFee);
     const discountCommissionAmount = serviceFeeDiscountApplied
       ? order.pricingModel === 'tiered'
-        ? Number(order.taskerFee || tieredSettlement.taskerFee || fullServiceFee)
+        ? order.cafeInquiry ? splitServiceFee(fullServiceFee - CAFE_INQUIRY_EXTRA_FEE).taskerFee : Number(order.taskerFee || tieredSettlement.taskerFee || fullServiceFee)
         : fullServiceFee
       : 0;
     const retriedServiceFee = fullServiceFee;
-    const retriedPlatformFee =
+    const retriedPlatformFee = order.cafeInquiry ? tieredSettlement.platformFee :
       Number(order.platformFee || 0) ||
       (order.pricingModel === 'tiered'
         ? tieredSettlement.platformFee
         : fullServiceFee);
-    const retriedTaskerFee =
+    const retriedTaskerFee = order.cafeInquiry ? tieredSettlement.taskerFee :
       Number(order.taskerFee || 0) ||
       (order.pricingModel === 'tiered' ? tieredSettlement.taskerFee : 0);
-    const fullTotalAmount =
+    const fullTotalAmount = order.cafeInquiry ? fullServiceFee :
       Number(order.totalAmount || 0) +
       (order.serviceFeeDiscountApplied ? fullServiceFee : 0);
     const retriedTotalAmount = serviceFeeDiscountApplied
-      ? Math.max(0, fullTotalAmount - fullServiceFee)
+      ? Math.max(0, fullTotalAmount - fullServiceFee + (order.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
       : fullTotalAmount;
 
     const retriedOrder = new Order({
@@ -105,9 +111,9 @@ export async function POST(
       customerPhone: order.customerPhone,
       customerName: order.customerName,
       taskType: order.taskType,
-      description: order.description,
-      amount: order.amount,
-      itemPrice: order.itemPrice,
+      description: order.cafeInquiry ? 'Text me what is in cafe' : order.description,
+      amount: order.cafeInquiry ? 0 : order.amount,
+      itemPrice: order.cafeInquiry ? 0 : order.itemPrice,
       commission: retriedServiceFee,
       platformFee: retriedPlatformFee,
       taskerFee: retriedTaskerFee,
@@ -126,11 +132,12 @@ export async function POST(
       location: order.location,
       deliveryLocation: order.deliveryLocation,
       store: order.store,
-      packaging: order.packaging,
-      restaurantPeopleCount: order.restaurantPeopleCount,
-      restaurantTakeawayCount: order.restaurantTakeawayCount,
+      packaging: order.cafeInquiry ? undefined : order.packaging,
+      restaurantPeopleCount: order.cafeInquiry ? 1 : order.restaurantPeopleCount,
+      restaurantTakeawayCount: order.cafeInquiry ? 0 : order.restaurantTakeawayCount,
       restaurantPackagingFee: order.restaurantPackagingFee,
       cafeInquiry: order.cafeInquiry,
+      cafeInquiryStatus: order.cafeInquiry ? 'waiting_for_tasker' : undefined,
       cafeInquiryFeePaid: false,
       cafeInquiryDetailsSubmitted: order.cafeInquiry ? false : order.cafeInquiryDetailsSubmitted,
       waterBags: order.waterBags,

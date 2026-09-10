@@ -115,11 +115,11 @@ export function AuthEntry() {
             <div className="relative z-10 flex h-full flex-col justify-between p-10 xl:p-12">
               <Link href="/" className="inline-flex w-fit">
                 <Image
-                  src="/logo.png?v=20260826"
+                  src="/logo.png?v=swiftdu-symbol-v1"
                   alt="SwiftDU"
-                  width={150}
-                  height={48}
-                  className="h-11 w-auto object-contain brightness-0 invert"
+                  width={512}
+                  height={512}
+                  className="h-11 w-auto object-contain"
                 />
               </Link>
 
@@ -145,10 +145,10 @@ export function AuthEntry() {
                   <div>
                     <Link href="/" className="inline-flex lg:hidden">
                       <Image
-                        src="/logo.png?v=20260826"
+                        src="/logo.png?v=swiftdu-symbol-v1"
                         alt="SwiftDU"
-                        width={150}
-                        height={54}
+                        width={512}
+                        height={512}
                         className="h-11 w-auto object-contain"
                       />
                     </Link>

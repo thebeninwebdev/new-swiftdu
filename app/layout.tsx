@@ -26,10 +26,10 @@ export const metadata: Metadata = {
   category: "productivity",
   icons: {
     icon: [
-      { url: "/pwa-192x192.png", sizes: "192x192", type: "image/png" },
-      { url: "/pwa-512x512.png", sizes: "512x512", type: "image/png" },
+      { url: "/favicon.ico?v=swiftdu-symbol-v1", sizes: "256x256", type: "image/x-icon" },
+      { url: "/icon.png?v=swiftdu-symbol-v1", sizes: "256x256", type: "image/png" },
     ],
-    apple: [{ url: "/apple-icon.png", sizes: "256x256", type: "image/png" }],
+    apple: [{ url: "/apple-icon.png?v=swiftdu-symbol-v1", sizes: "256x256", type: "image/png" }],
   },
   keywords: [
     "Swiftdu",
@@ -52,7 +52,7 @@ export const metadata: Metadata = {
     siteName: "Swiftdu",
     images: [
       {
-        url: "/opengraph-image.png",
+        url: "/opengraph-image.png?v=swiftdu-symbol-v1",
         width: 1200,
         height: 630,
         alt: "Swiftdu",
@@ -65,7 +65,7 @@ export const metadata: Metadata = {
     title: "Swiftdu | Campus errands made easy",
     description:
       "Swiftdu connects students with trusted campus runners for food delivery, shopping, printing, pickups, and everyday campus errands.",
-    images: ["/opengraph-image.png"],
+    images: ["/opengraph-image.png?v=swiftdu-symbol-v1"],
   },
   appleWebApp: {
     capable: true,

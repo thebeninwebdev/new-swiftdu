@@ -15,7 +15,7 @@ export const Footer = () => (
       <div className="grid gap-12 border-b border-white/10 pb-12 lg:grid-cols-[1.25fr_2fr]">
         <div>
           <Link href="/" className="inline-flex rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400">
-            <Image src="/logo.png?v=20260826" alt="SwiftDU" width={342} height={63} className="h-10 w-auto object-contain brightness-0 invert" />
+            <Image src="/logo.png?v=swiftdu-symbol-v1" alt="SwiftDU" width={512} height={512} className="h-10 w-auto object-contain" />
           </Link>
           <p className="mt-5 max-w-sm text-sm leading-6 text-slate-400">Building a stronger campus through support, opportunity and community.</p>
           <div className="mt-6 space-y-3 text-sm text-slate-400">

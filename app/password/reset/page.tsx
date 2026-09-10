@@ -67,11 +67,11 @@ export default function ForgotPasswordPage() {
             <div className="relative flex items-center justify-center gap-x-3">
               <Link href="/">
                 <Image
-                  src="/logo.png?v=20260826"
-                  alt="logo"
-                  width={342}
-                  height={63}
-                  className="w-28 object-contain"
+                  src="/logo.png?v=swiftdu-symbol-v1"
+                  alt="SwiftDU"
+                  width={512}
+                  height={512}
+                  className="h-11 w-11 object-contain"
                 />
               </Link>
             </div>

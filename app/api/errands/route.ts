@@ -38,6 +38,8 @@ const ERRAND_LIST_FIELDS = [
   'location',
   'store',
   'packaging',
+  'cafeInquiry',
+  'cafeInquiryStatus',
   'restaurantPeopleCount',
   'restaurantTakeawayCount',
   'restaurantPackagingFee',
@@ -279,6 +281,7 @@ export async function POST(request: NextRequest) {
       },
       {
         $set: {
+          ...(order.cafeInquiryStatus ? { cafeInquiryStatus: 'tasker_assigned' } : {}),
           acceptedBy: session.user.id,
           acceptedAt,
           bookedAt: order.bookedAt || acceptedAt,

@@ -67,7 +67,7 @@ export default function Header() {
         <nav className="h-16 px-3.5 flex-center items-center justify-between w-full max-w-7xl mx-auto">
           <div className="flex-center gap-x-3 z-999 relative">
             <Link href="/">
-            <Image src={"/logo.png?v=20260826"} alt="logo" width={342} height={63} className="object-contain w-28"/>
+            <Image src={"/logo.png?v=swiftdu-symbol-v1"} alt="SwiftDU" width={512} height={512} className="object-contain h-11 w-11"/>
             </Link>
           </div>
 

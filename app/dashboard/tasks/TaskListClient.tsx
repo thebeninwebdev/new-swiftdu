@@ -25,6 +25,7 @@ type OrderStatus = 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled
 type TaskTab = 'in_progress' | 'completed' | 'cancelled'
 
 interface Order {
+  cafeInquiry?: boolean
   _id: string
   taskType: string
   description?: string
@@ -111,6 +112,7 @@ const formatDate = (date: string) => {
 }
 
 function getTaskTitle(order: Order) {
+  if (order.cafeInquiry) return `Cafe check · ${order.store || 'Restaurant'}`
   if (order.description?.trim()) return order.description
   const label = taskTypeLabels[order.taskType] || order.taskType
   return order.store ? `${label} from ${order.store}` : label

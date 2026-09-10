@@ -30,6 +30,8 @@ import { io, type Socket } from 'socket.io-client'
 import { toast } from 'sonner'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
+import { CAFE_OPTIONS } from '@/lib/cafe-inquiry'
+import { CafeInquirySelector, CafeInquiryReview } from '@/components/cafe-inquiry'
 import { OrderFlowProgress, OrderMascot } from '@/components/order-mascot'
 import { SERVICE_MESSAGES } from '@/components/swifty/swifty-messages'
 import type { SwiftyInteraction } from '@/components/swifty/swifty-config'
@@ -194,13 +196,7 @@ const storeOptions: Record<string, Array<{ value: string; label: string }>> = {
     { value: 'sarah', label: 'Sarah Store' },
     { value: 'muuy V', label: 'Mummy V' },
   ],
-  restaurant: [
-    { value: '', label: 'Select a store...' },
-    { value: 'tasker_choose', label: 'Help me choose / any open cafe' },
-    { value: 'akpan', label: 'Akpan Store' },
-    { value: 'mama', label: "Mama's Kitchen" },
-    { value: 'golley', label: 'Golley Shop' },
-  ],
+  restaurant: CAFE_OPTIONS,
 }
 
 const restaurantQuickOrders = [
@@ -817,9 +813,9 @@ export default function ErrandWizardPage() {
     discountRemainingOrders === 1
       ? 'your next order'
       : `your next ${discountRemainingOrders} orders`
-  const displayedServiceFee = hasAvailableServiceFeeDiscount ? 0 : pricing.serviceFee
+  const displayedServiceFee = hasAvailableServiceFeeDiscount ? (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0) : pricing.serviceFee
   const displayedTotalAmount = hasAvailableServiceFeeDiscount
-    ? Math.max(0, pricing.totalAmount - pricing.serviceFee)
+    ? Math.max(0, pricing.totalAmount - pricing.serviceFee + (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
     : pricing.totalAmount
   const restaurantPackagingNote =
     normalizedRestaurantTakeawayCount > 0
@@ -1462,40 +1458,21 @@ if (stepNumber === 2) {
       </Button>
     ) : null
 
+  const renderCafeSelector = () => <CafeInquirySelector value={isCafeInquiry} onChange={(value) => {
+    if (value === isCafeInquiry) return
+    pauseRealtime()
+    setFormData(previous => ({ ...previous, cafeInquiry: value, description: '', restaurantItemPrice: '', packaging: '', restaurantPeople: '1', restaurantTakeawayCount: '0' }))
+    clearError('description'); clearError('restaurantItemPrice')
+  }} />
+  const renderCafeReview = () => <CafeInquiryReview cafe={selectedStoreLabel || formData.store || ''} location={formData.location} serviceFee={pricing.serviceFee} discounted={hasAvailableServiceFeeDiscount} />
+
   const renderDetailsFields = (mobile = false) => (
     <div className="space-y-4">
       {mobile && formData.taskType === 'restaurant' ? null : renderStoreSelect()}
 
       {formData.taskType === 'restaurant' ? (
         <>
-          {false ? (
-            <button
-              type="button"
-              onClick={() => {
-                pauseRealtime()
-                setFormData((previous) => ({
-                  ...previous,
-                  cafeInquiry: !previous.cafeInquiry,
-                  description: !previous.cafeInquiry ? '' : previous.description,
-                  restaurantItemPrice: !previous.cafeInquiry ? '' : previous.restaurantItemPrice,
-                  packaging: !previous.cafeInquiry ? '' : previous.packaging,
-                  restaurantTakeawayCount: !previous.cafeInquiry ? '0' : previous.restaurantTakeawayCount,
-                }))
-                clearError('description')
-                clearError('restaurantItemPrice')
-              }}
-              className={`w-full rounded-xl border px-4 py-3 text-left text-sm transition ${
-                isCafeInquiry
-                  ? 'border-blue-500 bg-blue-50 text-blue-950 dark:bg-blue-950/30 dark:text-blue-100'
-                  : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200'
-              }`}
-            >
-              <span className="block font-bold">Text me what is in cafe</span>
-              <span className="text-xs text-slate-500 dark:text-slate-400">
-                Adds {formatNaira(CAFE_INQUIRY_EXTRA_FEE)} if you want the tasker to check first.
-              </span>
-            </button>
-          ) : null}
+          {renderCafeSelector()}
           {!isCafeInquiry ? (
             <div>
               {!mobile ? (
@@ -1812,7 +1789,7 @@ if (stepNumber === 2) {
 
   const renderQuickDetails = () => (
     <div className="space-y-4">
-      {formData.taskType === 'restaurant' ? (
+      {formData.taskType === 'restaurant' && !isCafeInquiry ? (
         <div className="grid gap-3 sm:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
             <label className="block text-sm font-black text-slate-950 dark:text-white">People</label>
@@ -1870,7 +1847,7 @@ if (stepNumber === 2) {
         </div>
       ) : null}
 
-      {formData.taskType === 'restaurant' ? (
+      {formData.taskType === 'restaurant' && !isCafeInquiry ? (
         <div>
           <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">How much will your food cost?</label>
           <div className="relative">
@@ -1914,7 +1891,7 @@ if (stepNumber === 2) {
     </div>
   )
 
-  const renderOrderSummary = () => (
+  const renderOrderSummary = () => isCafeInquiry ? renderCafeReview() : (
     <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-900/60">
       <div className="flex items-start justify-between gap-4">
         <span className="text-slate-500">Order</span>
@@ -2041,7 +2018,7 @@ if (stepNumber === 2) {
       <div className="mx-auto max-w-4xl overflow-hidden rounded-[2rem] border border-indigo-100 bg-white shadow-[0_28px_80px_-36px_rgba(79,70,229,0.3)] dark:border-slate-800 dark:bg-slate-950">
         <header className="flex items-center justify-between border-b border-slate-100 px-8 py-5 dark:border-slate-800">
           <div className="flex items-center">
-            <Image src="/logo.png?v=20260826" alt="SwiftDU" width={76} height={76} className="h-16 w-16 rounded-xl object-contain xl:h-19 xl:w-19" />
+            <Image src="/logo.png?v=swiftdu-symbol-v1" alt="SwiftDU" width={512} height={512} className="h-16 w-16 rounded-xl object-contain xl:h-19 xl:w-19" />
           </div>
           <div className="text-center">
             <p className="text-sm font-black text-slate-900 dark:text-white">{stepTitles[step - 1]}</p>
@@ -2056,7 +2033,7 @@ if (stepNumber === 2) {
               mood={wizardMood}
               interaction={mascotInteraction}
               size={step === 4 ? 'sm' : 'md'}
-              message={wizardMessage}
+              message={formData.taskType === 'restaurant' && !isSubmitting && !submissionFailed ? isCafeInquiry ? (formData.store ? 'Got it. We’ll check what they have.' : 'Not sure what’s available? I can get a Tasker to check for you.') : 'What are we getting?' : wizardMessage}
             />
           </div>
 
@@ -2071,7 +2048,7 @@ if (stepNumber === 2) {
             </AnimatePresence>
             <div className="mt-8 flex gap-3 border-t border-slate-100 pt-5 dark:border-slate-800">
               {step > 1 ? <Button variant="outline" onClick={handleBack} className="h-12 rounded-xl px-6"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button> : null}
-              {step < 4 ? <Button onClick={handleNext} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">Continue<ChevronRight className="ml-2 h-4 w-4" /></Button> : <Button onClick={handleSubmit} disabled={isSubmitting} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Placing order...</> : <>Place order · {formatNaira(displayedTotalAmount)}<ArrowRight className="ml-2 h-4 w-4" /></>}</Button>}
+              {step < 4 ? <Button onClick={handleNext} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">Continue<ChevronRight className="ml-2 h-4 w-4" /></Button> : <Button onClick={handleSubmit} disabled={isSubmitting} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Placing order...</> : <>{isCafeInquiry ? 'Ask a Tasker to check' : 'Place order'} · {formatNaira(displayedTotalAmount)}<ArrowRight className="ml-2 h-4 w-4" /></>}</Button>}
             </div>
           </div>
         </div>
@@ -2087,7 +2064,7 @@ if (stepNumber === 2) {
             <div className="text-center"><p className="mb-2 text-xs font-black text-slate-900 dark:text-white">{stepTitles[step - 1]}</p><OrderFlowProgress step={step} /></div>
             <span className="absolute right-0 text-xs font-bold text-slate-400">{step}/4</span>
           </div>
-          <OrderMascot mood={wizardMood} interaction={mascotInteraction} size={step === 4 ? 'sm' : 'md'} message={wizardMessage} compactSpeech className="mb-6" />
+          <OrderMascot mood={wizardMood} interaction={mascotInteraction} size={step === 4 ? 'sm' : 'md'} message={formData.taskType === 'restaurant' && !isSubmitting && !submissionFailed ? isCafeInquiry ? (formData.store ? 'Got it. We’ll check what they have.' : 'Not sure what’s available? I can get a Tasker to check for you.') : 'What are we getting?' : wizardMessage} compactSpeech className="mb-6" />
           <AnimatePresence mode="wait">
           <motion.div key={step} initial={{ opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -18 }} transition={{ duration: 0.22 }}>
           {step === 1 ? (
@@ -2143,7 +2120,7 @@ if (stepNumber === 2) {
               disabled={isSubmitting}
               className="h-12 w-full rounded-xl bg-blue-600 font-black text-white hover:bg-blue-700"
             >
-              {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Posting...</> : 'Place Order'}
+              {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Posting...</> : isCafeInquiry ? `Ask a Tasker to check · ${formatNaira(displayedTotalAmount)}` : 'Place Order'}
             </Button>
           )}
           </div>
@@ -2570,32 +2547,7 @@ if (stepNumber === 2) {
                   ) : null}
                   {formData.taskType === 'restaurant' ? (
                     <div className="space-y-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          pauseRealtime()
-                          setFormData((previous) => ({
-                            ...previous,
-                            cafeInquiry: !previous.cafeInquiry,
-                            description: !previous.cafeInquiry ? '' : previous.description,
-                            restaurantItemPrice: !previous.cafeInquiry ? '' : previous.restaurantItemPrice,
-                            packaging: !previous.cafeInquiry ? '' : previous.packaging,
-                            restaurantTakeawayCount: !previous.cafeInquiry ? '0' : previous.restaurantTakeawayCount,
-                          }))
-                          clearError('description')
-                          clearError('restaurantItemPrice')
-                        }}
-                        className={`w-full rounded-2xl border-2 px-4 py-3 text-left transition ${
-                          isCafeInquiry
-                            ? 'border-blue-500 bg-blue-50 text-blue-900 dark:bg-blue-950/30 dark:text-blue-100'
-                            : 'border-slate-200 bg-white text-slate-700 hover:border-blue-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200'
-                        }`}
-                      >
-                        <span className="block font-bold">Text me what is in cafe</span>
-                        <span className="mt-1 block text-sm">
-                          Adds {formatNaira(CAFE_INQUIRY_EXTRA_FEE)} to the normal restaurant service fee. You can add your food description and budget after the tasker checks the cafe.
-                        </span>
-                      </button>
+                      {renderCafeSelector()}
                       {!isCafeInquiry ? (
                       <div>
                         <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -3339,7 +3291,7 @@ if (stepNumber === 2) {
                 </div>
               ) : null}
 
-              {step === reviewStep ? (
+              {step === reviewStep && isCafeInquiry ? renderCafeReview() : step === reviewStep ? (
                 <div className="space-y-5 md:space-y-6">
                   <div>
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Review Your Task</h2>

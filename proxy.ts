@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { areOperationsEnabled } from '@/lib/operations';
 import { EXCO_DASHBOARD_PATHS, getExcoDashboardPath } from '@/lib/exco-constants';
 
 const PUBLIC_ROUTES = [
@@ -37,6 +38,24 @@ function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) 
 export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const currentPath = `${pathname}${search}`;
+
+  // Check suspension before public routes or authentication, except tasker signup.
+  if (!areOperationsEnabled()) {
+    if (
+      pathname === '/suspended' ||
+      pathname === '/tasker-signup' ||
+      pathname.startsWith('/tasker-signup/')
+    ) return NextResponse.next();
+    const response = NextResponse.redirect(new URL('/suspended', request.url));
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
+  }
+
+  if (pathname === '/suspended') {
+    const response = NextResponse.redirect(new URL('/', request.url));
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
+  }
 
   const isPublicRoute = PUBLIC_ROUTES.some((route) =>
     route === '/' ? pathname === '/' : pathname.startsWith(route)

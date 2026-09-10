@@ -82,7 +82,11 @@ export async function POST(
       )
     }
 
-    if (order.cafeInquiry && !order.cafeInquiryFeePaid) {
+    if (order.cafeInquiryStatus && order.cafeInquiryStatus !== 'ready_for_payment') {
+      return NextResponse.json({ error: 'Choose your food and packaging before payment.' }, { status: 409 })
+    }
+
+    if (order.cafeInquiry && !order.cafeInquiryStatus && !order.cafeInquiryFeePaid) {
       order.cafeInquiryFeePaid = true
       order.paymentProvider = 'manual_transfer'
       order.paymentStatus = 'unpaid'

@@ -8,6 +8,7 @@ import { toast } from 'sonner'
 import { useRouter } from 'next/navigation'
 
 interface TaskCardProps {
+  cafeInquiry?: boolean
   id: string
   taskType: string
   description: string
@@ -62,7 +63,7 @@ function formatDeadline(dueDate?: string, deadlineDate?: string, deadlineValue?:
   return 'Not set'
 }
 
-export function TaskCard({ id, taskType, description, amount, totalAmount, dueDate, deadline, deadlineDate, deadlineValue, deadlineUnit, location, store, createdAt }: TaskCardProps) {
+export function TaskCard({ cafeInquiry, id, taskType, description, amount, totalAmount, dueDate, deadline, deadlineDate, deadlineValue, deadlineUnit, location, store, createdAt }: TaskCardProps) {
   const router = useRouter()
   const [isAccepting, setIsAccepting] = useState(false)
   const displayAmount = totalAmount || amount
@@ -120,7 +121,7 @@ export function TaskCard({ id, taskType, description, amount, totalAmount, dueDa
             <p className="text-sm text-muted-foreground">{timeAgo}</p>
           </div>
           <Badge className={taskTypeColors[taskType] || taskTypeColors.others}>
-            {taskTypeLabels[taskType] || 'Task'}
+            {cafeInquiry ? 'Cafe check' : taskTypeLabels[taskType] || 'Task'}
           </Badge>
         </div>
       </CardHeader>

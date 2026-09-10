@@ -17,33 +17,12 @@ const STATIC_CACHE_NAMES_TO_KEEP = new Set([
   'cross-origin',
 ])
 
-const publicPageCaching = {
-  urlPattern: ({ request, url }) => {
-    if (request.mode !== 'navigate') return false
-    if (self.origin !== url.origin) return false
-
-    const pathname = url.pathname
-
-    if (
-      pathname.startsWith('/api/') ||
-      pathname.startsWith('/admin') ||
-      pathname.startsWith('/dashboard') ||
-      pathname.startsWith('/tasker-dashboard')
-    ) {
-      return false
-    }
-
-    return true
-  },
-  handler: 'NetworkFirst',
-  options: {
-    cacheName: 'public-pages',
-    expiration: {
-      maxEntries: 32,
-      maxAgeSeconds: 24 * 60 * 60,
-    },
-    networkTimeoutSeconds: 2,
-  },
+// Page navigation must reach the server so operational redirects cannot be bypassed
+// by a cached public page. The existing offline fallback handles network failures.
+const pageNavigation = {
+  urlPattern: ({ request, url }) =>
+    request.mode === 'navigate' && self.origin === url.origin && !url.pathname.startsWith('/api/'),
+  handler: 'NetworkOnly',
 }
 
 const brandAssetCaching = {
@@ -52,7 +31,7 @@ const brandAssetCaching = {
     ['/logo.png', '/pwa-192x192.png', '/pwa-512x512.png', '/apple-icon.png'].includes(url.pathname),
   handler: 'NetworkFirst',
   options: {
-    cacheName: 'brand-assets-v2',
+    cacheName: 'brand-assets-symbol-v1',
     networkTimeoutSeconds: 3,
     expiration: {
       maxEntries: 8,
@@ -66,5 +45,5 @@ module.exports = [
   ...defaultRuntimeCaching.filter(({ options }) =>
     STATIC_CACHE_NAMES_TO_KEEP.has(options?.cacheName)
   ),
-  publicPageCaching,
+  pageNavigation,
 ]

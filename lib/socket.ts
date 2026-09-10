@@ -1,10 +1,11 @@
+import type { CafeInquiryFields } from '@/lib/cafe-inquiry'
 import type { Server as SocketIOServer } from 'socket.io'
 
 declare global {
   var __swiftDuIo: SocketIOServer | undefined
 }
 
-export type OrderSocketPayload = {
+export type OrderSocketPayload = CafeInquiryFields & {
   _id: string
   userId: string
   taskerId?: string
@@ -13,6 +14,9 @@ export type OrderSocketPayload = {
   hasPaid?: boolean
   isDeclinedTask?: boolean
   declinedMessage?: string
+  cafeInquiry?: boolean
+  cafeInquiryDetailsSubmitted?: boolean
+  serviceFee?: number
   taskType?: string
   description?: string
   amount?: number
@@ -51,7 +55,7 @@ export type OrderSocketPayload = {
   createdInMode?: string
 }
 
-type SocketOrderLike = {
+type SocketOrderLike = CafeInquiryFields & {
   _id: { toString(): string } | string
   userId: string
   taskerId?: { toString(): string } | string | null
@@ -60,6 +64,9 @@ type SocketOrderLike = {
   hasPaid?: boolean
   isDeclinedTask?: boolean
   declinedMessage?: string
+  cafeInquiry?: boolean
+  cafeInquiryDetailsSubmitted?: boolean
+  serviceFee?: number
   taskType?: string
   description?: string
   amount?: number
@@ -132,6 +139,13 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     hasPaid: order.hasPaid,
     isDeclinedTask: order.isDeclinedTask,
     declinedMessage: order.declinedMessage,
+    cafeInquiry: order.cafeInquiry,
+    cafeInquiryStatus: order.cafeInquiryStatus,
+    cafeAvailableItems: order.cafeAvailableItems,
+    cafeSelectedItems: order.cafeSelectedItems,
+    cafeOptionsVersion: order.cafeOptionsVersion,
+    cafeInquiryDetailsSubmitted: order.cafeInquiryDetailsSubmitted,
+    serviceFee: order.serviceFee,
     taskType: order.taskType,
     description: order.description,
     amount: order.amount,

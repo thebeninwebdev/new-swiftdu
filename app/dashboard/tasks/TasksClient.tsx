@@ -1,4 +1,6 @@
 'use client'
+import { CafeInquiryPanel } from '@/components/cafe-inquiry'
+import { cafeStatusLabels, type CafeInquiryFields } from '@/lib/cafe-inquiry'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
@@ -22,7 +24,7 @@ import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { OrderMascot } from '@/components/order-mascot'
 
 // ─── Types ───
-interface Order {
+interface Order extends CafeInquiryFields {
   _id: string
   taskType: string
   description: string
@@ -154,6 +156,8 @@ function getTaskerSearchMessage(elapsedMs: number) {
   return 'Still looking for available taskers'
 }
 function getTrackingStage(order: Order) {
+  if (order.cafeInquiryStatus && order.status !== 'cancelled' && order.status !== 'completed') return { label: order.hasPaid ? 'Food order underway' : 'Cafe check', detail: order.hasPaid ? 'Your Tasker is handling purchase and delivery.' : cafeStatusLabels[order.cafeInquiryStatus], progress: 0, taskerLabel: order.taskerId ? 'Assigned' : 'Searching' }
+
   if (order.status === 'completed') return { label: 'Delivered', detail: 'Your order has reached you.', progress: 100, taskerLabel: 'Delivered' }
   if (order.hasPaid || order.status === 'paid') return { label: 'Tasker on the way', detail: 'Your tasker is moving with your order.', progress: 78, taskerLabel: 'En route' }
   if (order.taskerId || order.status === 'in_progress') return { label: 'Order accepted', detail: 'Your order is being prepared. Confirm payment so fulfilment can keep moving.', progress: 45, taskerLabel: 'Assigned' }
@@ -639,7 +643,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const transferUnderReview = Boolean(currentOrder?.isDeclinedTask)
   const needsCafeDetails = Boolean(currentOrder?.cafeInquiry && currentOrder.cafeInquiryFeePaid && !currentOrder.cafeInquiryDetailsSubmitted)
   const transferAmount = currentOrder?.cafeInquiry && currentOrder.cafeInquiryFeePaid ? Number(currentOrder.amount || 0) : Number(currentOrder?.totalAmount || currentOrder?.amount || 0)
-  const needsPayment = Boolean(currentOrder?.taskerId && !currentOrder?.hasPaid && !transferUnderReview && !needsCafeDetails)
+  const needsPayment = Boolean(currentOrder?.taskerId && !currentOrder?.hasPaid && !transferUnderReview && !needsCafeDetails && (!currentOrder?.cafeInquiryStatus || currentOrder.cafeInquiryStatus === 'ready_for_payment'))
   const whatsappHref = taskerDetails?.phone ? getWhatsAppHref(taskerDetails.phone) : null
 
   useEffect(() => { if (needsPayment) { setPaymentModalOpen(true); return } setPaymentModalOpen(false) }, [currentOrder?._id, needsPayment])
@@ -720,7 +724,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
 
   return (
     <div className="min-h-[calc(100vh-5rem)] bg-slate-50 dark:bg-slate-950">
-      {currentOrder && isSearchingForTasker ? (
+      {currentOrder && isSearchingForTasker && !currentOrder.cafeInquiryStatus ? (
         <SearchingTaskerOverlay order={currentOrder} onCancel={requestCancelOrder} isCancelling={updatingAction === 'cancel'} isBusy={updatingAction === 'cancel' || confirmingTransfer} searchMessage={getTaskerSearchMessage(searchElapsedMs)} />
       ) : null}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10">
@@ -745,7 +749,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
             onAddTime={() => void handleExtendCompletionTimer()}
           />
         ) : null}
-        {isTrackingPage && currentOrder && canCancelCurrentOrder && !isSearchingForTasker ? (
+        {isTrackingPage && currentOrder && canCancelCurrentOrder && (!isSearchingForTasker || Boolean(currentOrder.cafeInquiryStatus)) ? (
           <CancelTaskPrompt
             isCancelling={updatingAction === 'cancel'}
             disabled={updatingAction === 'cancel' || confirmingTransfer}
@@ -758,12 +762,13 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
           <div className="space-y-6">
             {isTrackingPage && currentOrder ? (
               <div className="space-y-4">
-                <FulfillmentStatusCard
+                {currentOrder.cafeInquiryStatus ? <CafeInquiryPanel order={currentOrder} onUpdated={() => { void loadOrders(false) }} /> : null}
+                {(!currentOrder.cafeInquiryStatus || currentOrder.hasPaid) && <FulfillmentStatusCard
                   order={currentOrder}
                   amount={formatCurrency(transferAmount)}
                   statusLabel={currentStatus?.label || currentStage?.label || currentOrder.status}
                   supportHref={whatsappHref}
-                />
+                />}
                 {currentOrder.taskerId && taskerDetails ? (
                   <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg shadow-slate-200/30 dark:border-slate-800 dark:bg-slate-900 dark:shadow-slate-950/30">
                     <div className="flex items-center gap-4">
@@ -838,7 +843,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
                     <p className="font-bold text-slate-900 dark:text-white text-sm">{currentOrder.store || 'Not specified'}</p>
                   </div>
                 </div>
-                {canCancelCurrentOrder && !isSearchingForTasker ? (
+                {canCancelCurrentOrder && (!isSearchingForTasker || Boolean(currentOrder.cafeInquiryStatus)) ? (
                   <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 dark:border-rose-900/60 dark:bg-rose-950/20">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
@@ -953,10 +958,10 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
           {/* Right Column: Timeline & History */}
           <div className="space-y-6 lg:mt-0 mt-6">
 
-            {isTrackingPage && currentOrder ? (
+            {isTrackingPage && currentOrder && !currentOrder.cafeInquiryStatus ? (
               <div className="rounded-3xl bg-white dark:bg-slate-900 shadow-lg shadow-slate-200/30 dark:shadow-slate-950/30 border border-slate-100 dark:border-slate-800 p-6 transition-all hover:shadow-xl">
                 <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-6">Delivery Progress</h3>
-                <FulfillmentTimeline order={currentOrder} />
+                {!currentOrder.cafeInquiryStatus && <FulfillmentTimeline order={currentOrder} />}
               </div>
             ) : null}
 

@@ -1,4 +1,5 @@
 'use client'
+import { cafeStatusLabels, type CafeInquiryFields } from '@/lib/cafe-inquiry'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -35,7 +36,8 @@ import { useVisibleInterval } from '@/hooks/use-visible-interval'
 const REALTIME_REVALIDATE_DELAY_MS = 1200
 const REALTIME_POLL_INTERVAL_MS = 10000
 
-interface Errand {
+interface Errand extends CafeInquiryFields {
+  cafeInquiry?: boolean
   _id: string
   userId: string
   taskType: string
@@ -292,6 +294,7 @@ function formatRestaurantPackaging(errand: Pick<Errand, 'packaging' | 'restauran
 }
 
 function formatAcceptedErrandDescription(errand: Errand) {
+  if (errand.cafeInquiry) return `Cafe check · ${errand.store || ''} · ${errand.cafeInquiryStatus ? cafeStatusLabels[errand.cafeInquiryStatus] : 'Check availability'}`
   const description = errand.description?.trim() || 'Task'
 
   if (errand.taskType !== 'restaurant') {
@@ -1420,7 +1423,8 @@ export default function TaskerDashboardPage() {
 
                   {/* Description */}
                   <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed mb-4 line-clamp-2">
-                    {errand.description}
+                    {errand.cafeInquiry ? `Cafe check · ${errand.store || ''}` : errand.description}
+                    {errand.cafeInquiryStatus && <span className="block text-xs text-indigo-600">{cafeStatusLabels[errand.cafeInquiryStatus]}</span>}
                   </p>
 
                   {errand.serviceFeeDiscountApplied && errand.serviceFeeDiscountGrantedByPhone ? (
