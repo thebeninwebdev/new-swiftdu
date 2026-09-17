@@ -66,7 +66,7 @@ function CafeInquiryDraft({ order, tasker, onUpdated }: { order: CafeOrder; task
     <ol className="flex flex-wrap gap-2 text-xs text-slate-600" aria-label="Cafe request progress">
       <li>✓ Request posted</li>{state !== 'waiting_for_tasker' && <li>✓ Tasker found</li>}{['awaiting_customer_choice', 'ready_for_payment', 'completed'].includes(state) && <li>✓ Options sent</li>}{['ready_for_payment', 'completed'].includes(state) && <li>✓ Food selected</li>}{order.hasPaid && <li>✓ Transfer reported</li>}{state === 'completed' && <li>✓ Delivered</li>}
     </ol>
-    {state === 'unavailable' && <p className="text-sm">Contact your Tasker to discuss alternatives or use the existing cancellation action. This request remains open.</p>}
+    {active && state === 'unavailable' && <p className="text-sm">Contact your Tasker to discuss alternatives or use the existing cancellation action. This request remains open.</p>}
     {tasker && active && <p className="text-sm">Go to the cafe and tell the customer what is currently available. Include chargeable takeaway packs as priced options; there is no separate fixed packaging surcharge.</p>}
     {tasker && active && ['tasker_assigned', 'unavailable'].includes(state) && <button className={button} disabled={busy} onClick={() => submit('checking', {})}>I&apos;m at the cafe</button>}
     {tasker && canSend && <div className="space-y-3">
