@@ -638,7 +638,6 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   useEffect(() => { return () => { disconnectSocket() } }, [disconnectSocket])
 
   const currentOrderIsActive = isActiveOrderStatus(currentOrder?.status)
-  const transferUnderReview = currentOrderIsActive && Boolean(currentOrder?.isDeclinedTask)
   const transferAmount = currentOrder?.cafeInquiry && currentOrder.cafeInquiryFeePaid ? Number(currentOrder.amount || 0) : Number(currentOrder?.totalAmount || currentOrder?.amount || 0)
   const needsPayment = needsOrderPayment(currentOrder)
   const whatsappHref = taskerDetails?.phone ? getWhatsAppHref(taskerDetails.phone) : null

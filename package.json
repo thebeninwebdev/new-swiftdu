@@ -6,7 +6,8 @@
     "dev": "tsx watch server.mts",
     "build": "next build --webpack",
     "start": "tsx server.mts",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:cafe": "tsx --test lib/cafe-inquiry.test.ts lib/order-sync.test.ts lib/order-tracking.test.tsx"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1037.0",
