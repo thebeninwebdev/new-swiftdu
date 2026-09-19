@@ -1,3 +1,4 @@
+import { canPayCafeInquiry } from '@/lib/cafe-inquiry'
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
@@ -72,7 +73,7 @@ export async function PATCH(
       order.settlementDueAt = undefined
       order.settlementFailureReason = undefined
     } else if (action === 'complete') {
-      if (order.cafeInquiryStatus && (order.cafeInquiryStatus !== 'ready_for_payment' || !order.hasPaid)) return NextResponse.json({ error: 'Food selection and payment must be complete.' }, { status: 409 })
+      if (order.cafeInquiryStatus && (!canPayCafeInquiry(order.cafeInquiryStatus) || !order.hasPaid)) return NextResponse.json({ error: 'Cafe arrival and inquiry payment must be complete.' }, { status: 409 })
       if (order.cafeInquiryStatus) order.cafeInquiryStatus = 'completed'
       order.status = 'completed'
       order.completedAt = new Date()

@@ -423,7 +423,7 @@ export default function ErrandDetailPage() {
 
       {/* ─── Main Content ─── */}
       <div className="max-w-lg mx-auto px-4 pt-4 space-y-4">
-        {errand.cafeInquiryStatus && <CafeInquiryPanel order={errand} tasker onUpdated={() => { void loadErrand(false) }} />}
+        {errand.cafeInquiryStatus && <CafeInquiryPanel order={errand} tasker whatsappHref={whatsappLink} onUpdated={() => { void loadErrand(false) }} />}
         {errand.isTestOrder ? (
           <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
             <p className="font-bold">Training Only</p>
@@ -442,7 +442,7 @@ export default function ErrandDetailPage() {
                 </span>
               ) : null}
             </div>
-            <h1 className="mt-1 text-2xl font-black">{errand.cafeInquiry && !errand.cafeInquiryDetailsSubmitted ? 'Cafe check request' : errand.description}</h1>
+            <h1 className="mt-1 text-2xl font-black">{errand.cafeInquiry ? "Cafe Inquiry: Check what is available at " + (errand.store || "the cafe") : errand.description}</h1>
             <p className="mt-1 text-sm text-sky-50 opacity-90">{taskTypeLabels[errand.taskType] || errand.taskType}</p>
           </div>
 
@@ -478,7 +478,7 @@ export default function ErrandDetailPage() {
             )}
 
             {/* WhatsApp Chat Button */}
-            {whatsappLink ? (
+            {isActive && (whatsappLink ? (
               <a
                 href={whatsappLink}
                 target="_blank"
@@ -486,14 +486,13 @@ export default function ErrandDetailPage() {
                 className="flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98]"
               >
                 <MessageCircle className="h-5 w-5" />
-                Chat Customer on WhatsApp
+                Chat with Customer on WhatsApp
               </a>
             ) : (
               <div className="flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 font-bold">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading contact...
+                Customer WhatsApp contact is unavailable
               </div>
-            )}
+            ))}
 
             {/* Quick Info Row */}
             <div className="grid grid-cols-2 gap-2">
@@ -565,7 +564,7 @@ export default function ErrandDetailPage() {
                     ? 'Admin reviewing dispute'
                     : paymentConfirmed
                       ? 'Customer marked transfer as sent'
-                      : 'Complete delivery after customer pays'}
+                      : errand.cafeInquiry ? 'Complete the inquiry after its service charge is confirmed' : 'Complete delivery after customer pays'}
                 </p>
               </div>
             </div>
@@ -688,7 +687,7 @@ export default function ErrandDetailPage() {
                   className="h-12 w-full rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-60"
                 >
                   {actionLoading === 'complete' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-                  Mark as Completed
+                  {errand.cafeInquiry ? 'Complete inquiry' : 'Mark as Completed'}
                 </Button>
                 <div className="grid grid-cols-2 gap-2">
                   <Button
@@ -720,7 +719,7 @@ export default function ErrandDetailPage() {
             ) : (
               <div className="space-y-2">
                 <div className="rounded-xl bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900/50 p-3 text-center">
-                  <p className="text-sm text-sky-700 dark:text-sky-300">Complete delivery, then mark done after customer confirms payment.</p>
+                  <p className="text-sm text-sky-700 dark:text-sky-300">{errand.cafeInquiry ? 'Complete the cafe check, then mark the inquiry done after payment is confirmed.' : 'Complete delivery, then mark done after customer confirms payment.'}</p>
                 </div>
                 {taskerCanCancel && (
                   <Button
@@ -769,11 +768,11 @@ export default function ErrandDetailPage() {
               {showConfirmModal === 'complete' ? <CheckCircle2 className="h-6 w-6" /> : <XCircle className="h-6 w-6" />}
             </div>
             <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-white">
-              {showConfirmModal === 'complete' ? 'Mark completed?' : 'Cancel errand?'}
+              {showConfirmModal === 'complete' ? errand.cafeInquiry ? 'Complete inquiry?' : 'Mark completed?' : 'Cancel errand?'}
             </h2>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
               {showConfirmModal === 'complete'
-                ? 'Only confirm after the customer has received the order. A "Not yet" response keeps your platform fee payable.'
+                ? errand.cafeInquiry ? 'Confirm that you checked the cafe and shared availability with the customer on WhatsApp.' : 'Only confirm after the customer has received the order. A "Not yet" response keeps your platform fee payable.'
                 : 'This will close the task and return you to the dashboard.'}
             </p>
             <div className="mt-6 flex gap-3">

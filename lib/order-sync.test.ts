@@ -23,7 +23,17 @@ test('a late fetch cannot revert tasker acceptance or arrival; duplicate and old
   current = mergeOrderUpdate<OrderSocketPayload>(current, accepted)
   assert.equal(current.cafeInquiryStatus, 'checking_cafe')
   assert.deepEqual(mergeOrderUpdate<OrderSocketPayload>(current, current), current)
-  assert.equal(getTrackingStage(current).detail, 'Your Tasker is checking what’s available.')
+  assert.equal(getTrackingStage(current).detail, 'Your Tasker is at the cafe.')
+})
+
+test('stale HTTP snapshots cannot visually regress accepted or cancelled orders', () => {
+  for (const isTestOrder of [false, true]) {
+    const pending = { _id: 'normal-order', status: 'pending', taskerId: undefined as string | undefined, isTestOrder, updatedAt: '2026-09-18T10:00:00.000Z' }
+    const accepted = mergeOrderUpdate(pending, { ...pending, status: 'in_progress', taskerId: 'tasker-1', updatedAt: '2026-09-18T10:01:00.000Z' })
+    assert.equal(mergeOrderUpdate(accepted, pending), accepted)
+    const cancelled = mergeOrderUpdate(accepted, { ...accepted, status: 'cancelled', updatedAt: '2026-09-18T10:02:00.000Z' })
+    assert.equal(mergeOrderUpdate(cancelled, accepted), cancelled)
+  }
 })
 
 test('same timestamp cafe revisions are ordered; full snapshots hydrate omitted fields', () => {

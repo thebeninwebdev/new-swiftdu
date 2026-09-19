@@ -4,6 +4,7 @@ import Tasker from "@/models/tasker"
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { emitOrderUpdated } from '@/lib/socket'
+import { TASKER_SEARCH_TIMEOUT_MS } from '@/lib/order-tracking'
 import { ensureCompletionTimer } from '@/lib/completion-timer'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import {
@@ -106,6 +107,7 @@ export async function GET(request: NextRequest) {
       filter.$or = [
         {
           status: 'pending',
+          createdAt: { $gt: new Date(Date.now() - TASKER_SEARCH_TIMEOUT_MS) },
           $or: [
             { taskerId: { $exists: false } },
             { taskerId: null },
@@ -277,6 +279,7 @@ export async function POST(request: NextRequest) {
       {
         _id: orderId,
         status: 'pending',
+        createdAt: { $gt: new Date(acceptedAt.getTime() - TASKER_SEARCH_TIMEOUT_MS) },
         ...getTaskerOrderModeFilter(tasker),
       },
       {

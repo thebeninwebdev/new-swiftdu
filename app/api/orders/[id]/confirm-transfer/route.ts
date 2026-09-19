@@ -1,3 +1,4 @@
+import { canPayCafeInquiry } from '@/lib/cafe-inquiry'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { auth } from '@/lib/auth'
@@ -82,8 +83,8 @@ export async function POST(
       )
     }
 
-    if (order.cafeInquiryStatus && order.cafeInquiryStatus !== 'ready_for_payment') {
-      return NextResponse.json({ error: 'Choose your food and packaging before payment.' }, { status: 409 })
+    if (order.cafeInquiryStatus && !canPayCafeInquiry(order.cafeInquiryStatus)) {
+      return NextResponse.json({ error: 'The Tasker must reach the cafe before the inquiry charge can be paid.' }, { status: 409 })
     }
 
     if (order.cafeInquiry && !order.cafeInquiryStatus && !order.cafeInquiryFeePaid) {

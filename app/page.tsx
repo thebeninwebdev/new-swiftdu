@@ -1,6 +1,8 @@
 "use client"
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { authClient } from '@/lib/auth-client';
 import {useEffect, useRef, useState} from "react"
 import {
   Wallet,
@@ -453,6 +455,15 @@ function Hero() {
 };
 
 export default function LandingPage() {
+  const router = useRouter();
+  const { data: session, isPending } = authClient.useSession();
+
+  useEffect(() => {
+    if (!isPending && session?.user) router.replace('/dashboard');
+  }, [isPending, router, session?.user]);
+
+  if (isPending || session?.user) return null;
+
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-indigo-100 selection:text-indigo-900">
       <main>

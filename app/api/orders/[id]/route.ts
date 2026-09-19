@@ -1,3 +1,4 @@
+import { canPayCafeInquiry } from '@/lib/cafe-inquiry';
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { syncTaskerStats } from '@/lib/tasker-stats';
@@ -6,6 +7,8 @@ import {Order} from "@/models/order"
 import { auth } from '@/lib/auth'; 
 import { canCustomerCancelOrder, canTaskerCancelOrder } from '@/lib/order-status';
 import { emitOrderUpdated } from '@/lib/socket';
+import { expireUnmatchedOrder } from '@/lib/order-search-expiry';
+import { isTaskerSearchExpired } from '@/lib/order-tracking';
 import { ensureCompletionTimer } from '@/lib/completion-timer';
 import { getSettlementDueAt, splitServiceFee } from '@/lib/order-finance';
 import { ensureBookedAt } from '@/lib/order-response-time';
@@ -831,6 +834,9 @@ export async function PATCH(
         order.settlementDueAt = undefined;
         order.settlementFailureReason = undefined;
       } else if (status === 'completed') {
+        if (order.cafeInquiry && order.status !== 'in_progress' && order.status !== 'paid') {
+          return NextResponse.json({ error: 'Only an active cafe inquiry can be completed.' }, { status: 409 });
+        }
         if (!isTaskerOwner) {
           return NextResponse.json(
             { error: 'Only the assigned tasker can complete this order' },
@@ -855,8 +861,8 @@ export async function PATCH(
           );
         }
 
-        if (order.cafeInquiryStatus && order.cafeInquiryStatus !== 'ready_for_payment') {
-          return NextResponse.json({ error: 'Food selection is not complete.' }, { status: 409 });
+        if (order.cafeInquiryStatus && !canPayCafeInquiry(order.cafeInquiryStatus)) {
+          return NextResponse.json({ error: 'Tasker must reach the cafe before completion.' }, { status: 409 });
         }
         if (order.cafeInquiryStatus) order.cafeInquiryStatus = 'completed';
         order.status = 'completed';
@@ -1048,6 +1054,13 @@ export async function GET(
         { error: 'Forbidden: You do not own this order' },
         { status: 403 }
       );
+    }
+
+    if (isTaskerSearchExpired(order, Date.now())) {
+      const expired = await expireUnmatchedOrder(id, order.userId);
+      if (expired) return NextResponse.json(expired);
+      const refreshed = await Order.findById(id);
+      if (refreshed) return NextResponse.json(refreshed);
     }
 
     if (ensureCompletionTimer(order)) {

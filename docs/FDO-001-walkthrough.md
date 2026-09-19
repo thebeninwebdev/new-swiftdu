@@ -1,5 +1,7 @@
 # FDO-001 Cafe Journey Walkthrough
 
+> Historical record: this walkthrough describes the earlier in-app food-option flow. The current cafe inquiry uses WhatsApp for food details and has a shorter lifecycle. The PASS results below are not verification of the redesigned flow.
+
 ## Test setup
 
 - Customer account in Test Order Mode

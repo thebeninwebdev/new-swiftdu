@@ -73,7 +73,7 @@ function getDashboardPageTitle(pathname: string, pageTitle?: string) {
   if (navigationItem) return navigationItem.label
 
   if (pathname === '/tasks') return 'My Tasks'
-  if (pathname.startsWith('/dashboard/tasks')) return 'Track Order'
+  if (pathname.startsWith('/dashboard/tasks/')) return ''
   if (pathname.startsWith('/dashboard/reviews/')) return 'Leave Review'
   if (pathname.startsWith('/dashboard/whatsapp/')) return 'WhatsApp'
   if (pathname === '/dashboard/profile-completion') return 'Complete Profile'

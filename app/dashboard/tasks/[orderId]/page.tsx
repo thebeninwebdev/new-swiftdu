@@ -13,7 +13,7 @@ export default async function Page({ params }: PageProps) {
 
   return (
     <Suspense fallback={<div>Loading...</div>}>
-      <OrdersPage trackingOrderId={orderId} />
+      <OrdersPage key={orderId} trackingOrderId={orderId} />
     </Suspense>
   )
 }

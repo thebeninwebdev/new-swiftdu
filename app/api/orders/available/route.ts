@@ -4,6 +4,7 @@ import {Order} from "@/models/order"
 import {auth} from '@/lib/auth'; 
 import Tasker from '@/models/tasker';
 import { getTaskerOrderModeFilter } from '@/lib/test-orders';
+import { TASKER_SEARCH_TIMEOUT_MS } from '@/lib/order-tracking';
 
 export async function GET(request: NextRequest) {
   try {
@@ -25,6 +26,7 @@ export async function GET(request: NextRequest) {
     // Fetch all pending tasks that don't belong to the current user
     const availableTasks = await Order.find({
       status: 'pending',
+      createdAt: { $gt: new Date(Date.now() - TASKER_SEARCH_TIMEOUT_MS) },
       ...getTaskerOrderModeFilter(tasker || undefined),
       // userId: { $ne: session.user.id }, // Exclude user's own tasks
     })

@@ -339,6 +339,7 @@ export default function ErrandWizardPage() {
   const [step, setStep] = useState(1)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [transitioningOrderId, setTransitioningOrderId] = useState<string | null>(null)
   const [submissionFailed, setSubmissionFailed] = useState(false)
   const [mascotInteraction, setMascotInteraction] = useState<SwiftyInteraction>('greet')
   const [isRealtimePaused, setIsRealtimePaused] = useState(false)
@@ -361,7 +362,6 @@ export default function ErrandWizardPage() {
   const fetchingActiveOrderRef = useRef(false)
   const isRealtimePausedRef = useRef(false)
   const realtimeResumeTimeoutRef = useRef<number | null>(null)
-  const isTasker = session?.user.role === 'tasker'
 
   const [formData, setFormData] = useState<ErrandData>({
     taskType: 'restaurant',
@@ -1215,6 +1215,7 @@ if (stepNumber === 2) {
     setSubmissionFailed(false)
     setMascotInteraction('scan')
     setIsSubmitting(true)
+    let submitted = false
     try {
       const response = await fetch('/api/orders', {
         method: 'POST',
@@ -1256,34 +1257,17 @@ if (stepNumber === 2) {
         ...previous,
         [formData.taskType]: Number(previous[formData.taskType] || 0) + 1,
       }))
-      setFormData({
-        taskType: 'restaurant',
-        description: '',
-        amount: '',
-        location: '',
-        store: '',
-        waterBags: '',
-        noteSize: '',
-        numberOfPages: '',
-        printingServiceType: '',
-        printingNeedsEditing: '',
-        deadline: '',
-        packaging: '',
-        cafeInquiry: false,
-        restaurantItemPrice: '',
-        restaurantPeople: '1',
-        restaurantTakeawayCount: '',
-        indomiePacks: '',
-        eggCount: '',
-      })
-      setStep(2)
-      router.push(`/dashboard/tasks/${createdOrder._id}`)
+      submitted = true
+      setTransitioningOrderId(createdOrder._id)
+      router.replace(`/dashboard/tasks/${createdOrder._id}`)
     } catch {
-      setSubmissionFailed(true)
-      setMascotInteraction('apologize')
-      toast.error('An error occurred while posting the task.')
+      if (!submitted) {
+        setSubmissionFailed(true)
+        setMascotInteraction('apologize')
+        toast.error('An error occurred while posting the task.')
+      }
     } finally {
-      setIsSubmitting(false)
+      if (!submitted) setIsSubmitting(false)
     }
   }
 
@@ -2131,21 +2115,23 @@ if (stepNumber === 2) {
 
   if (!mounted) return null
 
+  if (isSubmitting) return (
+    <main className="flex min-h-[calc(100dvh-5rem)] flex-col items-center justify-center px-5 py-10 text-center">
+      <OrderMascot mood="searching" interaction="scan" size="lg" />
+      <h1 className="mt-5 text-2xl font-black text-slate-950 dark:text-white">
+        {transitioningOrderId ? 'Opening your task...' : 'Posting your task...'}
+      </h1>
+      <p className="mt-2 max-w-xs text-sm leading-6 text-slate-600 dark:text-slate-300">
+        {transitioningOrderId ? 'Your request is ready. Taking you to tracking.' : 'Sending your request to SwiftDU.'}
+      </p>
+      <Loader2 aria-hidden="true" className="mt-6 h-5 w-5 animate-spin text-indigo-600 motion-reduce:animate-none" />
+    </main>
+  )
+
   return (
     <div className="min-h-screen px-4 py-4 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl space-y-0 lg:space-y-5">
         {renderTopNotices()}
-
-        {isTasker ? (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
-            <div className="flex items-center justify-between gap-3">
-              <span className="font-bold">Tasker access enabled</span>
-              <Button variant="outline" onClick={() => router.push('/tasker-dashboard')} className="h-9 rounded-lg border-emerald-200">
-                Open
-              </Button>
-            </div>
-          </div>
-        ) : null}
 
         {DesktopErrandWizard()}
         {MobileErrandWizard()}
@@ -2194,27 +2180,6 @@ if (stepNumber === 2) {
                   className="h-11 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 px-4 text-white hover:from-indigo-700 hover:to-cyan-600"
                 >
                   Open Tracker
-                  <ArrowRight className="ml-2 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-          ) : null}
-
-          {isTasker ? (
-            <div className="mb-5 rounded-3xl border border-emerald-200/80 bg-linear-to-r from-emerald-50 via-white to-teal-50 p-4 shadow-sm dark:border-emerald-900/60 dark:from-emerald-950/40 dark:via-slate-900 dark:to-teal-950/40 md:mb-8 md:p-5">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                <div>
-                  <p className="text-sm font-semibold uppercase tracking-[0.2em] text-emerald-700 dark:text-emerald-300">Tasker access enabled</p>
-                  <h2 className="mt-2 text-xl font-bold text-slate-900 dark:text-white">You can use both dashboards.</h2>
-                  <p className="mt-2 max-w-2xl text-sm text-slate-600 dark:text-slate-300">
-                    Stay here to book errands, or switch to the tasker dashboard for active jobs.
-                  </p>
-                </div>
-                <Button
-                  onClick={() => router.push('/tasker-dashboard')}
-                  className="h-11 rounded-xl bg-linear-to-r from-emerald-600 to-teal-600 px-4 text-white hover:from-emerald-700 hover:to-teal-700"
-                >
-                  Open Tasker Dashboard
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
               </div>

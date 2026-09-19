@@ -7,7 +7,7 @@ import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertCircle, ArrowRight, CheckCircle2, Clock, CreditCard, Loader2,
-  MapPin, Package, Phone, RefreshCw, Store, UserRoundX, XCircle,
+  MapPin, Package, Phone, RefreshCw, Store, XCircle,
   Bike, MessageCircle, ChevronRight, Banknote,
 } from 'lucide-react'
 import { io, type Socket } from 'socket.io-client'
@@ -20,10 +20,11 @@ import {
 } from '@/components/ui/dialog'
 import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { canCustomerCancelOrder, isActiveOrderStatus } from '@/lib/order-status'
-import { getTrackingStage, needsOrderPayment } from '@/lib/order-tracking'
+import { getTrackingStage, isWaitingForTasker, needsOrderPayment, TASKER_SEARCH_TIMEOUT_MS } from '@/lib/order-tracking'
 import { mergeOrderUpdate } from '@/lib/order-sync'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { OrderMascot } from '@/components/order-mascot'
+import { SwiftieFact } from '@/components/swiftie-fact'
 
 // ─── Types ───
 interface Order extends CafeInquiryFields {
@@ -152,11 +153,13 @@ const canRetryOrder = (order: Order) => order.status === 'completed' || order.st
 const getMostRecentOrder = (orders: Order[]) => [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
 const shouldRedirectToReview = (order: Order) => order.status === 'completed' && Boolean(order.taskerId)
 function getTaskerSearchMessage(elapsedMs: number) {
-  const elapsedMinutes = elapsedMs / 60000
-  if (elapsedMinutes < 1) return 'Connecting you to nearby taskers'
-  if (elapsedMinutes < 3) return 'Searching beyond your hostel area'
-  if (elapsedMinutes < 5) return 'This request is taking longer than usual'
-  return 'Still looking for available taskers'
+  const minutes = elapsedMs / 60000
+  if (minutes < 1) return { heading: 'Finding a tasker for you...', detail: 'Swiftie is looking for an available tasker.' }
+  if (minutes < 2) return { heading: 'Still searching...', detail: 'It\'s taking a little longer than usual, but we\'re still looking.' }
+  if (minutes < 4) return { heading: 'We\'re still on it...', detail: 'Finding an available tasker can take a little time.' }
+  if (minutes < 6) return { heading: 'Hang tight...', detail: 'We\'re still looking for someone available to help.' }
+  if (minutes < 7) return { heading: 'Still looking...', detail: 'You can keep this page open while we search.' }
+  return { heading: 'Taking longer than expected', detail: "We haven't found an available tasker yet." }
 }
 // ─── Sub-components ───
 function TaskerAvatar({ tasker }: { tasker: TaskerDetails }) {
@@ -450,55 +453,31 @@ function MobileBottomSheet({ order, onChat }: { order: Order; onChat: () => void
   )
 }
 
-function SearchingTaskerOverlay({ order, onCancel, isCancelling, isBusy, searchMessage }: {
-  order: Order; onCancel: () => void; isCancelling: boolean; isBusy: boolean; searchMessage: string
+function TaskerSearchState({ orderId, onCancel, isCancelling, isBusy, canCancel, elapsedMs }: {
+  orderId: string; onCancel: () => void; isCancelling: boolean; isBusy: boolean; canCancel: boolean; elapsedMs: number
 }) {
+  const message = getTaskerSearchMessage(elapsedMs)
+  const longWait = elapsedMs >= TASKER_SEARCH_TIMEOUT_MS
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-[#21175f]/35 backdrop-blur-md md:items-center md:justify-center md:p-6">
-      <div className="w-full max-w-lg overflow-hidden rounded-t-[2rem] border border-white/70 bg-white shadow-2xl shadow-indigo-950/25 dark:border-slate-800 dark:bg-slate-900 md:rounded-[2rem]">
-        <div className="relative bg-linear-to-b from-[#f6f4ff] to-white px-5 pb-6 pt-5 text-center dark:from-indigo-950/40 dark:to-slate-900">
-          <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-white/25 md:hidden" />
-          <OrderMascot mood="searching" interaction="scan" size="lg" />
-          <h2 className="mt-1 text-2xl font-black tracking-tight text-slate-950 dark:text-white">Finding you a Tasker...</h2>
-          <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500 dark:text-slate-300">{searchMessage}. We&apos;ve notified nearby Taskers—this usually doesn&apos;t take long.</p>
-          <div className="mx-auto mt-5 h-1.5 max-w-xs overflow-hidden rounded-full bg-indigo-100 dark:bg-white/15">
-            <div className="h-full origin-left rounded-full bg-linear-to-r from-[#5b3df5] to-[#8069ff] animate-pulse" />
-          </div>
-          <div className="mt-5 flex shrink-0 flex-col items-center gap-4 sm:flex-row sm:justify-center">
-            <button type="button" onClick={onCancel} disabled={isBusy} className="flex w-full max-w-xs shrink-0 items-center justify-center gap-3 rounded-2xl border border-rose-200 bg-white px-4 py-3 text-left text-rose-600 shadow-sm transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-slate-900 sm:w-64">
-              {isCancelling ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserRoundX className="h-5 w-5" />}
-              <span className="min-w-0">
-                <span className="block text-sm font-black">{isCancelling ? 'Cancelling task...' : 'Cancel this task'}</span>
-                <span className="block text-xs font-medium text-rose-400">Stop looking for a Tasker</span>
-              </span>
-            </button>
-          </div>
+    <main data-tasker-search className="flex h-[calc(100dvh-5rem)] flex-col items-center overflow-hidden bg-gradient-to-b from-[#f6f4ff] to-white px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 text-center dark:from-[#1e1b35] dark:to-slate-950 lg:h-dvh [@media(max-height:700px)]:pt-2">
+      <div className="flex min-h-0 w-full max-w-md flex-1 flex-col items-center justify-center">
+        <span className="rounded-full bg-indigo-100 px-4 py-1.5 text-xs font-semibold text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-200 [@media(max-height:700px)]:hidden">{longWait ? 'Still searching' : 'Looking for a tasker'}</span>
+        <div aria-live="polite" aria-atomic="true" className="mt-4 [@media(max-height:700px)]:mt-0">
+          <h1 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white [@media(max-height:700px)]:text-2xl">{message.heading}</h1>
+          <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-600 dark:text-slate-300 [@media(max-height:700px)]:mt-1">{message.detail}</p>
         </div>
-        <div className="space-y-4 p-5">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/70 dark:ring-slate-800">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Task</p>
-              <p className="mt-2 truncate text-sm font-semibold text-slate-900 dark:text-white">{taskTypeLabels[order.taskType] || order.taskType}</p>
-            </div>
-            <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/70 dark:ring-slate-800">
-              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-400">Amount</p>
-              <p className="mt-2 text-sm font-semibold text-slate-900 dark:text-white">{formatCurrency(order.totalAmount || order.amount)}</p>
-            </div>
-          </div>
-          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/70 dark:ring-slate-800">
-            <div className="flex flex-wrap gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">
-                <MapPin className="h-3.5 w-3.5" />{order.location}
-              </span>
-              <span className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">
-                <Clock className="h-3.5 w-3.5" />{formatDeadline(order.dueDate || order.deadline, order.deadlineDate, order.deadlineValue, order.deadlineUnit)}
-              </span>
-            </div>
-          </div>
-          {isCancelling ? <p className="text-center text-xs font-medium text-rose-500 dark:text-rose-300">Cancelling task...</p> : null}
+        <div className="mt-4 motion-safe:animate-[bounce_4s_ease-in-out_infinite] motion-reduce:transform-none [@media(max-height:700px)]:mt-2"><OrderMascot mood="searching" interaction="scan" size="md" className="[@media(max-height:540px)]:[&>div]:!h-16 [@media(max-height:540px)]:[&>div]:!w-16" /></div>
+        <div aria-hidden="true" className="mt-4 flex gap-2 [@media(max-height:700px)]:hidden">
+          <span className="h-2 w-2 rounded-full bg-indigo-400 motion-safe:animate-pulse" />
+          <span className="h-2 w-2 rounded-full bg-indigo-300 motion-safe:animate-pulse [animation-delay:200ms]" />
+          <span className="h-2 w-2 rounded-full bg-indigo-200 motion-safe:animate-pulse [animation-delay:400ms]" />
         </div>
       </div>
-    </div>
+      <div className="mt-2 w-full max-w-md shrink-0 [@media(max-height:700px)]:mt-0">
+        <SwiftieFact key={orderId} orderId={orderId} />
+        {canCancel ? <button type="button" onClick={onCancel} disabled={isBusy} className="mt-1 min-h-11 rounded-xl px-6 text-sm font-semibold text-indigo-700 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50 dark:text-indigo-300">{isCancelling ? 'Cancelling...' : 'Cancel task'}</button> : null}
+      </div>
+    </main>
   )
 }
 
@@ -514,7 +493,6 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const [, setRefreshing] = useState(false)
   const [confirmingTransfer, setConfirmingTransfer] = useState(false)
   const [currentOrder, setCurrentOrderState] = useState<Order | null>(null)
-  const [searchElapsedMs, setSearchElapsedMs] = useState(0)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [activeTab, setActiveTab] = useState<OrderHistoryTab>('ongoing')
@@ -534,8 +512,9 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const socketRef = useRef<Socket | null>(null)
   const currentOrderRef = useRef<Order | null>(null)
   const requestGenerationRef = useRef(0)
+  const realtimeGenerationRef = useRef(0)
   const redirectedToReviewRef = useRef<string | null>(null)
-  const autoCancelledOrderRef = useRef<string | null>(null)
+  const cancellationInFlightRef = useRef(false)
 
   const setCurrentOrder = useCallback((incoming: Order | null) => {
     const next = incoming ? mergeOrderUpdate<Order>(currentOrderRef.current, incoming) : null
@@ -552,6 +531,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const loadOrders = useCallback(async (initial = false) => {
     if (fetchingRef.current) { queuedReloadRef.current = true; queuedInitialReloadRef.current = queuedInitialReloadRef.current || initial; return }
     const generation = requestGenerationRef.current
+    const realtimeGeneration = realtimeGenerationRef.current
     fetchingRef.current = true; if (initial) setLoading(true); else setRefreshing(true)
     try {
       let nextCurrentOrder: Order | null = null
@@ -570,6 +550,11 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
       if (!recentResponse.ok) throw new Error('Failed to fetch recent orders')
       const recentData: Order[] = await recentResponse.json()
       if (generation !== requestGenerationRef.current) return
+      if (realtimeGeneration !== realtimeGenerationRef.current) {
+        queuedReloadRef.current = true
+        queuedInitialReloadRef.current = queuedInitialReloadRef.current || initial
+        return
+      }
       if (nextCurrentOrder) nextCurrentOrder = mergeOrderUpdate<Order>(currentOrderRef.current, nextCurrentOrder)
       const mostRecentOngoingOrder = !isTrackingPage && !legacyRequestedOrderId ? getMostRecentOrder(recentData.filter((order) => order.status === 'in_progress')) : null
       if (mostRecentOngoingOrder) { router.replace(`/dashboard/tasks/${mostRecentOngoingOrder._id}`); return }
@@ -584,9 +569,9 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
       previousSnapshotRef.current = nextCurrentOrder ? { id: nextCurrentOrder._id, taskerId: nextCurrentOrder.taskerId, hasPaid: nextCurrentOrder.hasPaid, isDeclinedTask: nextCurrentOrder.isDeclinedTask } : null
       trackedOrderIdRef.current = isTrackingPage ? nextCurrentOrder?._id || null : null
       setCurrentOrder(nextCurrentOrder); setRecentOrders(previous => recentData.map(order => mergeOrderUpdate<Order>(previous.find(saved => saved._id === order._id) || null, order))); setError(null)
-    } catch (err) { if (generation === requestGenerationRef.current) setError(err instanceof Error ? err.message : 'Failed to load orders') }
+    } catch (err) { if (generation === requestGenerationRef.current && realtimeGeneration === realtimeGenerationRef.current) setError(err instanceof Error ? err.message : 'Failed to load orders') }
     finally {
-      fetchingRef.current = false; setLoading(false); setRefreshing(false)
+      fetchingRef.current = false; if (!queuedInitialReloadRef.current) setLoading(false); setRefreshing(false)
       if (queuedReloadRef.current) { const nextInitial = queuedInitialReloadRef.current; queuedReloadRef.current = false; queuedInitialReloadRef.current = false; void loadOrders(nextInitial) }
     }
   }, [isTrackingPage, legacyRequestedOrderId, router, setCurrentOrder])
@@ -596,6 +581,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
     const existingOrder = currentOrderRef.current
     const isCurrentOrder = existingOrder?._id === payload._id
     const isTrackedOrder = trackedOrderIdRef.current === payload._id
+    if (isCurrentOrder || isTrackedOrder) realtimeGenerationRef.current += 1
     if (!isCurrentOrder && !isTrackedOrder) { setRecentOrders((previous) => previous.map((order) => order._id === payload._id ? mergeOrderUpdate<Order>(order, { ...payload, _id: order._id }) : order)); return false }
     if (existingOrder && isCurrentOrder) {
       const nextOrder = mergeOrderUpdate<Order>(existingOrder, { ...payload, _id: existingOrder._id })
@@ -645,7 +631,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   useEffect(() => { if (needsPayment) { setPaymentModalOpen(true); return } setPaymentModalOpen(false) }, [currentOrder?._id, needsPayment])
 
   const handlePaymentModalOpenChange = (open: boolean) => {
-    if (!open && needsPayment) {
+    if (!open && needsPayment && !currentOrder?.cafeInquiry) {
       setPaymentModalOpen(true)
       return
     }
@@ -655,23 +641,54 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
 
   const handleOpenOrder = (orderId: string) => { if (trackedOrderIdRef.current === orderId) return; trackedOrderIdRef.current = orderId; previousSnapshotRef.current = null; taskerOrderRef.current = null; setTaskerDetails(null); router.push(`/dashboard/tasks/${orderId}`); void loadOrders(false) }
   const handleConfirmTransfer = async () => { if (!currentOrder || !needsOrderPayment(currentOrder)) return; try { setConfirmingTransfer(true); const response = await fetch(`/api/orders/${currentOrder._id}/confirm-transfer`, { method: 'POST' }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Failed to confirm the transfer.'); setCurrentOrder(payload.order); trackedOrderIdRef.current = payload.order?._id || currentOrder._id; previousSnapshotRef.current = payload.order ? { id: payload.order._id, taskerId: payload.order.taskerId, hasPaid: payload.order.hasPaid, isDeclinedTask: payload.order.isDeclinedTask } : null; setPaymentModalOpen(false); toast.success('Payment updated. Open WhatsApp and stay online for your tasker.') } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to confirm the transfer.'); void loadOrders(false) } finally { setConfirmingTransfer(false) } }
-  const handleCancelOrder = useCallback(async () => { if (!currentOrder || !canCustomerCancelOrder(currentOrder)) return; try { setUpdatingAction('cancel'); const response = await fetch(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancelled' }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to cancel order'); requestGenerationRef.current += 1; trackedOrderIdRef.current = null; taskerOrderRef.current = null; previousSnapshotRef.current = null; setTaskerDetails(null); setCurrentOrder(null); setRecentOrders((previous) => [data, ...previous.filter((order) => order._id !== data._id)]); toast.success('Order cancelled.'); router.replace('/dashboard/tasks'); void loadOrders(true) } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to cancel order') } finally { setUpdatingAction(null) } }, [currentOrder, loadOrders, router, setCurrentOrder])
+  const handleCancelOrder = useCallback(async () => { if (!currentOrder || !canCustomerCancelOrder(currentOrder) || cancellationInFlightRef.current) return; cancellationInFlightRef.current = true; try { setUpdatingAction('cancel'); const response = await fetch(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancelled' }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to cancel order'); requestGenerationRef.current += 1; trackedOrderIdRef.current = data._id; taskerOrderRef.current = null; previousSnapshotRef.current = null; setTaskerDetails(null); currentOrderRef.current = data; setCurrentOrderState(data); setRecentOrders((previous) => [data, ...previous.filter((order) => order._id !== data._id)]); toast.success('Order cancelled.'); router.replace('/dashboard/tasks') } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to cancel order') } finally { cancellationInFlightRef.current = false; setUpdatingAction(null) } }, [currentOrder, router])
   const handleExtendCompletionTimer = useCallback(async () => { if (!currentOrder || updatingAction || confirmingTransfer) return; try { setUpdatingAction('extendTimer'); const response = await fetch(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ extendCompletionTimer: true }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to add more time.'); setCurrentOrder(data); setRecentOrders((previous) => previous.map((order) => (order._id === data._id ? mergeOrderUpdate<Order>(order, data) : order))); toast.success('Ten minutes added for your tasker.') } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to add more time.') } finally { setUpdatingAction(null) } }, [confirmingTransfer, currentOrder, updatingAction, setCurrentOrder])
   const handleReceiptAnswer = useCallback(async (receivedOrder: boolean) => { if (!currentOrder || updatingAction || confirmingTransfer) return; try { setUpdatingAction(receivedOrder ? 'receiptYes' : 'receiptNo'); const response = await fetch(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerReceivedOrder: receivedOrder }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to update this task.'); setCurrentOrder(data); setRecentOrders((previous) => previous.map((order) => (order._id === data._id ? mergeOrderUpdate<Order>(order, data) : order))); toast.success(receivedOrder ? 'Thanks for confirming your order.' : 'Thanks. SwiftDU will review this completion.'); if (receivedOrder) { redirectedToReviewRef.current = data._id; router.replace(`/dashboard/reviews/${data._id}`) } } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to update this task.') } finally { setUpdatingAction(null) } }, [confirmingTransfer, currentOrder, router, updatingAction, setCurrentOrder])
   const handleRetryOrder = useCallback(async (order: Order) => { if (updatingAction || confirmingTransfer || !canRetryOrder(order)) return; try { setUpdatingAction('retry'); const response = await fetch(`/api/orders/${order._id}/retry`, { method: 'POST' }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to retry task'); requestGenerationRef.current += 1; trackedOrderIdRef.current = data._id; taskerOrderRef.current = null; previousSnapshotRef.current = { id: data._id, taskerId: data.taskerId, hasPaid: data.hasPaid, isDeclinedTask: data.isDeclinedTask }; setTaskerDetails(null); setCurrentOrder(data); setRecentOrders((previous) => [data, ...previous.filter((existingOrder) => existingOrder._id !== data._id && existingOrder._id !== order._id)]); toast.success('Task sent again. We are looking for taskers now.'); router.replace(`/dashboard/tasks/${data._id}`); void loadOrders(true) } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to retry task') } finally { setUpdatingAction(null) } }, [confirmingTransfer, loadOrders, router, updatingAction, setCurrentOrder])
   const requestCancelOrder = useCallback(() => { if (!currentOrder || updatingAction === 'cancel' || confirmingTransfer) return; setCancelConfirmOpen(true) }, [confirmingTransfer, currentOrder, updatingAction])
   const confirmCancelOrder = useCallback(() => { setCancelConfirmOpen(false); void handleCancelOrder() }, [handleCancelOrder])
 
-  useVisibleInterval(() => {
-    if (!currentOrder || currentOrder.status !== 'pending') {
-      setSearchElapsedMs(0)
-      return
+  const waitingOrderId = isTrackingPage && isWaitingForTasker(currentOrder) ? currentOrder?._id : null
+  const waitingStartedAt = waitingOrderId ? currentOrder?.createdAt : null
+
+  useEffect(() => {
+    if (!waitingOrderId || !waitingStartedAt) return
+    const orderId = waitingOrderId
+    const startedAt = Date.parse(waitingStartedAt)
+    if (!Number.isFinite(startedAt)) return
+
+    let stopped = false
+    let timer: number
+    const expire = async () => {
+      try {
+        const response = await fetch('/api/orders/' + orderId + '/expire', { method: 'POST' })
+        const order: Order = await response.json()
+        if (stopped) return
+        if (response.ok) {
+          requestGenerationRef.current += 1
+          trackedOrderIdRef.current = orderId
+          currentOrderRef.current = order
+          setCurrentOrderState(order)
+          setRecentOrders((previous) => [order, ...previous.filter((item) => item._id !== orderId)])
+          toast.info('No tasker accepted within 7 minutes. Your request was cancelled.')
+          router.replace('/dashboard/tasks')
+          return
+        }
+        if (response.status === 409) {
+          // The server may have assigned or manually cancelled the order first.
+          currentOrderRef.current = order
+          setCurrentOrderState(order)
+          if (!isWaitingForTasker(order)) return
+        }
+      } catch {
+        // Retry while the real order remains in the waiting state.
+      }
+      if (!stopped) timer = window.setTimeout(expire, 5000)
     }
 
-    const startedAt = new Date(currentOrder.createdAt).getTime()
-    setSearchElapsedMs(Number.isFinite(startedAt) ? Math.max(Date.now() - startedAt, 0) : 0)
-  }, currentOrder?.status === 'pending' ? 1000 : null)
-  useEffect(() => { if (!currentOrder || currentOrder.status !== 'pending') return; if (searchElapsedMs < 7 * 60000) return; if (autoCancelledOrderRef.current === currentOrder._id) return; autoCancelledOrderRef.current = currentOrder._id; toast.error('No tasker accepted within 7 minutes, so the request was cancelled.'); void handleCancelOrder() }, [currentOrder, handleCancelOrder, searchElapsedMs])
+    timer = window.setTimeout(expire, Math.max(0, startedAt + TASKER_SEARCH_TIMEOUT_MS - Date.now()))
+    return () => { stopped = true; window.clearTimeout(timer) }
+  }, [waitingOrderId, waitingStartedAt, router])
 
   if (loading) {
     return (
@@ -698,8 +715,10 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   ]
   const currentStage = currentOrder ? getTrackingStage(currentOrder) : null
   const currentStatus = currentOrder ? (currentOrderIsActive && currentOrder.isDeclinedTask ? declinedStatusConfig : statusConfig[currentOrder.status]) : null
-  const isSearchingForTasker = currentOrder?.status === 'pending'
+  const isSearchingForTasker = isWaitingForTasker(currentOrder)
   const canCancelCurrentOrder = currentOrder ? canCustomerCancelOrder(currentOrder) : false
+  const searchStartedAt = currentOrder ? new Date(currentOrder.createdAt).getTime() : NaN
+  const searchElapsedMs = Number.isFinite(searchStartedAt) ? Math.max(nowMs - searchStartedAt, 0) : 0
   const completionStartedMs = currentOrder?.completionTimerStartedAt ? new Date(currentOrder.completionTimerStartedAt).getTime() : currentOrder?.createdAt ? new Date(currentOrder.createdAt).getTime() : NaN
   const locationCompletionWindowMinutes = getCompletionWindowMinutes(currentOrder?.location, currentOrder?.taskType)
   const savedCompletionWindowMinutes = Number(currentOrder?.completionWindowMinutes || 0)
@@ -716,13 +735,35 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const canExtendCompletionTimer = Boolean(currentOrder && currentOrder.hasPaid && currentOrder.status !== 'completed' && currentOrder.status !== 'cancelled' && !completionTimerExpired)
   const completionRemainingLabel = completionTimerExpired ? '0:00' : formatDuration(completionRemainingMs)
   const completionWindowLabel = `${completionWindowMinutes}${completionExtensionMinutes ? ` + ${completionExtensionMinutes}` : ''} min window`
-  const shouldAskReceiptQuestion = Boolean(currentOrder?.status === 'completed' && currentOrder.hasPaid && currentOrder.customerReceiptConfirmed === undefined && !currentOrder.customerReceiptRespondedAt)
+  const shouldAskReceiptQuestion = Boolean(currentOrder?.status === 'completed' && !currentOrder.cafeInquiry && currentOrder.hasPaid && currentOrder.customerReceiptConfirmed === undefined && !currentOrder.customerReceiptRespondedAt)
+
+  if (isTrackingPage && currentOrder && isSearchingForTasker) return (
+    <>
+      <TaskerSearchState orderId={currentOrder._id} onCancel={requestCancelOrder} isCancelling={updatingAction === 'cancel'} isBusy={Boolean(updatingAction || confirmingTransfer)} canCancel={canCancelCurrentOrder} elapsedMs={searchElapsedMs} />
+      <Dialog open={canCancelCurrentOrder && cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
+        <DialogContent showCloseButton={false} className="max-w-[calc(100%-2rem)] gap-0 overflow-hidden rounded-[2rem] border border-indigo-100 bg-gradient-to-b from-[#f6f4ff] to-white p-0 text-center shadow-2xl shadow-indigo-950/15 ring-0 sm:max-w-sm dark:border-indigo-800/50 dark:from-[#1e1b35] dark:to-slate-950">
+          <div className="px-6 pb-6 pt-7">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/60 dark:text-indigo-300">
+              <Clock aria-hidden="true" className="h-7 w-7" />
+            </div>
+            <DialogHeader className="mt-5 items-center gap-2">
+              <DialogTitle className="text-2xl font-black leading-tight tracking-tight text-slate-950 dark:text-white">Stop looking for a tasker?</DialogTitle>
+              <DialogDescription className="max-w-xs text-sm leading-6 text-slate-600 dark:text-slate-300">This request will be cancelled, and taskers will no longer see it. You can create another task whenever you need help.</DialogDescription>
+            </DialogHeader>
+            <div className="mt-6 flex flex-col gap-2">
+              <Button type="button" onClick={() => setCancelConfirmOpen(false)} disabled={updatingAction === 'cancel'} className="h-12 w-full rounded-2xl bg-indigo-600 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700">Keep searching</Button>
+              <Button type="button" variant="ghost" onClick={confirmCancelOrder} disabled={updatingAction === 'cancel'} className="h-12 w-full rounded-2xl text-sm font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/30">
+                {updatingAction === 'cancel' ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Cancelling...</> : 'Cancel task'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
 
   return (
     <div className="min-h-[calc(100vh-5rem)] bg-slate-50 dark:bg-slate-950">
-      {currentOrder && isSearchingForTasker && !currentOrder.cafeInquiryStatus ? (
-        <SearchingTaskerOverlay order={currentOrder} onCancel={requestCancelOrder} isCancelling={updatingAction === 'cancel'} isBusy={updatingAction === 'cancel' || confirmingTransfer} searchMessage={getTaskerSearchMessage(searchElapsedMs)} />
-      ) : null}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10">
         <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -758,8 +799,8 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
           <div className="space-y-6">
             {isTrackingPage && currentOrder ? (
               <div className="space-y-4">
-                {currentOrder.cafeInquiryStatus ? <CafeInquiryPanel order={currentOrder} onUpdated={() => { void loadOrders(false) }} /> : null}
-                {(currentOrder.status === 'cancelled' || !currentOrder.cafeInquiryStatus || currentOrder.hasPaid) && <FulfillmentStatusCard
+                {currentOrder.cafeInquiryStatus ? <CafeInquiryPanel order={currentOrder} whatsappHref={whatsappHref} onOpenPayment={() => setPaymentModalOpen(true)} onUpdated={() => { void loadOrders(false) }} /> : null}
+                {(!currentOrder.cafeInquiryStatus) && <FulfillmentStatusCard
                   order={currentOrder}
                   amount={formatCurrency(transferAmount)}
                   statusLabel={currentStatus?.label || currentStage?.label || currentOrder.status}
@@ -1054,8 +1095,8 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
       </Dialog>
 
       {/* Payment Dialog */}
-      <Dialog open={currentOrderIsActive && (needsPayment || paymentModalOpen)} onOpenChange={handlePaymentModalOpenChange}>
-        <DialogContent className="sm:max-w-lg" showCloseButton={!needsPayment}>
+      <Dialog open={currentOrderIsActive && ((needsPayment && !currentOrder?.cafeInquiry) || paymentModalOpen)} onOpenChange={handlePaymentModalOpenChange}>
+        <DialogContent className="sm:max-w-lg" showCloseButton={!needsPayment || Boolean(currentOrder?.cafeInquiry)}>
           <DialogHeader>
             <DialogTitle>Transfer to your tasker</DialogTitle>
             <DialogDescription>

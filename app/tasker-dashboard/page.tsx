@@ -1155,12 +1155,6 @@ export default function TaskerDashboardPage() {
 
       {/* Main Content */}
       <div className="mx-auto max-w-7xl px-4 py-4 md:px-6 xl:px-8">
-        {taskerProfile?.taskerMode === 'training' ? (
-          <div className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-950 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
-            <p className="font-bold">You are in Training Mode. You can only see and handle test orders.</p>
-          </div>
-        ) : null}
-
         {/* Error State */}
         <AnimatePresence>
           {error && (

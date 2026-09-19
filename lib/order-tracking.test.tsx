@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { getTrackingStage, needsOrderPayment } from './order-tracking'
+import { getTrackingStage, isTaskerSearchExpired, isWaitingForTasker, needsOrderPayment, TASKER_SEARCH_TIMEOUT_MS } from './order-tracking'
 import { canCustomerCancelOrder, canTaskerCancelOrder, isActiveOrderStatus } from './order-status'
 import { toOrderSocketPayload } from './socket'
 import { cafeStatusLabels } from './cafe-inquiry'
@@ -22,6 +22,31 @@ test('active, paid and completed orders keep their tracking stages', () => {
   assert.equal(needsOrderPayment({ ...assigned, status: 'completed' }), false)
 })
 
+test('normal and cafe requests use one order-derived waiting state', () => {
+  for (const isTestOrder of [false, true]) {
+    const pending = { ...assigned, status: 'pending', taskerId: undefined, isTestOrder }
+    assert.equal(isWaitingForTasker(pending), true)
+    assert.equal(isWaitingForTasker({ ...pending, cafeInquiryStatus: 'waiting_for_tasker' }), true)
+    assert.equal(isWaitingForTasker({ ...pending, taskerId: 'tasker-1' }), false)
+    assert.equal(isWaitingForTasker({ ...pending, cafeInquiryStatus: 'tasker_assigned' }), false)
+    assert.equal(isWaitingForTasker({ ...pending, status: 'cancelled' }), false)
+  }
+})
+
+test('waiting requests expire at seven minutes, including cafe and test requests', () => {
+  const pending = { ...assigned, status: 'pending', taskerId: undefined }
+  const deadline = Date.parse(pending.createdAt) + TASKER_SEARCH_TIMEOUT_MS
+  for (const isTestOrder of [false, true]) {
+    for (const cafeInquiryStatus of [undefined, 'waiting_for_tasker' as const]) {
+      const order = { ...pending, isTestOrder, cafeInquiryStatus }
+      assert.equal(isTaskerSearchExpired(order, deadline - 1), false)
+      assert.equal(isTaskerSearchExpired(order, deadline), true)
+      assert.equal(isTaskerSearchExpired({ ...order, taskerId: 'tasker-1' }, deadline), false)
+      assert.equal(isTaskerSearchExpired({ ...order, status: 'cancelled' }, deadline), false)
+    }
+  }
+  assert.equal(isTaskerSearchExpired({ ...pending, createdAt: 'invalid' }, deadline), false)
+})
 for (const isTestOrder of [false, true]) {
   test(`cancelled socket state overrides assignment and payment history (${isTestOrder ? 'test' : 'live'})`, () => {
     for (const hasPaid of [false, true]) {
@@ -61,13 +86,23 @@ test('customer and tasker cancellation remain available before payment and block
   }
 })
 
-test('cafe pricing UI explains units and offers explicit pack pricing', () => {
-  const order = { ...assigned, cafeInquiryStatus: 'awaiting_customer_choice' as const, cafeAvailableItems: [{ id: 'rice', name: 'Rice', price: 200, unit: 'spoon' }] }
-  const customer = renderToStaticMarkup(<CafeInquiryPanel order={order} onUpdated={() => {}} />)
-  assert.match(customer, /₦200 \/ spoon/)
-  assert.match(customer, /Rice quantity in spoon/)
-  const tasker = renderToStaticMarkup(<CafeInquiryPanel order={order} tasker onUpdated={() => {}} />)
-  assert.match(tasker, /Takeaway costs ₦200 per pack/)
-  assert.match(tasker, /Add takeaway pack/)
-  assert.match(tasker, /Item 1 pricing unit/)
+test('cafe inquiry uses WhatsApp after arrival without food option controls', () => {
+  const order = { ...assigned, cafeInquiry: true, cafeInquiryStatus: 'checking_cafe' as const }
+  const customer = renderToStaticMarkup(<CafeInquiryPanel order={order} whatsappHref="https://wa.me/2348000000000" onUpdated={() => {}} />)
+  assert.match(customer, /Chat with Tasker on WhatsApp/)
+  assert.match(customer, /They’re checking what’s available/)
+  const tasker = renderToStaticMarkup(<CafeInquiryPanel order={order} tasker whatsappHref="https://wa.me/2348000000001" onUpdated={() => {}} />)
+  assert.match(tasker, /Customer notified/)
+  assert.match(tasker, /Chat with Customer on WhatsApp/)
+  for (const html of [customer, tasker]) assert.doesNotMatch(html, /Send to customer|Nothing suitable is available|quantity|takeaway|Add another item|Confirm food/)
+  assert.equal(needsOrderPayment(order), true)
+  assert.equal(needsOrderPayment({ ...order, hasPaid: true }), false)
+  assert.equal(getTrackingStage({ ...order, status: 'completed' }).label, 'Completed')
+})
+
+test('legacy cafe options remain readable without reopening the old workflow', () => {
+  const order = { ...assigned, cafeInquiry: true, cafeInquiryStatus: 'awaiting_customer_choice' as const, cafeAvailableItems: [{ id: 'rice', name: 'Rice', price: 200, unit: 'spoon' }] }
+  const html = renderToStaticMarkup(<CafeInquiryPanel order={order} onUpdated={() => {}} />)
+  assert.match(html, /Cafe Inquiry/)
+  assert.doesNotMatch(html, /Rice|quantity|Confirm food/)
 })

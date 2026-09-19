@@ -611,7 +611,7 @@ export default function AdminOrdersPage() {
                       <div className="mt-4">
                         <p className="text-sm font-medium text-muted-foreground mb-2">Description</p>
                         <p className="text-sm bg-muted/50 p-3 rounded-lg">{order.description}</p>
-                        {order.cafeInquiry && <div className="rounded-lg border border-indigo-200 p-3 text-sm"><strong>Cafe check · {order.store}</strong><p>{order.cafeInquiryStatus ? cafeStatusLabels[order.cafeInquiryStatus] : 'Legacy cafe inquiry'}</p><p>Options: {order.cafeAvailableItems?.map(item => item.name + ' (₦' + item.price + ')').join(', ') || 'None sent'}</p><p>Choice: {order.cafeSelectedItems?.map(item => item.quantity + ' × ' + item.name).join(', ') || 'Awaiting choice'}</p></div>}
+                        {order.cafeInquiry && <div className="rounded-lg border border-indigo-200 p-3 text-sm"><strong>Cafe check · {order.store}</strong><p>{order.cafeInquiryStatus ? cafeStatusLabels[order.cafeInquiryStatus] : 'Legacy cafe inquiry'}</p>{Boolean(order.cafeAvailableItems?.length || order.cafeSelectedItems?.length) && <p>Legacy food details are saved with this inquiry.</p>}</div>}
                       </div>
 
                       {order.isDeclinedTask ? (
