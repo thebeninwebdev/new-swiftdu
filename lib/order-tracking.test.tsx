@@ -60,3 +60,14 @@ test('customer and tasker cancellation remain available before payment and block
     assert.equal(canCancel({ ...assigned, status: 'completed' }), false)
   }
 })
+
+test('cafe pricing UI explains units and offers explicit pack pricing', () => {
+  const order = { ...assigned, cafeInquiryStatus: 'awaiting_customer_choice' as const, cafeAvailableItems: [{ id: 'rice', name: 'Rice', price: 200, unit: 'spoon' }] }
+  const customer = renderToStaticMarkup(<CafeInquiryPanel order={order} onUpdated={() => {}} />)
+  assert.match(customer, /₦200 \/ spoon/)
+  assert.match(customer, /Rice quantity in spoon/)
+  const tasker = renderToStaticMarkup(<CafeInquiryPanel order={order} tasker onUpdated={() => {}} />)
+  assert.match(tasker, /Takeaway costs ₦200 per pack/)
+  assert.match(tasker, /Add takeaway pack/)
+  assert.match(tasker, /Item 1 pricing unit/)
+})

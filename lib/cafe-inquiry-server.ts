@@ -51,7 +51,7 @@ export async function transitionCafeInquiry(request: NextRequest, id: string, ac
       const settlement = splitServiceFee(result.pricing.serviceFee)
       Object.assign(update, {
         cafeSelectedItems: result.selected, cafeSelectionSubmittedAt: new Date(), cafeInquiryStatus: 'ready_for_payment', cafeInquiryDetailsSubmitted: true,
-        description: result.selected.map(item => `${item.quantity} × ${item.name}`).join(', '),
+        description: result.selected.map(item => `${item.quantity}${item.unit ? ` ${item.unit}` : ''} × ${item.name}`).join(', '),
         amount: result.pricing.amount, itemPrice: result.pricing.amount, totalAmount: result.totalAmount,
         serviceFee: settlement.serviceFee, commission: settlement.serviceFee, platformFee: settlement.platformFee, taskerFee: settlement.taskerFee,
         serviceFeeBeforeDiscount: order.serviceFeeDiscountApplied ? settlement.serviceFee : undefined,

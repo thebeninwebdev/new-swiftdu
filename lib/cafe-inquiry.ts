@@ -1,8 +1,8 @@
 import { calculateOrderPricing, CAFE_INQUIRY_EXTRA_FEE, RESTAURANT_MAX_PEOPLE } from './pricing'
 
 export type CafeInquiryStatus = 'waiting_for_tasker' | 'tasker_assigned' | 'checking_cafe' | 'awaiting_customer_choice' | 'unavailable' | 'ready_for_payment' | 'completed'
-export interface CafeOption { id: string; name: string; price: number }
-export interface CafeSelection { itemId: string; name: string; price: number; quantity: number }
+export interface CafeOption { id: string; name: string; price: number; unit?: string }
+export interface CafeSelection { itemId: string; name: string; price: number; quantity: number; unit?: string }
 export interface CafeInquiryFields {
   cafeInquiryStatus?: CafeInquiryStatus
   cafeAvailableItems?: CafeOption[]
@@ -24,7 +24,9 @@ export function validateCafeOptions(input: unknown): Omit<CafeOption, 'id'>[] {
   return input.map(item => {
     if (!item || typeof item.name !== 'string' || !item.name.trim() || item.name.trim().length > 100) throw new Error('Each item needs a name of up to 100 characters.')
     if (typeof item.price !== 'number' || !Number.isSafeInteger(item.price) || item.price <= 0 || item.price > 1000000) throw new Error('Enter a whole-naira price between 1 and 1,000,000.')
-    return { name: item.name.trim(), price: item.price }
+    if (item.unit !== undefined && (typeof item.unit !== 'string' || item.unit.trim().length > 30)) throw new Error('Use a unit label of up to 30 characters, such as spoon or bottle.')
+    const unit = item.unit?.trim()
+    return { name: item.name.trim(), price: item.price, ...(unit ? { unit } : {}) }
   })
 }
 
@@ -38,7 +40,7 @@ export function calculateCafeSelection(options: CafeOption[], input: unknown, pe
     if (!option || seen.has(option.id)) throw new Error('Choose each saved option only once.')
     seen.add(option.id)
     if (!Number.isInteger(item.quantity) || item.quantity < 1 || item.quantity > 20) throw new Error('Quantities must be between 1 and 20.')
-    return { itemId: option.id, name: option.name, price: option.price, quantity: item.quantity } as CafeSelection
+    return { itemId: option.id, name: option.name, price: option.price, quantity: item.quantity, ...(option.unit ? { unit: option.unit } : {}) } as CafeSelection
   })
   const foodAmount = selected.reduce((sum, item) => sum + item.price * item.quantity, 0)
   const pricing = calculateOrderPricing({ taskType: 'restaurant', cafeInquiry: true, amount: foodAmount, restaurantPeopleCount: people, restaurantTakeawayCount: takeaway })

@@ -151,7 +151,7 @@ function EmptyState({ tab }: { tab: TaskTab }) {
       </p>
       {config.action && (
         <Button
-          onClick={() => router.push('/dashboard/post-task')}
+          onClick={() => router.push('/dashboard')}
           className="mt-6 h-11 rounded-xl bg-sky-600 px-6 text-sm font-semibold text-white hover:bg-sky-700"
         >
           {config.action}

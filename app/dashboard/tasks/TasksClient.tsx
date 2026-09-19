@@ -21,6 +21,7 @@ import {
 import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { canCustomerCancelOrder, isActiveOrderStatus } from '@/lib/order-status'
 import { getTrackingStage, needsOrderPayment } from '@/lib/order-tracking'
+import { mergeOrderUpdate } from '@/lib/order-sync'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { OrderMascot } from '@/components/order-mascot'
 
@@ -47,6 +48,7 @@ interface Order extends CafeInquiryFields {
   taskerName?: string
   taskerId?: string
   createdAt: string
+  updatedAt?: string
   hasPaid?: boolean
   isDeclinedTask?: boolean
   declinedMessage?: string
@@ -511,7 +513,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const [loading, setLoading] = useState(true)
   const [, setRefreshing] = useState(false)
   const [confirmingTransfer, setConfirmingTransfer] = useState(false)
-  const [currentOrder, setCurrentOrder] = useState<Order | null>(null)
+  const [currentOrder, setCurrentOrderState] = useState<Order | null>(null)
   const [searchElapsedMs, setSearchElapsedMs] = useState(0)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
@@ -531,32 +533,25 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const queuedInitialReloadRef = useRef(false)
   const socketRef = useRef<Socket | null>(null)
   const currentOrderRef = useRef<Order | null>(null)
-  const realtimeResumeTimeoutRef = useRef<number | null>(null)
+  const requestGenerationRef = useRef(0)
   const redirectedToReviewRef = useRef<string | null>(null)
   const autoCancelledOrderRef = useRef<string | null>(null)
 
-  useEffect(() => { currentOrderRef.current = currentOrder }, [currentOrder])
+  const setCurrentOrder = useCallback((incoming: Order | null) => {
+    const next = incoming ? mergeOrderUpdate<Order>(currentOrderRef.current, incoming) : null
+    currentOrderRef.current = next
+    setCurrentOrderState(next)
+  }, [])
   useEffect(() => { if (!trackingOrderId && legacyRequestedOrderId) router.replace(`/dashboard/tasks/${legacyRequestedOrderId}`) }, [legacyRequestedOrderId, router, trackingOrderId])
   useVisibleInterval(() => setNowMs(Date.now()), currentOrder ? 1000 : null)
 
   const disconnectSocket = useCallback(() => {
-    if (realtimeResumeTimeoutRef.current) { window.clearTimeout(realtimeResumeTimeoutRef.current); realtimeResumeTimeoutRef.current = null }
     socketRef.current?.disconnect(); socketRef.current = null
   }, [])
 
-  const pauseRealtimeForApi = useCallback((duration = 1200) => {
-    const socket = socketRef.current; if (!socket) return
-    if (realtimeResumeTimeoutRef.current) window.clearTimeout(realtimeResumeTimeoutRef.current)
-    if (socket.connected) socket.disconnect()
-    realtimeResumeTimeoutRef.current = window.setTimeout(() => { realtimeResumeTimeoutRef.current = null; if (socketRef.current === socket && !socket.connected) socket.connect() }, duration)
-  }, [])
-
-  const fetchWithRealtimePause = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
-    pauseRealtimeForApi(); try { return await fetch(input, init) } finally { pauseRealtimeForApi() }
-  }, [pauseRealtimeForApi])
-
   const loadOrders = useCallback(async (initial = false) => {
     if (fetchingRef.current) { queuedReloadRef.current = true; queuedInitialReloadRef.current = queuedInitialReloadRef.current || initial; return }
+    const generation = requestGenerationRef.current
     fetchingRef.current = true; if (initial) setLoading(true); else setRefreshing(true)
     try {
       let nextCurrentOrder: Order | null = null
@@ -564,10 +559,8 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
         const trackedResponse = await fetch(`/api/orders/${trackedOrderIdRef.current}`, { cache: 'no-store' })
         if (trackedResponse.ok) {
           const trackedOrder: Order = await trackedResponse.json(); nextCurrentOrder = trackedOrder
-          if (shouldRedirectToReview(trackedOrder) && redirectedToReviewRef.current !== trackedOrder._id) {
-            redirectedToReviewRef.current = trackedOrder._id; toast.success('Task completed. Please rate your tasker.'); router.replace(`/dashboard/reviews/${trackedOrder._id}`); return
-          }
-        } else { trackedOrderIdRef.current = null; if (isTrackingPage) throw new Error('Order not found') }
+          if (generation !== requestGenerationRef.current) return
+        } else { if (generation !== requestGenerationRef.current) return; trackedOrderIdRef.current = null; if (isTrackingPage) throw new Error('Order not found') }
       }
       if (!nextCurrentOrder && isTrackingPage) {
         const currentResponse = await fetch('/api/orders?current=true', { cache: 'no-store' })
@@ -576,48 +569,51 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
       const recentResponse = await fetch('/api/orders?status=in_progress,completed,cancelled', { cache: 'no-store' })
       if (!recentResponse.ok) throw new Error('Failed to fetch recent orders')
       const recentData: Order[] = await recentResponse.json()
+      if (generation !== requestGenerationRef.current) return
+      if (nextCurrentOrder) nextCurrentOrder = mergeOrderUpdate<Order>(currentOrderRef.current, nextCurrentOrder)
       const mostRecentOngoingOrder = !isTrackingPage && !legacyRequestedOrderId ? getMostRecentOrder(recentData.filter((order) => order.status === 'in_progress')) : null
       if (mostRecentOngoingOrder) { router.replace(`/dashboard/tasks/${mostRecentOngoingOrder._id}`); return }
-      if (nextCurrentOrder && previousSnapshotRef.current?.id === nextCurrentOrder._id) {
+      if (nextCurrentOrder) {
         if (shouldRedirectToReview(nextCurrentOrder) && redirectedToReviewRef.current !== nextCurrentOrder._id) {
           redirectedToReviewRef.current = nextCurrentOrder._id; toast.success('Task completed. Please rate your tasker.'); router.replace(`/dashboard/reviews/${nextCurrentOrder._id}`); return
         }
-        if (!previousSnapshotRef.current.taskerId && nextCurrentOrder.taskerId) toast.success('A tasker accepted your order.')
-        if (!previousSnapshotRef.current.hasPaid && nextCurrentOrder.hasPaid) toast.success('Your transfer has been confirmed. Your task is now moving.')
-        if (!previousSnapshotRef.current.isDeclinedTask && Boolean(nextCurrentOrder.isDeclinedTask)) toast.error(nextCurrentOrder.declinedMessage || 'We could not confirm that transfer. Our team will contact you within 24 hours.')
+        if (previousSnapshotRef.current?.id === nextCurrentOrder._id && !previousSnapshotRef.current.taskerId && nextCurrentOrder.taskerId) toast.success('A tasker accepted your order.')
+        if (previousSnapshotRef.current?.id === nextCurrentOrder._id && !previousSnapshotRef.current.hasPaid && nextCurrentOrder.hasPaid) toast.success('Your transfer has been confirmed. Your task is now moving.')
+        if (previousSnapshotRef.current?.id === nextCurrentOrder._id && !previousSnapshotRef.current.isDeclinedTask && Boolean(nextCurrentOrder.isDeclinedTask)) toast.error(nextCurrentOrder.declinedMessage || 'We could not confirm that transfer. Our team will contact you within 24 hours.')
       }
       previousSnapshotRef.current = nextCurrentOrder ? { id: nextCurrentOrder._id, taskerId: nextCurrentOrder.taskerId, hasPaid: nextCurrentOrder.hasPaid, isDeclinedTask: nextCurrentOrder.isDeclinedTask } : null
       trackedOrderIdRef.current = isTrackingPage ? nextCurrentOrder?._id || null : null
-      setCurrentOrder(nextCurrentOrder); setRecentOrders(recentData); setError(null)
-    } catch (err) { setError(err instanceof Error ? err.message : 'Failed to load orders') }
+      setCurrentOrder(nextCurrentOrder); setRecentOrders(previous => recentData.map(order => mergeOrderUpdate<Order>(previous.find(saved => saved._id === order._id) || null, order))); setError(null)
+    } catch (err) { if (generation === requestGenerationRef.current) setError(err instanceof Error ? err.message : 'Failed to load orders') }
     finally {
       fetchingRef.current = false; setLoading(false); setRefreshing(false)
       if (queuedReloadRef.current) { const nextInitial = queuedInitialReloadRef.current; queuedReloadRef.current = false; queuedInitialReloadRef.current = false; void loadOrders(nextInitial) }
     }
-  }, [isTrackingPage, legacyRequestedOrderId, router])
+  }, [isTrackingPage, legacyRequestedOrderId, router, setCurrentOrder])
 
   const applyRealtimeOrderUpdate = useCallback((payload?: OrderRealtimePayload) => {
     if (!payload?._id) return false
     const existingOrder = currentOrderRef.current
     const isCurrentOrder = existingOrder?._id === payload._id
     const isTrackedOrder = trackedOrderIdRef.current === payload._id
-    if (!isCurrentOrder && !isTrackedOrder) { setRecentOrders((previous) => previous.map((order) => order._id === payload._id ? ({ ...order, ...payload, _id: order._id } as Order) : order)); return false }
+    if (!isCurrentOrder && !isTrackedOrder) { setRecentOrders((previous) => previous.map((order) => order._id === payload._id ? mergeOrderUpdate<Order>(order, { ...payload, _id: order._id }) : order)); return false }
     if (existingOrder && isCurrentOrder) {
-      const nextOrder = { ...existingOrder, ...payload, _id: existingOrder._id } as Order
+      const nextOrder = mergeOrderUpdate<Order>(existingOrder, { ...payload, _id: existingOrder._id })
+      if (nextOrder === existingOrder) return true
       if (!existingOrder.taskerId && nextOrder.taskerId) toast.success('A tasker accepted your order.')
       if (!existingOrder.hasPaid && nextOrder.hasPaid) toast.success('Your transfer has been confirmed. Your task is now moving.')
       if (!existingOrder.isDeclinedTask && Boolean(nextOrder.isDeclinedTask)) toast.error(nextOrder.declinedMessage || 'We could not confirm that transfer. Our team will contact you within 24 hours.')
       previousSnapshotRef.current = { id: nextOrder._id, taskerId: nextOrder.taskerId, hasPaid: nextOrder.hasPaid, isDeclinedTask: nextOrder.isDeclinedTask }
-      trackedOrderIdRef.current = nextOrder._id; currentOrderRef.current = nextOrder; setCurrentOrder(nextOrder)
-      setRecentOrders((previous) => previous.map((order) => order._id === nextOrder._id ? ({ ...order, ...nextOrder } as Order) : order))
+      trackedOrderIdRef.current = nextOrder._id; setCurrentOrder(nextOrder)
+      setRecentOrders((previous) => previous.map((order) => order._id === nextOrder._id ? mergeOrderUpdate<Order>(order, nextOrder) : order))
       if (shouldRedirectToReview(nextOrder) && redirectedToReviewRef.current !== nextOrder._id) { redirectedToReviewRef.current = nextOrder._id; toast.success('Task completed. Please rate your tasker.'); router.replace(`/dashboard/reviews/${nextOrder._id}`) }
       return true
     }
     return false
-  }, [router])
+  }, [router, setCurrentOrder])
 
   useEffect(() => { void loadOrders(true) }, [loadOrders])
-  useEffect(() => { if (!isTrackingPage) return; if (!requestedOrderId || requestedOrderId === trackedOrderIdRef.current) return; trackedOrderIdRef.current = requestedOrderId; previousSnapshotRef.current = null; taskerOrderRef.current = null; setTaskerDetails(null); void loadOrders(true) }, [isTrackingPage, loadOrders, requestedOrderId])
+  useEffect(() => { if (!isTrackingPage) return; if (!requestedOrderId || requestedOrderId === trackedOrderIdRef.current) return; requestGenerationRef.current += 1; trackedOrderIdRef.current = requestedOrderId; previousSnapshotRef.current = null; taskerOrderRef.current = null; setTaskerDetails(null); void loadOrders(true) }, [isTrackingPage, loadOrders, requestedOrderId])
   useEffect(() => { const onFocus = () => { void loadOrders(false) }; window.addEventListener('focus', onFocus); return () => { window.removeEventListener('focus', onFocus) } }, [loadOrders])
   useVisibleInterval(
     () => {
@@ -629,16 +625,16 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
     const socket = io({ withCredentials: true }); socketRef.current = socket
     const watchCurrentOrder = () => { const orderId = trackedOrderIdRef.current || currentOrderRef.current?._id; if (orderId) socket.emit('order:watch', orderId) }
     socket.on('connect', () => { watchCurrentOrder(); void loadOrders(false) })
-    socket.on('order:updated', (payload?: OrderRealtimePayload) => { const applied = applyRealtimeOrderUpdate(payload); if (!applied) { void loadOrders(false); return } window.setTimeout(() => { void loadOrders(false) }, 300) })
+    socket.on('order:updated', (payload?: OrderRealtimePayload) => { applyRealtimeOrderUpdate(payload); void loadOrders(false) })
     watchCurrentOrder(); return () => { if (socketRef.current === socket) { disconnectSocket(); return } socket.disconnect() }
   }, [applyRealtimeOrderUpdate, disconnectSocket, loadOrders])
   useEffect(() => { const orderId = currentOrder?._id; const socket = socketRef.current; if (!socket || !orderId) return; socket.emit('order:watch', orderId); return () => { socket.emit('order:unwatch', orderId) } }, [currentOrder?._id])
   useEffect(() => {
     if (!currentOrder?.taskerId) { taskerOrderRef.current = null; setTaskerDetails(null); setLoadingTasker(false); return }
     if (taskerOrderRef.current === currentOrder._id) return; let cancelled = false
-    const fetchTasker = async () => { try { setLoadingTasker(true); const response = await fetchWithRealtimePause(`/api/orders/${currentOrder._id}/tasker`, { cache: 'no-store' }); if (!response.ok) throw new Error('Failed to fetch tasker details'); const data = await response.json(); if (!cancelled) { setTaskerDetails(data); taskerOrderRef.current = currentOrder._id } } catch { if (!cancelled) setTaskerDetails(null) } finally { if (!cancelled) setLoadingTasker(false) } }
+    const fetchTasker = async () => { try { setLoadingTasker(true); const response = await fetch(`/api/orders/${currentOrder._id}/tasker`, { cache: 'no-store' }); if (!response.ok) throw new Error('Failed to fetch tasker details'); const data = await response.json(); if (!cancelled) { setTaskerDetails(data); taskerOrderRef.current = currentOrder._id } } catch { if (!cancelled) setTaskerDetails(null) } finally { if (!cancelled) setLoadingTasker(false) } }
     void fetchTasker(); return () => { cancelled = true }
-  }, [currentOrder?._id, currentOrder?.taskerId, fetchWithRealtimePause])
+  }, [currentOrder?._id, currentOrder?.taskerId])
   useEffect(() => { return () => { disconnectSocket() } }, [disconnectSocket])
 
   const currentOrderIsActive = isActiveOrderStatus(currentOrder?.status)
@@ -659,11 +655,11 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   }
 
   const handleOpenOrder = (orderId: string) => { if (trackedOrderIdRef.current === orderId) return; trackedOrderIdRef.current = orderId; previousSnapshotRef.current = null; taskerOrderRef.current = null; setTaskerDetails(null); router.push(`/dashboard/tasks/${orderId}`); void loadOrders(false) }
-  const handleConfirmTransfer = async () => { if (!currentOrder || !needsOrderPayment(currentOrder)) return; try { setConfirmingTransfer(true); const response = await fetchWithRealtimePause(`/api/orders/${currentOrder._id}/confirm-transfer`, { method: 'POST' }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Failed to confirm the transfer.'); setCurrentOrder(payload.order); trackedOrderIdRef.current = payload.order?._id || currentOrder._id; previousSnapshotRef.current = payload.order ? { id: payload.order._id, taskerId: payload.order.taskerId, hasPaid: payload.order.hasPaid, isDeclinedTask: payload.order.isDeclinedTask } : null; setPaymentModalOpen(false); toast.success('Payment updated. Open WhatsApp and stay online for your tasker.') } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to confirm the transfer.'); void loadOrders(false) } finally { setConfirmingTransfer(false) } }
-  const handleCancelOrder = useCallback(async () => { if (!currentOrder || !canCustomerCancelOrder(currentOrder)) return; try { setUpdatingAction('cancel'); const response = await fetchWithRealtimePause(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancelled' }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to cancel order'); trackedOrderIdRef.current = null; taskerOrderRef.current = null; previousSnapshotRef.current = null; setTaskerDetails(null); setCurrentOrder(null); setRecentOrders((previous) => [data, ...previous.filter((order) => order._id !== data._id)]); toast.success('Order cancelled.'); router.replace('/dashboard/tasks'); void loadOrders(true) } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to cancel order') } finally { setUpdatingAction(null) } }, [currentOrder, fetchWithRealtimePause, loadOrders, router])
-  const handleExtendCompletionTimer = useCallback(async () => { if (!currentOrder || updatingAction || confirmingTransfer) return; try { setUpdatingAction('extendTimer'); const response = await fetchWithRealtimePause(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ extendCompletionTimer: true }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to add more time.'); setCurrentOrder(data); setRecentOrders((previous) => previous.map((order) => (order._id === data._id ? data : order))); toast.success('Ten minutes added for your tasker.') } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to add more time.') } finally { setUpdatingAction(null) } }, [confirmingTransfer, currentOrder, fetchWithRealtimePause, updatingAction])
-  const handleReceiptAnswer = useCallback(async (receivedOrder: boolean) => { if (!currentOrder || updatingAction || confirmingTransfer) return; try { setUpdatingAction(receivedOrder ? 'receiptYes' : 'receiptNo'); const response = await fetchWithRealtimePause(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerReceivedOrder: receivedOrder }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to update this task.'); setCurrentOrder(data); setRecentOrders((previous) => previous.map((order) => (order._id === data._id ? data : order))); toast.success(receivedOrder ? 'Thanks for confirming your order.' : 'Thanks. SwiftDU will review this completion.'); if (receivedOrder) { redirectedToReviewRef.current = data._id; router.replace(`/dashboard/reviews/${data._id}`) } } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to update this task.') } finally { setUpdatingAction(null) } }, [confirmingTransfer, currentOrder, fetchWithRealtimePause, router, updatingAction])
-  const handleRetryOrder = useCallback(async (order: Order) => { if (updatingAction || confirmingTransfer || !canRetryOrder(order)) return; try { setUpdatingAction('retry'); const response = await fetchWithRealtimePause(`/api/orders/${order._id}/retry`, { method: 'POST' }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to retry task'); trackedOrderIdRef.current = data._id; taskerOrderRef.current = null; previousSnapshotRef.current = { id: data._id, taskerId: data.taskerId, hasPaid: data.hasPaid, isDeclinedTask: data.isDeclinedTask }; setTaskerDetails(null); setCurrentOrder(data); setRecentOrders((previous) => [data, ...previous.filter((existingOrder) => existingOrder._id !== data._id && existingOrder._id !== order._id)]); toast.success('Task sent again. We are looking for taskers now.'); router.replace(`/dashboard/tasks/${data._id}`); void loadOrders(true) } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to retry task') } finally { setUpdatingAction(null) } }, [confirmingTransfer, fetchWithRealtimePause, loadOrders, router, updatingAction])
+  const handleConfirmTransfer = async () => { if (!currentOrder || !needsOrderPayment(currentOrder)) return; try { setConfirmingTransfer(true); const response = await fetch(`/api/orders/${currentOrder._id}/confirm-transfer`, { method: 'POST' }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Failed to confirm the transfer.'); setCurrentOrder(payload.order); trackedOrderIdRef.current = payload.order?._id || currentOrder._id; previousSnapshotRef.current = payload.order ? { id: payload.order._id, taskerId: payload.order.taskerId, hasPaid: payload.order.hasPaid, isDeclinedTask: payload.order.isDeclinedTask } : null; setPaymentModalOpen(false); toast.success('Payment updated. Open WhatsApp and stay online for your tasker.') } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to confirm the transfer.'); void loadOrders(false) } finally { setConfirmingTransfer(false) } }
+  const handleCancelOrder = useCallback(async () => { if (!currentOrder || !canCustomerCancelOrder(currentOrder)) return; try { setUpdatingAction('cancel'); const response = await fetch(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancelled' }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to cancel order'); requestGenerationRef.current += 1; trackedOrderIdRef.current = null; taskerOrderRef.current = null; previousSnapshotRef.current = null; setTaskerDetails(null); setCurrentOrder(null); setRecentOrders((previous) => [data, ...previous.filter((order) => order._id !== data._id)]); toast.success('Order cancelled.'); router.replace('/dashboard/tasks'); void loadOrders(true) } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to cancel order') } finally { setUpdatingAction(null) } }, [currentOrder, loadOrders, router, setCurrentOrder])
+  const handleExtendCompletionTimer = useCallback(async () => { if (!currentOrder || updatingAction || confirmingTransfer) return; try { setUpdatingAction('extendTimer'); const response = await fetch(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ extendCompletionTimer: true }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to add more time.'); setCurrentOrder(data); setRecentOrders((previous) => previous.map((order) => (order._id === data._id ? mergeOrderUpdate<Order>(order, data) : order))); toast.success('Ten minutes added for your tasker.') } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to add more time.') } finally { setUpdatingAction(null) } }, [confirmingTransfer, currentOrder, updatingAction, setCurrentOrder])
+  const handleReceiptAnswer = useCallback(async (receivedOrder: boolean) => { if (!currentOrder || updatingAction || confirmingTransfer) return; try { setUpdatingAction(receivedOrder ? 'receiptYes' : 'receiptNo'); const response = await fetch(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerReceivedOrder: receivedOrder }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to update this task.'); setCurrentOrder(data); setRecentOrders((previous) => previous.map((order) => (order._id === data._id ? mergeOrderUpdate<Order>(order, data) : order))); toast.success(receivedOrder ? 'Thanks for confirming your order.' : 'Thanks. SwiftDU will review this completion.'); if (receivedOrder) { redirectedToReviewRef.current = data._id; router.replace(`/dashboard/reviews/${data._id}`) } } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to update this task.') } finally { setUpdatingAction(null) } }, [confirmingTransfer, currentOrder, router, updatingAction, setCurrentOrder])
+  const handleRetryOrder = useCallback(async (order: Order) => { if (updatingAction || confirmingTransfer || !canRetryOrder(order)) return; try { setUpdatingAction('retry'); const response = await fetch(`/api/orders/${order._id}/retry`, { method: 'POST' }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to retry task'); requestGenerationRef.current += 1; trackedOrderIdRef.current = data._id; taskerOrderRef.current = null; previousSnapshotRef.current = { id: data._id, taskerId: data.taskerId, hasPaid: data.hasPaid, isDeclinedTask: data.isDeclinedTask }; setTaskerDetails(null); setCurrentOrder(data); setRecentOrders((previous) => [data, ...previous.filter((existingOrder) => existingOrder._id !== data._id && existingOrder._id !== order._id)]); toast.success('Task sent again. We are looking for taskers now.'); router.replace(`/dashboard/tasks/${data._id}`); void loadOrders(true) } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to retry task') } finally { setUpdatingAction(null) } }, [confirmingTransfer, loadOrders, router, updatingAction, setCurrentOrder])
   const requestCancelOrder = useCallback(() => { if (!currentOrder || updatingAction === 'cancel' || confirmingTransfer) return; setCancelConfirmOpen(true) }, [confirmingTransfer, currentOrder, updatingAction])
   const confirmCancelOrder = useCallback(() => { setCancelConfirmOpen(false); void handleCancelOrder() }, [handleCancelOrder])
 

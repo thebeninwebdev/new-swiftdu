@@ -20,7 +20,8 @@ import {
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
-import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
+import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
+import { mergeOrderUpdate } from '@/lib/order-sync'
 import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { canTaskerCancelOrder, isCustomerPaymentConfirmed } from '@/lib/order-status'
 import { convertToNaira } from '@/lib/utils'
@@ -68,6 +69,7 @@ interface ErrandDetail extends CafeInquiryFields {
   taskerName?: string
   acceptedAt?: string
   createdAt: string
+  updatedAt?: string
   completionTimerStartedAt?: string
   completionDueAt?: string
   completionWindowMinutes?: number
@@ -192,7 +194,14 @@ export default function ErrandDetailPage() {
   const params = useParams()
   const errandId = String(params?.id || '')
 
-  const [errand, setErrand] = useState<ErrandDetail | null>(null)
+  const [errand, setErrandState] = useState<ErrandDetail | null>(null)
+  const errandRef = useRef<ErrandDetail | null>(null)
+  const setErrand = useCallback((incoming: ErrandDetail) => {
+    const next = mergeOrderUpdate(errandRef.current, incoming)
+    errandRef.current = next
+    setErrandState(next)
+    return next
+  }, [])
   const [userInfo, setUserInfo] = useState<UserInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<'complete' | 'cancel' | 'report' | 'people' | 'clearDeclined' | null>(null)
@@ -211,13 +220,12 @@ export default function ErrandDetailPage() {
     if (fetchingRef.current) { queuedRefreshRef.current = true; return }
     fetchingRef.current = true
     try {
-      const errandRes = await fetchWithSocketPause(`/api/orders/${errandId}`, { cache: 'no-store' })
+      const errandRes = await fetch(`/api/orders/${errandId}`, { cache: 'no-store' })
       if (errandRes.status === 401) { router.push('/auth'); return }
       if (!errandRes.ok) throw new Error('Failed to fetch errand details')
-      const errandData: ErrandDetail = await errandRes.json()
-      setErrand(errandData)
+      const errandData = setErrand(await errandRes.json() as ErrandDetail)
 
-      const userRes = await fetchWithSocketPause(`/api/users/${errandData.userId}`)
+      const userRes = await fetch(`/api/users/${errandData.userId}`)
       if (userRes.ok) { const userData = await userRes.json(); setUserInfo(userData) }
       else setUserInfo(null)
 
@@ -242,7 +250,7 @@ export default function ErrandDetailPage() {
       setLoading(false)
       if (queuedRefreshRef.current) { queuedRefreshRef.current = false; void loadErrand(false) }
     }
-  }, [errandId, router])
+  }, [errandId, router, setErrand])
 
   useEffect(() => { void loadErrand(true) }, [loadErrand])
 
@@ -256,7 +264,7 @@ export default function ErrandDetailPage() {
   useEffect(() => {
     if (!errandId) return
     const socket = acquireSharedSocket()
-    const handleConnect = () => { socket.emit('order:watch', errandId) }
+    const handleConnect = () => { socket.emit('order:watch', errandId); void loadErrand(false) }
     const handleOrderUpdate = (payload?: { _id?: string }) => { if (!payload?._id || payload._id === errandId) void loadErrand(false) }
     socket.on('connect', handleConnect)
     socket.on('order:updated', handleOrderUpdate)
@@ -279,7 +287,7 @@ export default function ErrandDetailPage() {
       setActionLoading(action)
       setShowConfirmModal(null)
       const nextStatus = action === 'complete' ? 'completed' : 'cancelled'
-      const response = await fetchWithSocketPause(`/api/orders/${errandId}`, {
+      const response = await fetch(`/api/orders/${errandId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: nextStatus }),
@@ -302,7 +310,7 @@ export default function ErrandDetailPage() {
     try {
       setActionLoading('report')
       setError(null)
-      const response = await fetchWithSocketPause(`/api/orders/${errandId}/report-transfer-issue`, { method: 'POST' })
+      const response = await fetch(`/api/orders/${errandId}/report-transfer-issue`, { method: 'POST' })
       const payload = await response.json()
       if (!response.ok) { setError(payload.error || 'Failed to report transfer issue'); return }
       setErrand(payload.order)
@@ -316,7 +324,7 @@ export default function ErrandDetailPage() {
     try {
       setActionLoading('clearDeclined')
       setError(null)
-      const response = await fetchWithSocketPause(`/api/orders/${errandId}`, {
+      const response = await fetch(`/api/orders/${errandId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clearDeclinedTask: true }),
@@ -335,7 +343,7 @@ export default function ErrandDetailPage() {
     try {
       setActionLoading('people')
       setError(null)
-      const response = await fetchWithSocketPause(`/api/orders/${errandId}`, {
+      const response = await fetch(`/api/orders/${errandId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ restaurantPeopleCount: peopleCount }),

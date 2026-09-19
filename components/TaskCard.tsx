@@ -117,7 +117,7 @@ export function TaskCard({ cafeInquiry, id, taskType, description, amount, total
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
-            <CardTitle className="text-lg mb-2">{taskType === 'restaurant' ? `Order from ${store}` : taskType === 'shopping' ? `Buy from ${store}` : taskType === 'indomie' ? 'Buy Indomie' : taskType === 'water' ? 'Bag of Water' : 'Task'}</CardTitle>
+            <CardTitle className="text-lg mb-2">{taskType === 'restaurant' ? (cafeInquiry ? `CAFE INQUIRY: Check what's available at ${store || 'the cafe'}` : `Order from ${store}`) : taskType === 'shopping' ? `Buy from ${store}` : taskType === 'indomie' ? 'Buy Indomie' : taskType === 'water' ? 'Bag of Water' : 'Task'}</CardTitle>
             <p className="text-sm text-muted-foreground">{timeAgo}</p>
           </div>
           <Badge className={taskTypeColors[taskType] || taskTypeColors.others}>

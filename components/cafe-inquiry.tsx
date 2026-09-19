@@ -1,9 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { OrderMascot } from '@/components/order-mascot'
 import { getCafeLabel, cafeStatusLabels, calculateCafeSelection, type CafeInquiryFields } from '@/lib/cafe-inquiry'
-import { CAFE_INQUIRY_EXTRA_FEE, RESTAURANT_MAX_PEOPLE } from '@/lib/pricing'
+import { CAFE_INQUIRY_EXTRA_FEE, RESTAURANT_MAX_PEOPLE, RESTAURANT_TAKEAWAY_PACK_PRICE } from '@/lib/pricing'
 
 const money = (amount: number) => `₦${amount.toLocaleString('en-NG')}`
 const field = 'w-full rounded-xl border border-slate-300 bg-white p-3 text-slate-900'
@@ -31,11 +31,18 @@ export function CafeInquiryReview({ cafe, location, serviceFee, discounted }: { 
 
 type CafeOrder = CafeInquiryFields & { _id: string; store?: string; status: string; hasPaid?: boolean; serviceFeeDiscountApplied?: boolean }
 export function CafeInquiryPanel({ order, tasker = false, onUpdated }: { order: CafeOrder; tasker?: boolean; onUpdated: () => void }) {
+  const previous = useRef({ id: order._id, version: order.cafeOptionsVersion, state: order.cafeInquiryStatus })
+  const [optionsChanged, setOptionsChanged] = useState(false)
+  useEffect(() => {
+    const old = previous.current
+    if (!tasker && old.id === order._id && old.state === 'awaiting_customer_choice' && order.cafeInquiryStatus === 'awaiting_customer_choice' && old.version !== order.cafeOptionsVersion) setOptionsChanged(true)
+    previous.current = { id: order._id, version: order.cafeOptionsVersion, state: order.cafeInquiryStatus }
+  }, [order._id, order.cafeOptionsVersion, order.cafeInquiryStatus, tasker])
   // Remount the draft when options are corrected; never submit a stale draft against a new price.
-  return <CafeInquiryDraft key={`${order._id}:${order.cafeOptionsVersion}`} order={order} tasker={tasker} onUpdated={onUpdated} />
+  return <>{optionsChanged && order.cafeInquiryStatus === 'awaiting_customer_choice' && <p role="status" className="rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">The cafe options were updated by your Tasker. Please review your choices again.</p>}<CafeInquiryDraft key={`${order._id}:${order.cafeOptionsVersion}`} order={order} tasker={tasker} onUpdated={onUpdated} /></>
 }
 function CafeInquiryDraft({ order, tasker, onUpdated }: { order: CafeOrder; tasker: boolean; onUpdated: () => void }) {
-  const [rows, setRows] = useState(() => order.cafeAvailableItems?.length ? order.cafeAvailableItems.map(item => ({ name: item.name, price: String(item.price) })) : [{ name: '', price: '' }])
+  const [rows, setRows] = useState(() => order.cafeAvailableItems?.length ? order.cafeAvailableItems.map(item => ({ name: item.name, price: String(item.price), unit: item.unit || '' })) : [{ name: '', price: '', unit: '' }])
   const [quantities, setQuantities] = useState<Record<string, number>>({})
   const [people, setPeople] = useState(1)
   const [takeaway, setTakeaway] = useState<number | undefined>()
@@ -66,32 +73,35 @@ function CafeInquiryDraft({ order, tasker, onUpdated }: { order: CafeOrder; task
     <ol className="flex flex-wrap gap-2 text-xs text-slate-600" aria-label="Cafe request progress">
       <li>✓ Request posted</li>{state !== 'waiting_for_tasker' && <li>✓ Tasker found</li>}{['awaiting_customer_choice', 'ready_for_payment', 'completed'].includes(state) && <li>✓ Options sent</li>}{['ready_for_payment', 'completed'].includes(state) && <li>✓ Food selected</li>}{order.hasPaid && <li>✓ Transfer reported</li>}{state === 'completed' && <li>✓ Delivered</li>}
     </ol>
-    {active && state === 'unavailable' && <p className="text-sm">Contact your Tasker to discuss alternatives or use the existing cancellation action. This request remains open.</p>}
-    {tasker && active && <p className="text-sm">Go to the cafe and tell the customer what is currently available. Include chargeable takeaway packs as priced options; there is no separate fixed packaging surcharge.</p>}
+    {active && state === 'unavailable' && <p className="text-sm">{tasker ? 'The customer has been updated. Discuss alternatives with them or wait for them to cancel. You can check the cafe again below.' : 'Contact your Tasker to discuss alternatives, or cancel this request.'}</p>}
+    {tasker && active && <p className="text-sm">Go to the cafe and tell the customer what is currently available. Takeaway costs {money(RESTAURANT_TAKEAWAY_PACK_PRICE)} per pack. Add a separate takeaway option so the customer can choose the number of packs. Packaging is charged only through selected options.</p>}
     {tasker && active && ['tasker_assigned', 'unavailable'].includes(state) && <button className={button} disabled={busy} onClick={() => submit('checking', {})}>I&apos;m at the cafe</button>}
     {tasker && canSend && <div className="space-y-3">
-      {rows.map((row, index) => <div key={index} className="grid grid-cols-[1fr_7rem] gap-2">
+      {rows.map((row, index) => <div key={index} className="grid grid-cols-1 gap-2 sm:grid-cols-[1fr_7rem_9rem]">
         <input aria-label={`Item ${index + 1} name`} placeholder="Food or pack name" maxLength={100} className={field} value={row.name} onChange={event => setRows(rows.map((item, i) => i === index ? { ...item, name: event.target.value } : item))} />
         <input aria-label={`Item ${index + 1} price`} placeholder="Price ₦" type="number" min={1} max={1000000} step={1} className={field} value={row.price} onChange={event => setRows(rows.map((item, i) => i === index ? { ...item, price: event.target.value } : item))} />
+        <input aria-label={`Item ${index + 1} pricing unit`} placeholder="Per item / spoon" maxLength={30} className={field} value={row.unit} onChange={event => setRows(rows.map((item, i) => i === index ? { ...item, unit: event.target.value } : item))} />
         <button className="text-left text-sm text-red-700" disabled={busy} onClick={() => setRows(rows.filter((_, i) => i !== index))}>Remove item {index + 1}</button>
       </div>)}
-      <button className="block text-sm font-semibold text-indigo-700" disabled={rows.length >= 40 || busy} onClick={() => setRows([...rows, { name: '', price: '' }])}>+ Add another item</button>
-      <button className={button} disabled={busy || !rows.length} onClick={() => submit('options', { items: rows.map(row => ({ name: row.name, price: Number(row.price) })) })}>Send to customer</button>
+      <button className="block text-sm font-semibold text-indigo-700" disabled={rows.length >= 40 || busy} onClick={() => setRows([...rows, { name: '', price: '', unit: '' }])}>+ Add another item</button>
+      <p className="text-sm">Enter a price per unit, for example rice per spoon. Leave the unit blank for a standard item.</p>
+      <button className="block text-sm font-semibold text-indigo-700" disabled={rows.length >= 40 || busy} onClick={() => setRows([...rows, { name: 'Takeaway pack', price: String(RESTAURANT_TAKEAWAY_PACK_PRICE), unit: 'pack' }])}>+ Add takeaway pack ({money(RESTAURANT_TAKEAWAY_PACK_PRICE)} per pack)</button>
+      <button className={button} disabled={busy || !rows.length} onClick={() => submit('options', { items: rows.map(row => ({ name: row.name, price: Number(row.price), unit: row.unit })) })}>Send to customer</button>
       <button className="block text-sm text-slate-600 underline" disabled={busy} onClick={() => submit('options', { unavailable: true })}>Nothing suitable is available</button>
     </div>}
     {!tasker && active && state === 'awaiting_customer_choice' && <div className="space-y-4">
-      {!review ? <>{order.cafeAvailableItems?.map(item => <label key={item.id} className="flex items-center justify-between gap-3 rounded-xl border p-3"><span>{item.name}<span className="block text-sm text-slate-500">{money(item.price)}</span></span><input aria-label={`${item.name} quantity`} className="w-20 rounded-lg border p-2" type="number" min={0} max={20} value={quantities[item.id] || 0} onChange={event => setQuantities({ ...quantities, [item.id]: Math.max(0, Math.min(20, Math.floor(Number(event.target.value) || 0))) })} /></label>)}
+      {!review ? <>{order.cafeAvailableItems?.map(item => <label key={item.id} className="flex items-center justify-between gap-3 rounded-xl border p-3"><span>{item.name}<span className="block text-sm text-slate-500">{money(item.price)} / {item.unit || 'item'}</span></span><input aria-label={`${item.name} quantity${item.unit ? ` in ${item.unit}` : ''}`} className="w-20 rounded-lg border p-2" type="number" min={0} max={20} value={quantities[item.id] || 0} onChange={event => setQuantities({ ...quantities, [item.id]: Math.max(0, Math.min(20, Math.floor(Number(event.target.value) || 0))) })} /></label>)}
         <p className="font-bold">Food and selected packs: {money(foodAmount)}</p>
         <button className={button} disabled={!selected.length} onClick={() => setReview(true)}>Continue to packaging</button></> : <>
-        <label className="block">Number of meals<select className={field} value={people} onChange={event => { setPeople(Number(event.target.value)); setTakeaway(undefined) }}>{Array.from({ length: RESTAURANT_MAX_PEOPLE }, (_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}</select></label>
-        <label className="block">How many need takeaway packs?<select className={field} value={takeaway ?? ''} onChange={event => setTakeaway(event.target.value === '' ? undefined : Number(event.target.value))}><option value="">Choose packaging</option>{Array.from({ length: people + 1 }, (_, i) => <option key={i} value={i}>{i === 0 ? 'All cellophane' : i === people ? 'All takeaway' : `${i} takeaway, ${people - i} cellophane`}</option>)}</select></label>
-        <p className="text-xs">Select any priced packs from the options before continuing. Existing service pricing applies for {people} meal{people === 1 ? '' : 's'}.</p>
+        <label className="block">Number of meals (sets the service fee)<select className={field} value={people} onChange={event => { setPeople(Number(event.target.value)); setTakeaway(undefined) }}>{Array.from({ length: RESTAURANT_MAX_PEOPLE }, (_, i) => <option key={i} value={i + 1}>{i + 1}</option>)}</select></label>
+        <label className="block">How many takeaway packs do you need?<select className={field} value={takeaway ?? ''} onChange={event => setTakeaway(event.target.value === '' ? undefined : Number(event.target.value))}><option value="">Choose packaging</option>{Array.from({ length: people + 1 }, (_, i) => <option key={i} value={i}>{i === 0 ? 'All cellophane' : i === people ? 'All takeaway' : `${i} takeaway, ${people - i} cellophane`}</option>)}</select></label>
+        <p className="text-xs">Takeaway packs cost {money(RESTAURANT_TAKEAWAY_PACK_PRICE)} each. Select the same number of packs from the cafe options on the previous screen. {takeaway !== undefined ? `${takeaway} x ${money(RESTAURANT_TAKEAWAY_PACK_PRICE)} = ${money(takeaway * RESTAURANT_TAKEAWAY_PACK_PRICE)}.` : ''} Pack prices are already included in the food and selected packs total. If no pack option is listed, ask your Tasker to add it before confirming.</p>
         {final && <dl className="space-y-2 text-sm"><div>Food and selected packs: {money(foodAmount)}</div><div>SwiftDU service fee: {money(order.serviceFeeDiscountApplied ? 0 : final.pricing.serviceFee - CAFE_INQUIRY_EXTRA_FEE)}</div><div>Cafe check fee (included once): {money(CAFE_INQUIRY_EXTRA_FEE)}</div><div className="font-bold">Final transfer: {money(final.totalAmount)}</div></dl>}
         <button className="mr-3 text-sm underline" disabled={busy} onClick={() => setReview(false)}>Back to food</button>
         <button className={button} disabled={busy || !final} onClick={() => submit('selection', { items: selected, restaurantPeopleCount: people, restaurantTakeawayCount: takeaway })}>Confirm food and packaging</button>
       </>}
     </div>}
-    {order.cafeSelectedItems?.length ? <ul className="text-sm">{order.cafeSelectedItems.map(item => <li key={item.itemId}>{item.quantity} × {item.name} · {money(item.price * item.quantity)}</li>)}</ul> : null}
+    {order.cafeSelectedItems?.length ? <ul className="text-sm">{order.cafeSelectedItems.map(item => <li key={item.itemId}>{item.quantity}{item.unit ? ` ${item.unit}` : ''} × {item.name} · {money(item.price * item.quantity)}</li>)}</ul> : null}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}
   </section>
 }

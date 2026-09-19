@@ -40,6 +40,7 @@ export type OrderSocketPayload = CafeInquiryFields & {
   eggCount?: number
   acceptedAt?: string
   createdAt?: string
+  updatedAt?: string
   paymentStatus?: string
   completionTimerStartedAt?: string
   completionDueAt?: string
@@ -90,6 +91,7 @@ type SocketOrderLike = CafeInquiryFields & {
   eggCount?: number
   acceptedAt?: Date | string
   createdAt?: Date | string
+  updatedAt?: Date | string
   paymentStatus?: string
   completionTimerStartedAt?: Date | string
   completionDueAt?: Date | string
@@ -169,6 +171,7 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     eggCount: order.eggCount,
     acceptedAt: serializeDate(order.acceptedAt),
     createdAt: serializeDate(order.createdAt),
+    updatedAt: serializeDate(order.updatedAt),
     paymentStatus: order.paymentStatus,
     completionTimerStartedAt: serializeDate(order.completionTimerStartedAt),
     completionDueAt: serializeDate(order.completionDueAt),
@@ -202,10 +205,8 @@ export function emitOrderUpdated(order: SocketOrderLike) {
   if (!payload.isTestOrder) {
     io.to('taskers').emit('tasks:updated', payload)
   }
-  io.to(`user:${payload.userId}`).emit('order:updated', payload)
-  io.to(`order:${payload._id}`).emit('order:updated', payload)
-
-  if (payload.taskerId) {
-    io.to(`tasker:${payload.taskerId}`).emit('order:updated', payload)
-  }
+  const rooms = [`user:${payload.userId}`, `order:${payload._id}`]
+  if (payload.taskerId) rooms.push(`tasker:${payload.taskerId}`)
+  // A socket in multiple rooms receives this update once.
+  io.to(rooms).emit('order:updated', payload)
 }

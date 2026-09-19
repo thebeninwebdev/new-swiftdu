@@ -294,7 +294,7 @@ function formatRestaurantPackaging(errand: Pick<Errand, 'packaging' | 'restauran
 }
 
 function formatAcceptedErrandDescription(errand: Errand) {
-  if (errand.cafeInquiry) return `Cafe check · ${errand.store || ''} · ${errand.cafeInquiryStatus ? cafeStatusLabels[errand.cafeInquiryStatus] : 'Check availability'}`
+  if (errand.cafeInquiry) return `CAFE INQUIRY: Check what's available at ${errand.store || 'the cafe'} · ${errand.cafeInquiryStatus ? cafeStatusLabels[errand.cafeInquiryStatus] : 'Check availability'}`
   const description = errand.description?.trim() || 'Task'
 
   if (errand.taskType !== 'restaurant') {
@@ -1423,7 +1423,7 @@ export default function TaskerDashboardPage() {
 
                   {/* Description */}
                   <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed mb-4 line-clamp-2">
-                    {errand.cafeInquiry ? `Cafe check · ${errand.store || ''}` : errand.description}
+                    {errand.cafeInquiry ? `CAFE INQUIRY: Check what's available at ${errand.store || 'the cafe'}` : errand.description}
                     {errand.cafeInquiryStatus && <span className="block text-xs text-indigo-600">{cafeStatusLabels[errand.cafeInquiryStatus]}</span>}
                   </p>
 

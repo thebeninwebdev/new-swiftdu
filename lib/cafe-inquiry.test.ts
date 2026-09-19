@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { calculateCafeSelection, validateCafeOptions } from './cafe-inquiry'
-import { calculateOrderPricing, calculateRestaurantPackagingFee } from './pricing'
+import { calculateOrderPricing, calculateRestaurantPackagingFee, RESTAURANT_TAKEAWAY_PACK_PRICE } from './pricing'
 import { toOrderSocketPayload } from './socket'
 import { Order } from '../models/order'
 
@@ -68,4 +68,21 @@ test('realtime includes saved options, state, prices and training visibility', (
   assert.equal(payload.cafeOptionsVersion, 2)
   assert.equal(payload.isTestOrder, true)
   assert.equal(payload.totalAmount, 650)
+})
+
+test('unit prices survive validation, schema casting and server-authoritative selection', () => {
+  const items = validateCafeOptions([{ name: 'Rice', price: 200, unit: ' spoon ' }])
+  assert.equal(items[0].unit, 'spoon')
+  for (const unit of [123, null, 'x'.repeat(31)]) assert.throws(() => validateCafeOptions([{ name: 'Rice', price: 200, unit }]))
+  const available = [{ id: 'rice', ...items[0] }, { id: 'pack', name: 'Takeaway pack', price: RESTAURANT_TAKEAWAY_PACK_PRICE, unit: 'pack' }]
+  const result = calculateCafeSelection(available, [{ itemId: 'rice', quantity: 3, unit: 'bowl', price: 1 }, { itemId: 'pack', quantity: 2 }], 1, 1, false)
+  assert.equal(result.selected[0].unit, 'spoon')
+  assert.equal(result.pricing.amount, 1000)
+  assert.equal(result.totalAmount, 1650)
+  assert.equal(result.pricing.restaurantPackagingFee, 0)
+  const withoutPacks = calculateCafeSelection(available, [{ itemId: 'rice', quantity: 3 }], 1, 1, false)
+  assert.equal(withoutPacks.pricing.amount, 600)
+  const saved = new Order({ cafeAvailableItems: available, cafeSelectedItems: result.selected })
+  assert.equal(saved.cafeAvailableItems?.[0].unit, 'spoon')
+  assert.equal(saved.cafeSelectedItems?.[0].unit, 'spoon')
 })

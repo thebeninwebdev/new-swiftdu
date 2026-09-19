@@ -1,4 +1,5 @@
 'use client'
+import { mergeOrderUpdate } from '@/lib/order-sync'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
@@ -83,6 +84,7 @@ interface ErrandData {
 }
 
 interface ActiveOrder {
+  updatedAt?: string
   _id: string
   taskType: string
   description: string
@@ -527,16 +529,18 @@ export default function ErrandWizardPage() {
   const fetchCurrentOrder = useCallback(async () => {
     if (fetchingActiveOrderRef.current) return
     fetchingActiveOrderRef.current = true
+    const orderAtRequest = activeOrderRef.current
 
     try {
-      const response = await fetch('/api/orders?current=true')
+      const response = await fetch('/api/orders?current=true', { cache: 'no-store' })
       if (!response.ok) throw new Error('Failed to fetch current order')
       const data = await response.json()
-      activeOrderRef.current = data
-      setActiveOrder(data)
+      if (!data && activeOrderRef.current !== orderAtRequest) return
+      const next = data ? mergeOrderUpdate<ActiveOrder>(activeOrderRef.current, data as ActiveOrder) : null
+      activeOrderRef.current = next
+      setActiveOrder(next)
     } catch {
-      activeOrderRef.current = null
-      setActiveOrder(null)
+      // A failed refresh is not evidence that the active order disappeared.
     } finally {
       fetchingActiveOrderRef.current = false
     }
@@ -552,11 +556,7 @@ export default function ErrandWizardPage() {
       return false
     }
 
-    const nextOrder = {
-      ...activeOrderRef.current,
-      ...payload,
-      _id: activeOrderRef.current._id,
-    } as ActiveOrder
+    const nextOrder = mergeOrderUpdate<ActiveOrder>(activeOrderRef.current, { ...payload, _id: activeOrderRef.current._id })
 
     activeOrderRef.current = nextOrder
     setActiveOrder(nextOrder)

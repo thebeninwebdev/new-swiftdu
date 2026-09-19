@@ -6,6 +6,8 @@ export const RESTAURANT_PERSON_FEE = 600
 export const CAFE_INQUIRY_EXTRA_FEE = 50
 export const CAFE_INQUIRY_SERVICE_FEE = RESTAURANT_PERSON_FEE + CAFE_INQUIRY_EXTRA_FEE
 export const RESTAURANT_MAX_PEOPLE = 3
+// Packaging is sold as a priced option, not an automatic surcharge.
+export const RESTAURANT_TAKEAWAY_PACK_PRICE = 200
 export const RESTAURANT_TAKEAWAY_FEE = 0
 export const PRINTING_TASK_TYPE = 'printing'
 export const PRINTING_SERVICE_FEE = 500
