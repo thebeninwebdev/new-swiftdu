@@ -6,7 +6,7 @@ import { canCustomerCancelOrder, canTaskerCancelOrder, isActiveOrderStatus } fro
 import { toOrderSocketPayload } from './socket'
 import { cafeStatusLabels } from './cafe-inquiry'
 import { CafeInquiryPanel } from '../components/cafe-inquiry'
-import { FulfillmentStatusCard } from '../app/dashboard/tasks/TasksClient'
+import { FulfillmentStatusCard, getTaskerSearchMessage } from '../app/dashboard/tasks/TasksClient'
 
 const assigned = { _id: 'order-1', userId: 'customer-1', taskerId: 'tasker-1', status: 'in_progress' as const, taskType: 'restaurant', amount: 1000, commission: 650, totalAmount: 1650, description: 'Lunch', location: 'Hostel', createdAt: '2026-09-17T10:00:00Z' }
 
@@ -22,6 +22,12 @@ test('active, paid and completed orders keep their tracking stages', () => {
   assert.equal(needsOrderPayment({ ...assigned, status: 'completed' }), false)
 })
 
+test('Swifty follows assigned and completed order states', () => {
+  const matched = renderToStaticMarkup(<FulfillmentStatusCard order={assigned} amount="1,650" statusLabel="Assigned" supportHref={null} />)
+  assert.match(matched, /\/mascot\/matched\.png/)
+  const completed = renderToStaticMarkup(<FulfillmentStatusCard order={{ ...assigned, status: 'completed' }} amount="1,650" statusLabel="Completed" supportHref={null} />)
+  assert.match(completed, /\/mascot\/success\.png/)
+})
 test('normal and cafe requests use one order-derived waiting state', () => {
   for (const isTestOrder of [false, true]) {
     const pending = { ...assigned, status: 'pending', taskerId: undefined, isTestOrder }
@@ -33,6 +39,13 @@ test('normal and cafe requests use one order-derived waiting state', () => {
   }
 })
 
+test('Swifty search phases change only at the existing elapsed-time boundaries', () => {
+  for (const [elapsed, phase] of [
+    [0, 0], [59999, 0], [60000, 1], [179999, 1],
+    [180000, 2], [299999, 2], [300000, 3], [419999, 3],
+  ] as const) assert.equal(getTaskerSearchMessage(elapsed).phase, phase)
+  assert.doesNotMatch(getTaskerSearchMessage(300000).detail, /almost there/i)
+})
 test('waiting requests expire at seven minutes, including cafe and test requests', () => {
   const pending = { ...assigned, status: 'pending', taskerId: undefined }
   const deadline = Date.parse(pending.createdAt) + TASKER_SEARCH_TIMEOUT_MS

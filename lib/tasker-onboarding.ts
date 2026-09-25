@@ -114,6 +114,39 @@ export async function issueTaskerOnboardingLink(
   const { email, name } = await getTaskerIdentity(tasker);
   if (!email) return { sent: false, reason: "missing-email" as const };
 
+  // Approval can link an existing account before this email is sent.
+  const linked = await Tasker.exists({ _id: tasker._id, accountLinkedAt: { $ne: null } });
+  if (linked) {
+    const reservation = await Tasker.updateOne({
+      _id: tasker._id,
+      $or: [
+        { onboardingEmailSentAt: { $exists: false } },
+        { onboardingEmailSentAt: { $lte: new Date(now.getTime() - TASKER_ONBOARDING_RESEND_COOLDOWN_MS) } },
+      ],
+    }, { $set: { onboardingEmailSentAt: now } });
+    if (reservation.modifiedCount !== 1) return { sent: false, reason: "cooldown" as const };
+
+    try {
+      await sendTransactionalEmail({
+        to: email,
+        subject: "Your SwiftDU Tasker account is ready",
+        react: createElement(TaskerApprovalEmail, {
+          name,
+          onboardingUrl: new URL("/tasker-dashboard", getEmailSiteUrl()).toString(),
+          expiresInHours: TASKER_ONBOARDING_TOKEN_TTL_HOURS,
+          accountLinked: true,
+        }),
+        tags: [{ name: "email_type", value: "tasker_approval" }],
+      });
+      return { sent: true, reason: "sent" as const };
+    } catch (error) {
+      await Tasker.updateOne({ _id: tasker._id, onboardingEmailSentAt: now }, {
+        $unset: { onboardingEmailSentAt: 1 },
+      });
+      throw error;
+    }
+  }
+
   const { token, tokenHash, expiresAt } = newOnboardingToken();
   const onboardingUrl = new URL("/tasker/onboarding", getEmailSiteUrl());
   onboardingUrl.searchParams.set("token", token);
@@ -217,7 +250,7 @@ export async function completeTaskerAccountLink(
       $set: {
         userId: user._id,
         accountLinkedAt: linkedAt,
-        taskerMode: "training",
+        taskerMode: tasker.taskerMode || "training",
       },
     }
   );

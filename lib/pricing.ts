@@ -4,6 +4,7 @@ export const WATER_BAG_FEE = 450
 export const WATER_PLATFORM_FEE_RATE = 0.24
 export const RESTAURANT_PERSON_FEE = 600
 export const CAFE_INQUIRY_EXTRA_FEE = 50
+export const SHOPPING_DISTANCE_FEE = 200
 export const CAFE_INQUIRY_SERVICE_FEE = RESTAURANT_PERSON_FEE + CAFE_INQUIRY_EXTRA_FEE
 export const RESTAURANT_MAX_PEOPLE = 3
 // Packaging is sold as a priced option, not an automatic surcharge.
@@ -115,6 +116,14 @@ function roundNaira(value: number) {
 
 export function descriptionMentionsWater(description: string) {
   return WATER_DESCRIPTION_PATTERN.test(description)
+}
+
+export function getShoppingDistanceFee(taskType: string, store?: string) {
+  // Keep the existing Mummy V store value compatible with saved orders.
+  const normalizedStore = store?.trim().toLowerCase()
+  return taskType === 'shopping' && ['sarah', 'muuy v', 'mummy v'].includes(normalizedStore || '')
+    ? SHOPPING_DISTANCE_FEE
+    : 0
 }
 
 export function getTieredServiceFee(amount: number) {
@@ -313,7 +322,7 @@ export function calculateOrderPricing(input: {
   }
 
   if (input.taskType === 'shopping') {
-    const serviceFee = getTieredServiceFee(amount)
+    const serviceFee = getTieredServiceFee(amount) + getShoppingDistanceFee(input.taskType, input.store)
 
     return {
       amount,

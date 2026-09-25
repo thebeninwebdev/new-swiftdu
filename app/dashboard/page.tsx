@@ -3,6 +3,7 @@ import { mergeOrderUpdate } from '@/lib/order-sync'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   ArrowRight,
@@ -41,8 +42,10 @@ import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { authClient } from '@/lib/auth-client'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { useIdleEffect } from '@/hooks/use-idle-effect'
+import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 import {
   calculateOrderPricing,
+  getShoppingDistanceFee,
   descriptionMentionsWater,
   PHOTOCOPY_PRICE_PER_PAGE,
   PRINTING_PRICE_PER_PAGE,
@@ -336,6 +339,7 @@ function TypeTypingEffect({
 export default function ErrandWizardPage() {
   const router = useRouter()
   const { data: session } = authClient.useSession()
+  const canApplyAsTasker = useTaskerEligibility()
   const [step, setStep] = useState(1)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -796,6 +800,7 @@ export default function ErrandWizardPage() {
     printingNeedsEditing: formData.printingNeedsEditing === 'yes',
     cafeInquiry: isCafeInquiry,
   })
+  const shoppingDistanceFee = getShoppingDistanceFee(taskType, formData.store)
   const hasAvailableServiceFeeDiscount = Boolean(
     serviceFeeDiscount?.hasAvailableDiscount && pricing.serviceFee > 0
   )
@@ -838,7 +843,7 @@ export default function ErrandWizardPage() {
   const packagingStep = -1
   const deliveryStep = 3
   const reviewStep = 4
-  const stepTitles = ['Choose Task', 'Details', 'Delivery', 'Review']
+  const stepTitles = ['Book a Task', 'Details', 'Delivery', 'Review']
   const stepIcons = [ShoppingBag, FileText, MapPin, CreditCard]
   const packagingCopy =
     packagingLanguage === 'english'
@@ -1394,6 +1399,13 @@ if (stepNumber === 2) {
     </div>
   )
 
+  const renderShoppingDistanceNotice = () => shoppingDistanceFee > 0 ? (
+    <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">
+      This store has an extra {formatNaira(shoppingDistanceFee)} distance fee, included in the service fee and total.
+      {hasAvailableServiceFeeDiscount ? ' Your service fee discount also waives this distance fee.' : ''}
+    </p>
+  ) : null
+
   const renderStoreSelect = () =>
     formData.taskType &&
     formData.taskType !== 'copy_notes' &&
@@ -1417,6 +1429,7 @@ if (stepNumber === 2) {
           ))}
         </select>
         {errors.store ? <p className="mt-2 text-sm text-red-500">{errors.store}</p> : null}
+        {renderShoppingDistanceNotice()}
       </div>
     ) : null
 
@@ -1923,7 +1936,7 @@ if (stepNumber === 2) {
           <span>{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span>
         </div>
         <div className="mt-2 flex justify-between text-xs text-slate-500">
-          <span>Service fee</span>
+          <span>Service fee{shoppingDistanceFee > 0 ? ` (includes ${formatNaira(shoppingDistanceFee)} distance fee)` : ''}</span>
           {renderServiceFeeAmount('font-medium')}
         </div>
         <div className="mt-3 flex items-end justify-between">
@@ -2011,12 +2024,13 @@ if (stepNumber === 2) {
           <span className="w-28" aria-hidden="true" />
         </header>
 
-        <div className="p-8 sm:p-10">
-          <div className="mb-8 flex items-center justify-center rounded-3xl bg-linear-to-r from-[#f7f5ff] to-[#f4f7ff] px-7 py-5 dark:from-indigo-950/30 dark:to-slate-900">
+        <div className={`p-8 sm:p-10 ${step === 1 ? 'lg:pt-5' : ''}`}>
+          <div className={`${step === 1 ? 'mb-6 pt-5 pb-2' : 'mb-8 py-5'} flex items-center justify-center rounded-3xl bg-linear-to-r from-[#f7f5ff] to-[#f4f7ff] px-7 dark:from-indigo-950/30 dark:to-slate-900`}>
             <OrderMascot
               mood={wizardMood}
               interaction={mascotInteraction}
-              size={step === 4 ? 'sm' : 'md'}
+              size={step === 1 ? 'booking' : step === 4 ? 'sm' : 'md'}
+              className={step === 1 ? 'w-fit max-w-full' : undefined}
               message={formData.taskType === 'restaurant' && !isSubmitting && !submissionFailed ? isCafeInquiry ? (formData.store ? 'Got it. We’ll check what they have.' : 'Not sure what’s available? I can get a Tasker to check for you.') : 'What are we getting?' : wizardMessage}
             />
           </div>
@@ -2042,13 +2056,13 @@ if (stepNumber === 2) {
 
   const MobileErrandWizard = () => (
     <section className="lg:hidden" onClick={dismissNoticeOnWizardButtonClick}>
-      <div className="min-h-screen bg-transparent px-3 pb-6 pt-4 min-[390px]:px-4">
+      <div className="min-h-screen bg-transparent px-3 pb-6 min-[390px]:px-4">
         <div className="mx-auto max-w-md">
-          <div className="relative mb-5 flex items-center justify-center">
+          <div className={`relative ${step === 1 ? 'mb-1' : 'mb-5'} flex items-center justify-center`}>
             <div className="text-center"><p className="mb-2 text-xs font-black text-slate-900 dark:text-white">{stepTitles[step - 1]}</p><OrderFlowProgress step={step} /></div>
             <span className="absolute right-0 text-xs font-bold text-slate-400">{step}/4</span>
           </div>
-          <OrderMascot mood={wizardMood} interaction={mascotInteraction} size={step === 4 ? 'sm' : 'md'} message={formData.taskType === 'restaurant' && !isSubmitting && !submissionFailed ? isCafeInquiry ? (formData.store ? 'Got it. We’ll check what they have.' : 'Not sure what’s available? I can get a Tasker to check for you.') : 'What are we getting?' : wizardMessage} compactSpeech className="mb-6" />
+          <OrderMascot mood={wizardMood} interaction={mascotInteraction} size={step === 1 ? 'booking' : step === 4 ? 'md' : 'lg'} message={formData.taskType === 'restaurant' && !isSubmitting && !submissionFailed ? isCafeInquiry ? (formData.store ? 'Got it. We’ll check what they have.' : 'Not sure what’s available? I can get a Tasker to check for you.') : 'What are we getting?' : wizardMessage} compactSpeech className={step === 1 ? 'mx-auto mb-6 w-fit max-w-full' : 'mb-6'} />
           <AnimatePresence mode="wait">
           <motion.div key={step} initial={{ opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -18 }} transition={{ duration: 0.22 }}>
           {step === 1 ? (
@@ -2135,6 +2149,19 @@ if (stepNumber === 2) {
 
         {DesktopErrandWizard()}
         {MobileErrandWizard()}
+
+        {step === 1 && canApplyAsTasker && (
+          <section aria-labelledby="tasker-application-heading" className="mt-6 flex flex-col gap-4 rounded-2xl border border-indigo-200 bg-white/80 p-5 dark:border-indigo-900 dark:bg-slate-900/80 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 id="tasker-application-heading" className="text-lg font-bold text-slate-950 dark:text-white">Earn by helping on campus</h2>
+              <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">Become a SwiftDU tasker. Tell us about yourself and when you can work, then submit your application for review.</p>
+            </div>
+            <Link href="/tasker-signup/signup" className="inline-flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600">
+              Apply to be a tasker
+              <ArrowRight aria-hidden="true" className="h-4 w-4" />
+            </Link>
+          </section>
+        )}
 
         {/* <div className="mx-auto max-w-4xl">
           <ProfileCompletionCard />
@@ -2320,6 +2347,7 @@ if (stepNumber === 2) {
                         {selectedStores.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
                       </select>
                       {errors.store ? <p className="mt-2 text-sm text-red-500">{errors.store}</p> : null}
+                      {renderShoppingDistanceNotice()}
                     </div>
                   ) : null}
                   {formData.taskType === 'copy_notes' ? (
@@ -3329,7 +3357,7 @@ if (stepNumber === 2) {
                       ) : null}
                       <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : formData.taskType === INDOMIE_TASK_TYPE ? 'Indomie amount' : formData.taskType === DRY_CLEANING_TASK_TYPE ? 'Dry cleaning budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span></div>
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between text-sm"><span className="text-slate-500">Packaging</span><span className="font-medium">{restaurantPackagingNote}</span></div> : null}
-                      <div className="flex justify-between gap-4 text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}</span>{renderServiceFeeAmount('font-medium')}</div>
+                      <div className="flex justify-between gap-4 text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}{shoppingDistanceFee > 0 ? ` (includes ${formatNaira(shoppingDistanceFee)} distance fee)` : ''}</span>{renderServiceFeeAmount('font-medium')}</div>
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(displayedTotalAmount)}</span></div>
                     </div>
                   </div>

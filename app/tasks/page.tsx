@@ -142,10 +142,7 @@ function DashboardShell({ children }: { children: ReactNode }) {
       }
     >
       <CompleteProfileGate>
-        <div className="min-h-screen overflow-x-hidden lg:flex">
-          <DashboardMenu pageTitle="My Tasks" />
-          {children}
-        </div>
+        <DashboardMenu pageTitle="My Tasks">{children}</DashboardMenu>
       </CompleteProfileGate>
     </Suspense>
   )
@@ -281,7 +278,7 @@ export default function TasksPage() {
   if (loading) {
     return (
       <DashboardShell>
-        <main className="min-w-0 flex-1 bg-[#f6f9fc] px-4 py-10 pt-24 dark:bg-slate-950 lg:pt-10">
+        <div className="min-w-0 flex-1 bg-[#f6f9fc] px-4 py-10 pt-4 dark:bg-slate-950 lg:pt-10">
           <div className="mx-auto flex min-h-[60vh] max-w-5xl items-center justify-center">
             <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
               <Loader2 className="h-5 w-5 animate-spin text-sky-600" />
@@ -290,14 +287,14 @@ export default function TasksPage() {
               </p>
             </div>
           </div>
-        </main>
+        </div>
       </DashboardShell>
     )
   }
 
   return (
     <DashboardShell>
-      <main className="min-w-0 flex-1 bg-[#f6f9fc] px-4 py-6 pt-24 dark:bg-slate-950 sm:px-6 lg:px-8 lg:pt-8">
+      <div className="min-w-0 flex-1 bg-[#f6f9fc] px-4 py-6 pt-4 dark:bg-slate-950 sm:px-6 lg:px-8 lg:pt-8">
         <div className="mx-auto max-w-5xl">
           <header className="flex flex-col gap-4 border-b border-slate-200 pb-5 dark:border-slate-800 sm:flex-row sm:items-end sm:justify-between">
             <div>
@@ -376,7 +373,7 @@ export default function TasksPage() {
           )}
         </section>
         </div>
-      </main>
+      </div>
     </DashboardShell>
   )
 }

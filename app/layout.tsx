@@ -1,9 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import { ChromeVisibility } from "@/components/ChromeVisibility";
 import { DeferredAppScripts } from "@/components/DeferredAppScripts";
-import { Footer } from "@/components/Footer";
-import { Navbar } from "@/components/Navbar";
+import { PublicNavigationShell } from "@/components/public-navigation-shell";
 import { adsenseAccount, siteUrl } from "@/lib/site";
 import { Manrope } from "next/font/google";
 
@@ -95,13 +93,7 @@ export default function RootLayout({
       <body
         className={`${manrope.className} antialiased tracking-wide`}
       >
-        <ChromeVisibility>
-          <Navbar />
-        </ChromeVisibility>
-        {children}
-        <ChromeVisibility>
-          <Footer />
-        </ChromeVisibility>
+        <PublicNavigationShell>{children}</PublicNavigationShell>
         <DeferredAppScripts />
       </body>
     </html>

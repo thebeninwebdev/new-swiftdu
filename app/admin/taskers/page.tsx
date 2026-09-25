@@ -111,10 +111,13 @@ export default function AdminTaskersPage() {
       } else if (action === 'approve' && data.onboardingEmailSent) {
         toast.success('Tasker approved and onboarding email sent')
       }
+      if (action === 'approve' && data.onboardingEmailReason === 'cooldown') {
+        toast.info('An approval email was sent recently. Wait two minutes before resending.')
+      }
 
       if (!(action === 'approve' && (data.onboardingEmailError || data.onboardingEmailSent))) toast.success(
         action === 'approve'
-          ? 'Tasker approved'
+          ? data.accountLinked ? 'User account updated to tasker' : 'Tasker approved'
           : action === 'reject'
             ? 'Tasker rejected'
             : action === 'suspend'
@@ -477,6 +480,15 @@ export default function AdminTaskersPage() {
                   {/* Re-action for already reviewed */}
                   {(tasker.isVerified || tasker.isRejected) && (
                     <div style={s.actions}>
+                      {tasker.isVerified && (
+                        <button
+                          style={{ ...s.approveBtn, ...(isActing ? s.btnDisabled : {}) }}
+                          disabled={!!isActing}
+                          onClick={() => handleAction(tasker._id, 'approve')}
+                        >
+                          {actionLoading === `${tasker._id}-approve` ? 'Sending...' : 'Sync Account & Resend Email'}
+                        </button>
+                      )}
                       {tasker.isVerified && (
                         <button
                           style={{

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -266,7 +267,7 @@ export default function TaskerSignupPage() {
       <ApplicationSuccess
         email={formData.email.trim().toLowerCase()}
         confirmationEmailSent={confirmationEmailSent}
-        onHome={() => router.push('/')}
+        onHome={() => router.push(user ? '/dashboard' : '/')}
       />
     )
   }
@@ -275,6 +276,11 @@ export default function TaskerSignupPage() {
     <main className="min-h-screen overflow-x-hidden bg-[#f5f4f0] px-3 py-6 sm:px-5 sm:py-10">
       <div className="mx-auto w-full max-w-lg">
         <header className="mb-5 px-1">
+          {user && (
+            <Link href="/dashboard" className="mb-4 inline-flex min-h-11 items-center text-sm font-semibold text-blue-700 underline-offset-4 hover:underline">
+              Back to dashboard
+            </Link>
+          )}
           <p className="text-xs font-bold uppercase tracking-[0.16em] text-blue-700">
             Join the SwiftDU community
           </p>

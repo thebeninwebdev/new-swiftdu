@@ -2,7 +2,7 @@ import { Suspense } from "react"
 // app/tasker-dashboard/layout.tsx
 import TaskerSidebar from "@/components/tasker-sidebar"
 import { PushSubscriptionManager } from "@/components/PushSubscriptionManager"
-
+import TaskerBottomNav from "@/components/BottomNavigation"
 export default function RootLayout({
   children,
 }: {
@@ -17,10 +17,12 @@ export default function RootLayout({
       }
     >
         <div className="flex min-h-screen bg-background">
-          <TaskerSidebar />
-          <main className="min-w-0 flex-1 overflow-x-hidden px-3 pb-24 pt-20 sm:px-4 md:px-6 lg:px-8 lg:pb-4 lg:pt-4">
-            {children}
-          </main>
+          <TaskerSidebar/>
+            <main className="min-w-0 flex-1 overflow-x-hidden px-3 pb-32 pt-2 sm:px-4 md:px-6 lg:px-8 lg:pb-4 lg:pt-4">
+              {children}
+              </main>
+              
+              <TaskerBottomNav />
           <PushSubscriptionManager />
         </div>
     </Suspense>

@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
-const HIDDEN_CHROME_PREFIXES = [
+export const HIDDEN_CHROME_PREFIXES = [
   "/suspended",
   "/admin",
   "/cfo-dashboard",
@@ -23,13 +23,15 @@ const HIDDEN_CHROME_PREFIXES = [
 
 export function ChromeVisibility({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const hidden = HIDDEN_CHROME_PREFIXES.some((prefix) =>
-    pathname.startsWith(prefix)
-  );
+  const hidden = isChromeHiddenPath(pathname);
 
   if (hidden) {
     return null;
   }
 
   return children;
+}
+
+export function isChromeHiddenPath(pathname: string) {
+  return HIDDEN_CHROME_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 }

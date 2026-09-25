@@ -1,10 +1,11 @@
 'use client'
 
-import {useState, useEffect} from 'react'
+import {useState, useEffect, type ReactNode} from 'react'
 import {useRouter, usePathname} from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import {ChevronLeft, LogOut, PlusCircle, ListTodo, User, Bell, UserPlus, Star, BriefcaseBusiness, Shirt, Menu, X} from 'lucide-react'
+import {ChevronLeft, LogOut, PlusCircle, ListTodo, User, Bell, Star, BriefcaseBusiness, Menu, X} from 'lucide-react'
 import { useIdleEffect } from '@/hooks/use-idle-effect'
+import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 
 
 // Navigation items configuration
@@ -33,6 +34,12 @@ const navigationItems = [
     href: '/dashboard/reviews',
     icon: Star,
     description: 'Rate completed tasks'
+  },
+  {
+    label: 'Become a Tasker',
+    href: '/tasker-signup/signup',
+    icon: BriefcaseBusiness,
+    description: 'Apply to earn on campus',
   },
   {
     label: 'Account',
@@ -64,10 +71,12 @@ interface HeaderProfile {
 
 interface DashboardMenuProps {
   pageTitle?: string
+  children: ReactNode
 }
 
 function getDashboardPageTitle(pathname: string, pageTitle?: string) {
   if (pageTitle) return pageTitle
+  if (pathname === '/dashboard') return ''
 
   const navigationItem = navigationItems.find((item) => item.href === pathname)
   if (navigationItem) return navigationItem.label
@@ -81,7 +90,7 @@ function getDashboardPageTitle(pathname: string, pageTitle?: string) {
   return 'Dashboard'
 }
 
-export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
+export default function DashboardMenu({ pageTitle, children }: DashboardMenuProps) {
   const { data: session } = authClient.useSession()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [hasNotification, setHasNotification] = useState(false)
@@ -95,25 +104,14 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
   const router = useRouter()
   const pathname = usePathname()
   const sessionUserId = session?.user?.id
+  const canApplyAsTasker = useTaskerEligibility()
+  const visibleNavigationItems = navigationItems.filter(
+    (item) => item.href !== '/tasker-signup/signup' || canApplyAsTasker
+  )
   const mobilePageTitle = getDashboardPageTitle(pathname, pageTitle)
   const userName = headerProfile?.name || session?.user?.name || 'SwiftDU user'
   const userEmail = headerProfile?.email || session?.user?.email || ''
   const userEmailName = userEmail.split('@')[0] || ''
-  const isTasker = session?.user.role === 'tasker'
-  const taskerAction = isTasker
-    ? {
-        href: '/tasker-dashboard',
-        title: 'Open Tasker Dashboard',
-        description: 'Switch to your tasker workspace and manage errands.',
-        mobileDescription: 'Go to your tasker workspace',
-      }
-    : {
-        href: '/tasker-signup',
-        title: 'Become a Tasker',
-        description: 'Apply to earn from errands while keeping your user account.',
-        mobileDescription: 'Open the tasker signup page',
-      }
-
   // Notification check: any active order that needs attention
   useIdleEffect(() => {
     async function fetchNotifications() {
@@ -210,9 +208,18 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
 
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setIsMobileMenuOpen(false)
+    }
+    const desktop = window.matchMedia('(min-width: 1024px)')
+    const onDesktop = () => { if (desktop.matches) setIsMobileMenuOpen(false) }
+    window.addEventListener('keydown', onKeyDown)
+    desktop.addEventListener('change', onDesktop)
 
     return () => {
       document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', onKeyDown)
+      desktop.removeEventListener('change', onDesktop)
     }
   }, [isMobileMenuOpen])
 
@@ -323,7 +330,7 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
   }
 
   return (
-    <>
+    <div className="relative isolate min-h-dvh overflow-x-clip bg-[#e9e7fb] dark:bg-[#161329] lg:flex lg:bg-transparent">
       {/* Desktop Sidebar Navigation */}
       <aside className="fixed left-0 top-0 z-40 hidden h-screen w-72 shrink-0 flex-col border-r border-slate-200 bg-white/80 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/90 lg:flex">
         {/* Logo Area */}
@@ -341,7 +348,7 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
 
         {/* Navigation Links */}
         <nav className="flex-1 p-4 space-y-2">
-          {navigationItems.map((item) => {
+          {visibleNavigationItems.map((item) => {
             const isActive = pathname === item.href
             const Icon = item.icon
             const isNotification = item.notification
@@ -434,43 +441,6 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
           ) : null}
         </nav>
 
-        <div className="px-4 pb-4">
-          <button
-            onClick={() => handleNavigation(taskerAction.href)}
-            className="w-full rounded-2xl bg-linear-to-r from-emerald-500 to-teal-500 p-4 text-left text-white shadow-lg shadow-emerald-500/20 transition-transform duration-300 hover:scale-[1.01]"
-          >
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 rounded-xl bg-white/20 p-2">
-                <UserPlus className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold">{taskerAction.title}</p>
-                <p className="mt-1 text-xs text-emerald-50">
-                  {taskerAction.description}
-                </p>
-              </div>
-            </div>
-          </button>
-
-          <button
-            onClick={() => handleNavigation('/dry-cleaner-signup/signup')}
-            className="mt-3 w-full rounded-2xl bg-linear-to-r from-cyan-500 to-blue-500 p-4 text-left text-white shadow-lg shadow-cyan-500/20 transition-transform duration-300 hover:scale-[1.01]"
-          >
-            <div className="flex items-start gap-3">
-              <div className="mt-0.5 rounded-xl bg-white/20 p-2">
-                <Shirt className="h-5 w-5" />
-              </div>
-              <div>
-                <p className="text-sm font-semibold">Sign up as Dry Cleaner</p>
-                <p className="mt-1 text-xs text-cyan-50">
-                  Register your laundry business for approval.
-                </p>
-              </div>
-            </div>
-          </button>
-
-        </div>
-
         {/* User Section */}
         <div className="p-4 border-t border-slate-200 dark:border-slate-800">
           <button
@@ -483,9 +453,8 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
         </div>
       </aside>
       <div className="hidden w-72 shrink-0 lg:block" aria-hidden="true" />
-    
-          {/* Mobile Header */}
-          <div className="pointer-events-none fixed inset-x-0 top-0 z-50 h-20 bg-transparent lg:hidden">
+          {/* Mobile header stays at the top while dashboard content scrolls. */}
+          <div className={`pointer-events-none fixed inset-x-0 top-0 z-50 h-20 bg-transparent transition-transform duration-300 ease-out motion-reduce:transition-none lg:hidden ${isMobileMenuOpen ? 'origin-top-left translate-x-[min(76vw,19rem)] scale-[0.94]' : ''}`}>
             <div className="absolute left-4 top-4 flex items-center gap-2">
               <button
                 type="button"
@@ -497,6 +466,7 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
                 }`}
                 aria-label={pathname === '/dashboard' && wizardCanGoBack ? 'Go back' : isMobileMenuOpen ? 'Close menu' : 'Open menu'}
                 aria-expanded={isMobileMenuOpen}
+                aria-controls="mobile-dashboard-menu"
               >
                 {pathname === '/dashboard' && wizardCanGoBack ? (
                   <ChevronLeft className="h-6 w-6 stroke-[3] transition-transform duration-300" />
@@ -524,14 +494,14 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
               {mobilePageTitle}
             </p>
           </div>
-    
-          {/* Mobile Menu Overlay */}
-          {isMobileMenuOpen && (
-            <div className="fixed inset-0 z-70 bg-slate-950/50 backdrop-blur-sm lg:hidden" onClick={() => setIsMobileMenuOpen(false)}>
-              <div 
-                className="absolute bottom-0 left-0 top-0 flex w-72 max-w-[85vw] flex-col bg-white shadow-2xl animate-in slide-in-from-left duration-300 dark:bg-slate-900 overflow-y-auto"
-                onClick={e => e.stopPropagation()}
-              >
+      <main className={`dashboard-content relative z-10 min-w-0 flex-1 bg-linear-to-br from-[#f7f9fc] via-white to-[#eef7ff] ${pathname === '/dashboard' ? 'pt-16' : 'pt-20'} transition-transform duration-300 ease-out motion-reduce:transition-none dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 lg:bg-transparent lg:pt-0 lg:transition-none ${isMobileMenuOpen ? 'min-h-[calc(100dvh/0.94)] origin-top-left translate-x-[min(76vw,19rem)] scale-[0.94] rounded-[2rem] shadow-[0_20px_60px_rgba(31,27,75,0.25)] lg:min-h-dvh lg:translate-x-0 lg:scale-100 lg:rounded-none lg:shadow-none' : 'min-h-dvh'}`}>
+          <div className="contents" inert={isMobileMenuOpen}>{children}</div>
+          {isMobileMenuOpen ? <button type="button" aria-label="Close navigation menu" onClick={() => setIsMobileMenuOpen(false)} className="absolute inset-0 z-40 cursor-pointer lg:hidden" /> : null}
+      </main>
+
+          {/* Mobile navigation sits beneath the dashboard page. */}
+          <div id="mobile-dashboard-menu" aria-hidden={!isMobileMenuOpen} inert={!isMobileMenuOpen} className={`fixed left-0 top-0 z-0 h-dvh w-[min(76vw,19rem)] overflow-x-hidden overflow-y-auto overscroll-contain bg-[#e9e7fb] transition-opacity duration-300 motion-reduce:transition-none dark:bg-[#161329] lg:hidden ${isMobileMenuOpen ? 'visible opacity-100' : 'invisible pointer-events-none opacity-0'}`}>
+              <div className="flex min-h-full flex-col">
                 <div className="p-5 mt-5">
                   <div className="flex flex-col items-left gap-3">
                     <div className="min-w-0">
@@ -543,7 +513,7 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
                   </div>
                 </div>
                 <nav className="flex-1 space-y-2 p-4 pb-6">
-                  {navigationItems.map((item) => {
+                  {visibleNavigationItems.map((item) => {
                     const isActive = pathname === item.href
                     const Icon = item.icon
                     
@@ -615,40 +585,6 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
                     </>
                   ) : null}
 
-                  <div className="pt-2">
-                    <button
-                      onClick={() => handleNavigation(taskerAction.href)}
-                      className="w-full rounded-xl bg-linear-to-r from-emerald-500 to-teal-500 px-4 py-3 text-left text-white shadow-lg shadow-emerald-500/20 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="rounded-lg bg-white/20 p-2">
-                          <UserPlus className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="font-medium">{taskerAction.title}</p>
-                          <p className="text-xs text-emerald-50">{taskerAction.mobileDescription}</p>
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      onClick={() => handleNavigation('/dry-cleaner-signup/signup')}
-                      className="w-full rounded-xl bg-linear-to-r from-cyan-500 to-blue-500 px-4 py-3 text-left text-white shadow-lg shadow-cyan-500/20 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="rounded-lg bg-white/20 p-2">
-                          <Shirt className="w-5 h-5" />
-                        </div>
-                        <div>
-                          <p className="font-medium">Sign up as Dry Cleaner</p>
-                          <p className="text-xs text-cyan-50">Register your laundry business</p>
-                        </div>
-                      </div>
-                    </button>
-                  </div>
-
                   <div className="pt-4 mt-4 border-t border-slate-200 dark:border-slate-800">
                     <button 
                       onClick={signOut}
@@ -661,6 +597,6 @@ export default function DashboardMenu({ pageTitle }: DashboardMenuProps) {
                 </nav>
               </div>
             </div>
-          )}</>
+    </div>
   )
 }

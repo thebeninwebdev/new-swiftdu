@@ -332,7 +332,6 @@ export default function TaskerDashboardPage() {
     (initial?: boolean, options?: { silent?: boolean }) => Promise<void>
   >(async () => {})
 
-  const taskerId = session?.user?.taskerId ? String(session.user.taskerId) : null
   const taskerName = session?.user?.name || 'Anonymous'
 
   useVisibleInterval(() => setNowMs(Date.now()), acceptedErrands.length > 0 ? 1000 : null)
@@ -360,29 +359,21 @@ export default function TaskerDashboardPage() {
       return
     }
 
-    if (!taskerId) {
-      setTaskerProfile(null)
-      setLoadingTaskerProfile(false)
-      setErrands([])
-      setAcceptedErrands([])
-      setError('Tasker profile not found for this account.')
-      return
-    }
-
     let cancelled = false
 
     const loadTaskerProfile = async () => {
       try {
         setLoadingTaskerProfile(true)
-        const taskerRes = await fetchWithSocketPause(`/api/taskers?taskerId=${taskerId}&basic=true`, {
+        const taskerRes = await fetchWithSocketPause('/api/taskers/me', {
           cache: 'no-store',
         })
 
+        const payload = await taskerRes.json()
         if (!taskerRes.ok) {
-          throw new Error('Failed to load your tasker profile.')
+          throw new Error(payload.error || 'Failed to load your tasker profile.')
         }
 
-        const { tasker }: { tasker: TaskerData } = await taskerRes.json()
+        const { tasker }: { tasker: TaskerData } = payload
 
         if (!cancelled) {
           setTaskerProfile(tasker)
@@ -400,7 +391,7 @@ export default function TaskerDashboardPage() {
           setTaskerProfile(null)
           setErrands([])
           setAcceptedErrands([])
-          setError('Failed to load your tasker profile.')
+          setError(profileError instanceof Error ? profileError.message : 'Failed to load your tasker profile.')
         }
       } finally {
         if (!cancelled) {
@@ -414,7 +405,7 @@ export default function TaskerDashboardPage() {
     return () => {
       cancelled = true
     }
-  }, [router, session?.user?.id, sessionPending, taskerId])
+  }, [router, session?.user?.id, sessionPending])
 
   const loadDashboard = useCallback(
     async (initial = false, options?: { silent?: boolean }) => {
@@ -426,15 +417,6 @@ export default function TaskerDashboardPage() {
 
       if (!session?.user?.id) {
         router.push('/auth')
-        return
-      }
-
-      if (!taskerId) {
-        setErrands([])
-        setAcceptedErrands([])
-        setError('Tasker profile not found for this account.')
-        setLoading(false)
-        setRefreshing(false)
         return
       }
 
@@ -552,7 +534,6 @@ export default function TaskerDashboardPage() {
       router,
       session?.user?.id,
       sessionPending,
-      taskerId,
       taskerProfile,
       taskTypeFilter,
       triggerNewTaskAlert,

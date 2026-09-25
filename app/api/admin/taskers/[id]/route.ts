@@ -4,7 +4,9 @@ import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
 import { normalizeExcoRole } from '@/lib/exco-constants'
 import Tasker from '@/models/tasker'
-import { issueTaskerOnboardingLink } from '@/lib/tasker-onboarding'
+import { completeTaskerAccountLink, issueTaskerOnboardingLink } from '@/lib/tasker-onboarding'
+import { normalizeEmail } from '@/lib/email-normalization'
+import { User } from '@/models/user'
 
 export async function PATCH(
   req: NextRequest,
@@ -93,7 +95,7 @@ export async function PATCH(
     if (action === 'approve') {
       tasker.isVerified = true
       tasker.isRejected = false
-      tasker.taskerMode = 'training'
+      if (!wasApproved) tasker.taskerMode = 'training'
     } else if (action === 'reject') {
       tasker.isVerified = false
       tasker.isRejected = true
@@ -111,33 +113,43 @@ export async function PATCH(
 
     await tasker.save()
 
+    let accountLinked = false
+    if (action === 'approve') {
+      const email = normalizeEmail(tasker.email)
+      const existingUser = email ? await User.findOne({ email }) : null
+      if (existingUser && existingUser.role !== 'admin') {
+        try {
+          await completeTaskerAccountLink(tasker, existingUser.id)
+          accountLinked = true
+        } catch (linkError) {
+          console.error('[Tasker approval account link]', linkError)
+          return NextResponse.json({
+            error: 'Tasker approved, but the account could not be linked. Check whether this user or application is already linked to another tasker account, then sync again.',
+          }, { status: 409 })
+        }
+      }
+    }
+
     let onboardingEmailSent = false
     let onboardingEmailError = false
-    if (action === 'approve' && !tasker.accountLinkedAt) {
-      const hasActiveToken = Boolean(
-        wasApproved &&
-          tasker.onboardingTokenHash &&
-          !tasker.onboardingTokenUsedAt &&
-          tasker.onboardingTokenExpiresAt &&
-          tasker.onboardingTokenExpiresAt.getTime() > Date.now()
-      )
-
-      if (!hasActiveToken) {
+    let onboardingEmailReason: string | undefined
+    if (action === 'approve') {
         try {
           const delivery = await issueTaskerOnboardingLink(tasker)
           onboardingEmailSent = delivery.sent
+          onboardingEmailReason = delivery.reason
+          onboardingEmailError = delivery.reason === 'missing-email'
         } catch (emailError) {
           onboardingEmailError = true
           console.error('[PATCH /api/admin/taskers/[id]] approval email failed', emailError)
         }
-      }
     }
 
     return NextResponse.json(
       {
         message:
           action === 'approve'
-            ? 'Tasker approved successfully.'
+            ? accountLinked ? 'Tasker approved and user account updated to tasker.' : 'Tasker approved successfully.'
             : action === 'reject'
               ? 'Tasker rejected successfully.'
               : nextBankDetails
@@ -153,6 +165,8 @@ export async function PATCH(
         },
         onboardingEmailSent,
         onboardingEmailError,
+        onboardingEmailReason,
+        accountLinked,
       },
       { status: 200 }
     )

@@ -4,26 +4,29 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ArrowUpRight, House, Info, Mail } from "lucide-react";
 
 const navLinks = [
   {
     label: "Home",
     href: "/",
+    icon: House,
   },
   {
     label: "About us",
     href: "/about-us",
+    icon: Info,
   },
   {
     label: "Contact us",
     href: "/contact-us",
+    icon: Mail,
   },
 ];
 
-export const Navbar = () => {
+export const Navbar = ({ isOpen, onToggle, onClose }: { isOpen: boolean; onToggle: () => void; onClose: () => void }) => {
   const pathname = usePathname();
 
-  const [isOpen, setIsOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -53,25 +56,10 @@ export const Navbar = () => {
     };
   }, []);
 
-  // Close mobile nav when route changes
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => setIsOpen(false));
-    return () => cancelAnimationFrame(frame);
-  }, [pathname]);
-
-  // Prevent page scrolling while mobile menu is open
-  useEffect(() => {
-    document.body.style.overflow = isOpen ? "hidden" : "";
-
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [isOpen]);
-
   return (
    <header
   className={`
-    fixed inset-x-0 top-0 z-50
+    sticky inset-x-0 top-0 z-50 -mb-[84px] lg:fixed lg:mb-0
     ${
       scrolled
         ? "bg-white/95 shadow-[0_1px_20px_rgba(0,0,0,0.04)] backdrop-blur-xl"
@@ -100,7 +88,7 @@ export const Navbar = () => {
         ========================================= */}
         <Link
           href="/"
-          onClick={() => setIsOpen(false)}
+          onClick={onClose}
           className="
             group relative z-50 shrink-0
             transition-transform duration-500
@@ -311,8 +299,9 @@ export const Navbar = () => {
         ========================================= */}
         <button
           type="button"
-          onClick={() => setIsOpen((current) => !current)}
+          onClick={onToggle}
           aria-expanded={isOpen}
+          aria-controls="public-mobile-menu"
           aria-label={isOpen ? "Close navigation" : "Open navigation"}
           className="
             relative z-50
@@ -362,173 +351,50 @@ export const Navbar = () => {
         </button>
       </nav>
 
-      {/* ========================================
-          Mobile menu
-      ========================================= */}
-<div
-  aria-hidden={!isOpen}
-  inert={!isOpen ? true : undefined}
-  className={`
-    fixed inset-x-0 bottom-0 top-[84px]
-    z-[999]
-    bg-white
-    lg:hidden
-
-    transition-[opacity,transform] ease-out
-
-    ${
-      isOpen
-        ? "translate-y-0 opacity-100 pointer-events-auto duration-300"
-        : "translate-y-2 opacity-0 pointer-events-none duration-200"
-    }
-  `}
->
-        <div
-          className="
-            mx-auto flex h-full max-w-7xl
-            flex-col
-            px-5 pb-8 pt-8
-            sm:px-7
-          "
-        >
-          {/* Mobile navigation links */}
-          <div className="flex flex-col">
-            {navLinks.map((link, index) => {
-              const active =
-                link.href === "/"
-                  ? pathname === "/"
-                  : pathname.startsWith(link.href);
-
-              return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setIsOpen(false)}
-                  style={{
-                    transitionDelay: isOpen
-                      ? `${100 + index * 70}ms`
-                      : "0ms",
-                  }}
-                  className={`
-                    group
-                    flex items-center justify-between
-                    border-b border-black/[0.08]
-                    py-5
-
-                    text-[clamp(2rem,8vw,3.2rem)]
-                    font-medium
-                    leading-none
-                    tracking-[-0.045em]
-                    text-[#171717]
-
-                    transition-all duration-700
-                    ease-[cubic-bezier(0.22,1,0.36,1)]
-
-                    ${
-                      isOpen
-                        ? "translate-y-0 opacity-100"
-                        : "translate-y-0 opacity-100"
-                    }
-                  `}
-                >
-                  <span>{link.label}</span>
-
-                  <span
-                    className={`
-                      h-2.5 w-2.5 rounded-full
-                      transition-all duration-500
-
-                      ${
-                        active
-                          ? "scale-100 bg-indigo-600"
-                          : "scale-0 bg-indigo-600 group-hover:scale-100"
-                      }
-                    `}
-                  />
-                </Link>
-              );
-            })}
-          </div>
-
-          {/* Bottom mobile actions */}
-          <div
-            className={`
-              mt-auto
-              transition-all delay-300 duration-700
-              ease-[cubic-bezier(0.22,1,0.36,1)]
-
-              ${
-                isOpen
-                  ? "translate-y-0 opacity-100"
-                  : "translate-y-0 opacity-100"
-              }
-            `}
-          >
-            <div className="mb-4 flex items-center justify-between">
-              <Link
-                href="/auth"
-                onClick={() => setIsOpen(false)}
-                className="
-                  text-[16px] font-medium
-                  text-[#171717]
-                  underline-offset-4
-                  hover:underline
-                "
-              >
-                Log in
-              </Link>
-
-              <Link
-                href="/dry-cleaner-signup/signup"
-                onClick={() => setIsOpen(false)}
-                className="
-                  text-sm text-black/45
-                  transition-colors duration-300
-                  hover:text-black
-                "
-              >
-                Become a service partner
-              </Link>
-            </div>
-
-            {/* Mobile CTA */}
-            <Link
-              href="/auth"
-              onClick={() => setIsOpen(false)}
-              className="
-                group relative
-                flex h-[60px] w-full
-                items-center justify-center
-                overflow-hidden
-                rounded-full
-                bg-[#151515]
-
-                text-base font-medium
-                text-white
-
-                active:scale-[0.98]
-              "
-            >
-              <span
-                className="
-                  absolute inset-0
-                  translate-y-full
-                  bg-indigo-600
-
-                  transition-transform duration-500
-                  ease-[cubic-bezier(0.22,1,0.36,1)]
-
-                  group-hover:translate-y-0
-                "
-              />
-
-              <span className="relative z-10">
-                Get Started
-              </span>
-            </Link>
-          </div>
-        </div>
-      </div>
     </header>
   );
 };
+
+export function PublicMobileMenu({ onClose }: { onClose: () => void }) {
+  const pathname = usePathname();
+
+  return (
+    <nav aria-label="Mobile navigation" className="flex min-h-full flex-col px-4 pb-6 pt-7 text-slate-900 dark:text-white">
+      <div className="mb-7 px-2">
+        <p className="text-[11px] font-bold uppercase tracking-[0.2em] text-indigo-600 dark:text-indigo-300">SwiftDU</p>
+        <p className="mt-2 text-xl font-bold leading-tight tracking-tight">Where to?</p>
+      </div>
+
+      <div className="space-y-2">
+        {navLinks.map((link) => {
+          const active = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
+          const Icon = link.icon;
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              onClick={onClose}
+              aria-current={active ? "page" : undefined}
+              className={`flex min-h-12 items-center gap-3 rounded-2xl px-3 py-3 text-sm font-semibold transition-colors ${active ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/20" : "text-slate-700 hover:bg-white/70 dark:text-slate-200 dark:hover:bg-white/10"}`}
+            >
+              <Icon className="h-5 w-5 shrink-0" aria-hidden="true" />
+              <span className="min-w-0">{link.label}</span>
+            </Link>
+          );
+        })}
+      </div>
+
+      <div className="mt-auto space-y-3 pt-8">
+        <Link href="/auth" onClick={onClose} className="flex min-h-11 items-center justify-between rounded-xl px-3 text-sm font-semibold text-slate-700 hover:bg-white/70 dark:text-slate-200 dark:hover:bg-white/10">
+          Log in <ArrowUpRight className="h-4 w-4" aria-hidden="true" />
+        </Link>
+        <Link href="/auth" onClick={onClose} className="flex min-h-12 items-center justify-center rounded-2xl bg-slate-950 px-3 text-center text-sm font-bold text-white shadow-lg shadow-slate-950/15 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500">
+          Get Started
+        </Link>
+        <Link href="/dry-cleaner-signup/signup" onClick={onClose} className="block px-3 py-2 text-center text-xs leading-5 text-slate-500 underline-offset-4 hover:underline dark:text-slate-400">
+          Become a service partner
+        </Link>
+      </div>
+    </nav>
+  );
+}

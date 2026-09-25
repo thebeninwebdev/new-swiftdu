@@ -12,4 +12,4 @@ export const SWIFTY_ALT: Record<SwiftyMood, string> = {
   success: 'Swifty celebrating your completed order', warning: 'Swifty asking for your attention', error: 'Swifty calmly explaining an error',
 }
 
-export const SWIFTY_SIZES = { sm: 'h-16 w-16 sm:h-18 sm:w-18', md: 'h-24 w-24 sm:h-28 sm:w-28', lg: 'h-32 w-32 sm:h-36 sm:w-36' } as const
+export const SWIFTY_SIZES = { sm: 'h-16 w-16 sm:h-18 sm:w-18', md: 'h-24 w-24 sm:h-28 sm:w-28', lg: 'h-32 w-32 sm:h-36 sm:w-36', booking: 'h-[120px] w-[120px] min-[375px]:h-[130px] min-[375px]:w-[130px] sm:h-[140px] sm:w-[140px]' } as const

@@ -24,6 +24,7 @@ import { getTrackingStage, isWaitingForTasker, needsOrderPayment, TASKER_SEARCH_
 import { mergeOrderUpdate } from '@/lib/order-sync'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { OrderMascot } from '@/components/order-mascot'
+import type { SwiftySearchPhase } from '@/components/swifty/Swifty'
 import { SwiftieFact } from '@/components/swiftie-fact'
 
 // ─── Types ───
@@ -152,14 +153,13 @@ const getDeliveryEta = (location: string) => {
 const canRetryOrder = (order: Order) => order.status === 'completed' || order.status === 'cancelled'
 const getMostRecentOrder = (orders: Order[]) => [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
 const shouldRedirectToReview = (order: Order) => order.status === 'completed' && Boolean(order.taskerId)
-function getTaskerSearchMessage(elapsedMs: number) {
+export function getTaskerSearchMessage(elapsedMs: number): { phase: SwiftySearchPhase; heading: string; detail: string; speech?: string } {
   const minutes = elapsedMs / 60000
-  if (minutes < 1) return { heading: 'Finding a tasker for you...', detail: 'Swiftie is looking for an available tasker.' }
-  if (minutes < 2) return { heading: 'Still searching...', detail: 'It\'s taking a little longer than usual, but we\'re still looking.' }
-  if (minutes < 4) return { heading: 'We\'re still on it...', detail: 'Finding an available tasker can take a little time.' }
-  if (minutes < 6) return { heading: 'Hang tight...', detail: 'We\'re still looking for someone available to help.' }
-  if (minutes < 7) return { heading: 'Still looking...', detail: 'You can keep this page open while we search.' }
-  return { heading: 'Taking longer than expected', detail: "We haven't found an available tasker yet." }
+  if (minutes < 1) return { phase: 0, heading: 'Finding a tasker for you...', detail: 'Swifty is looking for an available tasker.' }
+  if (minutes < 3) return { phase: 1, heading: 'Checking for available taskers...', detail: 'We are still looking for someone available to help.', speech: "You don't need to refresh. I'll update this page." }
+  if (minutes < 5) return { phase: 2, heading: 'Still checking availability...', detail: 'Finding an available tasker can take a little time.', speech: 'Still checking for an available tasker.' }
+  if (minutes < 7) return { phase: 3, heading: 'Still with you...', detail: 'We are still waiting for an available tasker.', speech: "I'm here with you while we keep looking." }
+  return { phase: 3, heading: 'Closing your request...', detail: 'No tasker accepted within seven minutes.', speech: 'This request is being closed.' }
 }
 // ─── Sub-components ───
 function TaskerAvatar({ tasker }: { tasker: TaskerDetails }) {
@@ -458,6 +458,8 @@ function TaskerSearchState({ orderId, onCancel, isCancelling, isBusy, canCancel,
 }) {
   const message = getTaskerSearchMessage(elapsedMs)
   const longWait = elapsedMs >= TASKER_SEARCH_TIMEOUT_MS
+  const phaseStartedAt = [0, 60000, 180000, 300000][message.phase]
+  const speech = elapsedMs - phaseStartedAt < 20000 ? message.speech : undefined
   return (
     <main data-tasker-search className="flex h-[calc(100dvh-5rem)] flex-col items-center overflow-hidden bg-gradient-to-b from-[#f6f4ff] to-white px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 text-center dark:from-[#1e1b35] dark:to-slate-950 lg:h-dvh [@media(max-height:700px)]:pt-2">
       <div className="flex min-h-0 w-full max-w-md flex-1 flex-col items-center justify-center">
@@ -466,7 +468,7 @@ function TaskerSearchState({ orderId, onCancel, isCancelling, isBusy, canCancel,
           <h1 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white [@media(max-height:700px)]:text-2xl">{message.heading}</h1>
           <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-600 dark:text-slate-300 [@media(max-height:700px)]:mt-1">{message.detail}</p>
         </div>
-        <div className="mt-4 motion-safe:animate-[bounce_4s_ease-in-out_infinite] motion-reduce:transform-none [@media(max-height:700px)]:mt-2"><OrderMascot mood="searching" interaction="scan" size="md" className="[@media(max-height:540px)]:[&>div]:!h-16 [@media(max-height:540px)]:[&>div]:!w-16" /></div>
+        <div className="mt-4 min-w-0 [@media(max-height:700px)]:mt-2"><OrderMascot mood="searching" interaction="scan" searchPhase={message.phase} message={speech} compactSpeech stackSpeech size="md" className="[@media(max-height:700px)]:[&_[data-slot=swifty-speech]]:hidden [@media(max-height:540px)]:[&>div:first-child]:!h-16 [@media(max-height:540px)]:[&>div:first-child]:!w-16" /></div>
         <div aria-hidden="true" className="mt-4 flex gap-2 [@media(max-height:700px)]:hidden">
           <span className="h-2 w-2 rounded-full bg-indigo-400 motion-safe:animate-pulse" />
           <span className="h-2 w-2 rounded-full bg-indigo-300 motion-safe:animate-pulse [animation-delay:200ms]" />
