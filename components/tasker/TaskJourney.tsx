@@ -12,7 +12,7 @@ export function TaskJourney({ task }: { task: TaskCardData }) {
     <CategoryBadge type={task.taskType} />
     <p className="mt-5 text-4xl font-black tracking-tight text-violet-700 dark:text-violet-300">{convertToNaira(taskerEarnings(task))}</p>
     <p className="mt-1 text-xs text-slate-500">{task.isTestOrder ? 'Simulated earnings · training task' : task.status === 'completed' ? 'Task earnings' : 'Estimated earnings'}</p>
-    <div className="mt-6 border-l-2 border-dotted border-violet-200 pl-5"><p className="text-[10px] font-bold tracking-widest text-violet-600">{pickupLabel}</p><p className="mt-1 font-bold">{task.store || 'Follow task instructions'}</p><p className="mt-6 text-[10px] font-bold tracking-widest text-violet-600">{task.cafeInquiry ? 'CUSTOMER LOCATION' : 'DELIVER TO'}</p><p className="mt-1 font-bold">{task.location}</p></div>
+    <div className="mt-6 border-l-2 border-dotted border-violet-200 pl-5"><p className="text-[10px] font-bold tracking-widest text-violet-600">{pickupLabel}</p><p className="mt-1 font-bold">{task.store === 'tasker_choose' ? 'Buy from anywhere' : task.store || 'Follow task instructions'}</p><p className="mt-6 text-[10px] font-bold tracking-widest text-violet-600">{task.cafeInquiry ? 'CUSTOMER LOCATION' : 'DELIVER TO'}</p><p className="mt-1 font-bold">{task.location}</p></div>
     {task.cafeInquiry && <p className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Cafe inquiry: check availability and share options with the customer. Items and pricing may need confirmation.</p>}
   </section>
 }

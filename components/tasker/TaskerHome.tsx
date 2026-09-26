@@ -4,12 +4,12 @@ import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Bell, SlidersHorizontal, RefreshCw } from 'lucide-react'
+import { ArrowLeft, Bell, SlidersHorizontal, RefreshCw } from 'lucide-react'
 import { convertToNaira } from '@/lib/utils'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { TaskerSwifty } from './Swifty'
 import { activeTime, useTaskerWork, workButton, workCard } from './WorkProvider'
-import { CategoryBadge, categoryLabels, TaskCard, type TaskCardData } from './TaskCards'
+import { categoryLabels, TaskCard, type TaskCardData } from './TaskCards'
 
 export function WorkStats({ period = 'today' }: { period?: 'today' | 'week' | 'month' }) {
   const { data } = useTaskerWork()
@@ -48,10 +48,11 @@ export function TaskerHome({ name, errands, accepted, loading, refreshing, error
         <h1 className="text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl">{greeting},<br />{firstName} <span aria-hidden="true">👋</span></h1><p className="mt-3 text-sm text-slate-500">Ready to make someone&apos;s day easier?</p>
         <div className="my-5"><TaskerSwifty state={problem ? 'warning' : 'idle'} large /></div>
         <div className={workCard}><h2 className="mx-auto max-w-xs text-lg font-bold">Check in to start receiving tasks around campus.</h2><button disabled={work.saving || !work.data?.canCheckIn} onClick={() => void work.checkIn()} className={`${workButton} mt-5 w-full`}>Check in</button></div>
+        <Link href="/dashboard" className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-violet-200 bg-white px-4 py-3 text-sm font-bold text-violet-700 transition-colors hover:bg-violet-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600 dark:border-violet-800 dark:bg-slate-900 dark:text-violet-200 dark:hover:bg-violet-950/40"><ArrowLeft aria-hidden="true" className="h-4 w-4" />Back to user dashboard</Link>
         <p className="mt-6 text-xs tracking-wide text-slate-400">Small tasks. A brighter campus.</p>
       </motion.section> : <>
         <div className="mb-6 flex items-center justify-between gap-2"><div><h1 className="text-3xl font-extrabold leading-tight tracking-tight">{greeting},<br />{firstName} <span aria-hidden="true">👋</span></h1><p className="mt-2 text-sm text-slate-500">{accepted.length ? 'One step at a time. You’ve got this.' : 'Ready when you are.'}</p></div><TaskerSwifty state={accepted.length ? 'moving' : 'idle'} /></div>
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="grid gap-6">
           <div className="min-w-0 space-y-5">
             {newTaskAlert && <p role="status" className="rounded-2xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800">A new task just arrived.</p>}
             {accepted.length > 0 && <section><h2 className="mb-3 text-lg font-bold">Your active tasks <span className="text-slate-400">{accepted.length}</span></h2><div className="space-y-3">{accepted.map(task => <TaskCard key={task._id} task={task} active now={now} />)}</div></section>}
@@ -62,7 +63,7 @@ export function TaskerHome({ name, errands, accepted, loading, refreshing, error
             </section>}
             {tasksOnly && !accepted.length && <div className={`${workCard} text-center`}><h2 className="font-bold">No active tasks yet</h2><Link href="/tasker-dashboard?view=all" className={`${workButton} mt-4`}>Find a task</Link></div>}
           </div>
-          <aside className="order-first space-y-4 lg:order-last"><WorkStats /><p className="px-2 text-xs leading-5 text-slate-500">Earnings show completed live tasks. Active time is measured from your recorded check-ins.</p></aside>
+
         </div>
       </>}
     </>}

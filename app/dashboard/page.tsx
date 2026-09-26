@@ -1,5 +1,6 @@
 'use client'
 import { mergeOrderUpdate } from '@/lib/order-sync'
+import { formatRestaurantCost, getRestaurantEstimate } from '@/lib/restaurant-estimate'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image from 'next/image'
@@ -350,7 +351,6 @@ export default function ErrandWizardPage() {
   const [mounted, setMounted] = useState(false)
   const [packagingLanguage, setPackagingLanguage] = useState<PackagingLanguage>('pidgin')
   const [isTaskerAvailabilityNoticeDismissed, setIsTaskerAvailabilityNoticeDismissed] = useState(false)
-  const [isMobileViewport, setIsMobileViewport] = useState(false)
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [serviceFeeDiscount, setServiceFeeDiscount] = useState<{
@@ -596,20 +596,6 @@ export default function ErrandWizardPage() {
   useEffect(() => {
     if (!mounted) return
 
-    const mediaQuery = window.matchMedia('(max-width: 1023px)')
-    const updateMobileViewport = () => setIsMobileViewport(mediaQuery.matches)
-
-    updateMobileViewport()
-    mediaQuery.addEventListener('change', updateMobileViewport)
-
-    return () => {
-      mediaQuery.removeEventListener('change', updateMobileViewport)
-    }
-  }, [mounted])
-
-  useEffect(() => {
-    if (!mounted) return
-
     try {
       const savedLanguage = window.localStorage.getItem(PACKAGING_LANGUAGE_STORAGE_KEY)
       if (savedLanguage === 'english' || savedLanguage === 'pidgin') {
@@ -734,8 +720,9 @@ export default function ErrandWizardPage() {
     }
   }, [disconnectSocket])
 
-  const restaurantFoodBudget = parseMoneyInput(formData.restaurantItemPrice)
   const isCafeInquiry = formData.taskType === 'restaurant' && formData.cafeInquiry === true
+  const restaurantEstimate = getRestaurantEstimate(formData.restaurantItemPrice, isCafeInquiry)
+  const restaurantFoodBudget = restaurantEstimate.amount
   const restaurantPeopleCount = Number(formData.restaurantPeople || 1)
   const normalizedRestaurantPeopleCount =
     Number.isInteger(restaurantPeopleCount) && restaurantPeopleCount > 0
@@ -746,7 +733,7 @@ export default function ErrandWizardPage() {
     Number.isInteger(restaurantTakeawayCount) && restaurantTakeawayCount >= 0
       ? Math.min(restaurantTakeawayCount, normalizedRestaurantPeopleCount)
       : 0
-  const restaurantBudget = restaurantFoodBudget
+  const restaurantBudget = restaurantEstimate.amount
   const restaurantDescription = isCafeInquiry
     ? formData.description.trim() || 'Text me what is in cafe'
     : formData.description.trim()
@@ -841,10 +828,16 @@ export default function ErrandWizardPage() {
     descriptionMentionsWater(description) &&
     formData.taskType !== WATER_TASK_TYPE
   const packagingStep = -1
-  const deliveryStep = 3
-  const reviewStep = 4
-  const stepTitles = ['Book a Task', 'Details', 'Delivery', 'Review']
-  const stepIcons = [ShoppingBag, FileText, MapPin, CreditCard]
+  const orderTypeStep = formData.taskType === 'restaurant' ? 2 : -1
+  const detailsStep = formData.taskType === 'restaurant' ? 3 : 2
+  const deliveryStep = detailsStep + 1
+  const reviewStep = deliveryStep + 1
+  const stepTitles = formData.taskType === 'restaurant'
+    ? ['Book a Task', 'Your order', 'Details', 'Delivery', 'Review']
+    : ['Book a Task', 'Details', 'Delivery', 'Review']
+  const stepIcons = formData.taskType === 'restaurant'
+    ? [ShoppingBag, Info, FileText, MapPin, CreditCard]
+    : [ShoppingBag, FileText, MapPin, CreditCard]
   const packagingCopy =
     packagingLanguage === 'english'
       ? {
@@ -925,9 +918,9 @@ export default function ErrandWizardPage() {
     pauseRealtime()
     const { name, value } = event.target
     const nextValue =
-      name === 'restaurantItemPrice' || name === 'amount'
-        ? formatMoneyInput(value)
-        : value
+      name === 'restaurantItemPrice'
+        ? formatRestaurantCost(value)
+        : name === 'amount' ? formatMoneyInput(value) : value
     setFormData((previous) => ({ ...previous, [name]: nextValue }))
     clearError(name)
     if (
@@ -998,7 +991,7 @@ export default function ErrandWizardPage() {
 
   const handleEditStep = (nextStep: number) => {
     pauseRealtime()
-    setMascotInteraction(nextStep === 1 ? 'rest' : nextStep === 3 ? 'guide' : nextStep === 4 ? 'check' : 'consider')
+    setMascotInteraction(nextStep === 1 ? 'rest' : nextStep === deliveryStep ? 'guide' : nextStep === reviewStep ? 'check' : 'consider')
     setStep(nextStep)
   }
 
@@ -1007,7 +1000,7 @@ export default function ErrandWizardPage() {
 
     if (stepNumber === 1 && !formData.taskType) nextErrors.taskType = 'Select a task type to continue.'
 
-if (stepNumber === 2) {
+if (stepNumber === detailsStep) {
   if (
     formData.taskType &&
     formData.taskType !== 'others' &&
@@ -1027,8 +1020,8 @@ if (stepNumber === 2) {
       nextErrors.description = 'Use at least 5 characters.'
     }
 
-    if (!isMobileViewport && !isCafeInquiry && (!Number.isFinite(restaurantFoodBudget) || restaurantFoodBudget <= 0)) {
-      nextErrors.restaurantItemPrice = 'Enter a valid food budget.'
+    if (!isCafeInquiry && !restaurantEstimate.valid) {
+      nextErrors.restaurantItemPrice = 'Enter a valid food cost in whole naira, greater than zero.'
     }
   }
 
@@ -1159,7 +1152,7 @@ if (stepNumber === 2) {
   }
 }
 
-if (stepNumber === 2) {
+if (stepNumber === detailsStep) {
   if (
     formData.taskType === 'restaurant' &&
     (formData.packaging === 'mixed' && formData.restaurantTakeawayCount === '')
@@ -1176,14 +1169,6 @@ if (stepNumber === 2) {
 }
 
  if (stepNumber === deliveryStep) {
-  if (
-    formData.taskType === 'restaurant' &&
-    !isCafeInquiry &&
-    (!Number.isFinite(restaurantFoodBudget) || restaurantFoodBudget <= 0)
-  ) {
-    nextErrors.restaurantItemPrice = 'Enter a valid food budget.'
-  }
-
   if (!formData.location.trim()) {
     nextErrors.location = 'Enter the delivery location.'
   }
@@ -1198,7 +1183,7 @@ if (stepNumber === 2) {
     if (!validateStep(step)) return
     setStep((previous) => {
       const next = previous + 1
-      setMascotInteraction(next === 3 ? 'guide' : next === 4 ? 'check' : 'consider')
+      setMascotInteraction(next === deliveryStep ? 'guide' : next === reviewStep ? 'check' : 'consider')
       return next
     })
     setErrors({})
@@ -1208,7 +1193,7 @@ if (stepNumber === 2) {
     pauseRealtime()
     setStep((previous) => {
       const next = previous - 1
-      setMascotInteraction(next === 1 ? 'rest' : next === 3 ? 'guide' : 'consider')
+      setMascotInteraction(next === 1 ? 'rest' : next === deliveryStep ? 'guide' : 'consider')
       return next
     })
     setErrors({})
@@ -1279,8 +1264,8 @@ if (stepNumber === 2) {
   const handleSubmit = async () => {
     pauseRealtime(REALTIME_PAUSE_MS * 2)
 
-    if (!validateStep(2)) {
-      setStep(2)
+    if (!validateStep(detailsStep)) {
+      setStep(detailsStep)
       return
     }
     if (!validateStep(deliveryStep)) {
@@ -1348,9 +1333,9 @@ if (stepNumber === 2) {
       ? 'Something went wrong. Please try again.'
       : step === 1
         ? 'Hi! What can I help you with today?'
-        : step === 2
+        : step === detailsStep
           ? SERVICE_MESSAGES[formData.taskType] || 'Tell me a little more about it.'
-          : step === 3
+          : step === deliveryStep
             ? 'Where should we bring it?'
             : 'One quick check. Everything look right?'
   const quickLocations = ['Amnesty Hostel', 'Girls Hostel', 'PLT', 'Library', 'NDDC Auditorium']
@@ -1461,7 +1446,107 @@ if (stepNumber === 2) {
     setFormData(previous => ({ ...previous, cafeInquiry: value, description: '', restaurantItemPrice: '', packaging: '', restaurantPeople: '1', restaurantTakeawayCount: '0' }))
     clearError('description'); clearError('restaurantItemPrice')
   }} />
+  const renderRestaurantOrderType = () => (
+    <div className="space-y-5">
+      <div>
+        <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white">Do you know what you want?</h1>
+        <p className="mt-2 text-sm text-slate-500">Tell us your order, or ask a Tasker to check what is available.</p>
+      </div>
+      {renderCafeSelector()}
+    </div>
+  )
+
   const renderCafeReview = () => <CafeInquiryReview cafe={selectedStoreLabel || formData.store || ''} location={formData.location} serviceFee={pricing.serviceFee} discounted={hasAvailableServiceFeeDiscount} />
+
+  const renderRestaurantEstimate = () => (
+    <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Estimated food cost (includes takeaway)</span><span className="font-bold tabular-nums">{formatNaira(restaurantEstimate.amount)}</span></div>
+  )
+
+  const renderRestaurantCosts = () => (
+    <div className="space-y-4">
+      {formData.taskType === 'restaurant' && !isCafeInquiry ? (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+            <label className="block text-sm font-black text-slate-950 dark:text-white">People</label>
+            <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              How many people are you ordering for?
+            </p>
+            <div className="mt-4 flex h-11 items-center justify-between gap-4">
+              <span className="flex h-11 min-w-12 items-center text-2xl font-black leading-none text-slate-950 dark:text-white">
+                {normalizedRestaurantPeopleCount}
+              </span>
+              <div className="flex h-11 items-center overflow-hidden rounded-full border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
+                <button
+                  type="button"
+                  onClick={() => setFormData((previous) => ({ ...previous, restaurantPeople: String(Math.max(1, normalizedRestaurantPeopleCount - 1)), restaurantTakeawayCount: previous.packaging === 'takeaway' ? String(Math.max(1, normalizedRestaurantPeopleCount - 1)) : '0' }))}
+                  className="flex h-11 w-12 items-center justify-center text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-200 dark:hover:bg-slate-900"
+                  disabled={normalizedRestaurantPeopleCount <= 1}
+                  aria-label="Reduce people count"
+                >
+                  <Minus className="h-4 w-4 stroke-[3]" />
+                </button>
+                <div className="h-5 w-px bg-slate-200 dark:bg-slate-800" />
+                <button
+                  type="button"
+                  onClick={() => setFormData((previous) => ({ ...previous, restaurantPeople: String(Math.min(RESTAURANT_MAX_PEOPLE, normalizedRestaurantPeopleCount + 1)), restaurantTakeawayCount: previous.packaging === 'takeaway' ? String(Math.min(RESTAURANT_MAX_PEOPLE, normalizedRestaurantPeopleCount + 1)) : '0' }))}
+                  className="flex h-11 w-12 items-center justify-center bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={normalizedRestaurantPeopleCount >= RESTAURANT_MAX_PEOPLE}
+                  aria-label="Increase people count"
+                >
+                  <Plus className="h-4 w-4 stroke-[3]" />
+                </button>
+              </div>
+            </div>
+          </div>
+          <div>
+            <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Packaging</label>
+            <select
+              name="packaging"
+              value={formData.packaging === 'takeaway' ? 'takeaway' : 'cellophane'}
+              onChange={(event) => {
+                pauseRealtime()
+                const isTakeaway = event.target.value === 'takeaway'
+                setFormData((previous) => ({
+                  ...previous,
+                  packaging: event.target.value,
+                  restaurantTakeawayCount: isTakeaway ? String(normalizedRestaurantPeopleCount) : '0',
+                }))
+                clearError('restaurantTakeawayCount')
+              }}
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 dark:border-slate-800 dark:bg-slate-900"
+            >
+              <option value="cellophane">Cellophane</option>
+              <option value="takeaway">Takeaway</option>
+            </select>
+          </div>
+        </div>
+      ) : null}
+      <label className="block text-sm font-bold text-slate-900 dark:text-slate-100">
+        Estimated food cost
+        <span className="relative mt-2 block">
+          <span aria-hidden="true" className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">&#8358;</span>
+          <input type="text" inputMode="numeric" name="restaurantItemPrice" value={formData.restaurantItemPrice} onChange={handleInputChange} placeholder="4,000" aria-invalid={Boolean(errors.restaurantItemPrice)} className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-4 text-base font-semibold outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900" />
+        </span>
+      </label>
+      <div className="rounded-xl bg-indigo-50 p-4 text-sm text-indigo-950 dark:bg-indigo-950/40 dark:text-indigo-100">
+        <p className="font-bold">Don&apos;t forget takeaway &#128064;</p>
+        <p className="mt-1 leading-5">Include the takeaway/packaging price in your estimated food cost above. Ask the restaurant for the price so your estimate is accurate.</p>
+      </div>
+      {errors.restaurantItemPrice ? <p role="alert" className="text-sm text-red-500">{errors.restaurantItemPrice}</p> : null}
+
+
+      <p className="text-xs text-slate-500">Next, review your order and choose where to deliver it. The SwiftDU service fee is shown before you place your order.</p>
+    </div>
+  )
+
+  const renderRestaurantReview = () => (
+    <section className="space-y-4 border-b border-slate-200 pb-5 dark:border-slate-800" aria-label="Review your order">
+      <div className="flex items-center justify-between gap-3"><h2 className="font-bold">Your order</h2><button type="button" onClick={() => handleEditStep(detailsStep)} className="min-h-11 shrink-0 text-sm font-bold text-indigo-600 dark:text-indigo-300">Edit order</button></div>
+      <p className="whitespace-pre-wrap break-words text-sm leading-6">{restaurantDescription}</p>
+      <p className="text-xs text-slate-500">{normalizedRestaurantPeopleCount} {normalizedRestaurantPeopleCount === 1 ? 'person' : 'people'} &middot; {restaurantPackagingNote}</p>
+      {renderRestaurantEstimate()}
+    </section>
+  )
 
   const renderDetailsFields = (mobile = false) => (
     <div className="space-y-4">
@@ -1469,17 +1554,15 @@ if (stepNumber === 2) {
 
       {formData.taskType === 'restaurant' ? (
         <>
-          {renderCafeSelector()}
           {!isCafeInquiry ? (
             <div>
-              {!mobile ? (
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <label className="block text-sm font-bold text-slate-900 dark:text-slate-100">What do you need?</label>
-                  {renderSpeechButton('orange')}
-                </div>
-              ) : null}
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <label htmlFor={mobile ? 'restaurant-request-mobile' : 'restaurant-request-desktop'} className="block text-sm font-bold text-slate-900 dark:text-slate-100">What do you want to buy?</label>
+                {!mobile ? renderSpeechButton('orange') : null}
+              </div>
               <div className="relative">
                 <textarea
+                  id={mobile ? 'restaurant-request-mobile' : 'restaurant-request-desktop'}
                   name="description"
                   value={formData.description}
                   onChange={handleInputChange}
@@ -1531,24 +1614,7 @@ if (stepNumber === 2) {
               {errors.description ? <p className="mt-2 text-sm text-red-500">{errors.description}</p> : null}
             </div>
           ) : null}
-          {!isCafeInquiry && !mobile ? (
-            <div>
-              <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Food budget</label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">₦</span>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  name="restaurantItemPrice"
-                  value={formData.restaurantItemPrice}
-                  onChange={handleInputChange}
-                  placeholder="1,500"
-                  className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pl-8 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900"
-                />
-              </div>
-              {errors.restaurantItemPrice ? <p className="mt-2 text-sm text-red-500">{errors.restaurantItemPrice}</p> : null}
-            </div>
-          ) : null}
+          {!isCafeInquiry ? renderRestaurantCosts() : null}
         </>
       ) : null}
 
@@ -1786,85 +1852,7 @@ if (stepNumber === 2) {
 
   const renderQuickDetails = () => (
     <div className="space-y-4">
-      {formData.taskType === 'restaurant' && !isCafeInquiry ? (
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
-            <label className="block text-sm font-black text-slate-950 dark:text-white">People</label>
-            <p className="mt-1 text-xs font-semibold text-slate-500 dark:text-slate-400">
-              How many people are you ordering for?
-            </p>
-            <div className="mt-4 flex h-11 items-center justify-between gap-4">
-              <span className="flex h-11 min-w-12 items-center text-2xl font-black leading-none text-slate-950 dark:text-white">
-                {normalizedRestaurantPeopleCount}
-              </span>
-              <div className="flex h-11 items-center overflow-hidden rounded-full border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-950">
-                <button
-                  type="button"
-                  onClick={() => setFormData((previous) => ({ ...previous, restaurantPeople: String(Math.max(1, normalizedRestaurantPeopleCount - 1)), restaurantTakeawayCount: '' }))}
-                  className="flex h-11 w-12 items-center justify-center text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-200 dark:hover:bg-slate-900"
-                  disabled={normalizedRestaurantPeopleCount <= 1}
-                  aria-label="Reduce people count"
-                >
-                  <Minus className="h-4 w-4 stroke-[3]" />
-                </button>
-                <div className="h-5 w-px bg-slate-200 dark:bg-slate-800" />
-                <button
-                  type="button"
-                  onClick={() => setFormData((previous) => ({ ...previous, restaurantPeople: String(Math.min(RESTAURANT_MAX_PEOPLE, normalizedRestaurantPeopleCount + 1)), restaurantTakeawayCount: '' }))}
-                  className="flex h-11 w-12 items-center justify-center bg-blue-600 text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={normalizedRestaurantPeopleCount >= RESTAURANT_MAX_PEOPLE}
-                  aria-label="Increase people count"
-                >
-                  <Plus className="h-4 w-4 stroke-[3]" />
-                </button>
-              </div>
-            </div>
-          </div>
-          <div className="sm:col-span-2">
-            <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Packaging</label>
-            <select
-              name="packaging"
-              value={formData.packaging === 'takeaway' ? 'takeaway' : 'cellophane'}
-              onChange={(event) => {
-                pauseRealtime()
-                const isTakeaway = event.target.value === 'takeaway'
-                setFormData((previous) => ({
-                  ...previous,
-                  packaging: event.target.value,
-                  restaurantTakeawayCount: isTakeaway ? String(normalizedRestaurantPeopleCount) : '0',
-                }))
-                clearError('restaurantTakeawayCount')
-              }}
-              className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 dark:border-slate-800 dark:bg-slate-900"
-            >
-              <option value="cellophane">Cellophane</option>
-              <option value="takeaway">Takeaway</option>
-            </select>
-          </div>
-        </div>
-      ) : null}
-
-      {formData.taskType === 'restaurant' && !isCafeInquiry ? (
-        <div>
-          <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">How much will your food cost?</label>
-          <div className="relative">
-            <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-slate-500">₦</span>
-            <input
-              type="text"
-              inputMode="numeric"
-              name="restaurantItemPrice"
-              value={formData.restaurantItemPrice}
-              onChange={handleInputChange}
-              placeholder="1,500"
-              className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 pl-8 text-sm font-bold outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900"
-            />
-          </div>
-          <p className="mt-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            Don&apos;t forget to include price of takeaway if any.
-          </p>
-          {errors.restaurantItemPrice ? <p className="mt-2 text-sm text-red-500">{errors.restaurantItemPrice}</p> : null}
-        </div>
-      ) : null}
+      {formData.taskType === 'restaurant' && !isCafeInquiry ? renderRestaurantReview() : null}
 
       <div>
         <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Deliver to</label>
@@ -1890,9 +1878,10 @@ if (stepNumber === 2) {
 
   const renderOrderSummary = () => isCafeInquiry ? renderCafeReview() : (
     <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm dark:border-slate-800 dark:bg-slate-900/60">
+      {formData.taskType === 'restaurant' ? <button type="button" onClick={() => handleEditStep(detailsStep)} className="min-h-11 text-sm font-bold text-indigo-600 dark:text-indigo-300">Edit order</button> : null}
       <div className="flex items-start justify-between gap-4">
         <span className="text-slate-500">Order</span>
-        <span className="max-w-64 text-right font-semibold text-slate-900 dark:text-slate-100">
+        <span className="min-w-0 max-w-64 break-words text-right font-semibold text-slate-900 dark:text-slate-100">
           {description || selectedTask.label}
         </span>
       </div>
@@ -1931,10 +1920,12 @@ if (stepNumber === 2) {
         </>
       ) : null}
       <div className="border-t border-slate-200 pt-3 dark:border-slate-800">
+        {formData.taskType === 'restaurant' ? renderRestaurantEstimate() : (
         <div className="flex justify-between text-xs text-slate-500">
           <span>{pricing.pricingModel === 'water' ? 'Water and errand fee' : pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === INDOMIE_TASK_TYPE ? 'Indomie amount' : formData.taskType === DRY_CLEANING_TASK_TYPE ? 'Dry cleaning budget' : 'Budget'}</span>
           <span>{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span>
         </div>
+        )}
         <div className="mt-2 flex justify-between text-xs text-slate-500">
           <span>Service fee{shoppingDistanceFee > 0 ? ` (includes ${formatNaira(shoppingDistanceFee)} distance fee)` : ''}</span>
           {renderServiceFeeAmount('font-medium')}
@@ -2019,7 +2010,7 @@ if (stepNumber === 2) {
           </div>
           <div className="text-center">
             <p className="text-sm font-black text-slate-900 dark:text-white">{stepTitles[step - 1]}</p>
-            <OrderFlowProgress step={step} />
+            <OrderFlowProgress step={step} total={stepTitles.length} />
           </div>
           <span className="w-28" aria-hidden="true" />
         </header>
@@ -2029,7 +2020,7 @@ if (stepNumber === 2) {
             <OrderMascot
               mood={wizardMood}
               interaction={mascotInteraction}
-              size={step === 1 ? 'booking' : step === 4 ? 'sm' : 'md'}
+              size={step === 1 ? 'booking' : step === reviewStep ? 'sm' : 'md'}
               className={step === 1 ? 'w-fit max-w-full' : undefined}
               message={formData.taskType === 'restaurant' && !isSubmitting && !submissionFailed ? isCafeInquiry ? (formData.store ? 'Got it. We’ll check what they have.' : 'Not sure what’s available? I can get a Tasker to check for you.') : 'What are we getting?' : wizardMessage}
             />
@@ -2039,14 +2030,15 @@ if (stepNumber === 2) {
             <AnimatePresence mode="wait">
               <motion.div key={step} initial={{ opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -18 }} transition={{ duration: 0.24 }} className="flex-1">
                 {step === 1 ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Choose a service</h1><p className="mt-2 text-slate-500">Select the errand you need help with.</p><div className="mt-6">{renderCategoryCards(false)}</div></> : null}
-                {step === 2 ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Order details</h1><div className="mt-6">{renderDetailsFields(false)}</div></> : null}
-                {step === 3 ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Delivery location</h1><p className="mt-2 text-slate-500">Pick a familiar campus location or enter a precise one.</p><div className="mt-6">{renderQuickDetails()}</div></> : null}
-                {step === 4 ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Order summary</h1><p className="mt-2 text-slate-500">Check your items, location and total.</p><div className="mt-6">{renderOrderSummary()}</div></> : null}
+                {step === orderTypeStep ? renderRestaurantOrderType() : null}
+                {step === detailsStep ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Order details</h1><div className="mt-6">{renderDetailsFields(false)}</div></> : null}
+                {step === deliveryStep ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">{formData.taskType === 'restaurant' && !isCafeInquiry ? 'Review your order' : 'Delivery location'}</h1><p className="mt-2 text-slate-500">Pick a familiar campus location or enter a precise one.</p><div className="mt-6">{renderQuickDetails()}</div></> : null}
+                {step === reviewStep ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Order summary</h1><p className="mt-2 text-slate-500">Check your items, location and total.</p><div className="mt-6">{renderOrderSummary()}</div></> : null}
               </motion.div>
             </AnimatePresence>
             <div className="mt-8 flex gap-3 border-t border-slate-100 pt-5 dark:border-slate-800">
               {step > 1 ? <Button variant="outline" onClick={handleBack} className="h-12 rounded-xl px-6"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button> : null}
-              {step < 4 ? <Button onClick={handleNext} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">Continue<ChevronRight className="ml-2 h-4 w-4" /></Button> : <Button onClick={handleSubmit} disabled={isSubmitting} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Placing order...</> : <>{isCafeInquiry ? 'Ask a Tasker to check' : 'Place order'} · {formatNaira(displayedTotalAmount)}<ArrowRight className="ml-2 h-4 w-4" /></>}</Button>}
+              {step < reviewStep ? <Button onClick={handleNext} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{step === detailsStep && formData.taskType === 'restaurant' && !isCafeInquiry ? 'Review order' : 'Continue'}<ChevronRight className="ml-2 h-4 w-4" /></Button> : <Button onClick={handleSubmit} disabled={isSubmitting} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Placing order...</> : <>{isCafeInquiry ? 'Ask a Tasker to check' : 'Place order'} · {formatNaira(displayedTotalAmount)}<ArrowRight className="ml-2 h-4 w-4" /></>}</Button>}
             </div>
           </div>
         </div>
@@ -2059,10 +2051,10 @@ if (stepNumber === 2) {
       <div className="min-h-screen bg-transparent px-3 pb-6 min-[390px]:px-4">
         <div className="mx-auto max-w-md">
           <div className={`relative ${step === 1 ? 'mb-1' : 'mb-5'} flex items-center justify-center`}>
-            <div className="text-center"><p className="mb-2 text-xs font-black text-slate-900 dark:text-white">{stepTitles[step - 1]}</p><OrderFlowProgress step={step} /></div>
-            <span className="absolute right-0 text-xs font-bold text-slate-400">{step}/4</span>
+            <div className="text-center"><p className="mb-2 text-xs font-black text-slate-900 dark:text-white">{stepTitles[step - 1]}</p><OrderFlowProgress step={step} total={stepTitles.length} /></div>
+            <span className="absolute right-0 text-xs font-bold text-slate-400">{step}/{stepTitles.length}</span>
           </div>
-          <OrderMascot mood={wizardMood} interaction={mascotInteraction} size={step === 1 ? 'booking' : step === 4 ? 'md' : 'lg'} message={formData.taskType === 'restaurant' && !isSubmitting && !submissionFailed ? isCafeInquiry ? (formData.store ? 'Got it. We’ll check what they have.' : 'Not sure what’s available? I can get a Tasker to check for you.') : 'What are we getting?' : wizardMessage} compactSpeech className={step === 1 ? 'mx-auto mb-6 w-fit max-w-full' : 'mb-6'} />
+          <OrderMascot mood={wizardMood} interaction={mascotInteraction} size={step === 1 ? 'booking' : step === reviewStep ? 'md' : 'lg'} message={formData.taskType === 'restaurant' && !isSubmitting && !submissionFailed ? isCafeInquiry ? (formData.store ? 'Got it. We’ll check what they have.' : 'Not sure what’s available? I can get a Tasker to check for you.') : 'What are we getting?' : wizardMessage} compactSpeech className={step === 1 ? 'mx-auto mb-6 w-fit max-w-full' : 'mb-6'} />
           <AnimatePresence mode="wait">
           <motion.div key={step} initial={{ opacity: 0, x: 22 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -18 }} transition={{ duration: 0.22 }}>
           {step === 1 ? (
@@ -2073,7 +2065,9 @@ if (stepNumber === 2) {
             </div>
           ) : null}
 
-          {step === 2 ? (
+          {step === orderTypeStep ? renderRestaurantOrderType() : null}
+
+          {step === detailsStep ? (
             <div>
               <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white">Order details</h1>
               {formData.taskType === 'restaurant' ? null : (
@@ -2083,14 +2077,14 @@ if (stepNumber === 2) {
             </div>
           ) : null}
 
-          {step === 3 ? (
+          {step === deliveryStep ? (
             <div>
-              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white">Delivery location</h1>
+              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white">{formData.taskType === 'restaurant' && !isCafeInquiry ? 'Review your order' : 'Delivery location'}</h1>
               <div className="mt-5">{renderQuickDetails()}</div>
             </div>
           ) : null}
 
-          {step === 4 ? (
+          {step === reviewStep ? (
             <div>
               <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white">Order summary</h1>
               <div className="mt-5">{renderOrderSummary()}</div>
@@ -2102,16 +2096,19 @@ if (stepNumber === 2) {
 
         {step > 1 ? (
           <div className="mx-auto mt-6 max-w-md">
-            {step === 2 && formData.taskType === 'restaurant' ? (
+            {step === detailsStep && formData.taskType === 'restaurant' ? (
               <div className="mb-4">{renderStoreSelect()}</div>
             ) : null}
-            {step < 4 ? (
+            {step < reviewStep ? (
+            <>
             <Button
               onClick={handleNext}
               className="h-12 w-full rounded-xl bg-blue-600 font-black text-white hover:bg-blue-700"
             >
-              Next
+              {step === detailsStep && formData.taskType === 'restaurant' && !isCafeInquiry ? 'Review order' : 'Next'}
             </Button>
+            <Button variant="outline" onClick={handleBack} className="mt-3 h-12 w-full rounded-xl">Back</Button>
+            </>
           ) : (
             <Button
               onClick={handleSubmit}
@@ -2329,7 +2326,7 @@ if (stepNumber === 2) {
                 </div>
               ) : null}
 
-              {step === 2 ? (
+              {step === detailsStep ? (
                 <div className="space-y-4 md:space-y-5">
                   <div>
                     <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Errand Details</h2>

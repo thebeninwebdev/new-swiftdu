@@ -332,59 +332,6 @@ function FulfillmentTimeline({ order }: { order: Order }) {
   )
 }
 
-function AddTimePrompt({
-  remainingLabel,
-  windowLabel,
-  canAddTime,
-  isAdding,
-  onAddTime,
-}: {
-  remainingLabel: string
-  windowLabel: string
-  canAddTime: boolean
-  isAdding: boolean
-  onAddTime: () => void
-}) {
-  return (
-    <div className="mb-6 overflow-hidden rounded-3xl border border-amber-200 bg-white shadow-lg shadow-amber-100/60 dark:border-amber-900/60 dark:bg-slate-900 dark:shadow-none">
-      <div className="grid gap-4 p-4 sm:grid-cols-[1fr_auto] sm:items-center sm:p-5">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
-            <Clock className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-black text-slate-950 dark:text-white">Need more time for this order?</p>
-            <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
-              {canAddTime
-                ? `There is ${remainingLabel} left. Tap once to give your tasker 10 extra minutes.`
-                : 'If the task will take longer you can increase the tasker time.'}
-            </p>
-            <p className="mt-2 text-xs font-bold uppercase text-slate-400">{windowLabel}</p>
-          </div>
-        </div>
-        <Button
-          type="button"
-          onClick={onAddTime}
-          disabled={!canAddTime || isAdding}
-          className="h-12 w-full rounded-xl bg-amber-600 px-5 text-sm font-black text-white shadow-lg shadow-amber-600/20 hover:bg-amber-700 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-        >
-          {isAdding ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Adding time...
-            </>
-          ) : (
-            <>
-              <Clock className="mr-2 h-4 w-4" />
-              Add 10 minutes
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
 function CancelTaskPrompt({
   isCancelling,
   disabled,
@@ -502,7 +449,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const [paymentModalOpen, setPaymentModalOpen] = useState(false)
   const [cancelConfirmOpen, setCancelConfirmOpen] = useState(false)
   const [loadingTasker, setLoadingTasker] = useState(false)
-  const [updatingAction, setUpdatingAction] = useState<'cancel' | 'retry' | 'extendTimer' | 'receiptYes' | 'receiptNo' | null>(null)
+  const [updatingAction, setUpdatingAction] = useState<'cancel' | 'retry' | 'receiptYes' | 'receiptNo' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const trackedOrderIdRef = useRef<string | null>(trackingOrderId || null)
@@ -644,7 +591,6 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const handleOpenOrder = (orderId: string) => { if (trackedOrderIdRef.current === orderId) return; trackedOrderIdRef.current = orderId; previousSnapshotRef.current = null; taskerOrderRef.current = null; setTaskerDetails(null); router.push(`/dashboard/tasks/${orderId}`); void loadOrders(false) }
   const handleConfirmTransfer = async () => { if (!currentOrder || !needsOrderPayment(currentOrder)) return; try { setConfirmingTransfer(true); const response = await fetch(`/api/orders/${currentOrder._id}/confirm-transfer`, { method: 'POST' }); const payload = await response.json(); if (!response.ok) throw new Error(payload.error || 'Failed to confirm the transfer.'); setCurrentOrder(payload.order); trackedOrderIdRef.current = payload.order?._id || currentOrder._id; previousSnapshotRef.current = payload.order ? { id: payload.order._id, taskerId: payload.order.taskerId, hasPaid: payload.order.hasPaid, isDeclinedTask: payload.order.isDeclinedTask } : null; setPaymentModalOpen(false); toast.success('Payment updated. Open WhatsApp and stay online for your tasker.') } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to confirm the transfer.'); void loadOrders(false) } finally { setConfirmingTransfer(false) } }
   const handleCancelOrder = useCallback(async () => { if (!currentOrder || !canCustomerCancelOrder(currentOrder) || cancellationInFlightRef.current) return; cancellationInFlightRef.current = true; try { setUpdatingAction('cancel'); const response = await fetch(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'cancelled' }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to cancel order'); requestGenerationRef.current += 1; trackedOrderIdRef.current = data._id; taskerOrderRef.current = null; previousSnapshotRef.current = null; setTaskerDetails(null); currentOrderRef.current = data; setCurrentOrderState(data); setRecentOrders((previous) => [data, ...previous.filter((order) => order._id !== data._id)]); toast.success('Order cancelled.'); router.replace('/dashboard/tasks') } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to cancel order') } finally { cancellationInFlightRef.current = false; setUpdatingAction(null) } }, [currentOrder, router])
-  const handleExtendCompletionTimer = useCallback(async () => { if (!currentOrder || updatingAction || confirmingTransfer) return; try { setUpdatingAction('extendTimer'); const response = await fetch(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ extendCompletionTimer: true }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to add more time.'); setCurrentOrder(data); setRecentOrders((previous) => previous.map((order) => (order._id === data._id ? mergeOrderUpdate<Order>(order, data) : order))); toast.success('Ten minutes added for your tasker.') } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to add more time.') } finally { setUpdatingAction(null) } }, [confirmingTransfer, currentOrder, updatingAction, setCurrentOrder])
   const handleReceiptAnswer = useCallback(async (receivedOrder: boolean) => { if (!currentOrder || updatingAction || confirmingTransfer) return; try { setUpdatingAction(receivedOrder ? 'receiptYes' : 'receiptNo'); const response = await fetch(`/api/orders/${currentOrder._id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ customerReceivedOrder: receivedOrder }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to update this task.'); setCurrentOrder(data); setRecentOrders((previous) => previous.map((order) => (order._id === data._id ? mergeOrderUpdate<Order>(order, data) : order))); toast.success(receivedOrder ? 'Thanks for confirming your order.' : 'Thanks. SwiftDU will review this completion.'); if (receivedOrder) { redirectedToReviewRef.current = data._id; router.replace(`/dashboard/reviews/${data._id}`) } } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to update this task.') } finally { setUpdatingAction(null) } }, [confirmingTransfer, currentOrder, router, updatingAction, setCurrentOrder])
   const handleRetryOrder = useCallback(async (order: Order) => { if (updatingAction || confirmingTransfer || !canRetryOrder(order)) return; try { setUpdatingAction('retry'); const response = await fetch(`/api/orders/${order._id}/retry`, { method: 'POST' }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Failed to retry task'); requestGenerationRef.current += 1; trackedOrderIdRef.current = data._id; taskerOrderRef.current = null; previousSnapshotRef.current = { id: data._id, taskerId: data.taskerId, hasPaid: data.hasPaid, isDeclinedTask: data.isDeclinedTask }; setTaskerDetails(null); setCurrentOrder(data); setRecentOrders((previous) => [data, ...previous.filter((existingOrder) => existingOrder._id !== data._id && existingOrder._id !== order._id)]); toast.success('Task sent again. We are looking for taskers now.'); router.replace(`/dashboard/tasks/${data._id}`); void loadOrders(true) } catch (err) { toast.error(err instanceof Error ? err.message : 'Failed to retry task') } finally { setUpdatingAction(null) } }, [confirmingTransfer, loadOrders, router, updatingAction, setCurrentOrder])
   const requestCancelOrder = useCallback(() => { if (!currentOrder || updatingAction === 'cancel' || confirmingTransfer) return; setCancelConfirmOpen(true) }, [confirmingTransfer, currentOrder, updatingAction])
@@ -734,8 +680,6 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const completionTimerExpired = hasCompletionTimer && completionRemainingMs <= 0
   const completionWindowMs = completionWindowMinutes > 0 ? completionWindowMinutes * 60000 : completionDueMs - completionStartedMs
   const completionProgress = hasCompletionTimer && completionWindowMs > 0 ? Math.min(100, Math.max(0, ((nowMs - completionStartedMs) / completionWindowMs) * 100)) : 0
-  const canExtendCompletionTimer = Boolean(currentOrder && currentOrder.hasPaid && currentOrder.status !== 'completed' && currentOrder.status !== 'cancelled' && !completionTimerExpired)
-  const completionRemainingLabel = completionTimerExpired ? '0:00' : formatDuration(completionRemainingMs)
   const completionWindowLabel = `${completionWindowMinutes}${completionExtensionMinutes ? ` + ${completionExtensionMinutes}` : ''} min window`
   const shouldAskReceiptQuestion = Boolean(currentOrder?.status === 'completed' && !currentOrder.cafeInquiry && currentOrder.hasPaid && currentOrder.customerReceiptConfirmed === undefined && !currentOrder.customerReceiptRespondedAt)
 
@@ -779,15 +723,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
             <div><p className="font-black">Something went wrong</p><p className="mt-1 font-medium">{error}</p></div>
           </div>
         ) : null}
-        {isTrackingPage && currentOrder && hasCompletionTimer && canExtendCompletionTimer ? (
-          <AddTimePrompt
-            remainingLabel={completionRemainingLabel}
-            windowLabel={completionWindowLabel}
-            canAddTime={canExtendCompletionTimer}
-            isAdding={updatingAction === 'extendTimer' || confirmingTransfer}
-            onAddTime={() => void handleExtendCompletionTimer()}
-          />
-        ) : null}
+
         {isTrackingPage && currentOrder && canCancelCurrentOrder && (!isSearchingForTasker || Boolean(currentOrder.cafeInquiryStatus)) ? (
           <CancelTaskPrompt
             isCancelling={updatingAction === 'cancel'}
