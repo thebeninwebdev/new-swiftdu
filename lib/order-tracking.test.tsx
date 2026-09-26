@@ -1,31 +1,32 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { getTrackingStage, isTaskerSearchExpired, isWaitingForTasker, needsOrderPayment, TASKER_SEARCH_TIMEOUT_MS } from './order-tracking'
+import { getTrackingEta, getTrackingStage, getTrackingStore, isTaskerSearchExpired, isWaitingForTasker, needsOrderPayment, TASKER_SEARCH_TIMEOUT_MS } from './order-tracking'
 import { canCustomerCancelOrder, canTaskerCancelOrder, isActiveOrderStatus } from './order-status'
 import { toOrderSocketPayload } from './socket'
 import { cafeStatusLabels } from './cafe-inquiry'
 import { CafeInquiryPanel } from '../components/cafe-inquiry'
-import { FulfillmentStatusCard, getTaskerSearchMessage } from '../app/dashboard/tasks/TasksClient'
+import { getTaskerSearchMessage } from '../app/dashboard/tasks/TasksClient'
+import { TrackingHero, TrackingTimeline, TrackingOrderSummary, TrackingTasker } from '../components/customer-order-tracking'
 
 const assigned = { _id: 'order-1', userId: 'customer-1', taskerId: 'tasker-1', status: 'in_progress' as const, taskType: 'restaurant', amount: 1000, commission: 650, totalAmount: 1650, description: 'Lunch', location: 'Hostel', createdAt: '2026-09-17T10:00:00Z' }
 
 test('active, paid and completed orders keep their tracking stages', () => {
   assert.equal(getTrackingStage(assigned).label, 'Order accepted')
-  assert.equal(getTrackingStage(assigned).title, 'Your order is being fulfilled')
+  assert.equal(getTrackingStage(assigned).title, 'Your tasker has accepted your order!')
   assert.equal(needsOrderPayment(assigned), true)
   const paid = { ...assigned, status: 'paid', hasPaid: true }
   assert.equal(isActiveOrderStatus(paid.status), true)
-  assert.equal(getTrackingStage(paid).label, 'Tasker on the way')
+  assert.equal(getTrackingStage(paid).label, 'In progress')
   assert.equal(needsOrderPayment(paid), false)
   assert.equal(getTrackingStage({ ...paid, status: 'completed' }).label, 'Delivered')
   assert.equal(needsOrderPayment({ ...assigned, status: 'completed' }), false)
 })
 
 test('Swifty follows assigned and completed order states', () => {
-  const matched = renderToStaticMarkup(<FulfillmentStatusCard order={assigned} amount="1,650" statusLabel="Assigned" supportHref={null} />)
+  const matched = renderToStaticMarkup(<TrackingHero order={assigned} stage={getTrackingStage(assigned)} nowMs={0} />)
   assert.match(matched, /\/mascot\/matched\.png/)
-  const completed = renderToStaticMarkup(<FulfillmentStatusCard order={{ ...assigned, status: 'completed' }} amount="1,650" statusLabel="Completed" supportHref={null} />)
+  const completed = renderToStaticMarkup(<TrackingHero order={{ ...assigned, status: 'completed' }} stage={getTrackingStage({ ...assigned, status: 'completed' })} nowMs={0} />)
   assert.match(completed, /\/mascot\/success\.png/)
 })
 test('normal and cafe requests use one order-derived waiting state', () => {
@@ -68,7 +69,7 @@ for (const isTestOrder of [false, true]) {
       assert.equal(getTrackingStage(updated).label, 'Cancelled')
       assert.equal(getTrackingStage(updated).detail, 'This order was cancelled.')
       assert.equal(needsOrderPayment(updated), false)
-      const html = renderToStaticMarkup(<FulfillmentStatusCard order={{ ...assigned, status: 'cancelled', hasPaid, isTestOrder }} amount="1,650" statusLabel="Cancelled" supportHref={null} />)
+      const html = renderToStaticMarkup(<TrackingHero order={{ ...assigned, status: 'cancelled', hasPaid, isTestOrder }} stage={getTrackingStage({ ...assigned, status: 'cancelled', hasPaid })} nowMs={0} />)
       assert.match(html, /This order was cancelled\./)
       assert.doesNotMatch(html, /being fulfilled|Tasker on the way|Order accepted|Stay reachable|animate-spin/)
     }
@@ -118,4 +119,78 @@ test('legacy cafe options remain readable without reopening the old workflow', (
   const html = renderToStaticMarkup(<CafeInquiryPanel order={order} onUpdated={() => {}} />)
   assert.match(html, /Cafe Inquiry/)
   assert.doesNotMatch(html, /Rice|quantity|Confirm food/)
+})
+
+test('hero and timeline use one real state without claiming departure after payment', () => {
+  const states = [
+    { order: { ...assigned, taskerId: undefined, status: 'pending' }, key: 'searching', index: 0 },
+    { order: assigned, key: 'accepted', index: 1 },
+    { order: { ...assigned, hasPaid: true }, key: 'working', index: 2 },
+    { order: { ...assigned, status: 'paid' }, key: 'working', index: 2 },
+    { order: { ...assigned, paymentStatus: 'paid' }, key: 'working', index: 2 },
+    { order: { ...assigned, hasPaid: true, isDeclinedTask: true }, key: 'review', index: 2 },
+    { order: { ...assigned, status: 'completed' }, key: 'completed', index: 3 },
+    { order: { ...assigned, status: 'cancelled' }, key: 'cancelled', index: 0 },
+  ]
+  for (const { order, key, index } of states) {
+    const stage = getTrackingStage(order)
+    assert.equal(stage.key, key)
+    assert.equal(stage.activeIndex, index)
+    const html = renderToStaticMarkup(<TrackingTimeline stage={stage} />)
+    assert.equal((html.match(/aria-current="step"/g) || []).length, 1)
+    assert.equal((html.match(/leading-6/g) || []).length, 1, 'only the active step has an explanation')
+    assert.doesNotMatch(html, /Heading to you|on the way|in_progress|payment_verified/)
+  }
+})
+
+test('restaurant labels use stored cafe names and never expose tasker_choose', () => {
+  assert.equal(getTrackingStore({ taskType: 'restaurant', store: 'mama' }), "Mama's Kitchen")
+  assert.equal(getTrackingStore({ taskType: 'restaurant', store: 'tasker_choose' }), 'Buy from anywhere')
+  assert.equal(getTrackingStore({ taskType: 'restaurant' }), null)
+  assert.match(getTrackingStage({ ...assigned, hasPaid: true, store: 'mama' }).detail, /Mama's Kitchen/)
+})
+
+test('delivery target reads the final deadline without adding extension minutes again', () => {
+  const now = Date.parse('2026-09-26T11:00:00Z')
+  const order = { ...assigned, hasPaid: true, completionTimerStartedAt: '2026-09-26T11:00:00Z', completionWindowMinutes: 25, completionExtensionMinutes: 10, completionDueAt: '2026-09-26T11:35:00Z' }
+  assert.match(getTrackingEta(order, now)!.time!, /12:35/)
+  assert.equal(getTrackingEta({ ...order, completionDueAt: undefined }, now), null)
+  assert.equal(getTrackingEta({ ...order, completionDueAt: 'invalid' }, now), null)
+  assert.equal(getTrackingEta({ ...order, cafeInquiry: true }, now), null)
+  assert.equal(getTrackingEta({ ...order, status: 'cancelled' }, now), null)
+  assert.equal(getTrackingEta({ ...order, status: 'completed' }, now), null)
+  assert.equal(getTrackingEta({ ...order, isDeclinedTask: true }, now), null)
+  assert.equal(getTrackingEta({ ...order, hasPaid: false }, now), null)
+  assert.equal(getTrackingEta(order, Date.parse(order.completionDueAt))!.time, null)
+  const html = renderToStaticMarkup(<TrackingHero order={order} stage={getTrackingStage(order)} nowMs={now} />)
+  assert.match(html, /Delivery target/)
+  assert.doesNotMatch(html, /\+\s*10|25 min|Add.*minutes|min window|add-time/)
+  const noEta = renderToStaticMarkup(<TrackingHero order={{ ...assigned, hasPaid: true }} stage={getTrackingStage({ ...assigned, hasPaid: true })} nowMs={now} />)
+  assert.doesNotMatch(noEta, /Delivery target|ETA|25 mins|1 hour/)
+})
+
+test('free text, structured selections and existing details need no order images', () => {
+  const description = 'Rice 3 spoons, beans 2 spoons, 1 chicken and takeaway\n' + 'Long-request-'.repeat(40)
+  const order = { ...assigned, description, store: 'mama', packaging: '2 takeaway packs', cafeSelectedItems: [{ itemId: 'rice', name: 'Jollof rice', price: 1000, quantity: 2, unit: 'plate' }] }
+  const html = renderToStaticMarkup(<TrackingOrderSummary order={order} />)
+  assert.match(html, /Rice 3 spoons/)
+  assert.match(html, /2 × Jollof rice/)
+  assert.match(html, /2 takeaway packs/)
+  assert.match(html, /View details/)
+  assert.match(html, /SwiftDU service fee/)
+  assert.match(html, /whitespace-pre-wrap/)
+  assert.match(html, /overflow-wrap:anywhere/)
+  assert.doesNotMatch(html, /<img|background-image|Not set|Not specified|thumbnail/)
+})
+
+test('tasker identity uses an icon and real contact data, with no invented rating or photo', () => {
+  const tasker = { name: 'Eseosa', phone: '08012345678', profileImage: 'https://example.com/fake.jpg' }
+  const html = renderToStaticMarkup(<TrackingTasker order={assigned} tasker={tasker} loading={false} whatsappHref="https://wa.me/2348012345678" />)
+  assert.match(html, /Eseosa/)
+  assert.match(html, /href="tel:08012345678"/)
+  assert.match(html, /Message/)
+  assert.doesNotMatch(html, /<img|fake.jpg|4\.9|Top Rated|ETA/)
+  const missing = renderToStaticMarkup(<TrackingTasker order={assigned} tasker={null} loading={false} whatsappHref={null} />)
+  assert.match(missing, /Contact details are unavailable/)
+  assert.doesNotMatch(missing, /href="#"|<img/)
 })

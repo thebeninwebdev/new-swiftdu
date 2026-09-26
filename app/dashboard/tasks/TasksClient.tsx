@@ -1,14 +1,12 @@
 'use client'
-import { CafeInquiryPanel } from '@/components/cafe-inquiry'
+import { TrackingHero, TrackingTimeline, TrackingTasker, TrackingOrderSummary, TrackingSupport } from '@/components/customer-order-tracking'
 import { type CafeInquiryFields } from '@/lib/cafe-inquiry'
 
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
-  AlertCircle, ArrowRight, CheckCircle2, Clock, CreditCard, Loader2,
-  MapPin, Package, Phone, RefreshCw, Store, XCircle,
-  Bike, MessageCircle, ChevronRight, Banknote,
+  AlertCircle, ArrowLeft, CheckCircle2, Clock, CreditCard, Loader2,
+  Package, RefreshCw, Store, XCircle, ChevronRight,
 } from 'lucide-react'
 import { io, type Socket } from 'socket.io-client'
 import { toast } from 'sonner'
@@ -18,14 +16,12 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter,
   DialogHeader, DialogTitle,
 } from '@/components/ui/dialog'
-import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { canCustomerCancelOrder, isActiveOrderStatus } from '@/lib/order-status'
 import { getTrackingStage, isWaitingForTasker, needsOrderPayment, TASKER_SEARCH_TIMEOUT_MS } from '@/lib/order-tracking'
 import { mergeOrderUpdate } from '@/lib/order-sync'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { OrderMascot } from '@/components/order-mascot'
 import type { SwiftySearchPhase } from '@/components/swifty/Swifty'
-import { SwiftieFact } from '@/components/swiftie-fact'
 
 // ─── Types ───
 interface Order extends CafeInquiryFields {
@@ -78,7 +74,6 @@ interface TaskerDetails {
   _id: string
   name: string
   phone: string
-  profileImage?: string | null
   bankDetails?: { bankName: string; accountName: string; accountNumber: string }
 }
 
@@ -122,33 +117,13 @@ const declinedStatusConfig = {
 }
 
 // ─── Helpers ───
-function formatDeadline(dueDate?: string, deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
-  const exactDeadline = dueDate || deadlineDate
-  if (exactDeadline) return new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(exactDeadline))
-  if (deadlineValue && deadlineUnit) return `${deadlineValue} ${deadlineUnit}`
-  return 'Not set'
-}
-
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(amount)
 const formatDate = (date: string) => new Date(date).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
-const formatDuration = (milliseconds: number) => {
-  const totalSeconds = Math.max(Math.ceil(milliseconds / 1000), 0)
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
-}
 const getWhatsAppHref = (phone: string) => {
   const digits = phone.replace(/\D/g, '')
   if (!digits) return null
   const normalized = digits.startsWith('0') && digits.length === 11 ? `234${digits.slice(1)}` : digits
   return `https://wa.me/${normalized}`
-}
-const getDeliveryEta = (location: string) => {
-  const normalizedLocation = location.toLowerCase()
-  if (normalizedLocation.includes('amnesty') || normalizedLocation.includes('girls hostel')) {
-    return '25 mins'
-  }
-  return '1 hour'
 }
 const canRetryOrder = (order: Order) => order.status === 'completed' || order.status === 'cancelled'
 const getMostRecentOrder = (orders: Order[]) => [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
@@ -162,275 +137,6 @@ export function getTaskerSearchMessage(elapsedMs: number): { phase: SwiftySearch
   return { phase: 3, heading: 'Closing your request...', detail: 'No tasker accepted within seven minutes.', speech: 'This request is being closed.' }
 }
 // ─── Sub-components ───
-function TaskerAvatar({ tasker }: { tasker: TaskerDetails }) {
-  if (tasker.profileImage) {
-    const canOptimizeImage =
-      tasker.profileImage.startsWith('/') ||
-      tasker.profileImage.startsWith('https://res.cloudinary.com/')
-
-    if (!canOptimizeImage) {
-      return (
-        <div
-          role="img"
-          aria-label="Tasker profile"
-          className="h-12 w-12 rounded-xl bg-cover bg-center ring-2 ring-white dark:ring-slate-800"
-          style={{ backgroundImage: `url("${tasker.profileImage}")` }}
-        />
-      )
-    }
-
-    return (
-      <Image
-        src={tasker.profileImage}
-        alt="Tasker profile"
-        width={48}
-        height={48}
-        sizes="48px"
-        className="h-12 w-12 rounded-xl object-cover ring-2 ring-white dark:ring-slate-800"
-      />
-    )
-  }
-  return <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-sky-500 to-indigo-600 font-bold text-white">T</div>
-}
-
-export function FulfillmentStatusCard({
-  order,
-  amount,
-  statusLabel,
-  supportHref,
-}: {
-  order: Order
-  amount: string
-  statusLabel: string
-  supportHref: string | null
-}) {
-  const stage = getTrackingStage(order)
-  if (order.status === 'cancelled') {
-    return (
-      <div role="status" className="rounded-3xl border border-rose-200 bg-rose-50 p-6 text-rose-900 dark:border-rose-900 dark:bg-rose-950/30 dark:text-rose-100">
-        <XCircle className="mb-3 h-8 w-8" />
-        <h2 className="text-2xl font-black">{stage.title}</h2>
-        <p className="mt-2">{stage.detail}</p>
-      </div>
-    )
-  }
-  const gradient = taskTypeGradients[order.taskType] || taskTypeGradients.others
-  const taskLabel = taskTypeLabels[order.taskType] || order.taskType
-  const hasConfirmedPayment = Boolean(order.hasPaid || order.paymentStatus === 'paid')
-  const mascotMood = order.status === 'completed' ? 'success' : order.isDeclinedTask ? 'warning' : hasConfirmedPayment ? 'moving' : order.taskerId ? 'matched' : 'searching'
-  const mascotInteraction = mascotMood === 'success' ? 'complete' : mascotMood === 'matched' ? 'celebrate' : mascotMood === 'moving' ? 'travel' : mascotMood === 'warning' ? 'attention' : 'scan'
-
-  return (
-    <div className="overflow-hidden rounded-3xl border border-slate-100 bg-white shadow-xl shadow-slate-200/40 dark:border-slate-800 dark:bg-slate-900 dark:shadow-slate-950/40">
-      <div className="bg-gradient-to-br from-slate-950 via-slate-900 to-sky-950 p-6 text-white dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 sm:p-7">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold text-slate-100 ring-1 ring-white/15">
-            {order.status === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5 text-emerald-300" /> : <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-300" />}
-            {statusLabel}
-          </span>
-          <span className="text-xs font-semibold text-slate-400">#{order._id.slice(-6)}</span>
-        </div>
-        <div className="mt-7 flex items-start gap-4">
-          <OrderMascot mood={mascotMood} interaction={mascotInteraction} size="sm" />
-          <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br ${gradient} shadow-lg shadow-black/20`}>
-            {taskTypeIcons[order.taskType] || taskTypeIcons.others}
-          </div>
-          <div className="min-w-0">
-            <h2 className="text-2xl font-black tracking-normal sm:text-3xl">
-              {stage.title}
-            </h2>
-            {order.status === 'completed' ? <p className="mt-2 text-sm font-semibold text-violet-200">Your order supported another student.</p> : null}
-            <p className="mt-2 max-w-xl text-sm leading-6 text-slate-300">{stage.detail}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="space-y-5 p-5 sm:p-6">
-        <div>
-          <div className="mb-2 flex items-center justify-between text-xs font-bold uppercase text-slate-400">
-            <span>{stage.taskerLabel}</span>
-            <span>{stage.progress}%</span>
-          </div>
-          <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-sky-500 via-cyan-400 to-emerald-500 transition-all duration-700"
-              style={{ width: `${stage.progress}%` }}
-            />
-          </div>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/60 dark:ring-slate-800">
-            <p className="text-[11px] font-bold uppercase text-slate-400">Task</p>
-            <p className="mt-2 truncate text-sm font-black text-slate-900 dark:text-white">{taskLabel}</p>
-          </div>
-          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/60 dark:ring-slate-800">
-            <p className="text-[11px] font-bold uppercase text-slate-400">Budget</p>
-            <p className="mt-2 text-sm font-black text-slate-900 dark:text-white">{amount}</p>
-          </div>
-          <div className="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-950/60 dark:ring-slate-800">
-            <p className="text-[11px] font-bold uppercase text-slate-400">Payment</p>
-            <p className="mt-2 text-sm font-black text-slate-900 dark:text-white">{hasConfirmedPayment ? 'Confirmed' : 'Pending'}</p>
-          </div>
-        </div>
-
-        <div className="rounded-2xl border border-sky-100 bg-sky-50/70 p-4 dark:border-sky-900/50 dark:bg-sky-950/20">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="min-w-0">
-              <p className="text-sm font-black text-slate-900 dark:text-white">SwiftDU is handling the next step</p>
-              <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
-                Stay reachable while your tasker fulfils the order and updates you directly.
-              </p>
-            </div>
-            {supportHref ? (
-              <a href={supportHref} target="_blank" rel="noreferrer" className="inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-500 px-4 text-sm font-bold text-white shadow-lg shadow-emerald-500/20 transition hover:bg-emerald-600">
-                <MessageCircle className="h-4 w-4" />
-                Chat
-              </a>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function FulfillmentTimeline({ order }: { order: Order }) {
-  const stages = [
-    { key: 'placed', label: 'Order placed', desc: 'Your request has been received.', completed: true },
-    { key: 'assigned', label: 'Tasker assigned', desc: 'A tasker has accepted the order.', completed: Boolean(order.taskerId) },
-    { key: 'paid', label: 'Payment confirmed', desc: 'Your transfer has been verified.', completed: Boolean(order.hasPaid || order.paymentStatus === 'paid') },
-    {
-      key: 'fulfilling',
-      label: 'Being fulfilled',
-      desc: 'Your tasker is working on the order.',
-      completed: order.status === 'completed',
-      active: order.status === 'in_progress' || order.status === 'paid' || Boolean(order.hasPaid),
-    },
-    { key: 'delivered', label: 'Delivered', desc: 'Order has reached you.', completed: order.status === 'completed', active: order.status === 'completed' },
-  ]
-
-  return (
-    <div className="relative">
-      <div className="absolute bottom-2 left-5 top-2 w-0.5 bg-slate-200 dark:bg-slate-700" />
-      <div className="space-y-5">
-        {stages.map((stage) => (
-          <div key={stage.key} className="relative flex items-start gap-4">
-            <div className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition-all duration-300 ${
-              stage.completed ? 'bg-emerald-500 shadow-lg shadow-emerald-500/20' : stage.active ? 'bg-sky-500 shadow-lg shadow-sky-500/20' : 'bg-slate-200 dark:bg-slate-700'
-            }`}>
-              {stage.completed ? <CheckCircle2 className="h-5 w-5 text-white" /> : stage.active ? <Loader2 className="h-5 w-5 animate-spin text-white" /> : <Clock className="h-5 w-5 text-slate-400" />}
-            </div>
-            <div className="min-w-0 flex-1 pt-1">
-              <p className={`font-bold ${stage.completed ? 'text-slate-900 dark:text-white' : stage.active ? 'text-sky-600 dark:text-sky-400' : 'text-slate-500 dark:text-slate-500'}`}>{stage.label}</p>
-              <p className="text-sm leading-5 text-slate-500 dark:text-slate-400">{stage.desc}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-function CancelTaskPrompt({
-  isCancelling,
-  disabled,
-  onCancel,
-}: {
-  isCancelling: boolean
-  disabled: boolean
-  onCancel: () => void
-}) {
-  return (
-    <div className="mb-6 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-lg shadow-rose-100/60 dark:border-rose-900/60 dark:bg-slate-900 dark:shadow-none">
-      <div className="grid gap-4 p-4 sm:grid-cols-[1fr_auto] sm:items-center sm:p-5">
-        <div className="flex min-w-0 items-start gap-3">
-          <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-rose-100 text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
-            <XCircle className="h-5 w-5" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-sm font-black text-slate-950 dark:text-white">Need to cancel this task?</p>
-            <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
-              You can cancel before payment is confirmed. We will stop this request and taskers will no longer see it.
-            </p>
-          </div>
-        </div>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onCancel}
-          disabled={disabled}
-          className="h-12 w-full rounded-xl border-rose-200 bg-rose-50 px-5 text-sm font-black text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:bg-rose-950/50 sm:w-auto"
-        >
-          {isCancelling ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Cancelling...
-            </>
-          ) : (
-            <>
-              <XCircle className="mr-2 h-4 w-4" />
-              Cancel this task
-            </>
-          )}
-        </Button>
-      </div>
-    </div>
-  )
-}
-
-function MobileBottomSheet({ order, onChat }: { order: Order; onChat: () => void }) {
-  const stage = getTrackingStage(order)
-  return (
-    <div className="lg:hidden fixed bottom-0 left-0 right-0 z-40 animate-slide-up">
-      <div className="mx-auto max-w-lg bg-white dark:bg-slate-900 rounded-t-3xl shadow-2xl shadow-slate-950/20 border-t border-slate-100 dark:border-slate-800 p-4 pb-8">
-        <div className="w-12 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full mx-auto mb-3"/>
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-500 to-indigo-600 flex items-center justify-center">
-            {order.status === 'pending' ? <Loader2 className="w-5 h-5 text-white animate-spin" /> : <Bike className="w-5 h-5 text-white" />}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="font-bold text-slate-900 dark:text-white text-sm truncate">{stage.label}</p>
-            <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{stage.detail}</p>
-          </div>
-          <button onClick={onChat} className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-95 shrink-0">Chat</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function TaskerSearchState({ orderId, onCancel, isCancelling, isBusy, canCancel, elapsedMs }: {
-  orderId: string; onCancel: () => void; isCancelling: boolean; isBusy: boolean; canCancel: boolean; elapsedMs: number
-}) {
-  const message = getTaskerSearchMessage(elapsedMs)
-  const longWait = elapsedMs >= TASKER_SEARCH_TIMEOUT_MS
-  const phaseStartedAt = [0, 60000, 180000, 300000][message.phase]
-  const speech = elapsedMs - phaseStartedAt < 20000 ? message.speech : undefined
-  return (
-    <main data-tasker-search className="flex h-[calc(100dvh-5rem)] flex-col items-center overflow-hidden bg-gradient-to-b from-[#f6f4ff] to-white px-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-4 text-center dark:from-[#1e1b35] dark:to-slate-950 lg:h-dvh [@media(max-height:700px)]:pt-2">
-      <div className="flex min-h-0 w-full max-w-md flex-1 flex-col items-center justify-center">
-        <span className="rounded-full bg-indigo-100 px-4 py-1.5 text-xs font-semibold text-indigo-700 dark:bg-indigo-900/60 dark:text-indigo-200 [@media(max-height:700px)]:hidden">{longWait ? 'Still searching' : 'Looking for a tasker'}</span>
-        <div aria-live="polite" aria-atomic="true" className="mt-4 [@media(max-height:700px)]:mt-0">
-          <h1 className="text-3xl font-black tracking-tight text-slate-950 dark:text-white [@media(max-height:700px)]:text-2xl">{message.heading}</h1>
-          <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-600 dark:text-slate-300 [@media(max-height:700px)]:mt-1">{message.detail}</p>
-        </div>
-        <div className="mt-4 min-w-0 [@media(max-height:700px)]:mt-2"><OrderMascot mood="searching" interaction="scan" searchPhase={message.phase} message={speech} compactSpeech stackSpeech size="md" className="[@media(max-height:700px)]:[&_[data-slot=swifty-speech]]:hidden [@media(max-height:540px)]:[&>div:first-child]:!h-16 [@media(max-height:540px)]:[&>div:first-child]:!w-16" /></div>
-        <div aria-hidden="true" className="mt-4 flex gap-2 [@media(max-height:700px)]:hidden">
-          <span className="h-2 w-2 rounded-full bg-indigo-400 motion-safe:animate-pulse" />
-          <span className="h-2 w-2 rounded-full bg-indigo-300 motion-safe:animate-pulse [animation-delay:200ms]" />
-          <span className="h-2 w-2 rounded-full bg-indigo-200 motion-safe:animate-pulse [animation-delay:400ms]" />
-        </div>
-      </div>
-      <div className="mt-2 w-full max-w-md shrink-0 [@media(max-height:700px)]:mt-0">
-        <SwiftieFact key={orderId} orderId={orderId} />
-        {canCancel ? <button type="button" onClick={onCancel} disabled={isBusy} className="mt-1 min-h-11 rounded-xl px-6 text-sm font-semibold text-indigo-700 underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-indigo-600 disabled:opacity-50 dark:text-indigo-300">{isCancelling ? 'Cancelling...' : 'Cancel task'}</button> : null}
-      </div>
-    </main>
-  )
-}
-
-// ─── Main Component ───
 export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -662,284 +368,45 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
     { value: 'cancelled', label: 'Cancelled', count: cancelledOrders.length },
   ]
   const currentStage = currentOrder ? getTrackingStage(currentOrder) : null
-  const currentStatus = currentOrder ? (currentOrderIsActive && currentOrder.isDeclinedTask ? declinedStatusConfig : statusConfig[currentOrder.status]) : null
   const isSearchingForTasker = isWaitingForTasker(currentOrder)
   const canCancelCurrentOrder = currentOrder ? canCustomerCancelOrder(currentOrder) : false
   const searchStartedAt = currentOrder ? new Date(currentOrder.createdAt).getTime() : NaN
   const searchElapsedMs = Number.isFinite(searchStartedAt) ? Math.max(nowMs - searchStartedAt, 0) : 0
-  const completionStartedMs = currentOrder?.completionTimerStartedAt ? new Date(currentOrder.completionTimerStartedAt).getTime() : currentOrder?.createdAt ? new Date(currentOrder.createdAt).getTime() : NaN
-  const locationCompletionWindowMinutes = getCompletionWindowMinutes(currentOrder?.location, currentOrder?.taskType)
-  const savedCompletionWindowMinutes = Number(currentOrder?.completionWindowMinutes || 0)
-  const completionWindowMinutes = savedCompletionWindowMinutes > 0 ? Math.max(savedCompletionWindowMinutes, locationCompletionWindowMinutes) : locationCompletionWindowMinutes
-  const completionExtensionMinutes = Number(currentOrder?.completionExtensionMinutes || 0)
-  const computedCompletionDueMs = Number.isFinite(completionStartedMs) ? completionStartedMs + (completionWindowMinutes + completionExtensionMinutes) * 60000 : NaN
-  const savedCompletionDueMs = currentOrder?.completionDueAt ? new Date(currentOrder.completionDueAt).getTime() : NaN
-  const completionDueMs = Number.isFinite(savedCompletionDueMs) && Number.isFinite(computedCompletionDueMs) ? Math.max(savedCompletionDueMs, computedCompletionDueMs) : Number.isFinite(savedCompletionDueMs) ? savedCompletionDueMs : computedCompletionDueMs
-  const hasCompletionTimer = Boolean(currentOrder?.hasPaid) && Number.isFinite(completionDueMs) && currentOrder?.status !== 'cancelled'
-  const completionRemainingMs = hasCompletionTimer ? completionDueMs - nowMs : 0
-  const completionTimerExpired = hasCompletionTimer && completionRemainingMs <= 0
-  const completionWindowMs = completionWindowMinutes > 0 ? completionWindowMinutes * 60000 : completionDueMs - completionStartedMs
-  const completionProgress = hasCompletionTimer && completionWindowMs > 0 ? Math.min(100, Math.max(0, ((nowMs - completionStartedMs) / completionWindowMs) * 100)) : 0
-  const completionWindowLabel = `${completionWindowMinutes}${completionExtensionMinutes ? ` + ${completionExtensionMinutes}` : ''} min window`
   const shouldAskReceiptQuestion = Boolean(currentOrder?.status === 'completed' && !currentOrder.cafeInquiry && currentOrder.hasPaid && currentOrder.customerReceiptConfirmed === undefined && !currentOrder.customerReceiptRespondedAt)
 
-  if (isTrackingPage && currentOrder && isSearchingForTasker) return (
-    <>
-      <TaskerSearchState orderId={currentOrder._id} onCancel={requestCancelOrder} isCancelling={updatingAction === 'cancel'} isBusy={Boolean(updatingAction || confirmingTransfer)} canCancel={canCancelCurrentOrder} elapsedMs={searchElapsedMs} />
-      <Dialog open={canCancelCurrentOrder && cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
-        <DialogContent showCloseButton={false} className="max-w-[calc(100%-2rem)] gap-0 overflow-hidden rounded-[2rem] border border-indigo-100 bg-gradient-to-b from-[#f6f4ff] to-white p-0 text-center shadow-2xl shadow-indigo-950/15 ring-0 sm:max-w-sm dark:border-indigo-800/50 dark:from-[#1e1b35] dark:to-slate-950">
-          <div className="px-6 pb-6 pt-7">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-100 text-indigo-600 dark:bg-indigo-900/60 dark:text-indigo-300">
-              <Clock aria-hidden="true" className="h-7 w-7" />
-            </div>
-            <DialogHeader className="mt-5 items-center gap-2">
-              <DialogTitle className="text-2xl font-black leading-tight tracking-tight text-slate-950 dark:text-white">Stop looking for a tasker?</DialogTitle>
-              <DialogDescription className="max-w-xs text-sm leading-6 text-slate-600 dark:text-slate-300">This request will be cancelled, and taskers will no longer see it. You can create another task whenever you need help.</DialogDescription>
-            </DialogHeader>
-            <div className="mt-6 flex flex-col gap-2">
-              <Button type="button" onClick={() => setCancelConfirmOpen(false)} disabled={updatingAction === 'cancel'} className="h-12 w-full rounded-2xl bg-indigo-600 text-sm font-bold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-700">Keep searching</Button>
-              <Button type="button" variant="ghost" onClick={confirmCancelOrder} disabled={updatingAction === 'cancel'} className="h-12 w-full rounded-2xl text-sm font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/30">
-                {updatingAction === 'cancel' ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Cancelling...</> : 'Cancel task'}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
 
   return (
-    <div className="min-h-[calc(100vh-5rem)] bg-slate-50 dark:bg-slate-950">
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 lg:py-10">
-        <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <p className="text-sm font-bold text-sky-600 dark:text-sky-400">Order tracking</p>
-            <h1 className="mt-1 text-2xl font-black text-slate-950 dark:text-white">{currentStage?.title || 'Your orders'}</h1>
-          </div>
-        </div>
-        {error ? (
-          <div className="mb-6 flex items-center gap-3 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200">
-            <OrderMascot mood="error" interaction="apologize" size="sm" />
-            <div><p className="font-black">Something went wrong</p><p className="mt-1 font-medium">{error}</p></div>
-          </div>
-        ) : null}
-
-        {isTrackingPage && currentOrder && canCancelCurrentOrder && (!isSearchingForTasker || Boolean(currentOrder.cafeInquiryStatus)) ? (
-          <CancelTaskPrompt
-            isCancelling={updatingAction === 'cancel'}
-            disabled={updatingAction === 'cancel' || confirmingTransfer}
-            onCancel={requestCancelOrder}
-          />
-        ) : null}
-        <div className="lg:grid lg:grid-cols-2 lg:gap-8">
-
-          {/* Left Column: Active Delivery */}
-          <div className="space-y-6">
-            {isTrackingPage && currentOrder ? (
-              <div className="space-y-4">
-                {currentOrder.cafeInquiryStatus ? <CafeInquiryPanel order={currentOrder} whatsappHref={whatsappHref} onOpenPayment={() => setPaymentModalOpen(true)} onUpdated={() => { void loadOrders(false) }} /> : null}
-                {(!currentOrder.cafeInquiryStatus) && <FulfillmentStatusCard
-                  order={currentOrder}
-                  amount={formatCurrency(transferAmount)}
-                  statusLabel={currentStatus?.label || currentStage?.label || currentOrder.status}
-                  supportHref={whatsappHref}
-                />}
-                {currentOrderIsActive && currentOrder.taskerId && taskerDetails ? (
-                  <div className="rounded-3xl border border-slate-100 bg-white p-5 shadow-lg shadow-slate-200/30 dark:border-slate-800 dark:bg-slate-900 dark:shadow-slate-950/30">
-                    <div className="flex items-center gap-4">
-                      <div className="relative">
-                        <TaskerAvatar tasker={taskerDetails} />
-                        <div className="absolute -bottom-1 -right-1 w-5 h-5 bg-emerald-500 rounded-full border-2 border-white dark:border-slate-900 flex items-center justify-center">
-                          <CheckCircle2 className="w-3 h-3 text-white" />
-                        </div>
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-bold text-slate-900 dark:text-white truncate">{taskerDetails.name || 'Tasker'}</h3>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">Top Rated Tasker • 4.9★</p>
-                        <div className="flex items-center gap-2 mt-1">
-                         
-                          <span className="text-xs text-slate-400">
-                            ETA: {getDeliveryEta(currentOrder.location)}
-                          </span>
-                        </div>
-                      </div>
-                      {whatsappHref ? (
-                        <a href={whatsappHref} target="_blank" rel="noreferrer" className="shrink-0 p-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all hover:scale-105 active:scale-95">
-                          <MessageCircle className="w-5 h-5" />
-                        </a>
-                      ) : null}
-                    </div>
-                  </div>
-                ) : currentOrderIsActive && loadingTasker ? (
-                  <div className="flex items-center gap-3 rounded-3xl border border-slate-100 bg-white p-5 shadow-lg shadow-slate-200/30 dark:border-slate-800 dark:bg-slate-900">
-                    <Loader2 className="w-5 h-5 animate-spin text-slate-400" />
-                    <p className="text-sm text-slate-500">Loading tasker details...</p>
-                  </div>
-                ) : null}
-                {currentOrder.isTestOrder ? (
-                  <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-900 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
-                    <p className="font-bold">Test Order</p>
-                    <p className="mt-1">Training order - no real payment will be made.</p>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {isTrackingPage && currentOrder ? (
-              <div className="rounded-3xl bg-white dark:bg-slate-900 shadow-lg shadow-slate-200/30 dark:shadow-slate-950/30 border border-slate-100 dark:border-slate-800 p-6 transition-all hover:shadow-xl">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-4">Order Details</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <MapPin className="w-4 h-4 text-slate-400" />
-                      <span className="text-xs font-bold text-slate-400 uppercase">Location</span>
-                    </div>
-                    <p className="font-bold text-slate-900 dark:text-white text-sm">{currentOrder.location}</p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Banknote className="w-4 h-4 text-slate-400" />
-                      <span className="text-xs font-bold text-slate-400 uppercase">Amount</span>
-                    </div>
-                    <p className="font-bold text-slate-900 dark:text-white text-sm">{formatCurrency(transferAmount)}</p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Clock className="w-4 h-4 text-slate-400" />
-                      <span className="text-xs font-bold text-slate-400 uppercase">Deadline</span>
-                    </div>
-                    <p className="font-bold text-slate-900 dark:text-white text-sm">{formatDeadline(currentOrder.dueDate || currentOrder.deadline, currentOrder.deadlineDate, currentOrder.deadlineValue, currentOrder.deadlineUnit)}</p>
-                  </div>
-                  <div className="rounded-2xl bg-slate-50 dark:bg-slate-800/50 p-4">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Store className="w-4 h-4 text-slate-400" />
-                      <span className="text-xs font-bold text-slate-400 uppercase">Store</span>
-                    </div>
-                    <p className="font-bold text-slate-900 dark:text-white text-sm">{currentOrder.store || 'Not specified'}</p>
-                  </div>
-                </div>
-                {canCancelCurrentOrder && (!isSearchingForTasker || Boolean(currentOrder.cafeInquiryStatus)) ? (
-                  <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 dark:border-rose-900/60 dark:bg-rose-950/20">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="text-sm font-black text-slate-900 dark:text-white">Cancel this order</p>
-                        <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
-                          You can cancel this task before payment is confirmed.
-                        </p>
-                      </div>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={requestCancelOrder}
-                        disabled={updatingAction === 'cancel' || confirmingTransfer}
-                        className="h-11 w-full rounded-xl border-rose-200 bg-white px-4 text-sm font-black text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-200 dark:hover:bg-rose-950/50 sm:w-auto"
-                      >
-                        {updatingAction === 'cancel' ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Cancelling...
-                          </>
-                        ) : (
-                          <>
-                            <XCircle className="mr-2 h-4 w-4" />
-                            Cancel order
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-                {currentOrder.hasPaid ? (
-                  <div className="mt-4 p-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900/50">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-full bg-emerald-500 flex items-center justify-center shrink-0 mt-0.5">
-                        <CheckCircle2 className="w-4 h-4 text-white" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-emerald-900 dark:text-emerald-300">Payment Confirmed</p>
-                        <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-1">Your transfer has been verified. Tasker is now proceeding with your order.</p>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-                {hasCompletionTimer ? (
-                  <div
-                    className={`mt-4 rounded-2xl border p-4 ${
-                      completionTimerExpired
-                        ? 'border-amber-200 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/20'
-                        : 'border-sky-200 bg-sky-50 dark:border-sky-900/60 dark:bg-sky-950/20'
-                    }`}
-                  >
-                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-white">
-                          <Clock className={`h-4 w-4 ${completionTimerExpired ? 'text-amber-600' : 'text-sky-600'}`} />
-                          {completionTimerExpired ? 'Tasker time has run out' : `${formatDuration(completionRemainingMs)} left`}
-                        </p>
-                        <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
-                          {completionTimerExpired
-                            ? 'The countdown has ended, so extra time can no longer be added.'
-                            : 'Use the add-time panel at the top of this page if your tasker needs a little more time.'}
-                        </p>
-                        <p className="mt-2 text-xs font-bold uppercase tracking-wider text-slate-400">{completionWindowLabel}</p>
-                      </div>
-                    </div>
-                    <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-900/80">
-                      <div
-                        className={`h-full rounded-full ${completionTimerExpired ? 'bg-amber-500' : 'bg-sky-500'}`}
-                        style={{ width: `${completionTimerExpired ? 100 : completionProgress}%` }}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-                {shouldAskReceiptQuestion ? (
-                  <div className="mt-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900/60 dark:bg-emerald-950/20">
-                    <p className="text-sm font-black text-slate-900 dark:text-white">Did you receive this order?</p>
-                    <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">Confirm delivery so we can close this task properly.</p>
-                    <div className="mt-4 flex flex-col gap-3 sm:flex-row">
-                      <Button
-                        type="button"
-                        onClick={() => void handleReceiptAnswer(true)}
-                        disabled={updatingAction === 'receiptYes' || updatingAction === 'receiptNo' || confirmingTransfer}
-                        className="h-11 rounded-xl bg-emerald-600 px-4 text-sm font-black text-white hover:bg-emerald-700"
-                      >
-                        {updatingAction === 'receiptYes' ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Updating...</> : 'Yes, received'}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => void handleReceiptAnswer(false)}
-                        disabled={updatingAction === 'receiptYes' || updatingAction === 'receiptNo' || confirmingTransfer}
-                        className="h-11 rounded-xl"
-                      >
-                        {updatingAction === 'receiptNo' ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Updating...</> : 'No, report issue'}
-                      </Button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {isTrackingPage && !currentOrder ? (
-              <div className="flex flex-col items-center justify-center rounded-3xl border border-white/80 bg-white/95 px-6 py-12 text-center shadow-2xl shadow-slate-950/10 dark:border-slate-800 dark:bg-slate-900">
-                <OrderMascot mood="warning" interaction="attention" size="lg" />
-                <h2 className="mt-4 text-lg font-bold text-slate-900 dark:text-white">No active orders</h2>
-                <p className="mt-1 max-w-xs text-sm text-slate-500 dark:text-slate-400">Book a new task to get started.</p>
-                <Button onClick={() => router.push('/dashboard')} className="mt-6 h-11 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 px-6 text-white hover:from-sky-700 hover:to-indigo-700">Book a Task<ArrowRight className="ml-2 h-4 w-4" /></Button>
-              </div>
-            ) : null}
-          </div>
-
-          {/* Right Column: Timeline & History */}
-          <div className="space-y-6 lg:mt-0 mt-6">
-
-            {isTrackingPage && currentOrder && currentOrder.status !== 'cancelled' && !currentOrder.cafeInquiryStatus ? (
-              <div className="rounded-3xl bg-white dark:bg-slate-900 shadow-lg shadow-slate-200/30 dark:shadow-slate-950/30 border border-slate-100 dark:border-slate-800 p-6 transition-all hover:shadow-xl">
-                <h3 className="text-sm font-bold uppercase tracking-wider text-slate-400 mb-6">Delivery Progress</h3>
-                {!currentOrder.cafeInquiryStatus && <FulfillmentTimeline order={currentOrder} />}
-              </div>
-            ) : null}
-
+    <div className="min-h-[calc(100dvh-5rem)] bg-white text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+      <main className="mx-auto w-full max-w-2xl px-4 pb-[calc(2rem+env(safe-area-inset-bottom))] pt-2 sm:px-6 lg:pt-6">
+        <header className="mb-5 flex items-center gap-2">
+          <button type="button" aria-label="Back to your orders" onClick={() => router.push('/dashboard/tasks')} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-slate-700 hover:bg-violet-50 dark:text-slate-200 dark:hover:bg-violet-950"><ArrowLeft className="h-5 w-5" /></button>
+          <p className="text-lg font-bold">Track your order</p>
+        </header>
+        {error ? <p role="alert" className="mb-5 rounded-xl bg-rose-50 p-4 text-sm text-rose-800 dark:bg-rose-950/30 dark:text-rose-200">{error}</p> : null}
+        {isTrackingPage && currentOrder && currentStage ? <>
+          <TrackingHero order={currentOrder} stage={currentStage} nowMs={nowMs} searchMessage={isSearchingForTasker ? getTaskerSearchMessage(searchElapsedMs) : undefined} />
+          <TrackingTimeline stage={currentStage} />
+          <TrackingTasker order={currentOrder} tasker={taskerDetails} loading={loadingTasker} whatsappHref={whatsappHref} />
+          {currentOrder.cafeInquiryStatus && needsPayment ? <button type="button" onClick={() => setPaymentModalOpen(true)} className="mb-5 min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700">Pay inquiry charge</button> : null}
+          <TrackingOrderSummary order={currentOrder} />
+          {shouldAskReceiptQuestion ? <section className="border-t border-slate-100 py-6 dark:border-slate-800">
+            <h2 className="font-bold">Did you receive this order?</h2>
+            <p className="mt-2 text-sm text-slate-500">Let us know so we can close your task or help with a problem.</p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <Button onClick={() => void handleReceiptAnswer(true)} disabled={Boolean(updatingAction || confirmingTransfer)} className="min-h-11 rounded-xl bg-violet-600 text-white hover:bg-violet-700">{updatingAction === 'receiptYes' ? 'Updating...' : 'Yes, received'}</Button>
+              <Button variant="outline" onClick={() => void handleReceiptAnswer(false)} disabled={Boolean(updatingAction || confirmingTransfer)} className="min-h-11 rounded-xl">{updatingAction === 'receiptNo' ? 'Updating...' : 'No, report issue'}</Button>
+            </div>
+          </section> : null}
+          <TrackingSupport>
+            {canCancelCurrentOrder ? <button type="button" onClick={requestCancelOrder} disabled={Boolean(updatingAction || confirmingTransfer)} className="min-h-11 rounded-xl px-4 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-300 dark:hover:bg-rose-950/30">{updatingAction === 'cancel' ? 'Cancelling...' : 'Cancel order'}</button> : null}
+            {canRetryOrder(currentOrder) ? <button type="button" onClick={() => void handleRetryOrder(currentOrder)} disabled={Boolean(updatingAction || confirmingTransfer)} className="min-h-11 rounded-xl px-4 text-sm font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-50 dark:text-violet-300 dark:hover:bg-violet-950">{updatingAction === 'retry' ? 'Sending...' : 'Order again'}</button> : null}
+          </TrackingSupport>
+        </> : isTrackingPage ? <section className="py-12 text-center">
+          <OrderMascot mood="warning" interaction="attention" size="md" />
+          <h1 className="mt-5 text-xl font-bold">Order unavailable</h1>
+          <p className="mt-2 text-sm text-slate-500">Return to your orders or book a new task.</p>
+          <Button onClick={() => router.push('/dashboard')} className="mt-5 min-h-11 rounded-xl bg-violet-600 text-white">Book a task</Button>
+        </section> : <>
             {/* Order History Tabs */}
             <div className="rounded-3xl bg-white dark:bg-slate-900 shadow-lg shadow-slate-200/30 dark:shadow-slate-950/30 border border-slate-100 dark:border-slate-800 overflow-hidden transition-all hover:shadow-xl">
               <div className="flex border-b border-slate-100 dark:border-slate-800">
@@ -996,25 +463,9 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
               </div>
             </div>
 
-            {/* Quick Actions */}
-            {isTrackingPage && currentOrderIsActive && currentOrder && currentOrder.taskerId ? (
-              <div className="grid gap-3">
-                <a href={whatsappHref || '#'} target="_blank" rel="noreferrer" className="p-4 rounded-2xl bg-white dark:bg-slate-900 shadow-lg shadow-slate-200/30 dark:shadow-slate-950/30 border border-slate-100 dark:border-slate-800 flex flex-col items-center gap-2 text-center transition-all hover:shadow-xl hover:-translate-y-0.5">
-                  <div className="w-10 h-10 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center">
-                    <Phone className="w-5 h-5 text-emerald-500" />
-                  </div>
-                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300">Call Tasker</span>
-                </a>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      </main>
 
-      {/* Mobile Bottom Sheet */}
-      {isTrackingPage && currentOrderIsActive && currentOrder && currentOrder.taskerId && !isSearchingForTasker ? (
-        <MobileBottomSheet order={currentOrder} onChat={() => { if (whatsappHref) window.open(whatsappHref, '_blank') }} />
-      ) : null}
+        </>}
+      </main>
 
       {/* Cancel Dialog */}
       <Dialog open={canCancelCurrentOrder && cancelConfirmOpen} onOpenChange={setCancelConfirmOpen}>
@@ -1024,7 +475,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
             <DialogDescription>Taskers will stop seeing this request. You can create a new task anytime if you still need help.</DialogDescription>
           </DialogHeader>
           <DialogFooter className="gap-3 sm:justify-end">
-            <Button type="button" variant="outline" onClick={() => setCancelConfirmOpen(false)} disabled={updatingAction === 'cancel'} className="h-11 rounded-xl">Keep searching</Button>
+            <Button type="button" variant="outline" onClick={() => setCancelConfirmOpen(false)} disabled={updatingAction === 'cancel'} className="h-11 rounded-xl">Keep order</Button>
             <Button type="button" onClick={confirmCancelOrder} disabled={updatingAction === 'cancel'} className="h-11 rounded-xl bg-rose-600 text-white hover:bg-rose-700">
               {updatingAction === 'cancel' ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Cancelling...</> : 'Cancel task'}
             </Button>
