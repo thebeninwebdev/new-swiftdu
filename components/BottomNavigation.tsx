@@ -18,7 +18,7 @@ import {
   X,
   type LucideIcon,
 } from 'lucide-react'
-import { toast } from 'sonner'
+import { useTaskerWork } from '@/components/tasker/WorkProvider'
 
 import { authClient } from '@/lib/auth-client'
 
@@ -166,13 +166,8 @@ export default function TaskerBottomNav() {
 
   const [moreOpen, setMoreOpen] = useState(false)
 
-  /*
-   * TEMPORARY UI STATE.
-   *
-   * Replace this later with the real tasker check-in state
-   * returned by your backend.
-   */
-  const [checkedIn, setCheckedIn] = useState(false)
+  const work = useTaskerWork()
+  const checkedIn = work.data?.checkedIn === true
 
   const accepted = searchParams.get('accepted')
 
@@ -227,32 +222,10 @@ export default function TaskerBottomNav() {
   )
 
   const handleCheckIn = () => {
-    const nextState = !checkedIn
-
-    setInteractionItem('work')
-    setCheckedIn(nextState)
+    if (work.loading || work.saving) return
     setMoreOpen(false)
-
-    if (nextState) {
-      toast.success('You’re checked in', {
-        description: 'You are now available to receive tasks.',
-      })
-    } else {
-      toast.success('You’re checked out', {
-        description: 'You will no longer receive new tasks.',
-      })
-    }
-
-    /*
-     * Keep Work highlighted briefly so the animation
-     * communicates the action.
-     *
-     * Once real check-in has its own dashboard state/page,
-     * you can remove this timeout.
-     */
-    window.setTimeout(() => {
-      setInteractionItem(null)
-    }, 1400)
+    if (checkedIn || work.data?.status === 'busy') work.requestCheckout()
+    else void work.checkIn()
   }
 
   const handleMore = () => {
@@ -270,6 +243,9 @@ export default function TaskerBottomNav() {
     setMoreOpen(false)
     router.push('/auth')
   }
+
+  // Task details use a dedicated action bar and a focused work layout.
+  if (/^\/tasker-dashboard\/[a-f\d]{24}$/i.test(pathname)) return null
 
   return (
     <>
@@ -501,9 +477,10 @@ export default function TaskerBottomNav() {
                 return (
                   <NavButton
                     key={item.id}
-                    item={item}
+                    item={{ ...item, label: work.data?.status === 'busy' ? 'Working' : checkedIn ? 'Check out' : 'Check in' }}
                     active={active}
                     checkedIn={checkedIn}
+                    disabled={work.loading || work.saving || !work.data}
                     onClick={handleCheckIn}
                   />
                 )
@@ -669,11 +646,13 @@ function NavButton({
   active,
   checkedIn = false,
   onClick,
+  disabled = false,
 }: {
   item: NavItem
   active: boolean
   checkedIn?: boolean
   onClick: () => void
+  disabled?: boolean
 }) {
   const Icon = item.icon
 
@@ -684,6 +663,7 @@ function NavButton({
       type="button"
       onClick={onClick}
       aria-pressed={isWork ? checkedIn : undefined}
+      disabled={disabled}
       className="
         relative flex
         min-w-0
@@ -835,7 +815,7 @@ function NavButton({
             }
           `}
         >
-          {isWork && checkedIn ? 'Online' : item.label}
+          {item.label}
         </motion.span>
       </motion.div>
     </button>

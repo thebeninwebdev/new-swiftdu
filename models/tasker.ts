@@ -17,6 +17,8 @@ export interface ITasker extends Document {
   motivationOther?: string;
 
   isVerified: boolean;
+  workMutationToken?: string;
+  workMutationExpiresAt?: Date;
   isRejected?: boolean;
   taskerMode?: "training" | "live";
   onboardingTokenHash?: string;
@@ -39,6 +41,8 @@ export interface ITasker extends Document {
 
 const TaskerSchema = new Schema<ITasker>(
   {
+    workMutationToken: { type: String, select: false },
+    workMutationExpiresAt: { type: Date, select: false },
     userId: {
       type: Schema.Types.ObjectId,
       required: false,

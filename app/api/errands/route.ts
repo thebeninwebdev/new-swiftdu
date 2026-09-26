@@ -3,6 +3,8 @@ import { Order } from '@/models/order'
 import Tasker from "@/models/tasker"
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
+import { lockTaskerWork, WorkError } from '@/lib/tasker-work-server'
+import { TaskerWorkSession } from '@/models/tasker-work-session'
 import { emitOrderUpdated } from '@/lib/socket'
 import { TASKER_SEARCH_TIMEOUT_MS } from '@/lib/order-tracking'
 import { ensureCompletionTimer } from '@/lib/completion-timer'
@@ -275,7 +277,13 @@ export async function POST(request: NextRequest) {
 
     const acceptedAt = new Date()
 
-    const updatedOrder = await Order.findOneAndUpdate(
+    const releaseWork = await lockTaskerWork(String(tasker._id))
+    const updatedOrder = await (async () => {
+      try {
+        if (!await TaskerWorkSession.exists({ taskerId: String(tasker._id), open: true })) {
+          throw new WorkError('Check in before accepting a new task.', 403)
+        }
+        return await Order.findOneAndUpdate(
       {
         _id: orderId,
         status: 'pending',
@@ -296,6 +304,8 @@ export async function POST(request: NextRequest) {
       },
       { new: true }
     )
+      } finally { await releaseWork() }
+    })()
 
     if (!updatedOrder) {
       return NextResponse.json(
@@ -338,6 +348,7 @@ Please stay close to WhatsApp. SwiftDU will contact you with the next step.`
     return NextResponse.json(updatedOrder, { status: 200 })
   } catch (error) {
     console.error('POST /api/errands error:', error)
+    if (error instanceof WorkError) return NextResponse.json({ error: error.message }, { status: error.status })
     return NextResponse.json(
       { error: 'Failed to accept errand' },
       { status: 500 }

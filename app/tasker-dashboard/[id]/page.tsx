@@ -3,7 +3,10 @@ import { CafeInquiryPanel } from '@/components/cafe-inquiry'
 import type { CafeInquiryFields } from '@/lib/cafe-inquiry'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
+import { useTaskerWork, workButton } from '@/components/tasker/WorkProvider'
+import { TaskJourney, ActiveTaskStepper } from '@/components/tasker/TaskJourney'
+import { TaskOutcome } from '@/components/tasker/TaskOutcome'
 import {
   AlertCircle,
   ArrowLeft,
@@ -192,6 +195,11 @@ function TimerRing({ progress, timeLeft, label, expired }: { progress: number; t
 export default function ErrandDetailPage() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
+  const preview = searchParams.get('preview') === 'true'
+  const work = useTaskerWork()
+  const [acceptedConfirmation, setAcceptedConfirmation] = useState(false)
+  const [accepting, setAccepting] = useState(false)
   const errandId = String(params?.id || '')
 
   const [errand, setErrandState] = useState<ErrandDetail | null>(null)
@@ -220,13 +228,14 @@ export default function ErrandDetailPage() {
     if (fetchingRef.current) { queuedRefreshRef.current = true; return }
     fetchingRef.current = true
     try {
-      const errandRes = await fetch(`/api/orders/${errandId}`, { cache: 'no-store' })
+      const isPreview = preview && !errandRef.current?.taskerId
+      const errandRes = await fetch(isPreview ? `/api/errands/${errandId}` : `/api/orders/${errandId}`, { cache: 'no-store' })
       if (errandRes.status === 401) { router.push('/auth'); return }
-      if (!errandRes.ok) throw new Error('Failed to fetch errand details')
+      if (!errandRes.ok) { const payload = await errandRes.json(); throw new Error(payload.error || 'Failed to fetch errand details') }
       const errandData = setErrand(await errandRes.json() as ErrandDetail)
 
-      const userRes = await fetch(`/api/users/${errandData.userId}`)
-      if (userRes.ok) { const userData = await userRes.json(); setUserInfo(userData) }
+      const userRes = errandData.taskerId && errandData.userId ? await fetch(`/api/users/${errandData.userId}`) : null
+      if (userRes?.ok) { const userData = await userRes.json(); setUserInfo(userData) }
       else setUserInfo(null)
 
       if (!initial && previousSnapshotRef.current) {
@@ -243,14 +252,14 @@ export default function ErrandDetailPage() {
 
       previousSnapshotRef.current = { status: errandData.status, hasPaid: Boolean(errandData.hasPaid), isDeclinedTask: Boolean(errandData.isDeclinedTask) }
       setError(null)
-    } catch {
-      setError('Failed to load errand details')
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to load errand details')
     } finally {
       fetchingRef.current = false
       setLoading(false)
       if (queuedRefreshRef.current) { queuedRefreshRef.current = false; void loadErrand(false) }
     }
-  }, [errandId, router, setErrand])
+  }, [errandId, router, setErrand, preview])
 
   useEffect(() => { void loadErrand(true) }, [loadErrand])
 
@@ -297,13 +306,27 @@ export default function ErrandDetailPage() {
       setErrand(payload)
       previousSnapshotRef.current = { status: payload.status, hasPaid: Boolean(payload.hasPaid), isDeclinedTask: Boolean(payload.isDeclinedTask) }
       toast.success(action === 'complete' ? 'Errand marked as completed.' : 'Errand cancelled successfully.')
-      if (action === 'complete' && !payload.isTestOrder && payload.status === 'completed' && !payload.taskerHasPaid && payload.settlementStatus !== 'paid' && Number(payload.platformFee || 0) > 0) {
-        router.replace(`/tasker-dashboard/payment/${payload._id}`)
-        return
-      }
-      window.setTimeout(() => router.replace('/tasker-dashboard'), 1200)
+      window.dispatchEvent(new Event('swiftdu-work-updated'))
+      if (action === 'cancel') router.replace('/tasker-dashboard')
     } catch { setError(`Failed to ${action} errand`) }
     finally { setActionLoading(null) }
+  }
+
+  const acceptTask = async () => {
+    if (accepting) return
+    setAccepting(true); setError(null)
+    try {
+      const response = await fetch('/api/errands', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: errandId }) })
+      const payload = await response.json()
+      if (!response.ok) {
+        if (response.status === 409) { toast.error(payload.error || 'Another tasker accepted this task.'); router.replace('/tasker-dashboard?view=all'); return }
+        throw new Error(payload.error || 'Could not accept task.')
+      }
+      setErrand(payload); setAcceptedConfirmation(true)
+      if (payload.serviceFeeDiscountApplied && payload.serviceFeeDiscountGrantedByPhone) toast('Customer discount active', { description: 'Contact ' + payload.serviceFeeDiscountGrantedByPhone + ' to collect your commission.' })
+      window.dispatchEvent(new Event('swiftdu-work-updated'))
+    } catch (error) { setError(error instanceof Error ? error.message : 'Check your connection and try again.') }
+    finally { setAccepting(false) }
   }
 
   const handleReportTransferIssue = async () => {
@@ -374,7 +397,7 @@ export default function ErrandDetailPage() {
         <div className="w-full max-w-sm rounded-3xl border border-slate-200 bg-white px-6 py-10 text-center shadow-xl dark:border-slate-800 dark:bg-slate-900">
           <XCircle className="mx-auto h-12 w-12 text-rose-500" />
           <h1 className="mt-4 text-xl font-bold text-slate-900 dark:text-white">Task not found</h1>
-          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">This task may have been removed or you no longer have access to it.</p>
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{error || 'This task may have been removed or you no longer have access to it.'}</p>
           <Button onClick={() => router.push('/tasker-dashboard')} className="mt-6 h-11 w-full rounded-2xl bg-sky-600 text-white hover:bg-sky-700">Back to dashboard</Button>
         </div>
       </div>
@@ -389,7 +412,7 @@ export default function ErrandDetailPage() {
   const whatsappLink = userInfo ? getWhatsappLink(userInfo.phone, errand, userInfo.name) : ''
   const restaurantPeopleCount = Number.isInteger(Number(errand.restaurantPeopleCount || 0)) && Number(errand.restaurantPeopleCount || 0) > 0 ? Number(errand.restaurantPeopleCount) : 1
   const restaurantPackaging = formatRestaurantPackaging(errand)
-  const canUpdateRestaurantPeople = errand.taskType === 'restaurant' && !errand.cafeInquiryStatus && isActive && !paymentConfirmed && !transferUnderReview
+  const canUpdateRestaurantPeople = Boolean(errand.taskerId) && errand.taskType === 'restaurant' && !errand.cafeInquiryStatus && isActive && !paymentConfirmed && !transferUnderReview
 
   // Timer calculations
   const completionStartedMs = errand.completionTimerStartedAt ? new Date(errand.completionTimerStartedAt).getTime() : new Date(errand.createdAt).getTime()
@@ -400,17 +423,20 @@ export default function ErrandDetailPage() {
   const computedCompletionDueMs = completionStartedMs + (completionWindowMinutes + completionExtensionMinutes) * 60000
   const savedCompletionDueMs = errand.completionDueAt ? new Date(errand.completionDueAt).getTime() : NaN
   const completionDueMs = Number.isFinite(savedCompletionDueMs) && Number.isFinite(computedCompletionDueMs) ? Math.max(savedCompletionDueMs, computedCompletionDueMs) : Number.isFinite(savedCompletionDueMs) ? savedCompletionDueMs : computedCompletionDueMs
-  const hasCompletionTimer = paymentConfirmed && Number.isFinite(completionDueMs) && Number.isFinite(completionStartedMs) && errand.status !== 'cancelled'
+  const hasCompletionTimer = errand.status !== 'completed' && paymentConfirmed && Number.isFinite(completionDueMs) && Number.isFinite(completionStartedMs) && errand.status !== 'cancelled'
   const completionRemainingMs = hasCompletionTimer ? completionDueMs - nowMs : 0
   const completionTimerExpired = hasCompletionTimer && completionRemainingMs <= 0
   const completionWindowMs = completionWindowMinutes > 0 ? completionWindowMinutes * 60000 : completionDueMs - completionStartedMs
   const completionProgress = hasCompletionTimer && completionWindowMs > 0 ? Math.min(100, Math.max(0, ((nowMs - completionStartedMs) / completionWindowMs) * 100)) : 0
 
+  if (acceptedConfirmation) return <TaskOutcome task={errand} onContinue={() => { setAcceptedConfirmation(false); router.replace('/tasker-dashboard/' + errand._id) }} />
+  if (errand.status === 'completed') return <TaskOutcome task={errand} completed settlementDue={settlementOutstanding} />
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-sky-50 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 pb-24">
+    <div className="min-h-screen bg-[#faf9ff] dark:bg-slate-950 pb-48">
       {/* ─── Top Bar ─── */}
       <div className="sticky top-0 z-40 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg border-b border-slate-200/50 dark:border-slate-800/50">
-        <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
+        <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <button onClick={() => router.push('/tasker-dashboard')} className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition">
             <ArrowLeft className="h-4 w-4" />
             Back
@@ -422,8 +448,13 @@ export default function ErrandDetailPage() {
       </div>
 
       {/* ─── Main Content ─── */}
-      <div className="max-w-lg mx-auto px-4 pt-4 space-y-4">
-        {errand.cafeInquiryStatus && <CafeInquiryPanel order={errand} tasker whatsappHref={whatsappLink} onUpdated={() => { void loadErrand(false) }} />}
+      <div className="max-w-2xl mx-auto px-4 pt-4 space-y-4">
+        <h1 className="text-2xl font-black tracking-tight">{errand.status === 'pending' ? 'Task details' : 'Task in progress'}</h1>
+        <p className="text-xs text-slate-500">Order #{errand._id.slice(-6)}</p>
+        <TaskJourney task={errand} />
+        {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
+        {errand.taskerId && <ActiveTaskStepper paid={paymentConfirmed} inquiry={Boolean(errand.cafeInquiry)} inquiryReady={Boolean(errand.cafeInquiryDetailsSubmitted)} review={transferUnderReview} completed={false} />}
+        {errand.taskerId && errand.cafeInquiryStatus && <CafeInquiryPanel order={errand} tasker whatsappHref={whatsappLink} onUpdated={() => { void loadErrand(false) }} />}
         {errand.isTestOrder ? (
           <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
             <p className="font-bold">Training Only</p>
@@ -433,17 +464,17 @@ export default function ErrandDetailPage() {
 
         {/* ─── Order Header Card ─── */}
         <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
-          <div className="bg-gradient-to-r from-sky-500 to-indigo-600 px-5 py-4 text-white">
+          <div className="border-b border-slate-100 bg-white px-5 py-4 text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-white">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-sky-100">Order #{errand._id.slice(-6)}</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Order #{errand._id.slice(-6)}</p>
               {errand.isTestOrder ? (
                 <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white ring-1 ring-white/30">
                   Test Order
                 </span>
               ) : null}
             </div>
-            <h1 className="mt-1 text-2xl font-black">{errand.cafeInquiry ? "Cafe Inquiry: Check what is available at " + (errand.store || "the cafe") : errand.description}</h1>
-            <p className="mt-1 text-sm text-sky-50 opacity-90">{taskTypeLabels[errand.taskType] || errand.taskType}</p>
+            <h1 className="mt-1 text-lg font-bold">{errand.cafeInquiry ? "Cafe Inquiry: Check what is available at " + (errand.store || "the cafe") : errand.description}</h1>
+            <p className="mt-1 text-sm text-slate-500">{taskTypeLabels[errand.taskType] || errand.taskType}</p>
           </div>
 
           {/* ─── ABOVE THE FOLD: Timer + WhatsApp ─── */}
@@ -457,7 +488,7 @@ export default function ErrandDetailPage() {
                     {formatDuration(completionRemainingMs)}
                   </p>
                   <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    {completionWindowMinutes}{completionExtensionMinutes ? ` + ${completionExtensionMinutes}` : ''} min window
+                    Complete before {new Date(completionDueMs).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}
                   </p>
                 </div>
                 <TimerRing
@@ -478,7 +509,7 @@ export default function ErrandDetailPage() {
             )}
 
             {/* WhatsApp Chat Button */}
-            {isActive && (whatsappLink ? (
+            {errand.taskerId && isActive && (whatsappLink ? (
               <a
                 href={whatsappLink}
                 target="_blank"
@@ -572,7 +603,7 @@ export default function ErrandDetailPage() {
         </div>
 
         {/* ─── Customer Card ─── */}
-        {userInfo && (
+        {userInfo && errand.taskerId && (
           <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm p-4">
             <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Customer</p>
             <div className="flex items-center gap-3">
@@ -583,7 +614,7 @@ export default function ErrandDetailPage() {
                 <p className="font-bold text-slate-900 dark:text-white truncate">{userInfo.name}</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">{userInfo.phone}</p>
               </div>
-              <a href={`tel:${userInfo.phone}`} className="p-2.5 rounded-xl bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 hover:bg-sky-100 dark:hover:bg-sky-950 transition">
+              <a aria-label="Call customer" href={`tel:${userInfo.phone}`} className="p-2.5 rounded-xl bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 hover:bg-sky-100 dark:hover:bg-sky-950 transition">
                 <Phone className="h-4 w-4" />
               </a>
             </div>
@@ -676,15 +707,16 @@ export default function ErrandDetailPage() {
       </div>
 
       {/* ─── Bottom Action Bar ─── */}
-      {isActive && !transferUnderReview && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200/50 dark:border-slate-800/50">
-          <div className="max-w-lg mx-auto px-4 py-3 space-y-2">
+      {errand.status === 'pending' && <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-white/95 p-4 backdrop-blur lg:left-72 dark:bg-slate-900"><div className="mx-auto max-w-2xl"><button className={workButton + ' w-full'} disabled={accepting || !work.data?.checkedIn || !work.data?.canCheckIn} onClick={() => void acceptTask()}>{accepting ? 'Accepting task...' : !work.data?.checkedIn ? 'Check in from Home to accept' : 'Accept task'}</button><button onClick={() => router.push('/tasker-dashboard?view=all')} className="min-h-11 w-full text-sm font-semibold">Not this one</button></div></div>}
+      {errand.taskerId && isActive && !transferUnderReview && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 lg:left-72 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200/50 dark:border-slate-800/50">
+          <div className="max-w-2xl mx-auto px-4 py-3 space-y-2">
             {paymentConfirmed ? (
               <>
                 <Button
                   onClick={() => setShowConfirmModal('complete')}
                   disabled={Boolean(actionLoading)}
-                  className="h-12 w-full rounded-xl bg-emerald-600 text-white font-bold hover:bg-emerald-700 disabled:opacity-60"
+                  className="h-12 w-full rounded-xl bg-violet-600 text-white font-bold hover:bg-violet-700 disabled:opacity-60"
                 >
                   {actionLoading === 'complete' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
                   {errand.cafeInquiry ? 'Complete inquiry' : 'Mark as Completed'}
@@ -740,8 +772,8 @@ export default function ErrandDetailPage() {
 
       {/* ─── Closed Task Actions ─── */}
       {!isActive && (
-        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200/50 dark:border-slate-800/50">
-          <div className="max-w-lg mx-auto px-4 py-3 space-y-2">
+        <div className="fixed bottom-0 left-0 right-0 z-40 lg:left-72 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200/50 dark:border-slate-800/50">
+          <div className="max-w-2xl mx-auto px-4 py-3 space-y-2">
             {settlementOutstanding && (
               <Button
                 onClick={() => router.push(`/tasker-dashboard/payment/${errand._id}`)}

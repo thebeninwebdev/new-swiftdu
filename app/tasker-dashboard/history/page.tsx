@@ -3,7 +3,9 @@
 import React, { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { convertToNaira, getTaskerId } from '@/lib/utils'
+import { convertToNaira } from '@/lib/utils'
+import { WorkStats } from '@/components/tasker/TaskerHome'
+import { useTaskerWork } from '@/components/tasker/WorkProvider'
 import { 
   History, 
   CheckCircle2, 
@@ -121,22 +123,15 @@ const statusStyles: Record<string, { bg: string; text: string; darkBg: string; d
 }
 
 export default function HistoryPage() {
-  const [taskerId, setTaskerId] = useState<string | null>(null)
+  const work = useTaskerWork()
+  const taskerId = work.data?.taskerId
+  const [period, setPeriod] = useState<'today' | 'week' | 'month'>('today')
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [searchQuery, setSearchQuery] = useState('')
   const [data, setData] = useState<TaskHistory | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-
-  // Get taskerId from session
-  useEffect(() => {
-    getTaskerId().then((id) => {
-      if (id) setTaskerId(id)
-    }).catch((err) => {
-      console.error('Failed to get tasker ID', err)
-    })
-  }, [])
 
   // Fetch task history
   useEffect(() => {
@@ -187,10 +182,18 @@ export default function HistoryPage() {
   ) || []
 
   return (
-    <div className="min-h-[calc(100vh-5rem)] bg-linear-to-br from-[#f6f9fc] via-white to-[#eef7ff] dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 pt-10 sm:pt-0">
+    <div className="min-h-[calc(100vh-5rem)] bg-[#faf9ff] dark:bg-slate-950">
       {/* Sticky Header */}
 
       <div className="mx-auto max-w-4xl px-3 py-4 sm:px-4 sm:py-6">
+        <h1 className="text-3xl font-black tracking-tight">Earnings & history</h1>
+        <p className="mt-2 text-sm text-slate-500">Your campus work, all in one place.</p>
+        {work.data?.mode === 'training' && <p className="mt-2 text-sm font-semibold text-violet-700">Training mode · test tasks do not count towards real earnings.</p>}
+        <div className="my-5 flex gap-2" aria-label="Earnings summary period">{(['today', 'week', 'month'] as const).map(value => <button key={value} aria-pressed={period === value} onClick={() => setPeriod(value)} className={`min-h-11 rounded-full px-5 text-sm font-semibold ${period === value ? 'bg-violet-600 text-white' : 'bg-white text-slate-600 dark:bg-slate-900'}`}>{value === 'today' ? 'Today' : value === 'week' ? 'This week' : 'This month'}</button>)}</div>
+        <WorkStats period={period} />
+        <p className="mb-6 mt-2 text-xs text-slate-500">Live earnings only. Active time is measured from recorded check-ins in Lagos time.</p>
+        {work.error && <p role="alert" className="mb-4 text-sm text-rose-700">{work.error}<button onClick={() => void work.refresh()} className="ml-3 min-h-11 underline">Retry</button></p>}
+        <h2 className="mb-3 text-lg font-bold">All-time totals & recent tasks</h2>
         {/* Stats Cards */}
         {data && (
           <div className="mb-4 grid grid-cols-2 gap-3">

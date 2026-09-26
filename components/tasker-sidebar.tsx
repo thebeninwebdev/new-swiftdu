@@ -1,4 +1,5 @@
 'use client'
+import { WorkControl } from '@/components/tasker/WorkControl'
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -600,6 +601,7 @@ export default function TaskerSidebar() {
             MAIN NAVIGATION
         ====================================== */}
 
+        <WorkControl />
         <nav className="flex-1 space-y-2 overflow-y-auto p-4">
           {navigation.map((item) => (
             <NavButton

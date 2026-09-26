@@ -17,6 +17,19 @@ interface ReviewSummary {
   reviewCount: number
 }
 
+export async function calculateTaskerPeriodStats(taskerId: string, starts: Record<'today' | 'week' | 'month', Date>) {
+  const pairs = await Promise.all(Object.entries(starts).map(async ([period, start]) => {
+    const [result] = await Order.aggregate([
+      { $match: excludeTestOrders({ taskerId, status: 'completed', completedAt: { $gte: start } }) },
+      { $group: { _id: null, tasks: { $sum: 1 }, earnings: { $sum: {
+        $cond: [{ $and: [{ $eq: ['$serviceFeeDiscountApplied', true] }, { $gt: ['$discountCommissionAmount', 0] }] }, '$discountCommissionAmount', { $ifNull: ['$taskerFee', 0] }],
+      } } } },
+    ])
+    return [period, { tasks: Number(result?.tasks || 0), earnings: Number(result?.earnings || 0) }] as const
+  }))
+  return Object.fromEntries(pairs) as Record<'today' | 'week' | 'month', { tasks: number; earnings: number }>
+}
+
 export async function calculateTaskerStats(taskerId: string): Promise<TaskerStats> {
   const [completedTasks, reviewSummary] = await Promise.all([
     Order.countDocuments(excludeTestOrders({ taskerId, status: 'completed' })),

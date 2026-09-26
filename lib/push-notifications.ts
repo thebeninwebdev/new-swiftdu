@@ -11,6 +11,7 @@ import {
 } from '@/lib/tasker-push-subscriptions'
 import { PushSubscription } from '@/models/push-subscription'
 import Tasker from '@/models/tasker'
+import { TaskerWorkSession } from '@/models/tasker-work-session'
 
 type PushAudience =
   | { userIds: string[] }
@@ -166,7 +167,10 @@ function createPushPayload(input: PushPayloadInput) {
 }
 
 async function getApprovedTaskerUserIds() {
+  const checkedInIds = await TaskerWorkSession.distinct('taskerId', { open: true })
   const taskers = await Tasker.find({
+    _id: { $in: checkedInIds },
+    isSettlementSuspended: { $ne: true },
     isVerified: true,
     isRejected: { $ne: true },
     userId: { $exists: true, $ne: null },
