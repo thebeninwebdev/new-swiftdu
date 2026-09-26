@@ -368,3 +368,16 @@
 @media (prefers-reduced-motion: reduce) {
   .mobile-push-page, .mobile-push-menu { transition: none; }
 }
+
+/* Keep the payout suggestion close to the account form without adding another tasker decision. */
+#bank-details-title + p::after {
+  content: " For quicker transfers, we recommend OPay or PalmPay.";
+  display: block;
+  margin-top: 0.5rem;
+  font-weight: 600;
+  color: #6d28d9;
+}
+
+.dark #bank-details-title + p::after {
+  color: #c4b5fd;
+}

@@ -5,7 +5,6 @@ import type { CafeInquiryFields } from '@/lib/cafe-inquiry'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useTaskerWork, workButton } from '@/components/tasker/WorkProvider'
-import { TaskJourney, ActiveTaskStepper } from '@/components/tasker/TaskJourney'
 import { TaskOutcome } from '@/components/tasker/TaskOutcome'
 import {
   AlertCircle,
@@ -67,6 +66,9 @@ interface ErrandDetail extends CafeInquiryFields {
   restaurantPackagingFee?: number
   indomiePacks?: number
   eggCount?: number
+  waterBags?: number
+  printingServiceType?: 'printing' | 'photocopying'
+  printingNeedsEditing?: boolean
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   taskerId?: string
   taskerName?: string
@@ -167,28 +169,46 @@ function getWhatsappLink(phone: string, errand: ErrandDetail, userName?: string)
 }
 
 // ─── Timer Ring Component ───
-function TimerRing({ progress, timeLeft, label, expired }: { progress: number; timeLeft: string; label: string; expired: boolean }) {
-  const radius = 36
-  const circumference = 2 * Math.PI * radius
-  const offset = circumference - (progress / 100) * circumference
+function getTaskTitle(errand: ErrandDetail) {
+  if (errand.store === 'tasker_choose') return 'Get food from any store'
+  if (errand.cafeInquiry) return `Check what is available at ${errand.store || 'the cafe'}`
+  if (errand.taskType === 'restaurant') return `Get food from ${errand.store || 'the restaurant'}`
+  if (errand.taskType === 'printing') return errand.printingServiceType === 'photocopying' ? 'Photocopy these notes' : 'Print these notes'
+  if (errand.taskType === 'copy_notes') return 'Copy these notes'
+  if (errand.taskType === 'water') return `Get ${errand.waterBags || 1} bag${Number(errand.waterBags || 1) === 1 ? '' : 's'} of water`
+  if (errand.taskType === 'indomie') return 'Get Indomie'
+  if (errand.taskType === 'dry_cleaning') return 'Pick up dry cleaning'
+  return errand.description || 'Complete this errand'
+}
 
-  return (
-    <div className="flex flex-col items-center gap-2">
-      <div className="relative w-24 h-24">
-        <svg className="w-24 h-24 -rotate-90" viewBox="0 0 80 80">
-          <circle cx="40" cy="40" r={radius} fill="none" stroke="currentColor" strokeWidth="6" className="text-slate-200 dark:text-slate-700" />
-          <circle cx="40" cy="40" r={radius} fill="none" stroke="currentColor" strokeWidth="6" strokeLinecap="round"
-            className={expired ? 'text-amber-500' : 'text-sky-500'}
-            style={{ strokeDasharray: circumference, strokeDashoffset: offset, transition: 'stroke-dashoffset 1s linear' }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={`text-lg font-black ${expired ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'}`}>{timeLeft}</span>
-          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
-        </div>
-      </div>
-    </div>
-  )
+function getStoreDisplayName(store?: string) {
+  return store === 'tasker_choose' ? 'Any store' : store
+}
+
+function getTaskDetails(errand: ErrandDetail, packaging: string) {
+  const details: string[] = []
+  if (errand.taskType === 'indomie') {
+    details.push(`${errand.indomiePacks || 0} Indomie`)
+    if (errand.eggCount) details.push(`${errand.eggCount} egg${errand.eggCount === 1 ? '' : 's'}`)
+  } else if (errand.taskType === 'water') details.push(`${errand.waterBags || 1} bag${Number(errand.waterBags || 1) === 1 ? '' : 's'} of water`)
+  else if (errand.taskType === 'printing') {
+    if (errand.numberOfPages) details.push(`${errand.numberOfPages} pages`)
+    details.push(errand.printingServiceType === 'photocopying' ? 'Photocopying' : 'Black & white printing')
+    if (errand.printingNeedsEditing) details.push('Editing needed')
+  } else if (errand.taskType === 'copy_notes') {
+    if (errand.copyNotesPages || errand.numberOfPages) details.push(`${errand.copyNotesPages || errand.numberOfPages} pages`)
+    if (errand.copyNotesType || errand.noteSize) details.push(`${errand.copyNotesType || errand.noteSize} note`)
+  } else if (errand.description) details.push(errand.description)
+  if (errand.taskType === 'restaurant' && (!errand.cafeInquiryStatus || errand.cafeInquiryDetailsSubmitted)) details.push(`Packaging: ${packaging}`)
+  return details
+}
+
+function getTaskerNextStep(errand: ErrandDetail, paid: boolean, review: boolean, settlementDue: boolean) {
+  if (review) return { title: 'We’re checking this payment', detail: 'Don’t hand over the order yet. SwiftDU will update you.', tone: 'rose' }
+  if (paid) return { title: errand.cafeInquiry ? 'Finish the cafe check' : 'Give the order to the customer', detail: errand.cafeInquiry ? 'Share what is available, then confirm the inquiry is done.' : 'Then tap “Order delivered.”', tone: 'emerald' }
+  if (settlementDue) return { title: 'Task completed', detail: 'Send SwiftDU’s service fee to finish this task.', tone: 'amber' }
+  if (errand.status === 'completed') return { title: 'Task completed', detail: 'No more action is required.', tone: 'emerald' }
+  return { title: errand.cafeInquiry ? 'Check the cafe' : 'Waiting for customer payment', detail: errand.cafeInquiry ? 'Share what is available, then wait for payment.' : 'Get the order ready, but do not hand it over yet.', tone: 'indigo' }
 }
 
 // ─── Main Page ───
@@ -428,6 +448,7 @@ export default function ErrandDetailPage() {
   const completionTimerExpired = hasCompletionTimer && completionRemainingMs <= 0
   const completionWindowMs = completionWindowMinutes > 0 ? completionWindowMinutes * 60000 : completionDueMs - completionStartedMs
   const completionProgress = hasCompletionTimer && completionWindowMs > 0 ? Math.min(100, Math.max(0, ((nowMs - completionStartedMs) / completionWindowMs) * 100)) : 0
+  const nextStep = getTaskerNextStep(errand, paymentConfirmed, transferUnderReview, settlementOutstanding)
 
   if (acceptedConfirmation) return <TaskOutcome task={errand} onContinue={() => { setAcceptedConfirmation(false); router.replace('/tasker-dashboard/' + errand._id) }} />
   if (errand.status === 'completed') return <TaskOutcome task={errand} completed settlementDue={settlementOutstanding} />
@@ -449,16 +470,14 @@ export default function ErrandDetailPage() {
 
       {/* ─── Main Content ─── */}
       <div className="max-w-2xl mx-auto px-4 pt-4 space-y-4">
-        <h1 className="text-2xl font-black tracking-tight">{errand.status === 'pending' ? 'Task details' : 'Task in progress'}</h1>
-        <p className="text-xs text-slate-500">Order #{errand._id.slice(-6)}</p>
-        <TaskJourney task={errand} />
+        <h1 className="text-2xl font-black tracking-tight">{getTaskTitle(errand)}</h1>
+        <p className="text-sm text-slate-500">{errand.cafeInquiry ? 'Cafe inquiry' : taskTypeLabels[errand.taskType]} <span aria-hidden="true">•</span> Order #{errand._id.slice(-6)}</p>
         {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-        {errand.taskerId && <ActiveTaskStepper paid={paymentConfirmed} inquiry={Boolean(errand.cafeInquiry)} inquiryReady={Boolean(errand.cafeInquiryDetailsSubmitted)} review={transferUnderReview} completed={false} />}
         {errand.taskerId && errand.cafeInquiryStatus && <CafeInquiryPanel order={errand} tasker whatsappHref={whatsappLink} onUpdated={() => { void loadErrand(false) }} />}
         {errand.isTestOrder ? (
           <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
-            <p className="font-bold">Training Only</p>
-            <p className="mt-1">This is a test order. No real payment or settlement is required.</p>
+            <p className="font-bold">Training task</p>
+            <p className="mt-1">No real money is involved.</p>
           </div>
         ) : null}
 
@@ -473,30 +492,18 @@ export default function ErrandDetailPage() {
                 </span>
               ) : null}
             </div>
-            <h1 className="mt-1 text-lg font-bold">{errand.cafeInquiry ? "Cafe Inquiry: Check what is available at " + (errand.store || "the cafe") : errand.description}</h1>
-            <p className="mt-1 text-sm text-slate-500">{taskTypeLabels[errand.taskType] || errand.taskType}</p>
+            <h2 className="mt-1 text-lg font-bold">What to do</h2>
+            <div className="mt-2 space-y-1 text-base font-semibold leading-6">{getTaskDetails(errand, restaurantPackaging).map(detail => <p key={detail}>{detail}</p>)}</div>
           </div>
 
           {/* ─── ABOVE THE FOLD: Timer + WhatsApp ─── */}
           <div className="p-4 space-y-4">
             {/* Timer */}
             {hasCompletionTimer ? (
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Time Left</p>
-                  <p className={`mt-1 text-3xl font-black tabular-nums ${completionTimerExpired ? 'text-amber-600 dark:text-amber-400' : 'text-slate-900 dark:text-white'}`}>
-                    {formatDuration(completionRemainingMs)}
-                  </p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                    Complete before {new Date(completionDueMs).toLocaleTimeString('en-NG', { hour: 'numeric', minute: '2-digit' })}
-                  </p>
-                </div>
-                <TimerRing
-                  progress={completionTimerExpired ? 100 : completionProgress}
-                  timeLeft={formatDuration(completionRemainingMs)}
-                  label={completionTimerExpired ? 'Expired' : 'Left'}
-                  expired={completionTimerExpired}
-                />
+              <div className={`rounded-xl p-3 ${completionTimerExpired || completionRemainingMs <= 5 * 60 * 1000 ? 'bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100' : 'bg-slate-50 dark:bg-slate-800/50'}`}>
+                <div className="flex items-center gap-2 font-bold"><Clock className="h-5 w-5" />{completionTimerExpired ? 'Time is up' : `${formatDuration(completionRemainingMs)} left`}</div>
+                <p className="mt-1 text-sm opacity-75">{completionTimerExpired ? 'Finish the delivery as soon as possible.' : `Try to complete this delivery within ${completionWindowMinutes} minutes.`}</p>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/10"><div className="h-full rounded-full bg-current" style={{ width: `${completionTimerExpired ? 100 : completionProgress}%` }} /></div>
               </div>
             ) : (
               <div className="flex items-center gap-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3">
@@ -526,21 +533,9 @@ export default function ErrandDetailPage() {
             ))}
 
             {/* Quick Info Row */}
-            <div className="grid grid-cols-2 gap-2">
-              <div className="flex items-center gap-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3">
-                <MapPin className="h-4 w-4 text-sky-500 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase text-slate-400">Location</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{errand.location}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3">
-                <Store className="h-4 w-4 text-sky-500 shrink-0" />
-                <div className="min-w-0">
-                  <p className="text-[10px] font-bold uppercase text-slate-400">Store</p>
-                  <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{errand.store || 'Any'}</p>
-                </div>
-              </div>
+            <div className="border-y border-slate-100 py-4 dark:border-slate-800">
+              <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Go to</p>
+              <div className="mt-2 flex gap-3"><MapPin className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" /><div><p className="text-lg font-bold text-slate-900 dark:text-white">{getStoreDisplayName(errand.store) || errand.location}</p>{errand.store && <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{errand.location}</p>}</div></div>
             </div>
 
             {/* Packaging (for restaurant) */}
@@ -588,14 +583,10 @@ export default function ErrandDetailPage() {
               </div>
               <div>
                 <p className="text-sm font-bold text-slate-900 dark:text-white">
-                  {transferUnderReview ? 'Transfer under review' : paymentConfirmed ? 'Payment confirmed' : errand.cafeInquiryStatus && !errand.cafeInquiryDetailsSubmitted ? 'Cafe check in progress' : 'Awaiting payment'}
+                  {nextStep.title}
                 </p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  {transferUnderReview
-                    ? 'Admin reviewing dispute'
-                    : paymentConfirmed
-                      ? 'Customer marked transfer as sent'
-                      : errand.cafeInquiry ? 'Complete the inquiry after its service charge is confirmed' : 'Complete delivery after customer pays'}
+                  {nextStep.detail}
                 </p>
               </div>
             </div>
@@ -614,10 +605,8 @@ export default function ErrandDetailPage() {
                 <p className="font-bold text-slate-900 dark:text-white truncate">{userInfo.name}</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">{userInfo.phone}</p>
               </div>
-              <a aria-label="Call customer" href={`tel:${userInfo.phone}`} className="p-2.5 rounded-xl bg-sky-50 dark:bg-sky-950/50 text-sky-600 dark:text-sky-400 hover:bg-sky-100 dark:hover:bg-sky-950 transition">
-                <Phone className="h-4 w-4" />
-              </a>
             </div>
+            <div className="mt-4 grid grid-cols-2 gap-2"><a href={`tel:${userInfo.phone}`} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-100 text-sm font-bold text-slate-800 dark:bg-slate-800 dark:text-white"><Phone className="h-4 w-4" />Call</a>{whatsappLink ? <a href={whatsappLink} target="_blank" rel="noreferrer" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-bold text-white"><MessageCircle className="h-4 w-4" />WhatsApp</a> : <p className="flex items-center justify-center text-sm text-slate-500">WhatsApp unavailable</p>}</div>
           </div>
         )}
 
@@ -625,8 +614,8 @@ export default function ErrandDetailPage() {
         {canUpdateRestaurantPeople && (
           <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm p-4">
             <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">People on Order</p>
-              <span className="text-xs text-slate-500 dark:text-slate-400">Updates customer total</span>
+              <p className="font-bold text-slate-900 dark:text-white">How many people is this order for?</p>
+              <span className="text-xs text-slate-500 dark:text-slate-400">Changes service fee</span>
             </div>
             <div className="grid grid-cols-5 gap-2">
               {Array.from({ length: RESTAURANT_MAX_PEOPLE }, (_, i) => i + 1).map((people) => (
@@ -650,26 +639,26 @@ export default function ErrandDetailPage() {
 
         {/* ─── Transfer Summary ─── */}
         <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm p-4">
-          <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Transfer Summary</p>
+          <p className="font-bold text-slate-900 dark:text-white mb-3">Money</p>
           <div className="space-y-2.5">
             <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-500 dark:text-slate-400">Customer budget</span>
-              <span className="text-sm font-bold text-slate-900 dark:text-white">{convertToNaira(errand.amount || 0)}</span>
+              <span className="text-sm text-slate-500 dark:text-slate-400">Customer sends you</span>
+              <span className="text-sm font-bold text-slate-900 dark:text-white">{convertToNaira(errand.totalAmount || errand.amount + errand.commission)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-sm text-slate-500 dark:text-slate-400">Your fee</span>
+              <span className="text-sm text-slate-500 dark:text-slate-400">You earn</span>
               <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
                 {convertToNaira(errand.serviceFeeDiscountApplied ? errand.discountCommissionAmount || errand.taskerFee || 0 : errand.taskerFee || 0)}
               </span>
             </div>
             <div className="h-px bg-slate-100 dark:bg-slate-800" />
             <div className="flex justify-between items-center">
-              <span className="text-sm font-bold text-slate-900 dark:text-white">Total</span>
-              <span className="text-lg font-black text-slate-900 dark:text-white">{convertToNaira(errand.totalAmount || errand.amount + errand.commission)}</span>
+              <span className="text-sm font-bold text-slate-900 dark:text-white">Customer budget</span>
+              <span className="text-lg font-black text-slate-900 dark:text-white">{convertToNaira(errand.amount || 0)}</span>
             </div>
             {errand.platformFee > 0 && (
               <div className="flex justify-between items-center">
-                <span className="text-xs text-slate-400 dark:text-slate-500">Platform fee due</span>
+                <span className="text-xs text-slate-400 dark:text-slate-500">You send SwiftDU after delivery</span>
                 <span className="text-xs font-bold text-amber-600 dark:text-amber-400">{convertToNaira(errand.platformFee)}</span>
               </div>
             )}
@@ -682,8 +671,8 @@ export default function ErrandDetailPage() {
             <div className="flex items-start gap-3">
               <AlertCircle className="h-5 w-5 text-rose-500 shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold text-rose-900 dark:text-rose-100">Declined task awaiting review</p>
-                <p className="text-sm text-rose-700 dark:text-rose-200 mt-1">{errand.declinedMessage || 'The transaction was not found. Admin will review this dispute.'}</p>
+                <p className="font-bold text-rose-900 dark:text-rose-100">Payment problem reported</p>
+                <p className="text-sm text-rose-700 dark:text-rose-200 mt-1">{errand.declinedMessage || 'SwiftDU is checking the payment. Do not hand over the order yet.'}</p>
                 <Button
                   variant="outline"
                   onClick={() => void handleClearDeclinedTask()}
@@ -691,7 +680,7 @@ export default function ErrandDetailPage() {
                   className="mt-3 h-10 rounded-xl border-rose-300 text-rose-700 hover:bg-rose-100 dark:border-rose-800 dark:text-rose-200 dark:hover:bg-rose-950/40"
                 >
                   {actionLoading === 'clearDeclined' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Clear declined flag
+                  Payment received after all
                 </Button>
               </div>
             </div>
@@ -719,9 +708,9 @@ export default function ErrandDetailPage() {
                   className="h-12 w-full rounded-xl bg-violet-600 text-white font-bold hover:bg-violet-700 disabled:opacity-60"
                 >
                   {actionLoading === 'complete' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
-                  {errand.cafeInquiry ? 'Complete inquiry' : 'Mark as Completed'}
+                  {errand.cafeInquiry ? 'Inquiry completed' : 'Order delivered'}
                 </Button>
-                <div className="grid grid-cols-2 gap-2">
+                <details className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800"><summary className="h-8 cursor-pointer list-none px-2 text-sm font-semibold text-slate-600 dark:text-slate-300">Need help?</summary><div className="grid grid-cols-2 gap-2 pt-2">
                   <Button
                     variant="outline"
                     onClick={() => void handleReportTransferIssue()}
@@ -729,7 +718,7 @@ export default function ErrandDetailPage() {
                     className="h-10 rounded-xl border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950/30"
                   >
                     {actionLoading === 'report' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <AlertCircle className="h-4 w-4 mr-2" />}
-                    Report Issue
+                    Payment problem
                   </Button>
                   {taskerCanCancel ? (
                     <Button
@@ -739,19 +728,19 @@ export default function ErrandDetailPage() {
                       className="h-10 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
                     >
                       {actionLoading === 'cancel' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
-                      Cancel
+                      Cancel task
                     </Button>
                   ) : (
                     <div className="h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-500 dark:text-slate-400 text-center px-2">
                       Cancel locked after payment
                     </div>
                   )}
-                </div>
+                </div></details>
               </>
             ) : (
               <div className="space-y-2">
                 <div className="rounded-xl bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900/50 p-3 text-center">
-                  <p className="text-sm text-sky-700 dark:text-sky-300">{errand.cafeInquiry ? 'Complete the cafe check, then mark the inquiry done after payment is confirmed.' : 'Complete delivery, then mark done after customer confirms payment.'}</p>
+                  <p className="text-sm font-semibold text-sky-700 dark:text-sky-300">Waiting for payment</p><p className="mt-1 text-xs text-sky-700 dark:text-sky-300">Do not hand over the order yet.</p>
                 </div>
                 {taskerCanCancel && (
                   <Button
@@ -761,7 +750,7 @@ export default function ErrandDetailPage() {
                     className="h-10 w-full rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
                   >
                     {actionLoading === 'cancel' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
-                    Cancel Errand
+                    Cancel task
                   </Button>
                 )}
               </div>
@@ -774,12 +763,12 @@ export default function ErrandDetailPage() {
       {!isActive && (
         <div className="fixed bottom-0 left-0 right-0 z-40 lg:left-72 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200/50 dark:border-slate-800/50">
           <div className="max-w-2xl mx-auto px-4 py-3 space-y-2">
-            {settlementOutstanding && (
+              {settlementOutstanding && (
               <Button
                 onClick={() => router.push(`/tasker-dashboard/payment/${errand._id}`)}
                 className="h-12 w-full rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600"
               >
-                Pay Platform Fee
+                Pay SwiftDU {convertToNaira(errand.platformFee)}
               </Button>
             )}
             <Button
@@ -800,20 +789,20 @@ export default function ErrandDetailPage() {
               {showConfirmModal === 'complete' ? <CheckCircle2 className="h-6 w-6" /> : <XCircle className="h-6 w-6" />}
             </div>
             <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-white">
-              {showConfirmModal === 'complete' ? errand.cafeInquiry ? 'Complete inquiry?' : 'Mark completed?' : 'Cancel errand?'}
+              {showConfirmModal === 'complete' ? errand.cafeInquiry ? 'Have you checked the cafe?' : 'Has the customer received the order?' : 'Cancel this task?'}
             </h2>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
               {showConfirmModal === 'complete'
-                ? errand.cafeInquiry ? 'Confirm that you checked the cafe and shared availability with the customer on WhatsApp.' : 'Only confirm after the customer has received the order. A "Not yet" response keeps your platform fee payable.'
-                : 'This will close the task and return you to the dashboard.'}
+                ? errand.cafeInquiry ? 'Only confirm after you have shared what is available with the customer.' : 'Only confirm after you have handed the order to the customer.'
+                : 'Only cancel if you cannot complete this task.'}
             </p>
             <div className="mt-6 flex gap-3">
-              <Button variant="outline" onClick={() => setShowConfirmModal(null)} className="h-11 flex-1 rounded-xl">Go back</Button>
+              <Button variant="outline" onClick={() => setShowConfirmModal(null)} className="h-11 flex-1 rounded-xl">{showConfirmModal === 'complete' ? 'Not yet' : 'Go back'}</Button>
               <Button
                 onClick={() => handleAction(showConfirmModal)}
                 className={`h-11 flex-1 rounded-xl text-white font-bold ${showConfirmModal === 'complete' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}
               >
-                {showConfirmModal === 'complete' ? 'Complete' : 'Cancel'}
+                {showConfirmModal === 'complete' ? errand.cafeInquiry ? 'Yes, checked' : 'Yes, delivered' : 'Yes, cancel task'}
               </Button>
             </div>
           </div>

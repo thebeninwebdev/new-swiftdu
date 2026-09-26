@@ -62,7 +62,7 @@ export function TaskerHome({ name, errands, accepted, loading, refreshing, error
             </section>}
             {tasksOnly && !accepted.length && <div className={`${workCard} text-center`}><h2 className="font-bold">No active tasks yet</h2><Link href="/tasker-dashboard?view=all" className={`${workButton} mt-4`}>Find a task</Link></div>}
           </div>
-          <aside className="order-first space-y-4 lg:order-last"><WorkStats /><p className="px-2 text-xs leading-5 text-slate-500">Earnings show completed live tasks. Active time is measured from your recorded check-ins.</p><Link href="/tasker-dashboard/history" className={`${workCard} block text-sm font-semibold text-violet-700`}>View earnings & history →</Link><button onClick={work.requestCheckout} className="min-h-12 w-full rounded-2xl border border-slate-200 text-sm font-semibold">{work.data?.status === 'busy' ? 'Working · checkout options' : 'Check out'}</button></aside>
+          <aside className="order-first space-y-4 lg:order-last"><WorkStats /><p className="px-2 text-xs leading-5 text-slate-500">Earnings show completed live tasks. Active time is measured from your recorded check-ins.</p></aside>
         </div>
       </>}
     </>}

@@ -23,7 +23,7 @@ export function canPayCafeInquiry(status: CafeInquiryStatus | undefined) {
 
 export const CAFE_OPTIONS = [
   { value: '', label: 'Select a store...' },
-  { value: 'tasker_choose', label: 'Help me choose / any open cafe' },
+  { value: 'tasker_choose', label: 'Any store' },
   { value: 'akpan', label: 'Akpan Store' },
   { value: 'mama', label: "Mama's Kitchen" },
   { value: 'golley', label: 'Golley Shop' },
