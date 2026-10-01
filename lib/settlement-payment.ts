@@ -72,6 +72,9 @@ export async function verifyAndMarkOrderSettlementPaid({
   reference,
   transactionId,
 }: VerifySettlementInput) {
+  if (order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
+    throw new Error('No platform settlement is due for this order.')
+  }
   if (order.taskerHasPaid && order.settlementStatus === 'paid') {
     return order
   }

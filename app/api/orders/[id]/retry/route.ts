@@ -1,3 +1,5 @@
+import { saveNewOrderWithBonus } from '@/lib/first-order-bonus';
+import { calculateOrderPricing } from '@/lib/pricing';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { auth } from '@/lib/auth';
@@ -12,7 +14,7 @@ import {
   getUserLookupConditions,
   hasActiveServiceFeeDiscountReservation,
 } from '@/lib/service-fee-discount';
-import { CAFE_INQUIRY_SERVICE_FEE, CAFE_INQUIRY_EXTRA_FEE } from '@/lib/pricing';
+import { CAFE_INQUIRY_EXTRA_FEE } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
 import {
   getCreatedInMode,
@@ -59,6 +61,13 @@ export async function POST(
       );
     }
 
+    if (order.taskType === 'copy_notes') {
+      return NextResponse.json(
+        { error: 'Copying notes is no longer available. Please choose another task.' },
+        { status: 400 }
+      );
+    }
+
     const bookedAt = new Date();
     const customerLookupConditions = getUserLookupConditions({ id: session.user.id });
     const customerAccount = customerLookupConditions.length
@@ -74,36 +83,25 @@ export async function POST(
     }
 
     const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(session.user.id);
-    const fullServiceFee = order.cafeInquiry ? CAFE_INQUIRY_SERVICE_FEE : Number(
-      order.serviceFeeBeforeDiscount || order.serviceFee || order.commission || 0
-    );
+    // Reposts always start with today's normal price, never a discounted snapshot.
+    const pricing = calculateOrderPricing({
+      ...order.toObject(), amount: order.cafeInquiry ? 0 : Number(order.itemPrice ?? order.amount),
+      restaurantPeopleCount: order.cafeInquiry ? 1 : order.restaurantPeopleCount,
+      restaurantTakeawayCount: order.cafeInquiry ? 0 : order.restaurantTakeawayCount,
+    });
+    const fullServiceFee = pricing.serviceFee;
     const serviceFeeDiscountApplied = Boolean(
       customerAccount?.serviceFeeDiscountEnabled &&
         Number(customerAccount.serviceFeeDiscountRemainingOrders || 0) > 0 &&
         !hasDiscountReservation &&
         fullServiceFee > 0
     );
-    const tieredSettlement = splitServiceFee(fullServiceFee);
+    const normalFees = pricing.pricingModel === 'tiered' ? splitServiceFee(fullServiceFee) : { platformFee: pricing.platformFee || 0, taskerFee: pricing.taskerFee || 0 };
     const discountCommissionAmount = serviceFeeDiscountApplied
-      ? order.pricingModel === 'tiered'
-        ? order.cafeInquiry ? splitServiceFee(fullServiceFee - CAFE_INQUIRY_EXTRA_FEE).taskerFee : Number(order.taskerFee || tieredSettlement.taskerFee || fullServiceFee)
+      ? pricing.pricingModel === 'tiered'
+        ? order.cafeInquiry ? splitServiceFee(fullServiceFee - CAFE_INQUIRY_EXTRA_FEE).taskerFee : normalFees.taskerFee
         : fullServiceFee
       : 0;
-    const retriedServiceFee = fullServiceFee;
-    const retriedPlatformFee = order.cafeInquiry ? tieredSettlement.platformFee :
-      Number(order.platformFee || 0) ||
-      (order.pricingModel === 'tiered'
-        ? tieredSettlement.platformFee
-        : fullServiceFee);
-    const retriedTaskerFee = order.cafeInquiry ? tieredSettlement.taskerFee :
-      Number(order.taskerFee || 0) ||
-      (order.pricingModel === 'tiered' ? tieredSettlement.taskerFee : 0);
-    const fullTotalAmount = order.cafeInquiry ? fullServiceFee :
-      Number(order.totalAmount || 0) +
-      (order.serviceFeeDiscountApplied ? fullServiceFee : 0);
-    const retriedTotalAmount = serviceFeeDiscountApplied
-      ? Math.max(0, fullTotalAmount - fullServiceFee + (order.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
-      : fullTotalAmount;
 
     const retriedOrder = new Order({
       userId: order.userId,
@@ -112,12 +110,12 @@ export async function POST(
       customerName: order.customerName,
       taskType: order.taskType,
       description: order.cafeInquiry ? 'Text me what is in cafe' : order.description,
-      amount: order.cafeInquiry ? 0 : order.amount,
+      amount: pricing.amount,
       itemPrice: order.cafeInquiry ? 0 : order.itemPrice,
-      commission: retriedServiceFee,
-      platformFee: retriedPlatformFee,
-      taskerFee: retriedTaskerFee,
-      serviceFee: retriedServiceFee,
+      commission: fullServiceFee,
+      platformFee: normalFees.platformFee,
+      taskerFee: normalFees.taskerFee,
+      serviceFee: fullServiceFee,
       serviceFeeBeforeDiscount: serviceFeeDiscountApplied ? fullServiceFee : undefined,
       serviceFeeDiscountApplied,
       serviceFeeDiscountGrantedByName: serviceFeeDiscountApplied
@@ -127,8 +125,8 @@ export async function POST(
         ? customerAccount?.serviceFeeDiscountGrantedByPhone || undefined
         : undefined,
       discountCommissionAmount,
-      pricingModel: order.pricingModel,
-      totalAmount: retriedTotalAmount,
+      pricingModel: pricing.pricingModel,
+      totalAmount: pricing.totalAmount,
       location: order.location,
       deliveryLocation: order.deliveryLocation,
       store: order.store,
@@ -141,7 +139,7 @@ export async function POST(
       cafeInquiryFeePaid: false,
       cafeInquiryDetailsSubmitted: order.cafeInquiry ? false : order.cafeInquiryDetailsSubmitted,
       waterBags: order.waterBags,
-      waterFee: order.waterFee,
+      waterFee: pricing.waterFee,
       indomiePacks: order.indomiePacks,
       eggCount: order.eggCount,
       noteSize: order.noteSize,
@@ -172,7 +170,7 @@ export async function POST(
         : undefined,
     });
 
-    await retriedOrder.save();
+    await saveNewOrderWithBonus(retriedOrder, pricing);
 
     emitOrderUpdated(retriedOrder);
 

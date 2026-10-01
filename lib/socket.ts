@@ -21,6 +21,10 @@ export type OrderSocketPayload = CafeInquiryFields & {
   description?: string
   amount?: number
   commission?: number
+  firstOrderBonusApplied?: boolean
+  firstOrderBonusAmount?: number
+  platformFeeBeforeFirstOrderBonus?: number
+  pricingModel?: string
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
@@ -72,6 +76,10 @@ type SocketOrderLike = CafeInquiryFields & {
   description?: string
   amount?: number
   commission?: number
+  firstOrderBonusApplied?: boolean
+  firstOrderBonusAmount?: number
+  platformFeeBeforeFirstOrderBonus?: number
+  pricingModel?: string
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
@@ -152,6 +160,10 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     description: order.description,
     amount: order.amount,
     commission: order.commission,
+    firstOrderBonusApplied: order.firstOrderBonusApplied,
+    firstOrderBonusAmount: order.firstOrderBonusAmount,
+    platformFeeBeforeFirstOrderBonus: order.platformFeeBeforeFirstOrderBonus,
+    pricingModel: order.pricingModel,
     platformFee: order.platformFee,
     taskerFee: order.taskerFee,
     totalAmount: order.totalAmount,

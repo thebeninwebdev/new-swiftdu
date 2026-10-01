@@ -1,3 +1,4 @@
+import { saveOrderLifecycle } from '@/lib/first-order-bonus';
 import { NextResponse, type NextRequest } from "next/server";
 import { Types } from "mongoose";
 
@@ -7,7 +8,6 @@ import { ensureCompletionTimer } from "@/lib/completion-timer";
 import { emitOrderUpdated } from "@/lib/socket";
 import { syncTaskerSettlementStatus } from "@/lib/tasker-settlement";
 import { issueTaskerOnboardingLink } from "@/lib/tasker-onboarding";
-import DryCleaner from "@/models/dry-cleaner";
 import { Order } from "@/models/order";
 import { Review } from "@/models/review";
 import Support from "@/models/support";
@@ -83,58 +83,6 @@ function getUserLookupConditions({
   }
 
   return conditions;
-}
-
-async function getDryCleaners() {
-  const dryCleaners = await DryCleaner.find()
-    .sort({ status: 1, createdAt: -1 })
-    .limit(40)
-    .lean();
-
-  const userIds = dryCleaners.map((dryCleaner) => dryCleaner.userId);
-  const users = await User.find({ _id: { $in: userIds } })
-    .select("_id name email")
-    .lean();
-
-  const userMap = Object.fromEntries(users.map((user) => [user._id.toString(), user]));
-
-  return dryCleaners.map((dryCleaner) => ({
-    id: dryCleaner._id.toString(),
-    businessName: dryCleaner.businessName,
-    ownerName: dryCleaner.ownerName,
-    email: userMap[dryCleaner.userId.toString()]?.email || "",
-    phone: dryCleaner.phone,
-    location: dryCleaner.location,
-    businessLogo: dryCleaner.businessLogo || "",
-    status: dryCleaner.status,
-    pricing: {
-      shirt: dryCleaner.pricing?.shirt || 0,
-      trouser: dryCleaner.pricing?.trouser || 0,
-      hoodieMin: dryCleaner.pricing?.hoodieMin || 0,
-      hoodieMax: dryCleaner.pricing?.hoodieMax || 0,
-      bedsheetMin: dryCleaner.pricing?.bedsheetMin || 0,
-      bedsheetMax: dryCleaner.pricing?.bedsheetMax || 0,
-      duvetMin: dryCleaner.pricing?.duvetMin || 2000,
-      duvetMax: dryCleaner.pricing?.duvetMax || 2500,
-      underwear: dryCleaner.pricing?.underwear || 500,
-      shoes: dryCleaner.pricing?.shoes || 500,
-      doesNotWashShirt: dryCleaner.pricing?.doesNotWashShirt === true,
-      doesNotWashTrouser: dryCleaner.pricing?.doesNotWashTrouser === true,
-      doesNotWashHoodie: dryCleaner.pricing?.doesNotWashHoodie === true,
-      doesNotWashBedsheet: dryCleaner.pricing?.doesNotWashBedsheet === true,
-      doesNotWashDuvet: dryCleaner.pricing?.doesNotWashDuvet !== false,
-      doesNotWashUnderwear: dryCleaner.pricing?.doesNotWashUnderwear !== false,
-      doesNotWashShoes: dryCleaner.pricing?.doesNotWashShoes !== false,
-    },
-    availability: {
-      acceptingDays: dryCleaner.availability?.acceptingDays || [],
-      expectedDeliveryDays: dryCleaner.availability?.expectedDeliveryDays || 1,
-      cutoffTime: dryCleaner.availability?.cutoffTime || "17:00",
-      temporarilyClosed: Boolean(dryCleaner.availability?.temporarilyClosed),
-    },
-    notes: dryCleaner.notes || "",
-    createdAt: dryCleaner.createdAt,
-  }));
 }
 
 async function getTaskers() {
@@ -566,7 +514,6 @@ export async function GET(request: NextRequest) {
   await connectDB();
 
   if (resource === "taskers") return NextResponse.json({ items: await getTaskers() });
-  if (resource === "dry-cleaners") return NextResponse.json({ items: await getDryCleaners() });
   if (resource === "reviews") return NextResponse.json({ items: await getReviews() });
   if (resource === "orders") return NextResponse.json({ items: await getOrders() });
   if (resource === "failed-settlements") {
@@ -688,31 +635,6 @@ export async function PATCH(request: NextRequest) {
     return NextResponse.json({ ok: true, onboardingEmailSent, onboardingEmailError });
   }
 
-  if (resource === "dry-cleaners") {
-    const { id, action } = body as { id?: string; action?: string };
-
-    if (!id || !["approve", "reject", "close", "reopen"].includes(action || "")) {
-      return NextResponse.json({ error: "Invalid dry cleaner action" }, { status: 400 });
-    }
-
-    if (access.excoRole !== "COO") {
-      return NextResponse.json({ error: "Only COO can manage dry cleaners" }, { status: 403 });
-    }
-
-    const dryCleaner = await DryCleaner.findById(id);
-    if (!dryCleaner) {
-      return NextResponse.json({ error: "Dry cleaner not found" }, { status: 404 });
-    }
-
-    if (action === "approve") dryCleaner.status = "approved";
-    if (action === "reject") dryCleaner.status = "rejected";
-    if (action === "close") dryCleaner.availability.temporarilyClosed = true;
-    if (action === "reopen") dryCleaner.availability.temporarilyClosed = false;
-
-    await dryCleaner.save();
-    return NextResponse.json({ ok: true });
-  }
-
   if (resource === "orders") {
     const { id, action } = body as { id?: string; action?: string };
 
@@ -746,7 +668,7 @@ export async function PATCH(request: NextRequest) {
     order.settlementDueAt = undefined;
     order.settlementFailureReason = undefined;
 
-    await order.save();
+    await saveOrderLifecycle(order);
     emitOrderUpdated(order);
     return NextResponse.json({ ok: true });
   }

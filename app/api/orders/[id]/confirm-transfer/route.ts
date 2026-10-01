@@ -110,6 +110,8 @@ export async function POST(
       return NextResponse.json({ order })
     }
 
+    // Do not revive an order cancelled or repriced while this request was in flight.
+    order.$where = { updatedAt: order.updatedAt, status: order.status }
     order.hasPaid = true
     order.isDeclinedTask = false
     order.declinedAt = undefined
@@ -122,7 +124,7 @@ export async function POST(
     order.customerTransferredAt = new Date()
     order.paidAt = new Date()
     order.completionTimerStartedAt = order.paidAt
-    order.completionWindowMinutes = getCompletionWindowMinutes(order.location, order.taskType)
+    order.completionWindowMinutes = getCompletionWindowMinutes(order.location, order.taskType, order.isTestOrder)
     order.completionExtensionMinutes = 0
     order.completionDueAt = new Date(
       order.paidAt.getTime() + order.completionWindowMinutes * 60000

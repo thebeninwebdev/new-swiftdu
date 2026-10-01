@@ -1,3 +1,4 @@
+import { saveNewOrderWithBonus } from '@/lib/first-order-bonus';
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
@@ -20,7 +21,6 @@ import {
   RESTAURANT_MAX_PEOPLE,
   CAFE_INQUIRY_SERVICE_FEE,
   WATER_TASK_TYPE,
-  DRY_CLEANING_TASK_TYPE,
   INDOMIE_TASK_TYPE,
 } from '@/lib/pricing';
 import { splitServiceFee } from '@/lib/order-finance';
@@ -40,7 +40,7 @@ import {
 import { isProfileComplete } from '@/lib/profile-completion';
 import { canCreateOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
 
-const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes', DRY_CLEANING_TASK_TYPE, INDOMIE_TASK_TYPE]);
+const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 
 export async function POST(request: NextRequest) {
   try {
@@ -252,12 +252,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (normalizedTaskType === 'shopping' || normalizedTaskType === DRY_CLEANING_TASK_TYPE) {
+    if (normalizedTaskType === 'shopping') {
       if (normalizedDescription.length < 5) {
         return NextResponse.json(
           {
             error:
-              normalizedTaskType === DRY_CLEANING_TASK_TYPE
+              false
                 ? 'Describe the clothes you want cleaned.'
                 : 'Describe the items you want.',
           },
@@ -266,12 +266,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (normalizedTaskType === 'shopping' || normalizedTaskType === DRY_CLEANING_TASK_TYPE || normalizedTaskType === INDOMIE_TASK_TYPE) {
+    if (normalizedTaskType === 'shopping' || normalizedTaskType === INDOMIE_TASK_TYPE) {
       if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
         return NextResponse.json(
           {
             error:
-              normalizedTaskType === DRY_CLEANING_TASK_TYPE
+              false
                 ? 'Enter a valid dry cleaning budget.'
                 : normalizedTaskType === INDOMIE_TASK_TYPE
                   ? 'Enter a valid indomie budget.'
@@ -430,10 +430,10 @@ export async function POST(request: NextRequest) {
         normalizedTaskType === 'copy_notes' ||
         normalizedTaskType === WATER_TASK_TYPE ||
         normalizedTaskType === INDOMIE_TASK_TYPE ||
-        normalizedTaskType === DRY_CLEANING_TASK_TYPE
+        false
           ? undefined
           : store || undefined,
-      itemPrice: normalizedTaskType === 'restaurant' || normalizedTaskType === 'shopping' || normalizedTaskType === DRY_CLEANING_TASK_TYPE || normalizedTaskType === INDOMIE_TASK_TYPE ? parsedAmount : undefined,
+      itemPrice: normalizedTaskType === 'restaurant' || normalizedTaskType === 'shopping' || normalizedTaskType === INDOMIE_TASK_TYPE ? parsedAmount : undefined,
       packaging: isCafeInquiry ? undefined :
         normalizedTaskType === 'restaurant'
           ? pricing.restaurantTakeawayCount && pricing.restaurantTakeawayCount > 0
@@ -479,7 +479,7 @@ export async function POST(request: NextRequest) {
         : undefined,
     });
 
-    await order.save();
+    await saveNewOrderWithBonus(order, pricing);
 
     emitOrderUpdated(order);
 

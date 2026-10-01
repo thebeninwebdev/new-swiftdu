@@ -1,4 +1,5 @@
 'use client'
+import { FirstOrderBonusNotice } from '@/components/first-order-bonus'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -30,6 +31,10 @@ interface Order {
   taskType: string
   description?: string
   amount: number
+  firstOrderBonusApplied?: boolean
+  firstOrderBonusAmount?: number
+  platformFeeBeforeFirstOrderBonus?: number
+  pricingModel?: string
   totalAmount?: number
   location: string
   status: OrderStatus
@@ -45,7 +50,6 @@ const taskTypeLabels: Record<string, string> = {
   copy_notes: 'Copy Notes',
   shopping: 'Shopping',
   indomie: 'Buy Indomie',
-  dry_cleaning: 'Dry Cleaning',
   water: 'Bag of Water',
   others: 'General Errand',
 }
@@ -233,7 +237,7 @@ export default function TaskListClient() {
   }, [groupedOrders, activeTab, searchQuery])
 
   const retryOrder = async (order: Order) => {
-    if (retryingOrderId) return
+    if (retryingOrderId || order.taskType === 'copy_notes') return
 
     try {
       setRetryingOrderId(order._id)
@@ -255,7 +259,7 @@ export default function TaskListClient() {
 
   const renderOrder = (order: Order) => {
     const isActive = ACTIVE_STATUSES.has(order.status)
-    const canRetry = order.status === 'completed' || order.status === 'cancelled'
+    const canRetry = order.taskType !== 'copy_notes' && (order.status === 'completed' || order.status === 'cancelled')
     const config = statusConfig[order.status]
     const StatusIcon = config.icon
 
@@ -304,6 +308,7 @@ export default function TaskListClient() {
                   </span>
                 </div>
 
+                <div className="mt-2"><FirstOrderBonusNotice order={order} /></div>
                 {/* Meta info */}
                 <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
                   <span className="inline-flex items-center gap-1.5 font-semibold text-slate-700 dark:text-slate-300">

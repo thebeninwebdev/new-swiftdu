@@ -1,4 +1,5 @@
 'use client'
+import { FirstOrderBonusNotice } from '@/components/first-order-bonus'
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
@@ -20,6 +21,9 @@ interface SettlementOrder {
   description?: string
   taskType: string
   amount: number
+  firstOrderBonusApplied?: boolean
+  firstOrderBonusAmount?: number
+  platformFeeWaivedForFastCompletion?: boolean
   platformFee: number
   taskerFee: number
   totalAmount: number
@@ -158,7 +162,7 @@ function TaskerPaymentPageContent() {
       allowRetry?: boolean
       showSuccessToast?: boolean
     }) => {
-      if (!orderId) {
+      if (!orderId || !order || order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
         return
       }
 
@@ -216,7 +220,7 @@ function TaskerPaymentPageContent() {
         clearStoredPendingReference()
         autoVerifyingReferenceRef.current = null
 
-        if (showSuccessToast) {
+        if (showSuccessToast && !payload.noSettlementRequired) {
           toast.success('Platform settlement paid successfully.')
         }
       } catch (verifyError) {
@@ -238,7 +242,7 @@ function TaskerPaymentPageContent() {
       clearRetryTimeout,
       clearStoredPendingReference,
       getStoredPendingReference,
-      order?.settlementReference,
+      order,
       orderId,
       storePendingReference,
     ]
@@ -337,7 +341,7 @@ function TaskerPaymentPageContent() {
   }, [loadOrder, orderId, router, searchParams, storePendingReference, verifySettlement])
 
   useEffect(() => {
-    if (!order || !orderId || verifying) {
+    if (!order || order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion || !orderId || verifying) {
       return
     }
 
@@ -362,7 +366,7 @@ function TaskerPaymentPageContent() {
   }, [getStoredPendingReference, order, orderId, verifySettlement, verifying])
 
   const handleStartPayment = async () => {
-    if (!order) {
+    if (!order || order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
       return
     }
 
@@ -375,6 +379,13 @@ function TaskerPaymentPageContent() {
 
       if (!response.ok) {
         throw new Error(payload.error || 'Failed to open the Paystack checkout.')
+      }
+
+      if (payload.noSettlementRequired && payload.order) {
+        setOrder(payload.order)
+        clearStoredPendingReference()
+        toast.info('No platform fee to remit.')
+        return
       }
 
       if (payload.alreadyPaid && payload.order) {
@@ -431,6 +442,10 @@ function TaskerPaymentPageContent() {
         </Button>
       </div>
     )
+  }
+
+  if (order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
+    return <div className="mx-auto max-w-xl space-y-4 px-4 py-10"><h1 className="text-2xl font-bold">No platform fee to remit</h1><FirstOrderBonusNotice order={order} tasker /><p>Your tasker fee: <strong>{convertToNaira(order.taskerFee || 0)}</strong></p><p className="text-sm text-slate-500 dark:text-slate-400">No Paystack payment is required for this task.</p><Button onClick={() => router.push('/tasker-dashboard/' + order._id)}>View task</Button></div>
   }
 
   const isCompleted = order.status === 'completed'

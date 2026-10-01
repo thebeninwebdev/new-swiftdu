@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
+import { AdminRatingExplorer } from '@/components/admin-rating-explorer'
 import { Card, CardContent} from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -140,10 +141,10 @@ export default function AdminReviewsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading admin panel...</p>
+          <p className="text-slate-500">Loading admin panel...</p>
         </div>
       </div>
     )
@@ -152,14 +153,14 @@ export default function AdminReviewsPage() {
   if (!admin) return null
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <div className="border-b border-border">
+      <div className="border-b border-slate-200/80 bg-white/80">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">Review Management</h1>
-              <p className="text-muted-foreground mt-1">Monitor and moderate user reviews</p>
+              <h1 className="text-3xl font-bold text-slate-900">Review Management</h1>
+              <p className="text-slate-500 mt-1">Monitor and moderate user reviews</p>
             </div>
             <Badge variant="secondary" className="px-3 py-1">
               Admin Panel
@@ -169,12 +170,12 @@ export default function AdminReviewsPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
-        {/* Filters */}
+        <AdminRatingExplorer />`n`n        {/* Filters */}
         <Card className="mb-6">
           <CardContent className="pt-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
                 <Input
                   placeholder="Search reviews..."
                   value={searchTerm}
@@ -220,8 +221,8 @@ export default function AdminReviewsPage() {
           {reviews.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
-                <Star className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">No reviews found</p>
+                <Star className="w-12 h-12 mx-auto mb-4 text-slate-500" />
+                <p className="text-slate-500">No reviews found</p>
               </CardContent>
             </Card>
           ) : (
@@ -230,8 +231,8 @@ export default function AdminReviewsPage() {
                 <CardContent className="p-6">
                   <div className="flex items-start justify-between">
                     <div className="flex items-start space-x-4 flex-1">
-                      <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
-                        <User className="w-6 h-6 text-primary" />
+                      <div className="w-12 h-12 bg-violet-50 rounded-full flex items-center justify-center">
+                        <User className="w-6 h-6 text-violet-600" />
                       </div>
 
                       <div className="flex-1">
@@ -245,13 +246,13 @@ export default function AdminReviewsPage() {
                           </Badge>
                         </div>
 
-                        <p className="text-sm text-muted-foreground mb-2">
+                        <p className="text-sm text-slate-500 mb-2">
                           Review for {review.taskerName} • {new Date(review.createdAt).toLocaleDateString()}
                         </p>
 
                         <p className="text-sm mb-3">{review.comment}</p>
 
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-xs text-slate-500">
                           <span>Order ID: {review.orderId}</span>
                         </div>
                       </div>
@@ -287,21 +288,21 @@ export default function AdminReviewsPage() {
 
                   {/* Expanded Details */}
                   {expandedId === review._id && (
-                    <div className="mt-6 pt-6 border-t border-border">
+                    <div className="mt-6 pt-6 border-t border-slate-200">
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Reviewer</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Reviewer</p>
                           <p className="text-sm">{review.userName}</p>
-                          <p className="text-xs text-muted-foreground">{review.userEmail}</p>
+                          <p className="text-xs text-slate-500">{review.userEmail}</p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Tasker Reviewed</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Tasker Reviewed</p>
                           <p className="text-sm">{review.taskerName}</p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Rating</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Rating</p>
                           <div className="flex items-center space-x-1">
                             {renderStars(review.rating)}
                             <span className="text-sm ml-2">{review.rating}/5</span>
@@ -309,21 +310,21 @@ export default function AdminReviewsPage() {
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Visibility</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Visibility</p>
                           <Badge variant={review.isVisible ? 'default' : 'secondary'}>
                             {review.isVisible ? 'Visible to users' : 'Hidden from users'}
                           </Badge>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Created</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Created</p>
                           <p className="text-sm">
                             {new Date(review.createdAt).toLocaleString()}
                           </p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Last Updated</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Last Updated</p>
                           <p className="text-sm">
                             {new Date(review.updatedAt).toLocaleString()}
                           </p>
@@ -331,8 +332,8 @@ export default function AdminReviewsPage() {
                       </div>
 
                       <div className="mt-4">
-                        <p className="text-sm font-medium text-muted-foreground mb-2">Full Review</p>
-                        <div className="bg-muted/50 p-4 rounded-lg">
+                        <p className="text-sm font-medium text-slate-500 mb-2">Full Review</p>
+                        <div className="bg-slate-50 p-4 rounded-lg">
                           <p className="text-sm">{review.comment}</p>
                         </div>
                       </div>
@@ -355,7 +356,7 @@ export default function AdminReviewsPage() {
               Previous
             </Button>
 
-            <span className="px-4 py-2 text-sm text-muted-foreground">
+            <span className="px-4 py-2 text-sm text-slate-500">
               Page {currentPage} of {totalPages}
             </span>
 

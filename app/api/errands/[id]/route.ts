@@ -11,7 +11,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     if (!tasker.isVerified || tasker.isRejected) throw new WorkError('Your tasker account needs approval.', 403)
     const { id } = await params
     const order = await Order.findOne({ _id: id, status: 'pending', createdAt: { $gt: new Date(Date.now() - TASKER_SEARCH_TIMEOUT_MS) }, ...getTaskerOrderModeFilter(tasker) })
-      .select('taskType description amount commission taskerFee platformFee totalAmount store location packaging restaurantPeopleCount restaurantTakeawayCount restaurantPackagingFee cafeInquiry cafeInquiryStatus cafeInquiryDetailsSubmitted indomiePacks eggCount noteSize numberOfPages printingServiceType printingNeedsEditing copyNotesType copyNotesPages deadline dueDate deadlineDate deadlineValue deadlineUnit serviceFeeDiscountApplied discountCommissionAmount status createdAt isTestOrder')
+      .select('taskType description amount commission taskerFee platformFee firstOrderBonusApplied firstOrderBonusAmount platformFeeBeforeFirstOrderBonus pricingModel totalAmount store location packaging restaurantPeopleCount restaurantTakeawayCount restaurantPackagingFee cafeInquiry cafeInquiryStatus cafeInquiryDetailsSubmitted indomiePacks eggCount noteSize numberOfPages printingServiceType printingNeedsEditing copyNotesType copyNotesPages deadline dueDate deadlineDate deadlineValue deadlineUnit serviceFeeDiscountApplied discountCommissionAmount status createdAt isTestOrder')
       .lean()
     if (!order) throw new WorkError('This task is no longer available. Choose another task.', 409)
     return NextResponse.json(order, { headers: { 'Cache-Control': 'no-store' } })

@@ -7,11 +7,9 @@ import { authClient } from '@/lib/auth-client'
 import { MobilePushFrame } from '@/components/mobile-push-frame'
 import {
   DollarSign,
-  Shirt,
   LayoutDashboard,
   LogOut,
   Menu,
-  MessageSquare,
   ShoppingBag,
   ShieldCheck,
   Star,
@@ -31,12 +29,6 @@ const adminNavigation = [
     href: '/admin/taskers',
     icon: Users,
     description: 'Review taskers',
-  },
-  {
-    label: 'Dry Cleaners',
-    href: '/admin/dry-cleaners',
-    icon: Shirt,
-    description: 'Approve laundry',
   },
   {
     label: 'Orders',
@@ -61,12 +53,6 @@ const adminNavigation = [
     href: '/admin/reviews',
     icon: Star,
     description: 'Moderate feedback',
-  },
-  {
-    label: 'Support',
-    href: '/admin/support',
-    icon: MessageSquare,
-    description: 'Handle tickets',
   },
 ]
 
@@ -101,12 +87,12 @@ export default function AdminSidebar({ children }: { children: ReactNode }) {
             onClick={closeMobileMenu}
             className="flex items-center gap-3"
           >
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg shadow-slate-300/40">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-sm shadow-violet-200">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-950">Swiftdu Admin</h1>
-              <p className="text-xs text-slate-500">Manage the platform</p>
+              <h1 className="text-lg font-bold text-slate-950">SwiftDU</h1>
+              <p className="text-xs text-slate-500">Admin</p>
             </div>
           </Link>
         </div>
@@ -123,14 +109,14 @@ export default function AdminSidebar({ children }: { children: ReactNode }) {
                 onClick={closeMobileMenu}
                 className={`flex items-center gap-3 rounded-2xl px-4 py-3 transition-all ${
                   active
-                    ? 'bg-slate-950 text-white shadow-lg shadow-slate-300/35'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                    ? 'bg-violet-50 text-violet-700 ring-1 ring-inset ring-violet-100'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-violet-700'
                 }`}
               >
-                <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-white' : ''}`} />
+                <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-violet-600' : ''}`} />
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">{item.label}</p>
-                  <p className={`text-xs ${active ? 'text-slate-300' : 'text-slate-400'}`}>
+                  <p className={`text-xs ${active ? 'text-violet-500' : 'text-slate-400'}`}>
                     {item.description}
                   </p>
                 </div>
@@ -153,10 +139,10 @@ export default function AdminSidebar({ children }: { children: ReactNode }) {
   )
 
   return (
-    <MobilePushFrame open={isMobileMenuOpen} onClose={closeMobileMenu} menuId="admin-mobile-menu" menu={menuContent} pageClassName="bg-slate-50/70 lg:flex">
-      <header className="sticky inset-x-0 top-0 z-[60] -mb-16 flex h-16 items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur-xl lg:hidden">
+    <MobilePushFrame open={isMobileMenuOpen} onClose={closeMobileMenu} menuId="admin-mobile-menu" menu={menuContent} pageClassName="bg-slate-50 lg:flex">
+      <header className="sticky inset-x-0 top-0 z-[60] -mb-16 flex h-16 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur lg:hidden">
         <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-950 text-white shadow-lg shadow-slate-300/40">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-white shadow-sm shadow-violet-200">
             <ShieldCheck className="h-4 w-4" />
           </div>
           <div>
@@ -168,7 +154,7 @@ export default function AdminSidebar({ children }: { children: ReactNode }) {
         <button
           type="button"
           onClick={() => setIsMobileMenuOpen((open) => !open)}
-          className="rounded-lg p-2 text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-950"
+          className="rounded-xl p-2.5 text-slate-600 transition-colors hover:bg-violet-50 hover:text-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300"
           aria-label={isMobileMenuOpen ? 'Close admin menu' : 'Open admin menu'}
           aria-expanded={isMobileMenuOpen}
           aria-controls="admin-mobile-menu"
@@ -177,19 +163,19 @@ export default function AdminSidebar({ children }: { children: ReactNode }) {
         </button>
       </header>
 
-      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-72 flex-col border-r border-slate-200 bg-white/95 backdrop-blur-xl lg:flex">
+      <aside className="fixed left-0 top-0 z-40 hidden h-screen w-72 flex-col border-r border-slate-200 bg-white lg:flex">
         <div className="border-b border-slate-200 px-6 py-5">
           <Link
             href="/admin"
             onClick={closeMobileMenu}
             className="flex items-center gap-3"
           >
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-lg shadow-slate-300/40">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-sm shadow-violet-200">
               <ShieldCheck className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-lg font-bold text-slate-950">Swiftdu Admin</h1>
-              <p className="text-xs text-slate-500">Manage the platform</p>
+              <h1 className="text-lg font-bold text-slate-950">SwiftDU</h1>
+              <p className="text-xs text-slate-500">Admin</p>
             </div>
           </Link>
         </div>
@@ -206,14 +192,14 @@ export default function AdminSidebar({ children }: { children: ReactNode }) {
                 onClick={closeMobileMenu}
                 className={`flex items-center gap-3 rounded-2xl px-4 py-3 transition-all ${
                   active
-                    ? 'bg-slate-950 text-white shadow-lg shadow-slate-300/35'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-950'
+                    ? 'bg-violet-50 text-violet-700 ring-1 ring-inset ring-violet-100'
+                    : 'text-slate-600 hover:bg-slate-50 hover:text-violet-700'
                 }`}
               >
-                <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-white' : ''}`} />
+                <Icon className={`h-5 w-5 shrink-0 ${active ? 'text-violet-600' : ''}`} />
                 <div className="min-w-0">
                   <p className="text-sm font-semibold">{item.label}</p>
-                  <p className={`text-xs ${active ? 'text-slate-300' : 'text-slate-400'}`}>
+                  <p className={`text-xs ${active ? 'text-violet-500' : 'text-slate-400'}`}>
                     {item.description}
                   </p>
                 </div>

@@ -391,9 +391,6 @@ export function PublicMobileMenu({ onClose }: { onClose: () => void }) {
         <Link href="/auth" onClick={onClose} className="flex min-h-12 items-center justify-center rounded-2xl bg-slate-950 px-3 text-center text-sm font-bold text-white shadow-lg shadow-slate-950/15 hover:bg-indigo-700 dark:bg-indigo-600 dark:hover:bg-indigo-500">
           Get Started
         </Link>
-        <Link href="/dry-cleaner-signup/signup" onClick={onClose} className="block px-3 py-2 text-center text-xs leading-5 text-slate-500 underline-offset-4 hover:underline dark:text-slate-400">
-          Become a service partner
-        </Link>
       </div>
     </nav>
   );

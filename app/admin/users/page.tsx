@@ -321,7 +321,7 @@ export default function AdminUsersPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-linear-to-br from-background via-background to-muted/20 flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <motion.div 
           className="text-center"
           initial={{ opacity: 0, y: 20 }}
@@ -329,11 +329,11 @@ export default function AdminUsersPage() {
           transition={{ duration: 0.5 }}
         >
           <motion.div 
-            className="h-16 w-16 border-4 border-primary/30 border-t-primary rounded-full mx-auto mb-4"
+            className="h-16 w-16 border-4 border-violet-200 border-t-violet-600 rounded-full mx-auto mb-4"
             animate={{ rotate: 360 }}
             transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
           />
-          <p className="text-muted-foreground font-medium">Loading admin panel...</p>
+          <p className="text-slate-500 font-medium">Loading admin panel...</p>
         </motion.div>
       </div>
     )
@@ -342,10 +342,10 @@ export default function AdminUsersPage() {
   if (!admin) return null
 
   return (
-    <div className="min-h-screen bg-linear-to-br from-background via-background to-muted/20">
+    <div className="min-h-screen bg-slate-50">
       {/* Animated Header */}
       <motion.div 
-        className="border-b border-border/50 backdrop-blur-sm bg-background/80 sticky top-16 lg:top-0 z-10"
+        className="border-b border-slate-200/80 bg-white/95 backdrop-blur-sm sticky top-16 lg:top-0 z-10"
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
@@ -362,7 +362,7 @@ export default function AdminUsersPage() {
                 User Management
               </motion.h1>
               <motion.p 
-                className="text-muted-foreground mt-2 text-sm sm:text-base"
+                className="text-slate-500 mt-2 text-sm sm:text-base"
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ delay: 0.2 }}
@@ -393,24 +393,24 @@ export default function AdminUsersPage() {
           animate="visible"
         >
           <motion.div variants={statsCardVariants}>
-            <Card className="bg-linear-to-br from-card to-card/50 border-border/50 hover:shadow-lg transition-shadow duration-300">
+            <Card className="bg-linear-to-br from-card to-card/50 border-slate-200/80 hover:shadow-lg transition-shadow duration-300">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Users</p>
+                  <p className="text-sm text-slate-500">Total Users</p>
                   <p className="text-2xl font-bold mt-1">{users.length}</p>
                 </div>
-                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Users className="w-5 h-5 text-primary" />
+                <div className="h-10 w-10 rounded-full bg-violet-50 flex items-center justify-center">
+                  <Users className="w-5 h-5 text-violet-600" />
                 </div>
               </CardContent>
             </Card>
           </motion.div>
           
           <motion.div variants={statsCardVariants}>
-            <Card className="bg-linear-to-br from-card to-card/50 border-border/50 hover:shadow-lg transition-shadow duration-300">
+            <Card className="bg-linear-to-br from-card to-card/50 border-slate-200/80 hover:shadow-lg transition-shadow duration-300">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Verified</p>
+                  <p className="text-sm text-slate-500">Verified</p>
                   <p className="text-2xl font-bold mt-1 text-emerald-600">{verifiedCount}</p>
                 </div>
                 <div className="h-10 w-10 rounded-full bg-emerald-500/10 flex items-center justify-center">
@@ -421,10 +421,10 @@ export default function AdminUsersPage() {
           </motion.div>
           
           <motion.div variants={statsCardVariants}>
-            <Card className="bg-linear-to-br from-card to-card/50 border-border/50 hover:shadow-lg transition-shadow duration-300">
+            <Card className="bg-linear-to-br from-card to-card/50 border-slate-200/80 hover:shadow-lg transition-shadow duration-300">
               <CardContent className="p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-muted-foreground">Total Orders</p>
+                  <p className="text-sm text-slate-500">Total Orders</p>
                   <p className="text-2xl font-bold mt-1">{totalOrders}</p>
                 </div>
                 <div className="h-10 w-10 rounded-full bg-blue-500/10 flex items-center justify-center">
@@ -441,25 +441,25 @@ export default function AdminUsersPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.3 }}
         >
-          <Card className="mb-6 border-border/50 shadow-sm hover:shadow-md transition-shadow duration-300">
+          <Card className="mb-6 border-slate-200/80 shadow-sm hover:shadow-md transition-shadow duration-300">
             <CardContent className="pt-6">
-              <div className="flex items-center gap-2 mb-4 text-muted-foreground">
+              <div className="flex items-center gap-2 mb-4 text-slate-500">
                 <Filter className="w-4 h-4" />
                 <span className="text-sm font-medium">Filters</span>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <div className="relative group">
-                  <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground group-focus-within:text-primary transition-colors" />
+                  <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500 group-focus-within:text-violet-600 transition-colors" />
                   <Input
                     placeholder="Search users..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-9 transition-all duration-300 focus:ring-2 focus:ring-primary/20"
+                    className="pl-9 transition-all duration-300 focus:ring-2 focus:ring-violet-200"
                   />
                 </div>
 
                 <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value ?? 'all')}>
-                  <SelectTrigger className="transition-all duration-300 hover:border-primary/50">
+                  <SelectTrigger className="transition-all duration-300 hover:border-violet-50">
                     <SelectValue placeholder="Filter by role" />
                   </SelectTrigger>
                   <SelectContent>
@@ -471,7 +471,7 @@ export default function AdminUsersPage() {
                 </Select>
 
                 <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value || 'all')}>
-                  <SelectTrigger className="transition-all duration-300 hover:border-primary/50">
+                  <SelectTrigger className="transition-all duration-300 hover:border-violet-50">
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>
                   <SelectContent>
@@ -517,17 +517,17 @@ export default function AdminUsersPage() {
                 exit={{ opacity: 0, scale: 0.95 }}
                 transition={{ duration: 0.3 }}
               >
-                <Card className="border-border/50">
+                <Card className="border-slate-200/80">
                   <CardContent className="py-16 text-center">
                     <motion.div
                       initial={{ y: 0 }}
                       animate={{ y: [0, -10, 0] }}
                       transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
                     >
-                      <Users className="w-16 h-16 mx-auto mb-4 text-muted-foreground/50" />
+                      <Users className="w-16 h-16 mx-auto mb-4 text-slate-500/50" />
                     </motion.div>
-                    <p className="text-muted-foreground text-lg">No users found</p>
-                    <p className="text-sm text-muted-foreground/60 mt-2">Try adjusting your filters</p>
+                    <p className="text-slate-500 text-lg">No users found</p>
+                    <p className="text-sm text-slate-500/60 mt-2">Try adjusting your filters</p>
                   </CardContent>
                 </Card>
               </motion.div>
@@ -543,7 +543,7 @@ export default function AdminUsersPage() {
                     whileHover={{ scale: 1.005 }}
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
                   >
-                    <Card className={`overflow-hidden border-border/50 transition-all duration-300 hover:shadow-lg ${user.isSuspended ? 'bg-red-50/50 dark:bg-red-950/10' : ''}`}>
+                    <Card className={`overflow-hidden border-slate-200/80 transition-all duration-300 hover:shadow-lg ${user.isSuspended ? 'bg-red-50/50 dark:bg-red-950/10' : ''}`}>
                       <CardContent className="p-4 md:p-6">
                         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                           <div className="flex items-start md:items-center space-x-3 md:space-x-4">
@@ -552,7 +552,7 @@ export default function AdminUsersPage() {
                               whileHover={{ scale: 1.1, rotate: 5 }}
                               transition={{ type: "spring", stiffness: 400 }}
                             >
-                              <Users className={`w-6 h-6 md:w-7 md:h-7 ${user.isSuspended ? 'text-red-600 dark:text-red-400' : 'text-primary'}`} />
+                              <Users className={`w-6 h-6 md:w-7 md:h-7 ${user.isSuspended ? 'text-red-600 dark:text-red-400' : 'text-violet-600'}`} />
                             </motion.div>
 
                             <div className="min-w-0 flex-1">
@@ -569,13 +569,13 @@ export default function AdminUsersPage() {
                                   </Badge>
                                 )}
                               </div>
-                              <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 text-xs md:text-sm text-muted-foreground gap-1 sm:gap-0 mt-1">
-                                <div className="flex items-center hover:text-foreground transition-colors">
+                              <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-4 text-xs md:text-sm text-slate-500 gap-1 sm:gap-0 mt-1">
+                                <div className="flex items-center hover:text-slate-900 transition-colors">
                                   <Mail className="w-3.5 h-3.5 mr-1.5 shrink-0" />
                                   <span className="truncate">{user.email}</span>
                                 </div>
                                 {user.phone && (
-                                  <div className="flex items-center hover:text-foreground transition-colors">
+                                  <div className="flex items-center hover:text-slate-900 transition-colors">
                                     <Phone className="w-3.5 h-3.5 mr-1.5 shrink-0" />
                                     {user.phone}
                                   </div>
@@ -602,7 +602,7 @@ export default function AdminUsersPage() {
                                   </Badge>
                                 )}
                               </div>
-                              <p className="text-xs sm:text-sm text-muted-foreground">
+                              <p className="text-xs sm:text-sm text-slate-500">
                                 {user.orderCount || 0} orders
                               </p>
                             </div>
@@ -693,7 +693,7 @@ export default function AdminUsersPage() {
                               exit="exit"
                               className="overflow-hidden"
                             >
-                              <div className="mt-6 pt-6 border-t border-border/50">
+                              <div className="mt-6 pt-6 border-t border-slate-200/80">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                                 <motion.div 
                                   className="space-y-1"
@@ -701,7 +701,7 @@ export default function AdminUsersPage() {
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ delay: 0.1 }}
                                 >
-                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Full Name</p>
+                                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Full Name</p>
                                   <p className="text-sm font-medium">{user.name}</p>
                                 </motion.div>
 
@@ -711,7 +711,7 @@ export default function AdminUsersPage() {
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ delay: 0.15 }}
                                 >
-                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Email</p>
+                                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Email</p>
                                   <p className="text-sm font-medium truncate">{user.email}</p>
                                 </motion.div>
 
@@ -721,7 +721,7 @@ export default function AdminUsersPage() {
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ delay: 0.2 }}
                                   >
-                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Phone</p>
+                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Phone</p>
                                     <div className="flex gap-2">
                                       <Input
                                         value={phoneEdits[user._id] ?? user.phone ?? ''}
@@ -750,7 +750,7 @@ export default function AdminUsersPage() {
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ delay: 0.25 }}
                                   >
-                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center gap-1">
                                       <MapPin className="w-3 h-3" />
                                       Location
                                     </p>
@@ -764,7 +764,7 @@ export default function AdminUsersPage() {
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ delay: 0.3 }}
                                 >
-                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Role</p>
+                                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Role</p>
                                   <Badge variant="outline" className="font-medium">{user.role}</Badge>
                                 </motion.div>
 
@@ -774,7 +774,7 @@ export default function AdminUsersPage() {
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ delay: 0.35 }}
                                 >
-                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Status</p>
+                                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Status</p>
                                   <div className="flex gap-2">
                                     <Badge variant={user.emailVerified ? 'default' : 'secondary'} className={user.emailVerified ? 'bg-emerald-500' : ''}>
                                       {user.emailVerified ? 'Verified' : 'Unverified'}
@@ -797,12 +797,12 @@ export default function AdminUsersPage() {
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ delay: 0.37 }}
                                   >
-                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Discount Contact</p>
+                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Discount Contact</p>
                                     <p className="text-sm font-medium">
                                       {user.serviceFeeDiscountGrantedByName || 'SwiftDU team'}
                                       {user.serviceFeeDiscountGrantedByPhone ? ` - ${user.serviceFeeDiscountGrantedByPhone}` : ''}
                                     </p>
-                                    <p className="text-xs text-muted-foreground">
+                                    <p className="text-xs text-slate-500">
                                       Applies to the next {Number(user.serviceFeeDiscountRemainingOrders || 0)} order
                                       {Number(user.serviceFeeDiscountRemainingOrders || 0) === 1 ? '' : 's'}.
                                     </p>
@@ -815,7 +815,7 @@ export default function AdminUsersPage() {
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ delay: 0.4 }}
                                 >
-                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center gap-1">
                                     <Calendar className="w-3 h-3" />
                                     Date of Birth
                                   </p>
@@ -830,7 +830,7 @@ export default function AdminUsersPage() {
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ delay: 0.42 }}
                                 >
-                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Age</p>
+                                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Age</p>
                                   <p className="text-sm font-medium">
                                     {user.dateOfBirth ? `${calculateAge(user.dateOfBirth)} years` : 'Not set'}
                                   </p>
@@ -842,7 +842,7 @@ export default function AdminUsersPage() {
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ delay: 0.44 }}
                                 >
-                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center gap-1">
                                     <Calendar className="w-3 h-3" />
                                     Joined
                                   </p>
@@ -862,7 +862,7 @@ export default function AdminUsersPage() {
                                     animate={{ opacity: 1, x: 0 }}
                                     transition={{ delay: 0.45 }}
                                   >
-                                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Last Login</p>
+                                    <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">Last Login</p>
                                     <p className="text-sm font-medium">
                                       {new Date(user.lastLogin).toLocaleString(undefined, {
                                         year: 'numeric',
@@ -881,7 +881,7 @@ export default function AdminUsersPage() {
                                   animate={{ opacity: 1, x: 0 }}
                                   transition={{ delay: 0.5 }}
                                 >
-                                  <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+                                  <p className="text-xs font-medium text-slate-500 uppercase tracking-wider flex items-center gap-1">
                                     <Package className="w-3 h-3" />
                                     Total Orders
                                   </p>
@@ -921,7 +921,7 @@ export default function AdminUsersPage() {
                 </Button>
               </motion.div>
 
-              <span className="px-4 py-2 text-sm text-muted-foreground font-medium bg-muted/50 rounded-md">
+              <span className="px-4 py-2 text-sm text-slate-500 font-medium bg-slate-50 rounded-md">
                 Page {currentPage} of {totalPages}
               </span>
 
@@ -942,7 +942,7 @@ export default function AdminUsersPage() {
 
       {/* Suspend Confirmation Dialog */}
       <AlertDialog open={suspendConfirm.show} onOpenChange={(open) => setSuspendConfirm({ show: open })}>
-        <AlertDialogContent className="border-border/50">
+        <AlertDialogContent className="border-slate-200/80">
           <AlertDialogHeader>
             <AlertDialogTitle className="flex items-center gap-2">
               <motion.div
@@ -954,7 +954,7 @@ export default function AdminUsersPage() {
               </motion.div>
               {suspendConfirm.willSuspend ? 'Suspend User' : 'Unsuspend User'}
             </AlertDialogTitle>
-            <AlertDialogDescription className="text-muted-foreground">
+            <AlertDialogDescription className="text-slate-500">
               {suspendConfirm.willSuspend
                 ? 'Are you sure you want to suspend this user? They will not be able to access their account until reactivated.'
                 : 'Are you sure you want to unsuspend this user? They will immediately regain access to their account.'}

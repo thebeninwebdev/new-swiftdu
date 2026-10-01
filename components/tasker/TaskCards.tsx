@@ -8,14 +8,19 @@ import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { workCard } from './WorkProvider'
 
 export interface TaskCardData {
+  firstOrderBonusApplied?: boolean
+  firstOrderBonusAmount?: number
+  platformFeeBeforeFirstOrderBonus?: number
+  pricingModel?: string
   _id: string; taskType: string; description?: string; store?: string; location: string; status: string
   taskerFee?: number; serviceFeeDiscountApplied?: boolean; discountCommissionAmount?: number
   cafeInquiry?: boolean; cafeInquiryStatus?: string; isTestOrder?: boolean; isDeclinedTask?: boolean
   hasPaid?: boolean; createdAt: string; deadline?: string; dueDate?: string; deadlineDate?: string
+  completedAt?: string; customerReceiptConfirmed?: boolean; prematureCompletionReported?: boolean
   completionDueAt?: string; completionTimerStartedAt?: string; completionWindowMinutes?: number; completionExtensionMinutes?: number
 }
-export const categoryLabels: Record<string, string> = { restaurant: 'Food delivery', shopping: 'Shopping', printing: 'Printing', copy_notes: 'Copy notes', water: 'Water delivery', indomie: 'Indomie', dry_cleaning: 'Dry cleaning', others: 'Campus errand' }
-const colors: Record<string, string> = { restaurant: 'bg-orange-50 text-orange-700', indomie: 'bg-orange-50 text-orange-700', shopping: 'bg-emerald-50 text-emerald-700', printing: 'bg-violet-50 text-violet-700', copy_notes: 'bg-amber-50 text-amber-800', water: 'bg-cyan-50 text-cyan-800', dry_cleaning: 'bg-cyan-50 text-cyan-800' }
+export const categoryLabels: Record<string, string> = { restaurant: 'Food delivery', shopping: 'Shopping', printing: 'Printing', copy_notes: 'Copy notes', water: 'Water delivery', indomie: 'Indomie', others: 'Campus errand' }
+const colors: Record<string, string> = { restaurant: 'bg-orange-50 text-orange-700', indomie: 'bg-orange-50 text-orange-700', shopping: 'bg-emerald-50 text-emerald-700', printing: 'bg-violet-50 text-violet-700', copy_notes: 'bg-amber-50 text-amber-800', water: 'bg-cyan-50 text-cyan-800' }
 export function CategoryBadge({ type }: { type: string }) {
   const Icon = type === 'water' ? Droplets : ['printing', 'copy_notes'].includes(type) ? FileText : type === 'shopping' ? Store : ShoppingBag
   return <span className={`inline-flex items-center gap-2 rounded-xl px-3 py-2 text-xs font-semibold ${colors[type] || 'bg-slate-100 text-slate-700'}`}><Icon size={16} aria-hidden="true" />{categoryLabels[type] || 'Campus errand'}</span>
@@ -24,7 +29,7 @@ export function CategoryBadge({ type }: { type: string }) {
 export function TaskCard({ task, active, now }: { task: TaskCardData; active?: boolean; now: number }) {
   const paid = task.hasPaid || task.status === 'paid'
   const start = new Date(task.completionTimerStartedAt || task.createdAt).getTime()
-  const windowMinutes = Math.max(task.completionWindowMinutes || 0, getCompletionWindowMinutes(task.location, task.taskType)) + (task.completionExtensionMinutes || 0)
+  const windowMinutes = Math.max(task.completionWindowMinutes || 0, getCompletionWindowMinutes(task.location, task.taskType, task.isTestOrder)) + (task.completionExtensionMinutes || 0)
   const due = Math.max(new Date(task.completionDueAt || 0).getTime(), start + windowMinutes * 60_000)
   const remaining = Math.max(0, Math.ceil((due - now) / 1000))
   const deadline = task.dueDate || task.deadline || task.deadlineDate

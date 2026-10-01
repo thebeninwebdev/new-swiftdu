@@ -15,6 +15,10 @@ export interface IOrder extends Document, CafeInquiryFields {
   platformFee: number;
   taskerFee: number;
   serviceFee: number;
+  firstOrderBonusApplied?: boolean;
+  platformFeeBeforeFirstOrderBonus?: number;
+  firstOrderBonusAmount?: number;
+  firstOrderBonusConsumedAt?: Date;
   serviceFeeBeforeDiscount?: number;
   serviceFeeDiscountApplied?: boolean;
   serviceFeeDiscountGrantedByName?: string;
@@ -132,7 +136,7 @@ const orderSchema = new Schema<IOrder>(
     taskType: {
       type: String,
       required: true,
-      enum: ['restaurant', 'printing', 'shopping', 'water', 'others', 'copy_notes', 'dry_cleaning', 'indomie'],
+      enum: ['restaurant', 'printing', 'shopping', 'water', 'others', 'copy_notes', 'indomie'],
     },
     description: {
       type: String,
@@ -167,6 +171,10 @@ const orderSchema = new Schema<IOrder>(
       required: true,
       default: 0,
     },
+    firstOrderBonusApplied: { type: Boolean, default: false },
+    platformFeeBeforeFirstOrderBonus: { type: Number, min: 0 },
+    firstOrderBonusAmount: { type: Number, min: 0 },
+    firstOrderBonusConsumedAt: Date,
     serviceFeeBeforeDiscount: {
       type: Number,
       min: 0,
@@ -431,6 +439,7 @@ const orderSchema = new Schema<IOrder>(
 );
 
 orderSchema.index({ status: 1, createdAt: -1 });
+orderSchema.index({ userId: 1, isTestOrder: 1, status: 1 });
 orderSchema.index({ taskerId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ taskType: 1, status: 1, createdAt: -1 });
 orderSchema.index({ isTestOrder: 1, status: 1, createdAt: -1 });
@@ -448,7 +457,7 @@ const existingTaskTypePath = existingOrderModel?.schema.path('taskType') as
 if (
   existingOrderModel &&
   existingTaskTypePath?.enumValues &&
-  (!existingTaskTypePath.enumValues.includes('indomie') || !existingOrderModel.schema.path('cafeInquiryStatus'))
+  (!existingTaskTypePath.enumValues.includes('indomie') || !existingOrderModel.schema.path('cafeInquiryStatus') || !existingOrderModel.schema.path('firstOrderBonusApplied'))
 ) {
   const mutableModels = mongoose.models as unknown as Record<string, Model<IOrder> | undefined>;
   const mutableConnectionModels = mongoose.connection.models as unknown as Record<

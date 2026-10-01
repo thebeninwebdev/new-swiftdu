@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { getTaskerId } from '@/lib/utils'
+import { BankDetailsForm } from '@/components/tasker/BankDetailsForm'
 
 interface TaskerProfile {
   _id: string
@@ -17,6 +18,7 @@ interface TaskerProfile {
   rating: number
   completedTasks: number
   bankDetails: {
+    bankCode?: string
     bankName: string
     accountNumber: string
     accountName: string
@@ -41,12 +43,6 @@ export default function ProfilePage() {
     profileImage: '',
   })
 
-  const [bankData, setBankData] = useState({
-    bankName: '',
-    accountNumber: '',
-    accountName: '',
-  })
-
   const loadProfile = useCallback(async (id: string) => {
     setIsLoading(true)
     setError(null)
@@ -65,7 +61,6 @@ export default function ProfilePage() {
         location: tasker.location,
         profileImage: tasker.profileImage || '',
       })
-      setBankData(tasker.bankDetails)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred')
     } finally {
@@ -115,41 +110,6 @@ export default function ProfilePage() {
     } catch (error) {
       console.error('Update error:', error)
       setMessage({ type: 'error', text: 'Failed to update profile' })
-    } finally {
-      setIsSubmitting(false)
-    }
-  }
-
-  const handleBankUpdate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsSubmitting(true)
-    setMessage(null)
-
-    try {
-      const response = await fetch(`/api/taskers/profile?id=${taskerId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ bankDetails: bankData }),
-      })
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        setMessage({ type: 'error', text: errorData.error })
-        return
-      }
-
-      setMessage({
-        type: 'success',
-        text: 'Bank details updated successfully!',
-      })
-      setIsBankEditing(false)
-
-      if (taskerId) {
-        await loadProfile(taskerId)
-      }
-    } catch (error) {
-      console.error('Update error:', error)
-      setMessage({ type: 'error', text: 'Failed to update bank details' })
     } finally {
       setIsSubmitting(false)
     }
@@ -353,73 +313,16 @@ export default function ProfilePage() {
           </div>
 
           {isBankEditing ? (
-            <form onSubmit={handleBankUpdate} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Bank Name
-                </label>
-                <Input
-                  type="text"
-                  value={bankData?.bankName}
-                  onChange={(e) =>
-                    setBankData({ ...bankData, bankName: e.target.value })
-                  }
-                  placeholder="e.g., Central Bank"
-                  className="w-full"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Account Number
-                </label>
-                <Input
-                  type="text"
-                  value={bankData.accountNumber}
-                  onChange={(e) =>
-                    setBankData({
-                      ...bankData,
-                      accountNumber: e.target.value,
-                    })
-                  }
-                  placeholder="1234567890"
-                  className="w-full"
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium mb-2">
-                  Account Name
-                </label>
-                <Input
-                  type="text"
-                  value={bankData.accountName}
-                  onChange={(e) =>
-                    setBankData({ ...bankData, accountName: e.target.value })
-                  }
-                  placeholder="Full Name as per bank"
-                  className="w-full"
-                />
-              </div>
-
-              <div className="flex gap-2">
-                <Button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="flex-1"
-                >
-                  {isSubmitting ? 'Saving...' : 'Save Changes'}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setIsBankEditing(false)}
-                  className="flex-1"
-                >
-                  Cancel
-                </Button>
-              </div>
-            </form>
+            <BankDetailsForm
+              initialDetails={profile.bankDetails}
+              submitLabel="Save Changes"
+              onCancel={() => setIsBankEditing(false)}
+              onSaved={(details) => {
+                setProfile((current) => current ? { ...current, bankDetails: details } : current)
+                setIsBankEditing(false)
+                setMessage({ type: 'success', text: 'Bank details updated successfully!' })
+              }}
+            />
           ) : (
             <div className="space-y-4">
               <div>

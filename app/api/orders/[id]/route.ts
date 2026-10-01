@@ -1,3 +1,5 @@
+import { clearZeroFeeSettlement, saveOrderLifecycle, OrderChangedError } from '@/lib/first-order-bonus';
+import { priceWithOrderDiscounts } from '@/lib/first-order-pricing';
 import { canPayCafeInquiry } from '@/lib/cafe-inquiry';
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
@@ -24,7 +26,6 @@ import {
   PRINTING_TASK_TYPE,
   RESTAURANT_MAX_PEOPLE,
   WATER_TASK_TYPE,
-  DRY_CLEANING_TASK_TYPE,
   INDOMIE_TASK_TYPE,
 } from '@/lib/pricing';
 import {
@@ -33,7 +34,7 @@ import {
 } from '@/lib/push-notifications';
 import { shouldSendOrderNotification } from '@/lib/test-orders';
 
-const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', 'copy_notes', DRY_CLEANING_TASK_TYPE, INDOMIE_TASK_TYPE]);
+const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 const COMPLETION_EXTENSION_MINUTES = 10;
 
 export async function PATCH(
@@ -75,6 +76,14 @@ export async function PATCH(
       );
     }
 
+    // Authorize before returning the original completion receipt on retries.
+    if (body.status === 'completed') {
+      if (!isTaskerOwner || !order.taskerId) {
+        return NextResponse.json({ error: 'Only the assigned tasker can complete this order' }, { status: 403 });
+      }
+      if (order.status === 'completed') return NextResponse.json(order);
+    }
+
     // Update only provided fields
     const {
       taskType,
@@ -112,7 +121,8 @@ export async function PATCH(
       order.declinedByTaskerAt = undefined;
     };
 
-    if (ensureCompletionTimer(order)) {
+    // Completion consumes the payment-time timer; never invent or resize it here.
+    if (status !== 'completed' && ensureCompletionTimer(order)) {
       await order.save();
       emitOrderUpdated(order);
     }
@@ -209,6 +219,7 @@ export async function PATCH(
           'Customer reported that the order had not been received when the tasker marked it complete.';
       }
 
+      clearZeroFeeSettlement(order);
       await order.save();
       emitOrderUpdated(order);
       return NextResponse.json(order);
@@ -236,6 +247,8 @@ export async function PATCH(
       || printingNeedsEditing !== undefined ||
       cafeInquiry !== undefined
     ) {
+      // An edit cannot revive a cancelled reservation or change a paid quote.
+      order.$where = { updatedAt: order.updatedAt, status: { $in: ['pending', 'in_progress'] }, hasPaid: { $ne: true }, paymentStatus: { $ne: 'paid' } };
       if (order.cafeInquiryStatus) {
         return NextResponse.json({ error: 'Use the cafe selection action for this request. Cancel and repost to change the cafe or delivery.' }, { status: 409 });
       }
@@ -323,6 +336,7 @@ export async function PATCH(
         order.totalAmount = discountStillApplies
           ? Math.max(0, pricing.totalAmount - pricing.serviceFee)
           : pricing.totalAmount;
+        Object.assign(order, priceWithOrderDiscounts(pricing, { firstOrderBonus: order.firstOrderBonusApplied, serviceFeeDiscount: discountStillApplies, cafeInquiry: order.cafeInquiry }));
         order.restaurantPeopleCount = pricing.restaurantPeopleCount;
         order.restaurantTakeawayCount = pricing.restaurantTakeawayCount;
         order.restaurantPackagingFee = pricing.restaurantPackagingFee || 0;
@@ -588,12 +602,12 @@ export async function PATCH(
         }
       }
 
-      if (nextTaskType === 'shopping' || nextTaskType === DRY_CLEANING_TASK_TYPE) {
+      if (nextTaskType === 'shopping') {
         if (nextDescription.length < 5) {
           return NextResponse.json(
             {
               error:
-                nextTaskType === DRY_CLEANING_TASK_TYPE
+                false
                   ? 'Describe the clothes you want cleaned.'
                   : 'Describe the items you want.',
             },
@@ -602,12 +616,12 @@ export async function PATCH(
         }
       }
 
-      if (nextTaskType === 'shopping' || nextTaskType === DRY_CLEANING_TASK_TYPE || nextTaskType === INDOMIE_TASK_TYPE) {
+      if (nextTaskType === 'shopping' || nextTaskType === INDOMIE_TASK_TYPE) {
         if (!Number.isFinite(nextAmount) || nextAmount <= 0) {
           return NextResponse.json(
             {
               error:
-                nextTaskType === DRY_CLEANING_TASK_TYPE
+                false
                   ? 'Enter a valid dry cleaning budget.'
                   : nextTaskType === INDOMIE_TASK_TYPE
                     ? 'Enter a valid indomie budget.'
@@ -667,7 +681,7 @@ export async function PATCH(
       order.description = nextCafeInquiry ? 'Text me what is in cafe' : nextDescription;
       order.amount = pricing.amount;
       order.itemPrice = nextCafeInquiry ? 0 :
-        nextTaskType === 'restaurant' || nextTaskType === 'shopping' || nextTaskType === DRY_CLEANING_TASK_TYPE || nextTaskType === INDOMIE_TASK_TYPE ? nextAmount : undefined;
+        nextTaskType === 'restaurant' || nextTaskType === 'shopping' || nextTaskType === INDOMIE_TASK_TYPE ? nextAmount : undefined;
       order.commission = settlement.serviceFee;
       order.platformFee = settlement.platformFee;
       order.taskerFee = settlement.taskerFee;
@@ -684,6 +698,7 @@ export async function PATCH(
       order.totalAmount = discountStillApplies
         ? Math.max(0, pricing.totalAmount - pricing.serviceFee + (nextCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
         : pricing.totalAmount;
+      Object.assign(order, priceWithOrderDiscounts(pricing, { firstOrderBonus: order.firstOrderBonusApplied, serviceFeeDiscount: discountStillApplies, cafeInquiry: nextCafeInquiry }));
       order.cafeInquiry = nextCafeInquiry;
       order.cafeInquiryStatus = nextCafeInquiry ? 'waiting_for_tasker' : undefined;
       order.cafeAvailableItems = [];
@@ -747,7 +762,7 @@ export async function PATCH(
         nextTaskType === 'copy_notes' ||
         nextTaskType === WATER_TASK_TYPE ||
         nextTaskType === INDOMIE_TASK_TYPE ||
-        nextTaskType === DRY_CLEANING_TASK_TYPE
+        false
           ? undefined
           : nextStore;
       order.packaging =
@@ -880,7 +895,9 @@ export async function PATCH(
         order.prematureCompletionReported = false;
         order.prematureCompletionReportedAt = undefined;
 
-        if (order.platformFeeWaivedForFastCompletion) {
+        if (order.platformFee <= 0) {
+          clearZeroFeeSettlement(order);
+        } else if (order.platformFeeWaivedForFastCompletion) {
           order.taskerHasPaid = true;
           order.settlementStatus = 'paid';
           order.settlementPaidAt = order.completedAt;
@@ -893,6 +910,7 @@ export async function PATCH(
           order.settlementFailureReason = undefined;
         }
       } else if (status === 'in_progress' || status === 'pending') {
+        if (order.status === 'completed' || order.status === 'cancelled') return NextResponse.json({ error: 'Repost this task to start a new order.' }, { status: 409 });
         if (order.cafeInquiryStatus) return NextResponse.json({ error: 'Use the cafe check actions to continue.' }, { status: 409 });
         if (!isTaskerOwner) {
           return NextResponse.json(
@@ -915,7 +933,14 @@ export async function PATCH(
         (previousStatus === 'completed' || order.status === 'completed');
     }
 
-    await order.save();
+    try {
+      await saveOrderLifecycle(order);
+    } catch (error) {
+      if (!(error instanceof OrderChangedError)) throw error;
+      const existing = await Order.findById(id);
+      if (status === 'completed' && existing?.status === 'completed' && existing.taskerId === session.user.taskerId) return NextResponse.json(existing);
+      return NextResponse.json({ error: error.message }, { status: 409 });
+    }
 
     if (shouldSyncTaskerStats && order.taskerId) {
       await syncTaskerStats(order.taskerId);
@@ -945,7 +970,11 @@ export async function PATCH(
       }
     }
 
-    return NextResponse.json(order);
+    return NextResponse.json(order, {
+      headers: status === 'completed' && previousStatus !== 'completed'
+        ? { 'X-SwiftDU-Completion-Transition': '1' }
+        : undefined,
+    });
   } catch (error) {
     console.error('[Orders PATCH Error]:', error);
     return NextResponse.json(
@@ -1011,7 +1040,7 @@ const session = await auth.api.getSession({
     order.settlementDueAt = undefined;
     order.settlementFailureReason = undefined;
 
-    await order.save();
+    await saveOrderLifecycle(order);
 
     emitOrderUpdated(order);
 
@@ -1073,6 +1102,8 @@ export async function GET(
 
       if (
         order.status === 'completed' &&
+        order.platformFee > 0 &&
+        !order.platformFeeWaivedForFastCompletion &&
         !order.taskerHasPaid &&
         order.settlementDueAt &&
         order.settlementDueAt.getTime() <= Date.now() &&

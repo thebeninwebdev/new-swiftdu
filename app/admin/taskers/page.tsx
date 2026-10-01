@@ -1,11 +1,10 @@
 'use client'
 
-import React, { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
 
 interface TaskerUser {
   _id: string
@@ -13,6 +12,17 @@ interface TaskerUser {
   email: string
 }
 
+interface ApplicationCheck {
+  status: 'valid' | 'warning' | 'invalid'
+  label: string
+  message: string
+}
+
+interface ApplicationReview {
+  checks: ApplicationCheck[]
+  status: 'valid' | 'warning' | 'invalid'
+  attentionCount: number
+}
 interface Tasker {
   _id: string
   phone: string
@@ -35,12 +45,12 @@ interface Tasker {
     accountName: string
   }
   createdAt: string
+  applicationReview: ApplicationReview
   user: TaskerUser | null
 }
 
 type StatusFilter = 'pending' | 'verified' | 'rejected'
 
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function AdminTaskersPage() {
   const router = useRouter()
@@ -55,7 +65,6 @@ export default function AdminTaskersPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [bankEdits, setBankEdits] = useState<Record<string, Tasker['bankDetails']>>({})
 
-  // ── Auth check ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -73,7 +82,6 @@ export default function AdminTaskersPage() {
     checkAuth()
   }, [router])
 
-  // ── Fetch taskers ──────────────────────────────────────────────────────────
 
   const fetchTaskers = useCallback(async (status: StatusFilter) => {
     setIsFetching(true)
@@ -93,7 +101,6 @@ export default function AdminTaskersPage() {
     if (admin) fetchTaskers(activeFilter)
   }, [admin, activeFilter, fetchTaskers])
 
-  // ── Approve / Reject ───────────────────────────────────────────────────────
 
   const handleAction = async (taskerId: string, action: 'approve' | 'reject' | 'suspend' | 'activate') => {
     setActionLoading(`${taskerId}-${action}`)
@@ -198,7 +205,6 @@ export default function AdminTaskersPage() {
     }
   }
 
-  // ── Counts per filter ──────────────────────────────────────────────────────
 
   const FILTERS: { key: StatusFilter; label: string }[] = [
     { key: 'pending', label: 'Pending' },
@@ -220,835 +226,49 @@ export default function AdminTaskersPage() {
     }
   }, [])
 
-  // ── Loading ────────────────────────────────────────────────────────────────
 
   if (isLoading) {
-    return (
-      <div style={s.loadingScreen}>
-        <div style={s.spinner} />
-        <p style={s.loadingText}>Loading admin panel…</p>
-      </div>
-    )
+    return <div className="flex min-h-screen items-center justify-center bg-slate-50 text-sm font-medium text-slate-500"><span className="mr-3 h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-violet-600" />Loading admin panel…</div>
   }
 
   if (!admin) return null
 
-  // ── Render ─────────────────────────────────────────────────────────────────
-
   return (
-    <div style={s.root}>
-      <div style={s.bgBlob} />
+    <main className="min-h-screen bg-slate-50 px-4 py-6 text-slate-900 sm:px-6 sm:py-8">
+      <div className="mx-auto max-w-6xl">
+        <header className="mb-6 flex flex-col gap-4 sm:mb-8 sm:flex-row sm:items-end sm:justify-between">
+          <div><h1 className="text-2xl font-bold tracking-tight sm:text-3xl">Tasker applications</h1><p className="mt-1 text-sm text-slate-500 sm:text-base">Review applications, update bank details, and manage tasker access.</p></div>
+          <span className="w-fit rounded-2xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600">{admin.name?.split(' ')[0]}</span>
+        </header>
 
-      <div style={s.container}>
-
-        {/* Header */}
-        <div style={s.header}>
-          <div>
-            <span style={s.badge}>Admin Panel</span>
-            <h1 style={s.title}>Tasker Applications</h1>
-            <p style={s.subtitle}>
-              Review applications, update bank details, and manage tasker access.
-            </p>
-          </div>
-          <div style={s.adminChip}>
-            <div style={s.adminDot} />
-            <span>{admin.name?.split(' ')[0]}</span>
-          </div>
+        <div className="mb-6 flex gap-2 overflow-x-auto rounded-2xl border border-slate-200/80 bg-white p-2 shadow-sm">
+          {FILTERS.map(({ key, label }) => <button key={key} type="button" onClick={() => setActiveFilter(key)} className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 ${activeFilter === key ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-violet-50 hover:text-violet-700'}`}>{label}{activeFilter === key && taskers.length > 0 && <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-xs">{taskers.length}</span>}</button>)}
         </div>
 
-        {/* Filter tabs */}
-        <div style={s.tabRow}>
-          {FILTERS.map(({ key, label }) => (
-            <button
-              key={key}
-              style={{
-                ...s.tab,
-                ...(activeFilter === key ? s.tabActive : {}),
-              }}
-              onClick={() => setActiveFilter(key)}
-            >
-              {label}
-              {activeFilter === key && taskers.length > 0 && (
-                <span style={s.tabCount}>{taskers.length}</span>
-              )}
-            </button>
-          ))}
-        </div>
-
-        {/* Content */}
-        {isFetching ? (
-          <div style={s.fetchingRow}>
-            <div style={s.spinnerSm} />
-            <span style={s.fetchingText}>Loading…</span>
-          </div>
-        ) : taskers.length === 0 ? (
-          <div style={s.emptyState}>
-            <span style={s.emptyIcon}>
-              {activeFilter === 'pending' ? '📋' : activeFilter === 'verified' ? '✅' : '🚫'}
-            </span>
-            <p style={s.emptyTitle}>No {activeFilter} taskers</p>
-            <p style={s.emptyBody}>
-              {activeFilter === 'pending'
-                ? 'All caught up — no applications waiting for review.'
-                : `No taskers have been ${activeFilter} yet.`}
-            </p>
-          </div>
-        ) : (
-          <div style={s.list}>
-            {taskers.map((tasker) => {
-              const isExpanded = expandedId === tasker._id
-              const isActing = actionLoading?.startsWith(tasker._id)
-
-              return (
-                <div key={tasker._id} style={s.card}>
-
-                  {/* Card header row */}
-                  <div style={s.cardTop}>
-                    {/* Avatar */}
-                    <div style={s.avatarWrap}>
-                      {tasker.profileImage ? (
-                        <img src={tasker.profileImage} alt="avatar" style={s.avatar} />
-                      ) : (
-                        <div style={s.avatarFallback}>
-                          {tasker.user?.name?.charAt(0)?.toUpperCase() ?? '?'}
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Info */}
-                    <div style={s.cardInfo}>
-                      <div style={s.cardName}>
-                        {tasker.user?.name ?? 'Unknown User'}
-                      </div>
-                      <div style={s.cardMeta}>
-                        {tasker.user?.email ?? '—'}
-                        <span style={s.dot}>·</span>
-                        {tasker.phone}
-                        <span style={s.dot}>·</span>
-                        {tasker.location}
-                      </div>
-                      <div style={s.cardDate}>
-                        Applied {new Date(tasker.createdAt).toLocaleDateString('en-GB', {
-                          day: 'numeric', month: 'short', year: 'numeric',
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Status pill */}
-                    <div style={s.statusWrap}>
-                      <div style={{
-                        ...s.statusPill,
-                        ...(tasker.isVerified
-                          ? s.pillVerified
-                          : tasker.isRejected
-                          ? s.pillRejected
-                          : s.pillPending),
-                      }}>
-                        {tasker.isVerified ? 'Approved' : tasker.isRejected ? 'Rejected' : 'Pending'}
-                      </div>
-                      {tasker.isSettlementSuspended ? (
-                        <div style={{ ...s.statusPill, ...s.pillRejected }}>
-                          Suspended
-                        </div>
-                      ) : null}
-                      <div style={{
-                        ...s.statusPill,
-                        ...(tasker.taskerMode === 'training' ? s.pillTraining : s.pillLive),
-                      }}>
-                        {tasker.taskerMode === 'training' ? 'Training Mode' : 'Live Mode'}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Expand toggle */}
-                  <button
-                    style={s.expandBtn}
-                    onClick={() => setExpandedId(isExpanded ? null : tasker._id)}
-                  >
-                    {isExpanded ? 'Hide details ↑' : 'View details ↓'}
-                  </button>
-
-                  {/* Expanded details */}
-                  {isExpanded && (
-                    <div style={s.details}>
-                      <div style={s.detailsGrid}>
-                        <DetailRow label="Matric Number" value={tasker.studentId} />
-                        <DetailRow label="Level" value={tasker.level || 'Not provided'} />
-                        <DetailRow
-                          label="Usually Available"
-                          value={tasker.availability?.join(', ') || 'Not provided'}
-                        />
-                        <DetailRow
-                          label="Why SwiftDU"
-                          value={
-                            tasker.motivation === 'Other'
-                              ? tasker.motivationOther || 'Other'
-                              : tasker.motivation || 'Not provided'
-                          }
-                        />
-                        <DetailRow label="Bank" value={tasker.bankDetails.bankName} />
-                        <DetailRow label="Account Number" value={tasker.bankDetails.accountNumber} />
-                        <DetailRow label="Account Name" value={tasker.bankDetails.accountName} />
-                        <DetailRow label="Completed Tasks" value={String(tasker.completedTasks)} />
-                        <DetailRow label="Rating" value={tasker.rating > 0 ? `${tasker.rating}/5` : 'Not yet rated'} />
-                        <DetailRow label="Tasker Suspension" value={tasker.isSettlementSuspended ? 'Suspended' : 'Active'} />
-                        <DetailRow label="Tasker Mode" value={tasker.taskerMode === 'training' ? 'Training Mode' : 'Live Mode'} />
-                      </div>
-                      <div style={s.bankEditor}>
-                        <input
-                          style={s.input}
-                          value={(bankEdits[tasker._id] ?? tasker.bankDetails).bankName}
-                          onChange={(event) =>
-                            setBankEdits((previous) => ({
-                              ...previous,
-                              [tasker._id]: {
-                                ...(previous[tasker._id] ?? tasker.bankDetails),
-                                bankName: event.target.value,
-                              },
-                            }))
-                          }
-                          placeholder="Bank name"
-                        />
-                        <input
-                          style={s.input}
-                          value={(bankEdits[tasker._id] ?? tasker.bankDetails).accountNumber}
-                          onChange={(event) =>
-                            setBankEdits((previous) => ({
-                              ...previous,
-                              [tasker._id]: {
-                                ...(previous[tasker._id] ?? tasker.bankDetails),
-                                accountNumber: event.target.value.replace(/\D/g, '').slice(0, 10),
-                              },
-                            }))
-                          }
-                          placeholder="Account number"
-                        />
-                        <input
-                          style={s.input}
-                          value={(bankEdits[tasker._id] ?? tasker.bankDetails).accountName}
-                          onChange={(event) =>
-                            setBankEdits((previous) => ({
-                              ...previous,
-                              [tasker._id]: {
-                                ...(previous[tasker._id] ?? tasker.bankDetails),
-                                accountName: event.target.value,
-                              },
-                            }))
-                          }
-                          placeholder="Account name"
-                        />
-                        <button
-                          style={{
-                            ...s.saveBankBtn,
-                            ...(actionLoading === `${tasker._id}-bank` ? s.btnDisabled : {}),
-                          }}
-                          disabled={actionLoading === `${tasker._id}-bank`}
-                          onClick={() => handleBankDetailsUpdate(tasker)}
-                        >
-                          {actionLoading === `${tasker._id}-bank` ? 'Saving...' : 'Save Bank Details'}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Actions — only show for pending */}
-                  {!tasker.isVerified && !tasker.isRejected && (
-                    <div style={s.actions}>
-                      <button
-                        style={{
-                          ...s.rejectBtn,
-                          ...(isActing ? s.btnDisabled : {}),
-                        }}
-                        disabled={!!isActing}
-                        onClick={() => handleAction(tasker._id, 'reject')}
-                      >
-                        {actionLoading === `${tasker._id}-reject` ? 'Rejecting…' : 'Reject'}
-                      </button>
-                      <button
-                        style={{
-                          ...s.approveBtn,
-                          ...(isActing ? s.btnDisabled : {}),
-                        }}
-                        disabled={!!isActing}
-                        onClick={() => handleAction(tasker._id, 'approve')}
-                      >
-                        {actionLoading === `${tasker._id}-approve` ? 'Approving…' : 'Approve'}
-                      </button>
-                    </div>
-                  )}
-
-                  {/* Re-action for already reviewed */}
-                  {(tasker.isVerified || tasker.isRejected) && (
-                    <div style={s.actions}>
-                      {tasker.isVerified && (
-                        <button
-                          style={{ ...s.approveBtn, ...(isActing ? s.btnDisabled : {}) }}
-                          disabled={!!isActing}
-                          onClick={() => handleAction(tasker._id, 'approve')}
-                        >
-                          {actionLoading === `${tasker._id}-approve` ? 'Sending...' : 'Sync Account & Resend Email'}
-                        </button>
-                      )}
-                      {tasker.isVerified && (
-                        <button
-                          style={{
-                            ...s.modeBtn,
-                            ...(tasker.taskerMode === 'training' ? s.liveModeBtn : s.trainingModeBtn),
-                            ...(isActing ? s.btnDisabled : {}),
-                          }}
-                          disabled={!!isActing}
-                          onClick={() => handleModeChange(tasker, tasker.taskerMode === 'training' ? 'live' : 'training')}
-                        >
-                          {actionLoading === `${tasker._id}-mode`
-                            ? 'Switching...'
-                            : tasker.taskerMode === 'training'
-                              ? 'Move to Live Mode'
-                              : 'Move to Training Mode'}
-                        </button>
-                      )}
-                      {tasker.isVerified && (
-                        <button
-                          style={{
-                            ...s.rejectBtn,
-                            ...(tasker.isSettlementSuspended ? s.activateBtn : {}),
-                            ...(isActing ? s.btnDisabled : {}),
-                          }}
-                          disabled={!!isActing}
-                          onClick={() => handleAction(tasker._id, tasker.isSettlementSuspended ? 'activate' : 'suspend')}
-                        >
-                          {actionLoading === `${tasker._id}-${tasker.isSettlementSuspended ? 'activate' : 'suspend'}`
-                            ? 'Saving...'
-                            : tasker.isSettlementSuspended
-                              ? 'Restore Tasker'
-                              : 'Suspend Tasker'}
-                        </button>
-                      )}
-                      {tasker.isVerified && (
-                        <button
-                          style={{ ...s.rejectBtn, ...(isActing ? s.btnDisabled : {}) }}
-                          disabled={!!isActing}
-                          onClick={() => handleAction(tasker._id, 'reject')}
-                        >
-                          {actionLoading === `${tasker._id}-reject` ? 'Revoking…' : 'Revoke Approval'}
-                        </button>
-                      )}
-                      {tasker.isRejected && (
-                        <button
-                          style={{ ...s.approveBtn, ...(isActing ? s.btnDisabled : {}) }}
-                          disabled={!!isActing}
-                          onClick={() => handleAction(tasker._id, 'approve')}
-                        >
-                          {actionLoading === `${tasker._id}-approve` ? 'Approving…' : 'Approve Instead'}
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                </div>
-              )
-            })}
-          </div>
-        )}
-
+        {isFetching ? <div className="flex items-center gap-3 rounded-3xl border border-slate-200/80 bg-white px-6 py-10 text-sm text-slate-500 shadow-sm"><span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-violet-600" />Loading taskers…</div> : taskers.length === 0 ? <div className="rounded-3xl border border-slate-200/80 bg-white px-6 py-12 text-center shadow-sm"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-50 text-violet-700">✓</div><p className="mt-4 font-semibold">No {activeFilter} taskers</p><p className="mt-1 text-sm text-slate-500">{activeFilter === 'pending' ? 'All caught up — no applications waiting for review.' : `No taskers have been ${activeFilter} yet.`}</p></div> : <div className="space-y-4">
+          {taskers.map((tasker) => {
+            const isExpanded = expandedId === tasker._id
+            const isActing = actionLoading?.startsWith(tasker._id)
+            const reviewLabel = tasker.applicationReview.status === 'invalid' ? 'Incomplete application' : tasker.applicationReview.attentionCount ? tasker.applicationReview.attentionCount + ' things to verify' : 'Checks passed'
+            const reviewTone = tasker.applicationReview.status === 'invalid' ? 'bg-rose-50 text-rose-700' : tasker.applicationReview.attentionCount ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+            const statusTone = tasker.isVerified ? 'bg-emerald-50 text-emerald-700 ring-emerald-200' : tasker.isRejected ? 'bg-rose-50 text-rose-700 ring-rose-200' : 'bg-amber-50 text-amber-700 ring-amber-200'
+            return <article key={tasker._id} className="overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm">
+              <div className="p-5 sm:p-6"><div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex min-w-0 gap-3"><div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl bg-violet-50 font-bold text-violet-700">{tasker.profileImage ? <img src={tasker.profileImage} alt="" className="h-full w-full object-cover" /> : (tasker.user?.name?.charAt(0)?.toUpperCase() ?? '?')}</div><div className="min-w-0"><h2 className="font-semibold text-slate-900">{tasker.user?.name ?? 'Unknown user'}</h2><p className="mt-1 break-words text-sm text-slate-500">{tasker.user?.email ?? 'No email'} <span className="hidden sm:inline">• {tasker.phone} • {tasker.location}</span></p><p className="mt-1 text-xs text-slate-400">Applied {new Date(tasker.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</p></div></div>
+                <div className="flex flex-wrap gap-2"><span className={`rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${statusTone}`}>{tasker.isVerified ? 'Approved' : tasker.isRejected ? 'Rejected' : 'Pending'}</span>{tasker.isSettlementSuspended && <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700 ring-1 ring-inset ring-rose-200">Suspended</span>}<span className="rounded-full bg-violet-50 px-2.5 py-1 text-xs font-semibold text-violet-700 ring-1 ring-inset ring-violet-200">{tasker.taskerMode === 'training' ? 'Training' : 'Live'}</span></div>
+              </div>
+              <span className={`mt-4 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${reviewTone}`}>{reviewLabel}</span><button type="button" onClick={() => setExpandedId(isExpanded ? null : tasker._id)} className="mt-5 min-h-11 rounded-xl px-3 text-sm font-semibold text-violet-700 hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300">{isExpanded ? 'Hide details' : 'View details'}</button>
+              {isExpanded && <div className="mt-4 border-t border-slate-100 pt-5"><div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3"><DetailRow label="Matric number" value={tasker.studentId} /><DetailRow label="Level" value={tasker.level || 'Not provided'} /><DetailRow label="Availability" value={tasker.availability?.join(', ') || 'Not provided'} /><DetailRow label="Why SwiftDU" value={tasker.motivation === 'Other' ? tasker.motivationOther || 'Other' : tasker.motivation || 'Not provided'} /><DetailRow label="Bank" value={tasker.bankDetails.bankName} /><DetailRow label="Account number" value={tasker.bankDetails.accountNumber ? `******${tasker.bankDetails.accountNumber.slice(-4)}` : 'Not submitted'} /><DetailRow label="Account name" value={tasker.bankDetails.accountName} /><DetailRow label="Completed tasks" value={String(tasker.completedTasks)} /><DetailRow label="Rating" value={tasker.rating > 0 ? `${tasker.rating}/5` : 'Not yet rated'} /></div>
+                <section className="mt-5 rounded-2xl border border-slate-200 bg-slate-50 p-4"><p className="font-semibold text-slate-900">Application summary</p><p className="mt-1 text-xs font-semibold uppercase tracking-wide text-violet-700">Review assistant</p><div className="mt-3 space-y-2">{tasker.applicationReview.checks.map((check) => <div key={check.label} className="rounded-xl bg-white p-3"><p className="text-sm font-semibold text-slate-900">{check.label}</p><p className="mt-1 text-sm text-slate-600">{check.message}</p></div>)}</div></section><div className="mt-5 grid gap-3 rounded-2xl bg-slate-50 p-4 sm:grid-cols-2 lg:grid-cols-4"><input className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-200" value={(bankEdits[tasker._id] ?? tasker.bankDetails).bankName} onChange={(event) => setBankEdits((previous) => ({ ...previous, [tasker._id]: { ...(previous[tasker._id] ?? tasker.bankDetails), bankName: event.target.value } }))} placeholder="Bank name" /><input className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-200" value={(bankEdits[tasker._id] ?? tasker.bankDetails).accountNumber} onChange={(event) => setBankEdits((previous) => ({ ...previous, [tasker._id]: { ...(previous[tasker._id] ?? tasker.bankDetails), accountNumber: event.target.value.replace(/\D/g, '').slice(0, 10) } }))} placeholder="Account number" /><input className="min-h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-violet-200" value={(bankEdits[tasker._id] ?? tasker.bankDetails).accountName} onChange={(event) => setBankEdits((previous) => ({ ...previous, [tasker._id]: { ...(previous[tasker._id] ?? tasker.bankDetails), accountName: event.target.value } }))} placeholder="Account name" /><button type="button" className="min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50" disabled={actionLoading === `${tasker._id}-bank`} onClick={() => handleBankDetailsUpdate(tasker)}>{actionLoading === `${tasker._id}-bank` ? 'Saving…' : 'Save bank details'}</button></div></div>}
+              <div className="mt-5 flex flex-wrap gap-2 border-t border-slate-100 pt-5">{!tasker.isVerified && !tasker.isRejected && <><button type="button" disabled={!!isActing} onClick={() => handleAction(tasker._id, 'reject')} className="min-h-11 rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 disabled:opacity-50">{actionLoading === `${tasker._id}-reject` ? 'Rejecting…' : 'Reject'}</button><button type="button" disabled={!!isActing} onClick={() => handleAction(tasker._id, 'approve')} className="min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-50">{actionLoading === `${tasker._id}-approve` ? 'Approving…' : 'Approve'}</button></>}{tasker.isVerified && <><button type="button" disabled={!!isActing} onClick={() => handleAction(tasker._id, 'approve')} className="min-h-11 rounded-xl border border-violet-200 px-4 text-sm font-semibold text-violet-700 disabled:opacity-50">Resend onboarding email</button><button type="button" disabled={!!isActing} onClick={() => handleModeChange(tasker, tasker.taskerMode === 'training' ? 'live' : 'training')} className="min-h-11 rounded-xl border border-slate-200 px-4 text-sm font-semibold text-slate-700 disabled:opacity-50">{tasker.taskerMode === 'training' ? 'Move to live mode' : 'Move to training mode'}</button><button type="button" disabled={!!isActing} onClick={() => handleAction(tasker._id, tasker.isSettlementSuspended ? 'activate' : 'suspend')} className="min-h-11 rounded-xl border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-700 disabled:opacity-50">{tasker.isSettlementSuspended ? 'Restore tasker' : 'Suspend settlement'}</button><button type="button" disabled={!!isActing} onClick={() => handleAction(tasker._id, 'reject')} className="min-h-11 rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-semibold text-rose-700 disabled:opacity-50">Revoke approval</button></>}{tasker.isRejected && <button type="button" disabled={!!isActing} onClick={() => handleAction(tasker._id, 'approve')} className="min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white disabled:opacity-50">Approve instead</button>}</div>
+              </div></article>
+          })}
+        </div>}
       </div>
-    </div>
+    </main>
   )
 }
-
-// ─── Detail row sub-component ─────────────────────────────────────────────────
 
 function DetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={s.detailRow}>
-      <span style={s.detailLabel}>{label}</span>
-      <span style={s.detailValue}>{value}</span>
-    </div>
-  )
-}
-
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
-const COLOR = {
-  bg: '#f5f4f0',
-  surface: '#ffffff',
-  border: '#e2dfd8',
-  accent: '#2563eb',
-  accentDim: 'rgba(37,99,235,0.08)',
-  accentText: '#1d4ed8',
-  text: '#111110',
-  muted: '#6b7280',
-  mutedLight: '#9ca3af',
-  error: '#dc2626',
-  errorDim: 'rgba(220,38,38,0.08)',
-  errorBorder: 'rgba(220,38,38,0.2)',
-  success: '#16a34a',
-  successDim: 'rgba(22,163,74,0.08)',
-  successBorder: 'rgba(22,163,74,0.2)',
-  pendingDim: 'rgba(217,119,6,0.08)',
-  pendingBorder: 'rgba(217,119,6,0.2)',
-  pendingText: '#92400e',
-  trainingDim: 'rgba(79,70,229,0.08)',
-  trainingBorder: 'rgba(79,70,229,0.22)',
-  trainingText: '#4338ca',
-}
-
-const s: Record<string, React.CSSProperties> = {
-  root: {
-    minHeight: '100vh',
-    background: COLOR.bg,
-    fontFamily: "'DM Sans', 'Helvetica Neue', sans-serif",
-    color: COLOR.text,
-    position: 'relative',
-    overflowX: 'hidden',
-    padding: '32px 14px 72px',
-  },
-  bgBlob: {
-    position: 'fixed',
-    inset: 0,
-    backgroundImage: `radial-gradient(ellipse 70% 40% at 60% 0%, rgba(37,99,235,0.05) 0%, transparent 65%)`,
-    pointerEvents: 'none',
-    zIndex: 0,
-  },
-  container: {
-    maxWidth: 760,
-    margin: '0 auto',
-    position: 'relative',
-    zIndex: 1,
-  },
-  // Header
-  header: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 32,
-    gap: 16,
-    flexWrap: 'wrap' as const,
-  },
-  badge: {
-    display: 'inline-block',
-    fontSize: 11,
-    fontWeight: 600,
-    letterSpacing: '0.12em',
-    textTransform: 'uppercase' as const,
-    color: COLOR.accentText,
-    background: COLOR.accentDim,
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: 'rgba(37,99,235,0.22)',
-    borderRadius: 4,
-    padding: '3px 10px',
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 800,
-    letterSpacing: '-0.03em',
-    margin: '0 0 6px',
-    color: COLOR.text,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: COLOR.muted,
-    margin: 0,
-  },
-  adminChip: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 8,
-    fontSize: 13,
-    fontWeight: 600,
-    color: COLOR.muted,
-    background: COLOR.surface,
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: COLOR.border,
-    borderRadius: 99,
-    padding: '6px 14px',
-    whiteSpace: 'nowrap' as const,
-    maxWidth: '100%',
-  },
-  adminDot: {
-    width: 8,
-    height: 8,
-    borderRadius: '50%',
-    background: COLOR.success,
-  },
-  // Filter tabs
-  tabRow: {
-    display: 'flex',
-    gap: 4,
-    marginBottom: 24,
-    background: COLOR.surface,
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: COLOR.border,
-    borderRadius: 10,
-    padding: 4,
-    width: '100%',
-    overflowX: 'auto' as const,
-  },
-  tab: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '7px 18px',
-    fontSize: 13,
-    fontWeight: 600,
-    background: 'none',
-    borderWidth: 0,
-    borderStyle: 'solid',
-    borderColor: 'transparent',
-    borderRadius: 7,
-    color: COLOR.muted,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    transition: 'all 0.15s',
-    whiteSpace: 'nowrap' as const,
-  },
-  tabActive: {
-    background: COLOR.accent,
-    color: '#ffffff',
-  },
-  tabCount: {
-    fontSize: 11,
-    fontWeight: 700,
-    background: 'rgba(255,255,255,0.25)',
-    borderRadius: 99,
-    padding: '1px 7px',
-  },
-  // Loading / fetching
-  loadingScreen: {
-    minHeight: '100vh',
-    display: 'flex',
-    flexDirection: 'column' as const,
-    alignItems: 'center',
-    justifyContent: 'center',
-    background: COLOR.bg,
-    gap: 16,
-    fontFamily: "'DM Sans', sans-serif",
-  },
-  spinner: {
-    width: 32,
-    height: 32,
-    borderWidth: 3,
-    borderStyle: 'solid',
-    borderColor: COLOR.border,
-    borderTopColor: COLOR.accent,
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-  },
-  spinnerSm: {
-    width: 18,
-    height: 18,
-    borderWidth: 2,
-    borderStyle: 'solid',
-    borderColor: COLOR.border,
-    borderTopColor: COLOR.accent,
-    borderRadius: '50%',
-    animation: 'spin 0.8s linear infinite',
-  },
-  loadingText: {
-    fontSize: 14,
-    color: COLOR.muted,
-    margin: 0,
-  },
-  fetchingRow: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: 10,
-    padding: '32px 0',
-  },
-  fetchingText: {
-    fontSize: 14,
-    color: COLOR.muted,
-  },
-  // Empty state
-  emptyState: {
-    textAlign: 'center' as const,
-    padding: '64px 24px',
-    background: COLOR.surface,
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: COLOR.border,
-    borderRadius: 16,
-  },
-  emptyIcon: { fontSize: 36, display: 'block', marginBottom: 12 },
-  emptyTitle: { fontSize: 17, fontWeight: 700, margin: '0 0 6px', color: COLOR.text },
-  emptyBody: { fontSize: 14, color: COLOR.muted, margin: 0 },
-  // List
-  list: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 12,
-  },
-  // Card
-  card: {
-    background: COLOR.surface,
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: COLOR.border,
-    borderRadius: 14,
-    padding: '18px 16px',
-    boxShadow: '0 1px 3px rgba(0,0,0,0.05)',
-  },
-  cardTop: {
-    display: 'flex',
-    alignItems: 'flex-start',
-    gap: 14,
-    flexWrap: 'wrap' as const,
-  },
-  // Avatar
-  avatarWrap: {
-    flexShrink: 0,
-  },
-  avatar: {
-    width: 48,
-    height: 48,
-    borderRadius: '50%',
-    objectFit: 'cover' as const,
-    borderWidth: 2,
-    borderStyle: 'solid',
-    borderColor: COLOR.border,
-  },
-  avatarFallback: {
-    width: 48,
-    height: 48,
-    borderRadius: '50%',
-    background: COLOR.accentDim,
-    borderWidth: 2,
-    borderStyle: 'solid',
-    borderColor: 'rgba(37,99,235,0.15)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    fontSize: 18,
-    fontWeight: 700,
-    color: COLOR.accentText,
-  },
-  cardInfo: {
-    flex: 1,
-    minWidth: 0,
-  },
-  cardName: {
-    fontSize: 15,
-    fontWeight: 700,
-    color: COLOR.text,
-    marginBottom: 3,
-    lineHeight: 1.35,
-  },
-  cardMeta: {
-    fontSize: 13,
-    color: COLOR.muted,
-    marginBottom: 3,
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: 4,
-    alignItems: 'center',
-    lineHeight: 1.5,
-  },
-  dot: {
-    color: COLOR.mutedLight,
-    fontSize: 16,
-    lineHeight: 1,
-  },
-  cardDate: {
-    fontSize: 12,
-    color: COLOR.mutedLight,
-  },
-  // Status pill
-  statusPill: {
-    fontSize: 11,
-    fontWeight: 700,
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase' as const,
-    borderRadius: 99,
-    padding: '3px 10px',
-    whiteSpace: 'nowrap' as const,
-    borderWidth: 1,
-    borderStyle: 'solid',
-  },
-  statusWrap: {
-    display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: 6,
-    alignItems: 'center',
-  },
-  pillPending: {
-    background: COLOR.pendingDim,
-    borderColor: COLOR.pendingBorder,
-    color: COLOR.pendingText,
-  },
-  pillVerified: {
-    background: COLOR.successDim,
-    borderColor: COLOR.successBorder,
-    color: COLOR.success,
-  },
-  pillRejected: {
-    background: COLOR.errorDim,
-    borderColor: COLOR.errorBorder,
-    color: COLOR.error,
-  },
-  pillTraining: {
-    background: COLOR.trainingDim,
-    borderColor: COLOR.trainingBorder,
-    color: COLOR.trainingText,
-  },
-  pillLive: {
-    background: COLOR.successDim,
-    borderColor: COLOR.successBorder,
-    color: COLOR.success,
-  },
-  // Expand button
-  expandBtn: {
-    marginTop: 14,
-    fontSize: 12,
-    fontWeight: 600,
-    color: COLOR.accentText,
-    background: 'none',
-    borderWidth: 0,
-    borderStyle: 'solid',
-    borderColor: 'transparent',
-    padding: 0,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-  },
-  // Details
-  details: {
-    marginTop: 14,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopStyle: 'solid' as const,
-    borderTopColor: COLOR.border,
-  },
-  detailsGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-    gap: 10,
-  },
-  bankEditor: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
-    gap: 8,
-    marginTop: 14,
-  },
-  input: {
-    minWidth: 0,
-    height: 38,
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: COLOR.border,
-    borderRadius: 8,
-    padding: '0 10px',
-    fontSize: 13,
-    fontFamily: 'inherit',
-  },
-  detailRow: {
-    display: 'flex',
-    flexDirection: 'column' as const,
-    gap: 2,
-    background: '#fafaf8',
-    borderRadius: 8,
-    padding: '10px 12px',
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: COLOR.border,
-  },
-  detailLabel: {
-    fontSize: 11,
-    fontWeight: 600,
-    letterSpacing: '0.04em',
-    textTransform: 'uppercase' as const,
-    color: COLOR.mutedLight,
-  },
-  detailValue: {
-    fontSize: 13,
-    fontWeight: 500,
-    color: COLOR.text,
-  },
-  // Actions
-  actions: {
-    display: 'flex',
-    gap: 8,
-    marginTop: 16,
-    justifyContent: 'flex-end',
-    flexWrap: 'wrap' as const,
-  },
-  rejectBtn: {
-    flex: '1 1 180px',
-    padding: '8px 20px',
-    fontSize: 13,
-    fontWeight: 700,
-    background: COLOR.errorDim,
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderColor: COLOR.errorBorder,
-    borderRadius: 8,
-    color: COLOR.error,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    transition: 'opacity 0.15s',
-    textAlign: 'center' as const,
-  },
-  approveBtn: {
-    flex: '1 1 180px',
-    padding: '8px 20px',
-    fontSize: 13,
-    fontWeight: 700,
-    background: COLOR.accent,
-    borderWidth: 0,
-    borderStyle: 'solid',
-    borderColor: 'transparent',
-    borderRadius: 8,
-    color: '#ffffff',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    transition: 'opacity 0.15s',
-    textAlign: 'center' as const,
-  },
-  modeBtn: {
-    flex: '1 1 180px',
-    padding: '8px 20px',
-    fontSize: 13,
-    fontWeight: 700,
-    borderWidth: 1,
-    borderStyle: 'solid',
-    borderRadius: 8,
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    transition: 'opacity 0.15s',
-    textAlign: 'center' as const,
-  },
-  liveModeBtn: {
-    background: COLOR.successDim,
-    borderColor: COLOR.successBorder,
-    color: COLOR.success,
-  },
-  trainingModeBtn: {
-    background: COLOR.trainingDim,
-    borderColor: COLOR.trainingBorder,
-    color: COLOR.trainingText,
-  },
-  activateBtn: {
-    background: COLOR.successDim,
-    borderColor: COLOR.successBorder,
-    color: COLOR.success,
-  },
-  saveBankBtn: {
-    minHeight: 38,
-    padding: '8px 14px',
-    fontSize: 13,
-    fontWeight: 700,
-    background: COLOR.accent,
-    borderWidth: 0,
-    borderStyle: 'solid',
-    borderColor: 'transparent',
-    borderRadius: 8,
-    color: '#ffffff',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-  },
-  btnDisabled: {
-    opacity: 0.5,
-    cursor: 'not-allowed',
-  },
+  return <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>
 }

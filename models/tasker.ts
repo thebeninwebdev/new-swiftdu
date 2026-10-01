@@ -16,6 +16,9 @@ export interface ITasker extends Document {
   motivation?: string;
   motivationOther?: string;
 
+  reviewSummary?: { summary: string; highlights: string[]; concerns: string[]; thingsToVerify: string[] };
+  reviewGeneratedAt?: Date;
+  reviewVersion?: number;
   isVerified: boolean;
   workMutationToken?: string;
   workMutationExpiresAt?: Date;
@@ -26,6 +29,8 @@ export interface ITasker extends Document {
   onboardingEmailSentAt?: Date;
   onboardingTokenUsedAt?: Date;
   accountLinkedAt?: Date;
+  bankDetailsVerified?: boolean;
+  bankDetailsAddedAt?: Date;
 
   rating: number;
   completedTasks: number;
@@ -33,6 +38,7 @@ export interface ITasker extends Document {
   settlementSuspendedAt?: Date | null;
 
   bankDetails: {
+    bankCode?: string;
     bankName: string;
     accountNumber: string;
     accountName: string;
@@ -115,6 +121,15 @@ const TaskerSchema = new Schema<ITasker>(
       required: false,
     },
 
+    reviewSummary: {
+      summary: { type: String, required: false },
+      highlights: { type: [String], default: [] },
+      concerns: { type: [String], default: [] },
+      thingsToVerify: { type: [String], default: [] },
+    },
+    reviewGeneratedAt: { type: Date, required: false },
+    reviewVersion: { type: Number, required: false },
+
     isVerified: {
       type: Boolean,
       default: false,
@@ -163,6 +178,16 @@ const TaskerSchema = new Schema<ITasker>(
       required: false,
     },
 
+    bankDetailsVerified: {
+      type: Boolean,
+      default: false,
+    },
+
+    bankDetailsAddedAt: {
+      type: Date,
+      required: false,
+    },
+
     rating: {
       type: Number,
       default: 0,
@@ -182,6 +207,10 @@ const TaskerSchema = new Schema<ITasker>(
     },
 
     bankDetails: {
+      bankCode: {
+        type: String,
+        required: false,
+      },
       bankName: {
         type: String,
         default: "",

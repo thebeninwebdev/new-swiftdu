@@ -1,3 +1,4 @@
+import { firstOrderBonusAvailable } from '@/lib/first-order-bonus'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { auth } from '@/lib/auth'
@@ -38,6 +39,7 @@ export async function GET(request: NextRequest) {
       : false
 
     return NextResponse.json({
+      firstOrderBonusAvailable: await firstOrderBonusAvailable(session.user.id),
       hasCurrentDiscount,
       hasAvailableDiscount: hasCurrentDiscount && !hasActiveReservation,
       hasActiveReservation,

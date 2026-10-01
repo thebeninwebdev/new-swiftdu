@@ -53,6 +53,10 @@ export async function POST(
       )
     }
 
+    if (order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
+      return NextResponse.json({ noSettlementRequired: true, order, message: 'No platform fee to remit.' });
+    }
+
     if (order.isTestOrder) {
       order.taskerHasPaid = true
       order.settlementStatus = 'paid'

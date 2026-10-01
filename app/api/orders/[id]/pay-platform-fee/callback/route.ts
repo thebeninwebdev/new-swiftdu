@@ -59,6 +59,10 @@ export async function GET(
     return NextResponse.redirect(redirectUrl)
   }
 
+  if (order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
+    return NextResponse.redirect(new URL('/tasker-dashboard/' + id, request.nextUrl.origin))
+  }
+
   try {
     const updatedOrder = await verifyAndMarkOrderSettlementPaid({
       order,

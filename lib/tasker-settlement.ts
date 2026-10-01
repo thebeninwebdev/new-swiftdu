@@ -23,6 +23,7 @@ async function backfillSettlementMetadata(taskerId: string) {
   const orders = await Order.find({
     taskerId,
     status: 'completed',
+    platformFee: { $gt: 0 },
     taskerHasPaid: false,
     $and: [
       NON_TEST_ORDER_MATCH,
@@ -60,6 +61,7 @@ export async function syncTaskerSettlementStatus(taskerId: string) {
     {
       taskerId,
       status: 'completed',
+      platformFee: { $gt: 0 },
       taskerHasPaid: false,
       settlementStatus: 'paid',
       $and: [NON_TEST_ORDER_MATCH, NON_WAIVED_PLATFORM_FEE_MATCH],
@@ -80,6 +82,7 @@ export async function syncTaskerSettlementStatus(taskerId: string) {
   const overdueQuery = {
     taskerId,
     status: 'completed' as const,
+    platformFee: { $gt: 0 },
     taskerHasPaid: false,
     settlementDueAt: { $lte: now },
     $and: [NON_TEST_ORDER_MATCH, NON_WAIVED_PLATFORM_FEE_MATCH],
@@ -111,6 +114,7 @@ export async function getOutstandingSettlementOrders(taskerId: string) {
   return Order.find({
     taskerId,
     status: 'completed',
+    platformFee: { $gt: 0 },
     taskerHasPaid: false,
     settlementStatus: { $in: [...OUTSTANDING_SETTLEMENT_STATUSES] },
     $and: [NON_TEST_ORDER_MATCH, NON_WAIVED_PLATFORM_FEE_MATCH],

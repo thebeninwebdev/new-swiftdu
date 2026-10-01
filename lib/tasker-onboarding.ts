@@ -1,98 +1,16 @@
 import "server-only";
 
-import { createHash, randomBytes } from "node:crypto";
 import { createElement } from "react";
-import { ObjectId } from "mongodb";
 
 import Tasker, { type ITasker } from "@/models/tasker";
 import { User } from "@/models/user";
-import clientPromise, { connectDB } from "@/lib/db";
+import { connectDB } from "@/lib/db";
 import { normalizeEmail } from "@/lib/email-normalization";
 import { sendTransactionalEmail } from "@/lib/email";
 import { getEmailSiteUrl } from "@/lib/email-config";
 import TaskerApprovalEmail from "@/emails/taskerApprovalEmail";
 
-export const TASKER_ONBOARDING_TOKEN_TTL_HOURS = 48;
 export const TASKER_ONBOARDING_RESEND_COOLDOWN_MS = 2 * 60 * 1000;
-
-export type TaskerOnboardingState =
-  | "ready"
-  | "expired"
-  | "used"
-  | "invalid"
-  | "not-approved";
-
-function hashOnboardingToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
-}
-
-function newOnboardingToken() {
-  const token = randomBytes(32).toString("base64url");
-  return {
-    token,
-    tokenHash: hashOnboardingToken(token),
-    expiresAt: new Date(
-      Date.now() + TASKER_ONBOARDING_TOKEN_TTL_HOURS * 60 * 60 * 1000
-    ),
-  };
-}
-
-function getUserIdConditions(userId: string) {
-  const conditions: Record<string, unknown>[] = [{ userId }];
-  if (ObjectId.isValid(userId)) conditions.push({ userId: new ObjectId(userId) });
-  return conditions;
-}
-
-export async function getCredentialProviders(userId: string) {
-  const client = await clientPromise;
-  const accounts = await client
-    .db()
-    .collection("account")
-    .find(
-      { $or: getUserIdConditions(userId) },
-      { projection: { providerId: 1, password: 1 } }
-    )
-    .toArray();
-
-  return {
-    hasCredential: accounts.some(
-      (account) =>
-        account.providerId === "credential" &&
-        typeof account.password === "string" &&
-        account.password.length > 0
-    ),
-    hasGoogle: accounts.some((account) => account.providerId === "google"),
-  };
-}
-
-export async function getTaskerOnboardingByToken(token: string) {
-  if (!/^[A-Za-z0-9_-]{40,100}$/.test(token)) {
-    return { state: "invalid" as const, tasker: null };
-  }
-
-  await connectDB();
-  const tasker = await Tasker.findOne({
-    onboardingTokenHash: hashOnboardingToken(token),
-  }).select(
-    "+onboardingTokenHash +onboardingTokenExpiresAt +onboardingEmailSentAt +onboardingTokenUsedAt"
-  );
-
-  if (!tasker) return { state: "invalid" as const, tasker: null };
-  if (tasker.onboardingTokenUsedAt || tasker.accountLinkedAt) {
-    return { state: "used" as const, tasker };
-  }
-  if (!tasker.isVerified || tasker.isRejected) {
-    return { state: "not-approved" as const, tasker };
-  }
-  if (
-    !tasker.onboardingTokenExpiresAt ||
-    tasker.onboardingTokenExpiresAt.getTime() <= Date.now()
-  ) {
-    return { state: "expired" as const, tasker };
-  }
-
-  return { state: "ready" as const, tasker };
-}
 
 async function getTaskerIdentity(tasker: ITasker) {
   const linkedUser = tasker.userId
@@ -107,54 +25,23 @@ async function getTaskerIdentity(tasker: ITasker) {
   return { email, name };
 }
 
-export async function issueTaskerOnboardingLink(
-  tasker: ITasker
-) {
+export async function issueTaskerOnboardingLink(tasker: ITasker) {
   const now = new Date();
   const { email, name } = await getTaskerIdentity(tasker);
   if (!email) return { sent: false, reason: "missing-email" as const };
 
-  // Approval can link an existing account before this email is sent.
-  const linked = await Tasker.exists({ _id: tasker._id, accountLinkedAt: { $ne: null } });
-  if (linked) {
-    const reservation = await Tasker.updateOne({
-      _id: tasker._id,
-      $or: [
-        { onboardingEmailSentAt: { $exists: false } },
-        { onboardingEmailSentAt: { $lte: new Date(now.getTime() - TASKER_ONBOARDING_RESEND_COOLDOWN_MS) } },
-      ],
-    }, { $set: { onboardingEmailSentAt: now } });
-    if (reservation.modifiedCount !== 1) return { sent: false, reason: "cooldown" as const };
-
-    try {
-      await sendTransactionalEmail({
-        to: email,
-        subject: "Your SwiftDU Tasker account is ready",
-        react: createElement(TaskerApprovalEmail, {
-          name,
-          onboardingUrl: new URL("/tasker-dashboard", getEmailSiteUrl()).toString(),
-          expiresInHours: TASKER_ONBOARDING_TOKEN_TTL_HOURS,
-          accountLinked: true,
-        }),
-        tags: [{ name: "email_type", value: "tasker_approval" }],
-      });
-      return { sent: true, reason: "sent" as const };
-    } catch (error) {
-      await Tasker.updateOne({ _id: tasker._id, onboardingEmailSentAt: now }, {
-        $unset: { onboardingEmailSentAt: 1 },
-      });
-      throw error;
+  if (!tasker.userId) {
+    const existingUser = await User.findOne({ email }).select("_id role");
+    if (existingUser && existingUser.role !== "admin") {
+      await completeTaskerAccountLink(tasker, existingUser.id);
     }
   }
 
-  const { token, tokenHash, expiresAt } = newOnboardingToken();
-  const onboardingUrl = new URL("/tasker/onboarding", getEmailSiteUrl());
-  onboardingUrl.searchParams.set("token", token);
+  const onboardingUrl = new URL("/tasker-dashboard", getEmailSiteUrl()).toString();
 
   const reservation = await Tasker.updateOne(
     {
       _id: tasker._id,
-      accountLinkedAt: { $exists: false },
       $or: [
         { onboardingEmailSentAt: { $exists: false } },
         {
@@ -166,11 +53,8 @@ export async function issueTaskerOnboardingLink(
     },
     {
       $set: {
-        onboardingTokenHash: tokenHash,
-        onboardingTokenExpiresAt: expiresAt,
         onboardingEmailSentAt: now,
       },
-      $unset: { onboardingTokenUsedAt: 1 },
     }
   );
 
@@ -181,28 +65,23 @@ export async function issueTaskerOnboardingLink(
   try {
     await sendTransactionalEmail({
       to: email,
-      subject: "Continue your SwiftDU Tasker onboarding",
+      subject: "Your SwiftDU Tasker account is ready",
       react: createElement(TaskerApprovalEmail, {
         name,
-        onboardingUrl: onboardingUrl.toString(),
-        expiresInHours: TASKER_ONBOARDING_TOKEN_TTL_HOURS,
+        onboardingUrl,
       }),
       tags: [
         { name: "email_type", value: "tasker_approval" },
-        { name: "auth_flow", value: "tasker_onboarding" },
+        { name: "auth_flow", value: "tasker_dashboard" },
       ],
     });
     return { sent: true, reason: "sent" as const };
   } catch (error) {
     // Do not leave a usable link in the database when delivery failed.
     await Tasker.updateOne(
-      { _id: tasker._id, onboardingTokenHash: tokenHash },
+      { _id: tasker._id, onboardingEmailSentAt: now },
       {
-        $unset: {
-          onboardingTokenHash: 1,
-          onboardingTokenExpiresAt: 1,
-          onboardingEmailSentAt: 1,
-        },
+        $unset: { onboardingEmailSentAt: 1 },
       }
     );
     throw error;
@@ -266,14 +145,6 @@ export async function completeTaskerAccountLink(
   await User.updateOne(
     { _id: user._id, email: user.email },
     { $set: userUpdates }
-  );
-
-  await Tasker.updateOne(
-    { _id: tasker._id, userId: user._id },
-    {
-      $set: { onboardingTokenUsedAt: new Date() },
-      $unset: { onboardingTokenExpiresAt: 1 },
-    }
   );
 
   return { userId: user.id, taskerId: tasker._id.toString() };

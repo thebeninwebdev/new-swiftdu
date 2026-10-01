@@ -59,7 +59,7 @@ export async function POST(request: NextRequest) {
 
   const order = await Order.findOne({ settlementReference: reference })
 
-  if (!order) {
+  if (!order || order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
     return NextResponse.json({ received: true })
   }
 

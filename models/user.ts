@@ -1,4 +1,4 @@
-import { Schema, Document, models, model } from "mongoose";
+import { Schema, Document, models, model, connection } from "mongoose";
 
 export type ExcoRole = "CFO" | "CMO" | "COO" | "CTO";
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
@@ -25,8 +25,10 @@ export interface IUser extends Document {
   isExco?: boolean;
   testOrderMode?: boolean;
   taskerId?: string;
-  dryCleanerId?: string;
   excoRole?: ExcoRole;
+  firstOrderBonusOrderId?: string;
+  firstOrderBonusConsumedAt?: Date;
+  firstOrderBonusVersion?: number;
   serviceFeeDiscountEnabled?: boolean;
   serviceFeeDiscountGrantedByUserId?: string;
   serviceFeeDiscountGrantedByName?: string;
@@ -123,15 +125,14 @@ const UserSchema = new Schema<IUser>(
       type: String,
       required: false,
     },
-    dryCleanerId: {
-      type: String,
-      required: false,
-    },
     excoRole: {
       type: String,
       enum: ["CFO", "CMO", "COO", "CTO"],
       required: false,
     },
+    firstOrderBonusOrderId: String,
+    firstOrderBonusConsumedAt: Date,
+    firstOrderBonusVersion: { type: Number, default: 0 },
     serviceFeeDiscountEnabled: {
       type: Boolean,
       default: false,
@@ -165,6 +166,12 @@ const UserSchema = new Schema<IUser>(
   }
 );
 
+
+// Refresh the development model after adding bonus fields.
+if (models.user && !models.user.schema.path('firstOrderBonusOrderId')) {
+  delete models.user;
+  delete connection.models.user;
+}
 
 export const User =
   models.user || model<IUser>("user", UserSchema);

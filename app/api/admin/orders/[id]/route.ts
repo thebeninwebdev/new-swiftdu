@@ -1,3 +1,4 @@
+import { clearZeroFeeSettlement, saveOrderLifecycle, OrderChangedError } from '@/lib/first-order-bonus'
 import { canPayCafeInquiry } from '@/lib/cafe-inquiry'
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
@@ -45,6 +46,7 @@ export async function PATCH(
       )
     }
 
+    if (action === 'complete' && order.status === 'completed') return NextResponse.json(order)
     const previousStatus = order.status
 
     ensureBookedAt(order)
@@ -88,7 +90,8 @@ export async function PATCH(
       clearDeclinedTask()
     }
 
-    await order.save()
+    clearZeroFeeSettlement(order)
+    await saveOrderLifecycle(order)
 
     emitOrderUpdated(order)
 
@@ -117,6 +120,7 @@ export async function PATCH(
     return NextResponse.json(order)
 
   } catch (error) {
+    if (error instanceof OrderChangedError) return NextResponse.json({ error: error.message }, { status: 409 })
     console.error('[PATCH /api/admin/orders/[id]]', error)
     return NextResponse.json(
       { error: 'Failed to update order' },

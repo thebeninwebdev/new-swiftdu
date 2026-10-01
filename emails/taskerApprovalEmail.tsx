@@ -6,31 +6,27 @@ import { primaryButtonStyle } from "@/emails/components/styles";
 interface TaskerApprovalEmailProps {
   name: string;
   onboardingUrl: string;
-  expiresInHours: number;
-  accountLinked?: boolean;
 }
 
 export default function TaskerApprovalEmail({
   name,
   onboardingUrl,
-  expiresInHours,
-  accountLinked = false,
 }: TaskerApprovalEmailProps) {
   return (
     <EmailLayout
-      preview="Your SwiftDU Tasker application has been approved."
+      preview="Congratulations — you have been selected as a SwiftDU Tasker."
       eyebrow="Tasker application"
-      title="Your Tasker application is approved"
+      title="Congratulations — you’re a SwiftDU Tasker 🎉"
       greeting={`Hi ${name || "there"},`}
-      intro={accountLinked ? "Your SwiftDU account is now a Tasker account. Sign in to open your dashboard and continue into Tasker training." : "You can now securely connect your application to your SwiftDU account and continue into Tasker training."}
+      intro="You’ve been selected to join the SwiftDU Community as a verified Tasker. Sign in to open your Tasker dashboard and continue into training."
     >
       <Section style={{ textAlign: "center", margin: "28px 0" }}>
         <Button href={onboardingUrl} style={primaryButtonStyle}>
-          {accountLinked ? 'Open Tasker Dashboard' : 'Continue Tasker Onboarding'}
+          Open Tasker Dashboard
         </Button>
       </Section>
       <Text style={{ color: "#475569", fontSize: "14px", lineHeight: "22px" }}>
-        {accountLinked ? 'Use your existing SwiftDU sign-in details to access your Tasker account.' : `This private link expires in ${expiresInHours} hours and can only be used to activate the approved application. If you did not apply, you can safely ignore this email.`}
+        Use your existing SwiftDU sign-in details to access your account. One of our team members will contact you shortly with the next steps.
       </Text>
     </EmailLayout>
   );

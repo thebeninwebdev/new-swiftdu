@@ -4,6 +4,8 @@ import Tasker from '@/models/tasker'
 import {User} from '@/models/user'
 import { getTaskerMode } from '@/lib/test-orders'
 import { auth } from '@/lib/auth'
+import { normalizeExcoRole } from '@/lib/exco-constants'
+import { reviewTaskerApplication } from '@/lib/tasker-application-review'
 
 // ─── GET /api/admin/taskers?status=pending|verified|rejected ─────────────────
 // Returns all tasker profiles joined with user name + email.
@@ -12,7 +14,10 @@ import { auth } from '@/lib/auth'
 export async function GET(req: NextRequest) {
   try {
     const session = await auth.api.getSession({ headers: req.headers })
-    if (!session?.user || session.user.role !== 'admin') {
+    const excoRole = normalizeExcoRole(
+      (session?.user as { excoRole?: string | null } | undefined)?.excoRole
+    )
+    if (!session?.user || (session.user.role !== 'admin' && !excoRole)) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 
@@ -58,6 +63,12 @@ export async function GET(req: NextRequest) {
     const enriched = taskers.map((t) => ({
       ...t,
       taskerMode: getTaskerMode(t),
+      applicationReview: reviewTaskerApplication({
+        name: t.userId ? userMap[t.userId.toString()]?.name : t.fullName,
+        email: t.userId ? userMap[t.userId.toString()]?.email : t.email,
+        phone: t.phone, location: t.location, studentId: t.studentId, level: t.level,
+        availability: t.availability, motivation: t.motivation, motivationOther: t.motivationOther,
+      }),
       user: t.userId
         ? userMap[t.userId.toString()] ?? null
         : {

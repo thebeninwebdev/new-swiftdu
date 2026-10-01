@@ -10,13 +10,10 @@ import {
   Users,
   ShoppingBag,
   Star,
-  MessageSquare,
   DollarSign,
   TrendingUp,
   Activity,
   AlertCircle,
-  CheckCircle2,
-  Shirt,
 } from 'lucide-react'
 
 interface DashboardStats {
@@ -42,24 +39,19 @@ interface DashboardStats {
 
 interface RecentActivity {
   id: string
-  type: 'order' | 'tasker' | 'dry-cleaner' | 'review' | 'user' | 'declined'
+  type: 'order' | 'tasker' | 'review' | 'user' | 'declined'
   message: string
   timestamp: string
   status?: string
 }
 
-type ExpenditureItem = {
-  id: string
-  title: string
-  amount: number
-  category: string
-  notes: string
-  status: 'pending' | 'approved'
-  approvals: Array<{ role: string; approvedByName?: string; approvedAt: string }>
-  pendingApprovals: string[]
-  createdByName: string
-  createdAt: string | null
+interface ActivityPagination {
+  page: number
+  limit: number
+  totalItems: number
+  totalPages: number
 }
+
 
 export default function AdminDashboard() {
   const router = useRouter()
@@ -67,9 +59,9 @@ export default function AdminDashboard() {
   const [isLoading, setIsLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
-  const [expenditures, setExpenditures] = useState<ExpenditureItem[]>([])
+  const [activityPage, setActivityPage] = useState(1)
+  const [activityPagination, setActivityPagination] = useState<ActivityPagination>({ page: 1, limit: 10, totalItems: 0, totalPages: 1 })
   const [isStatsLoading, setIsStatsLoading] = useState(false)
-  const [isApprovingExpense, setIsApprovingExpense] = useState(false)
 
   // Auth check
   useEffect(() => {
@@ -95,18 +87,14 @@ export default function AdminDashboard() {
   const fetchStats = async () => {
     setIsStatsLoading(true)
     try {
-      const response = await fetch('/api/admin/dashboard')
+      const response = await fetch(`/api/admin/dashboard?activityPage=${activityPage}&activityLimit=10`)
       if (!response.ok) throw new Error('Failed to fetch stats')
 
       const data = await response.json()
       setStats(data.stats)
       setRecentActivity(data.recentActivity || [])
+      setActivityPagination(data.activityPagination || { page: 1, limit: 10, totalItems: 0, totalPages: 1 })
 
-      const expenditureResponse = await fetch('/api/expenditures?limit=50')
-      if (expenditureResponse.ok) {
-        const expenditureData = await expenditureResponse.json()
-        setExpenditures(expenditureData.items || [])
-      }
     } catch (error) {
       console.error('Failed to fetch dashboard stats:', error)
     } finally {
@@ -118,27 +106,15 @@ export default function AdminDashboard() {
     if (admin) {
       fetchStats()
     }
-  }, [admin])
+  }, [admin, activityPage])
 
-  const approveExpenditure = async (id: string) => {
-    setIsApprovingExpense(true)
-    try {
-      const response = await fetch(`/api/expenditures/${id}/approve`, { method: 'POST' })
-      if (!response.ok) throw new Error('Failed to approve expenditure')
-      await fetchStats()
-    } catch (error) {
-      console.error('Failed to approve expenditure:', error)
-    } finally {
-      setIsApprovingExpense(false)
-    }
-  }
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading admin dashboard...</p>
+          <p className="text-slate-500">Loading admin dashboard...</p>
         </div>
       </div>
     )
@@ -147,14 +123,14 @@ export default function AdminDashboard() {
   if (!admin) return null
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <div className="border-b border-border">
+      <div className="border-b border-slate-200/80 bg-white/80">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Admin Dashboard</h1>
-              <p className="text-muted-foreground mt-1">Manage your Swiftdu platform</p>
+              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Overview</h1>
+              <p className="text-slate-500 mt-1">Here’s what’s happening across SwiftDU.</p>
             </div>
             <Badge variant="secondary" className="w-fit px-3 py-1">
               Admin Panel
@@ -164,201 +140,112 @@ export default function AdminDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
+        <p className="mb-3 text-sm font-semibold text-slate-700">Financial performance</p>
         {/* Income Breakdown */}
         <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5 md:gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Gross Revenue</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <TrendingUp className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
                 ₦{isStatsLoading ? '...' : (stats?.grossRevenue || 0).toLocaleString()}
               </div>
-              <p className="text-xs text-muted-foreground">Amount + Commission (all orders)</p>
+              <p className="text-xs text-slate-500">Amount + Commission (all orders)</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Paystack Fees</CardTitle>
-              <TrendingUp className="h-4 w-4 rotate-180 text-muted-foreground" />
+              <TrendingUp className="h-4 w-4 rotate-180 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
                 ₦{isStatsLoading ? '...' : (stats?.paystackSettlementFees || 0).toLocaleString()}
               </div>
-              <p className="text-xs text-muted-foreground">1.5% settlement charge</p>
+              <p className="text-xs text-slate-500">1.5% settlement charge</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Profit</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <DollarSign className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
                 ₦{isStatsLoading ? '...' : (stats?.profit || 0).toLocaleString()}
               </div>
-              <p className="text-xs text-muted-foreground">Platform fees after Paystack</p>
+              <p className="text-xs text-slate-500">Platform fees after Paystack</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Approved Expenditures</CardTitle>
-              <TrendingUp className="h-4 w-4 rotate-180 text-muted-foreground" />
+              <TrendingUp className="h-4 w-4 rotate-180 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
                 ₦{isStatsLoading ? '...' : (stats?.approvedExpenditures || 0).toLocaleString()}
               </div>
-              <p className="text-xs text-muted-foreground">Subtracted after full approval</p>
+              <p className="text-xs text-slate-500">Subtracted after full approval</p>
             </CardContent>
           </Card>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Compensation</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
+              <Activity className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
                 ₦{isStatsLoading ? '...' : (stats?.totalCompensation || 0).toLocaleString()}
               </div>
-              <p className="text-xs text-muted-foreground">Total Tasker Fees</p>
+              <p className="text-xs text-slate-500">Total Tasker Fees</p>
             </CardContent>
           </Card>
         </div>
 
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>CEO Expenditure Approvals</CardTitle>
-            <CardDescription>
-              CFO-created expenses reduce profit only after CFO, CMO, COO, CTO, and CEO approval.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {expenditures.filter((item) => item.status === 'pending').length === 0 ? (
-              <div className="text-sm text-muted-foreground">No expenditures waiting for CEO approval.</div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[760px] text-left text-sm">
-                  <thead>
-                    <tr className="border-b text-xs uppercase text-muted-foreground">
-                      <th className="pb-3 pr-4 font-semibold">Expense</th>
-                      <th className="pb-3 pr-4 font-semibold">Amount</th>
-                      <th className="pb-3 pr-4 font-semibold">Approved</th>
-                      <th className="pb-3 pr-4 font-semibold">Waiting On</th>
-                      <th className="pb-3 pr-4 font-semibold">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {expenditures
-                      .filter((item) => item.status === 'pending')
-                      .map((item) => {
-                        const canApprove = item.pendingApprovals.includes('CEO')
-                        const hasApproved = item.approvals.some((approval) => approval.role === 'CEO')
-
-                        return (
-                          <tr key={item.id} className="border-b align-top">
-                            <td className="py-4 pr-4">
-                              <div className="font-semibold">{item.title}</div>
-                              <p className="mt-1 text-xs text-muted-foreground">
-                                {item.category} - added by {item.createdByName || 'CFO'}
-                              </p>
-                              {item.notes ? (
-                                <p className="mt-2 text-xs text-muted-foreground">{item.notes}</p>
-                              ) : null}
-                            </td>
-                            <td className="py-4 pr-4 font-semibold">₦{item.amount.toLocaleString()}</td>
-                            <td className="py-4 pr-4">
-                              <div className="flex flex-wrap gap-1">
-                                {item.approvals.map((approval) => (
-                                  <Badge key={approval.role} variant="outline">
-                                    {approval.role}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </td>
-                            <td className="py-4 pr-4">
-                              <div className="flex flex-wrap gap-1">
-                                {item.pendingApprovals.map((role) => (
-                                  <Badge key={role} variant="secondary">
-                                    {role}
-                                  </Badge>
-                                ))}
-                              </div>
-                            </td>
-                            <td className="py-4 pr-4">
-                              <Button
-                                size="sm"
-                                disabled={!canApprove || isApprovingExpense}
-                                onClick={() => approveExpenditure(item.id)}
-                              >
-                                <CheckCircle2 className="mr-2 h-4 w-4" />
-                                {hasApproved ? 'Approved' : 'Approve'}
-                              </Button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
 
         {/* Stats Cards */}
+        <p className="mb-3 text-sm font-semibold text-slate-700">Platform activity</p>
         <div className="mb-8 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4 md:gap-6">
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Users</CardTitle>
-              <Users className="h-4 w-4 text-muted-foreground" />
+              <Users className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
                 {isStatsLoading ? '...' : stats?.totalUsers || 0}
               </div>
-              <p className="text-xs text-muted-foreground">Registered users</p>
+              <p className="text-xs text-slate-500">Registered users</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Active Taskers</CardTitle>
-              <ShoppingBag className="h-4 w-4 text-muted-foreground" />
+              <ShoppingBag className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
                 {isStatsLoading ? '...' : stats?.totalTaskers || 0}
               </div>
-              <p className="text-xs text-muted-foreground">Verified taskers</p>
+              <p className="text-xs text-slate-500">Verified taskers</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Orders</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
+              <Activity className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">
                 {isStatsLoading ? '...' : stats?.totalOrders || 0}
               </div>
-              <p className="text-xs text-muted-foreground">
+              <p className="text-xs text-slate-500">
                 {stats?.pendingOrders || 0} pending
-              </p>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Dry Cleaners</CardTitle>
-              <Shirt className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats?.activeDryCleaners || 0}</div>
-              <p className="text-xs text-muted-foreground">
-                {stats?.pendingDryCleanerApprovals || 0} pending approval
               </p>
             </CardContent>
           </Card>
@@ -389,21 +276,6 @@ export default function AdminDashboard() {
                 ) : null}
               </Button>
 
-              <Button
-                variant="outline"
-                className="w-full justify-between text-left"
-                onClick={() => router.push('/admin/dry-cleaners')}
-              >
-                <span className="flex items-center gap-2">
-                  <Shirt className="w-4 h-4" />
-                  Review Dry Cleaners
-                </span>
-                {stats?.pendingDryCleanerApprovals ? (
-                  <Badge variant="destructive" className="ml-auto">
-                    {stats.pendingDryCleanerApprovals}
-                  </Badge>
-                ) : null}
-              </Button>
 
               <Button
                 variant="outline"
@@ -439,14 +311,6 @@ export default function AdminDashboard() {
                 User Management
               </Button>
 
-              <Button
-                variant="outline"
-                className="w-full justify-start"
-                onClick={() => router.push('/admin/support')}
-              >
-                <MessageSquare className="w-4 h-4 mr-2" />
-                Support Tickets
-              </Button>
 
               <Button
                 variant="outline"
@@ -467,32 +331,30 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               {recentActivity.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
+                <div className="text-center py-8 text-slate-500">
                   <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
                   <p>No recent activity</p>
                 </div>
               ) : (
                 <div className="space-y-4">
                   {recentActivity.map((activity) => (
-                    <div key={activity.id} className="flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-start sm:space-x-3 sm:gap-0">
+                    <div key={activity.id} className="flex flex-col gap-3 rounded-2xl border p-3 sm:flex-row sm:items-start sm:space-x-3 sm:gap-0">
                       <div className={`p-2 rounded-full ${
                         activity.type === 'order' ? 'bg-blue-100 text-blue-600' :
                         activity.type === 'tasker' ? 'bg-green-100 text-green-600' :
-                        activity.type === 'dry-cleaner' ? 'bg-cyan-100 text-cyan-700' :
                         activity.type === 'declined' ? 'bg-red-100 text-red-600' :
                         activity.type === 'review' ? 'bg-yellow-100 text-yellow-600' :
                         'bg-gray-100 text-gray-600'
                       }`}>
                         {activity.type === 'order' && <ShoppingBag className="w-4 h-4" />}
                         {activity.type === 'tasker' && <Users className="w-4 h-4" />}
-                        {activity.type === 'dry-cleaner' && <Shirt className="w-4 h-4" />}
                         {activity.type === 'declined' && <AlertCircle className="w-4 h-4" />}
                         {activity.type === 'review' && <Star className="w-4 h-4" />}
                         {activity.type === 'user' && <Users className="w-4 h-4" />}
                       </div>
                       <div className="flex-1">
                         <p className="text-sm">{activity.message}</p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-slate-500">
                           {new Date(activity.timestamp).toLocaleString()}
                         </p>
                       </div>
@@ -510,6 +372,21 @@ export default function AdminDashboard() {
                   ))}
                 </div>
               )}
+              {activityPagination.totalPages > 1 ? (
+                <div className="mt-5 flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-slate-500">
+                    Page {activityPagination.page} of {activityPagination.totalPages} · {activityPagination.totalItems} activities
+                  </p>
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" disabled={isStatsLoading || activityPagination.page <= 1} onClick={() => setActivityPage((page) => Math.max(1, page - 1))}>
+                      Previous
+                    </Button>
+                    <Button variant="outline" size="sm" disabled={isStatsLoading || activityPagination.page >= activityPagination.totalPages} onClick={() => setActivityPage((page) => Math.min(activityPagination.totalPages, page + 1))}>
+                      Next
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </div>
@@ -525,7 +402,7 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-red-600">{stats?.declinedTasks || 0}</div>
-              <p className="text-xs text-muted-foreground">Transfer disputes flagged by taskers</p>
+              <p className="text-xs text-slate-500">Transfer disputes flagged by taskers</p>
             </CardContent>
           </Card>
 
@@ -542,7 +419,7 @@ export default function AdminDashboard() {
                   Math.round(((stats.completedOrders || 0) / stats.totalOrders) * 100) : 0
                 }%
               </div>
-              <p className="text-xs text-muted-foreground">Orders completed</p>
+              <p className="text-xs text-slate-500">Orders completed</p>
             </CardContent>
           </Card>
 
@@ -555,9 +432,9 @@ export default function AdminDashboard() {
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-orange-600">
-                {(stats?.pendingTaskerApprovals || 0) + (stats?.pendingDryCleanerApprovals || 0)}
+                {stats?.pendingTaskerApprovals || 0}
               </div>
-              <p className="text-xs text-muted-foreground">Tasker and dry cleaner applications</p>
+              <p className="text-xs text-slate-500">Tasker applications</p>
             </CardContent>
           </Card>
         </div>

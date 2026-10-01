@@ -57,6 +57,7 @@ interface TaskerProfileType {
 }
 
 const TASKER_NOTIFICATION_TOAST_ID = 'tasker-dashboard-notification'
+const TASKER_SUPPORT_WHATSAPP_URL = 'https://wa.me/2349053479802'
 
 const formatDueDate = (date?: string) =>
   date
@@ -89,7 +90,7 @@ const navigation = [
   },
   {
     name: 'Support',
-    href: '/tasker-dashboard/support',
+    href: TASKER_SUPPORT_WHATSAPP_URL,
     icon: MessageSquare,
     description: 'Get help',
   },
@@ -394,6 +395,10 @@ export default function TaskerSidebar() {
   }
 
   const handleNavigation = (href: string) => {
+    if (href.startsWith('https://wa.me/')) {
+      window.location.assign(href)
+      return
+    }
     router.push(href)
   }
 

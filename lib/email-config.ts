@@ -75,7 +75,10 @@ export function getEmailSupportMailto() {
 }
 
 export function getEmailSiteUrl() {
-  const configuredUrl = process.env.EMAIL_SITE_URL?.trim()
+  const configuredUrl =
+    process.env.EMAIL_SITE_URL?.trim() ||
+    process.env.NEXT_PUBLIC_BASE_URL?.trim() ||
+    process.env.BETTER_AUTH_URL?.trim()
 
   if (!configuredUrl) {
     return DEFAULT_EMAIL_SITE_URL

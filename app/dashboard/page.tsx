@@ -1,4 +1,6 @@
 'use client'
+import { FirstOrderPriceBreakdown } from '@/components/first-order-bonus'
+import { priceWithOrderDiscounts } from '@/lib/first-order-pricing'
 import { mergeOrderUpdate } from '@/lib/order-sync'
 import { formatRestaurantCost, getRestaurantEstimate } from '@/lib/restaurant-estimate'
 
@@ -163,14 +165,6 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'Documents',
     icon: FileText,
     accent: 'from-sky-500 to-indigo-500',
-  },
-  {
-    value: 'copy_notes',
-    label: 'Copy Notes',
-    description: 'Copy small or big notes by page count.',
-    mobileDescription: 'By page',
-    icon: FileText,
-    accent: 'from-amber-500 to-yellow-500',
   },
   // {
   //   value: DRY_CLEANING_TASK_TYPE,
@@ -354,6 +348,7 @@ export default function ErrandWizardPage() {
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [serviceFeeDiscount, setServiceFeeDiscount] = useState<{
+    firstOrderBonusAvailable?: boolean
     hasAvailableDiscount: boolean
     hasActiveReservation: boolean
     remainingOrders: number
@@ -750,7 +745,7 @@ export default function ErrandWizardPage() {
   const effectiveDescription =
     formData.taskType === 'restaurant'
       ? restaurantDescription
-      : formData.taskType === 'shopping' || formData.taskType === DRY_CLEANING_TASK_TYPE || formData.taskType === INDOMIE_TASK_TYPE
+      : formData.taskType === 'shopping' || false || formData.taskType === INDOMIE_TASK_TYPE
         ? shoppingDescription
         : formData.taskType === PRINTING_TASK_TYPE
           ? [
@@ -765,7 +760,7 @@ export default function ErrandWizardPage() {
   const amount =
     formData.taskType === 'restaurant'
       ? restaurantBudget
-      : formData.taskType === 'shopping' || formData.taskType === DRY_CLEANING_TASK_TYPE || formData.taskType === INDOMIE_TASK_TYPE
+      : formData.taskType === 'shopping' || false || formData.taskType === INDOMIE_TASK_TYPE
         ? shoppingBudget
         : formData.taskType === PRINTING_TASK_TYPE
           ? 0
@@ -805,10 +800,13 @@ export default function ErrandWizardPage() {
     discountRemainingOrders === 1
       ? 'your next order'
       : `your next ${discountRemainingOrders} orders`
-  const displayedServiceFee = hasAvailableServiceFeeDiscount ? (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0) : pricing.serviceFee
-  const displayedTotalAmount = hasAvailableServiceFeeDiscount
-    ? Math.max(0, pricing.totalAmount - pricing.serviceFee + (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
-    : pricing.totalAmount
+  const bonusPreview = priceWithOrderDiscounts(pricing, {
+    firstOrderBonus: Boolean(serviceFeeDiscount?.firstOrderBonusAvailable && !isExcoTrainingMode),
+    serviceFeeDiscount: hasAvailableServiceFeeDiscount, cafeInquiry: isCafeInquiry,
+  })
+  const previewOrder = { ...bonusPreview, amount: pricing.amount, pricingModel: pricing.pricingModel, serviceFeeDiscountApplied: hasAvailableServiceFeeDiscount }
+  const displayedServiceFee = hasAvailableServiceFeeDiscount ? (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE - (bonusPreview.firstOrderBonusAmount || 0) : 0) : bonusPreview.serviceFee
+  const displayedTotalAmount = bonusPreview.totalAmount
   const restaurantPackagingNote =
     normalizedRestaurantTakeawayCount > 0
       ? normalizedRestaurantTakeawayCount === normalizedRestaurantPeopleCount
@@ -1005,7 +1003,7 @@ if (stepNumber === detailsStep) {
     formData.taskType &&
     formData.taskType !== 'others' &&
     formData.taskType !== 'copy_notes' &&
-    formData.taskType !== DRY_CLEANING_TASK_TYPE &&
+    true &&
     formData.taskType !== INDOMIE_TASK_TYPE &&
     formData.taskType !== WATER_TASK_TYPE &&
     !formData.store
@@ -1064,7 +1062,7 @@ if (stepNumber === detailsStep) {
     }
   }
 
-  if (formData.taskType === DRY_CLEANING_TASK_TYPE) {
+  if (false) {
     if (!dryCleaningDescription) {
       nextErrors.description = 'Describe the clothes you want cleaned.'
     } else if (dryCleaningDescription.length < 5) {
@@ -1124,7 +1122,7 @@ if (stepNumber === detailsStep) {
     formData.taskType !== WATER_TASK_TYPE &&
     formData.taskType !== 'restaurant' &&
     formData.taskType !== 'shopping' &&
-    formData.taskType !== DRY_CLEANING_TASK_TYPE &&
+    true &&
     formData.taskType !== INDOMIE_TASK_TYPE &&
     formData.taskType !== PRINTING_TASK_TYPE
   ) {
@@ -1143,7 +1141,7 @@ if (stepNumber === detailsStep) {
     formData.taskType !== PRINTING_TASK_TYPE &&
     formData.taskType !== 'restaurant' &&
     formData.taskType !== 'shopping' &&
-    formData.taskType !== DRY_CLEANING_TASK_TYPE &&
+    true &&
     formData.taskType !== INDOMIE_TASK_TYPE &&
     formData.taskType !== WATER_TASK_TYPE &&
     (formData.amount === '' || !Number.isFinite(amount) || amount < 0)
@@ -1394,7 +1392,7 @@ if (stepNumber === detailsStep) {
   const renderStoreSelect = () =>
     formData.taskType &&
     formData.taskType !== 'copy_notes' &&
-    formData.taskType !== DRY_CLEANING_TASK_TYPE &&
+    true &&
     formData.taskType !== INDOMIE_TASK_TYPE &&
     formData.taskType !== WATER_TASK_TYPE ? (
       <div>
@@ -1456,7 +1454,7 @@ if (stepNumber === detailsStep) {
     </div>
   )
 
-  const renderCafeReview = () => <CafeInquiryReview cafe={selectedStoreLabel || formData.store || ''} location={formData.location} serviceFee={pricing.serviceFee} discounted={hasAvailableServiceFeeDiscount} />
+  const renderCafeReview = () => bonusPreview.firstOrderBonusApplied ? <div className="space-y-3"><p className="font-bold">{selectedStoreLabel || formData.store} &middot; {formData.location}</p><FirstOrderPriceBreakdown order={previewOrder} preview /></div> : <CafeInquiryReview cafe={selectedStoreLabel || formData.store || ''} location={formData.location} serviceFee={pricing.serviceFee} discounted={hasAvailableServiceFeeDiscount} />
 
   const renderRestaurantEstimate = () => (
     <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Estimated food cost (includes takeaway)</span><span className="font-bold tabular-nums">{formatNaira(restaurantEstimate.amount)}</span></div>
@@ -1734,7 +1732,7 @@ if (stepNumber === detailsStep) {
         </>
       ) : null}
 
-      {formData.taskType === DRY_CLEANING_TASK_TYPE ? (
+      {false ? (
         <>
           <div>
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -1919,10 +1917,10 @@ if (stepNumber === detailsStep) {
           </div>
         </>
       ) : null}
-      <div className="border-t border-slate-200 pt-3 dark:border-slate-800">
+      {bonusPreview.firstOrderBonusApplied ? <FirstOrderPriceBreakdown order={previewOrder} preview /> : <div className="border-t border-slate-200 pt-3 dark:border-slate-800">
         {formData.taskType === 'restaurant' ? renderRestaurantEstimate() : (
         <div className="flex justify-between text-xs text-slate-500">
-          <span>{pricing.pricingModel === 'water' ? 'Water and errand fee' : pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === INDOMIE_TASK_TYPE ? 'Indomie amount' : formData.taskType === DRY_CLEANING_TASK_TYPE ? 'Dry cleaning budget' : 'Budget'}</span>
+          <span>{pricing.pricingModel === 'water' ? 'Water and errand fee' : pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === INDOMIE_TASK_TYPE ? 'Indomie amount' : false ? 'Dry cleaning budget' : 'Budget'}</span>
           <span>{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span>
         </div>
         )}
@@ -1934,7 +1932,7 @@ if (stepNumber === detailsStep) {
           <span className="font-bold text-slate-900 dark:text-white">Estimated Total</span>
           <span className="text-2xl font-black text-slate-950 dark:text-white">{formatNaira(displayedTotalAmount)}</span>
         </div>
-      </div>
+      </div>}
     </div>
   )
 
@@ -2335,7 +2333,7 @@ if (stepNumber === detailsStep) {
                   {formData.taskType &&
                   formData.taskType !== 'others' &&
                   formData.taskType !== 'copy_notes' &&
-                  formData.taskType !== DRY_CLEANING_TASK_TYPE &&
+                  true &&
                   formData.taskType !== INDOMIE_TASK_TYPE &&
                   formData.taskType !== WATER_TASK_TYPE ? (
                     <div>
@@ -2997,7 +2995,7 @@ if (stepNumber === detailsStep) {
                       </div>
                     </div>
                   ) : null}
-                  {formData.taskType === DRY_CLEANING_TASK_TYPE ? (
+                  {false ? (
                     <div className="space-y-3">
                       <div>
                         <label className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
@@ -3078,7 +3076,7 @@ if (stepNumber === detailsStep) {
                       </div>
                     </div>
                   ) : null}
-                  {formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== DRY_CLEANING_TASK_TYPE && formData.taskType !== INDOMIE_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
+                  {formData.taskType !== WATER_TASK_TYPE && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && true && formData.taskType !== INDOMIE_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                         <FileText className="h-4 w-4 text-indigo-500" />
@@ -3105,7 +3103,7 @@ if (stepNumber === detailsStep) {
                       ) : null}
                     </div>
                   ) : null}
-                  {formData.taskType !== 'copy_notes' && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && formData.taskType !== DRY_CLEANING_TASK_TYPE && formData.taskType !== INDOMIE_TASK_TYPE && formData.taskType !== WATER_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
+                  {formData.taskType !== 'copy_notes' && formData.taskType !== 'restaurant' && formData.taskType !== 'shopping' && true && formData.taskType !== INDOMIE_TASK_TYPE && formData.taskType !== WATER_TASK_TYPE && formData.taskType !== PRINTING_TASK_TYPE ? (
                   <div>
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Wallet className="h-4 w-4 text-indigo-500" />Item Budget (NGN)</label>
                     <div className="relative">
@@ -3343,7 +3341,8 @@ if (stepNumber === detailsStep) {
                         </>
                       ) : null}
                     </div>
-                    <div className="space-y-3 border-t-2 border-slate-200 pt-6 dark:border-slate-700">
+                    {bonusPreview.firstOrderBonusApplied && <FirstOrderPriceBreakdown order={previewOrder} preview />}
+                    <div className={bonusPreview.firstOrderBonusApplied ? "hidden" : "space-y-3 border-t-2 border-slate-200 pt-6 dark:border-slate-700"}>
                       {hasAvailableServiceFeeDiscount ? (
                         <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-100">
                           <p className="font-semibold">Service fee discount applied</p>
@@ -3352,7 +3351,7 @@ if (stepNumber === detailsStep) {
                           </p>
                         </div>
                       ) : null}
-                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : formData.taskType === INDOMIE_TASK_TYPE ? 'Indomie amount' : formData.taskType === DRY_CLEANING_TASK_TYPE ? 'Dry cleaning budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span></div>
+                      <div className="flex justify-between text-sm"><span className="text-slate-500">{pricing.pricingModel === 'copy_notes' ? 'Copy notes price' : pricing.pricingModel === 'water' ? 'Water budget + tasker fee' : formData.taskType === PRINTING_TASK_TYPE ? `${printingLabel} price` : formData.taskType === 'restaurant' ? 'Food budget' : formData.taskType === 'shopping' ? 'Store item budget' : formData.taskType === INDOMIE_TASK_TYPE ? 'Indomie amount' : false ? 'Dry cleaning budget' : 'Item budget'}</span><span className="font-medium">{formatNaira(formData.taskType === 'restaurant' ? restaurantFoodBudget : pricing.amount)}</span></div>
                       {formData.taskType === 'restaurant' ? <div className="flex justify-between text-sm"><span className="text-slate-500">Packaging</span><span className="font-medium">{restaurantPackagingNote}</span></div> : null}
                       <div className="flex justify-between gap-4 text-sm"><span className="text-slate-500">{pricing.pricingModel === 'water' ? 'SwiftDU fee (24% of errand fee)' : pricing.pricingModel === 'copy_notes' ? 'SwiftDU fee' : 'Service fee'}{shoppingDistanceFee > 0 ? ` (includes ${formatNaira(shoppingDistanceFee)} distance fee)` : ''}</span>{renderServiceFeeAmount('font-medium')}</div>
                       <div className="flex justify-between border-t border-slate-200 pt-3 dark:border-slate-700"><span className="font-bold text-slate-900 dark:text-white">Total to pay</span><span className="text-xl font-bold text-indigo-600 dark:text-indigo-400">{formatNaira(displayedTotalAmount)}</span></div>

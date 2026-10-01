@@ -1,4 +1,5 @@
 'use client'
+import { FirstOrderPriceBreakdown } from '@/components/first-order-bonus'
 
 import type { ReactNode } from 'react'
 import Link from 'next/link'
@@ -13,6 +14,12 @@ export interface CustomerTrackingOrder extends TrackingOrder {
   description: string
   amount: number
   commission: number
+  firstOrderBonusApplied?: boolean
+  firstOrderBonusAmount?: number
+  platformFeeBeforeFirstOrderBonus?: number
+  pricingModel?: string
+  taskerFee?: number
+  serviceFeeDiscountApplied?: boolean
   totalAmount?: number
   location: string
   packaging?: string
@@ -118,12 +125,13 @@ export function TrackingOrderSummary({ order }: { order: CustomerTrackingOrder }
     {order.cafeSelectedItems?.length ? <ul className="mt-3 space-y-2 text-sm">{order.cafeSelectedItems.map((item, index) => <li key={`${item.itemId}-${index}`} className="flex justify-between gap-3"><span className="min-w-0 break-words">{item.quantity} × {item.name}{item.unit ? ` (${item.unit})` : ''}</span><span className="shrink-0 font-semibold">{convertToNaira(item.price * item.quantity)}</span></li>)}</ul> : null}
     {order.packaging ? <p className="mt-2 break-words text-sm text-slate-500">{order.packaging}</p> : null}
     <div className="mt-5 flex flex-wrap justify-between gap-2 text-sm"><span>{inquiry ? 'Inquiry charge' : 'Estimated order cost'}</span><span className="text-lg font-bold tabular-nums">{convertToNaira(inquiry ? total : order.amount)}</span></div>
+    {order.firstOrderBonusApplied && <div className="mt-4"><FirstOrderPriceBreakdown order={order} /></div>}
     <details className="mt-3">
       <summary className="flex min-h-11 cursor-pointer items-center justify-between text-sm font-semibold text-violet-700 dark:text-violet-300">View details <span aria-hidden="true">↓</span></summary>
       <dl className="space-y-3 border-t border-slate-100 pt-4 text-sm dark:border-slate-800">
         <div className="flex justify-between gap-4"><dt className="text-slate-500">Deliver to</dt><dd className="min-w-0 break-words text-right font-medium">{order.location}</dd></div>
         {!inquiry ? <div className="flex flex-wrap justify-between gap-2"><dt className="text-slate-500">Order estimate{order.taskType === 'restaurant' ? ' (includes packaging)' : ''}</dt><dd className="font-medium">{convertToNaira(order.amount)}</dd></div> : null}
-        <div className="flex justify-between gap-4"><dt className="text-slate-500">{inquiry ? 'Inquiry service fee' : 'SwiftDU service fee'}</dt><dd className="font-medium">{convertToNaira(order.commission)}</dd></div>
+        {!order.firstOrderBonusApplied && <div className="flex justify-between gap-4"><dt className="text-slate-500">{inquiry ? 'Inquiry service fee' : 'SwiftDU service fee'}</dt><dd className="font-medium">{convertToNaira(order.commission)}</dd></div>}
         <div className="flex justify-between gap-4"><dt className="font-semibold">Total</dt><dd className="font-bold">{convertToNaira(total)}</dd></div>
         {deadline ? <div className="flex justify-between gap-4"><dt className="text-slate-500">Requested deadline</dt><dd className="min-w-0 text-right font-medium">{deadline}</dd></div> : null}
         <div className="flex justify-between gap-4"><dt className="text-slate-500">Order number</dt><dd className="font-medium">#{order._id.slice(-6)}</dd></div>

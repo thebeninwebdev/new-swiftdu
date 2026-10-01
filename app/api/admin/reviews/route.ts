@@ -3,6 +3,7 @@ import { connectDB } from '@/lib/db'
 import {Review} from '@/models/review'
 import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
+import { auth } from '@/lib/auth'
 
 // ─── GET /api/admin/reviews ─────────────────────────────────────────────────
 // Returns paginated list of reviews with user and tasker details.
@@ -10,6 +11,10 @@ import Tasker from '@/models/tasker'
 
 export async function GET(req: NextRequest) {
   try {
+    const session = await auth.api.getSession({ headers: req.headers })
+    if (!session?.user || session.user.role !== 'admin') {
+      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+    }
     // TODO: Add admin auth check
     // const session = await authClient.getSession()
     // const user = session?.data?.user
@@ -26,6 +31,9 @@ export async function GET(req: NextRequest) {
 
     // Build filters
     const filters: any = {}
+
+    const taskerId = searchParams.get('taskerId')
+    if (taskerId) filters.taskerId = taskerId
 
     const search = searchParams.get('search')
     if (search) {

@@ -1,4 +1,5 @@
 'use client'
+import { FirstOrderPriceBreakdown } from '@/components/first-order-bonus'
 import { TrackingHero, TrackingTimeline, TrackingTasker, TrackingOrderSummary, TrackingSupport } from '@/components/customer-order-tracking'
 import { type CafeInquiryFields } from '@/lib/cafe-inquiry'
 
@@ -29,6 +30,12 @@ interface Order extends CafeInquiryFields {
   taskType: string
   description: string
   amount: number
+  firstOrderBonusApplied?: boolean
+  firstOrderBonusAmount?: number
+  platformFeeBeforeFirstOrderBonus?: number
+  pricingModel?: string
+  taskerFee?: number
+  serviceFeeDiscountApplied?: boolean
   platformFee?: number
   totalAmount?: number
   deadline?: string
@@ -86,7 +93,7 @@ const TRACKING_REFRESH_MS = 5000
 // ─── Constants ───
 const taskTypeLabels: Record<string, string> = {
   restaurant: 'Food Delivery', printing: 'Printing', copy_notes: 'Copy Notes',
-  shopping: 'Shopping', indomie: 'Buy Indomie', dry_cleaning: 'Dry Cleaning', water: 'Bag of Water', others: 'General Errand',
+  shopping: 'Shopping', indomie: 'Buy Indomie', water: 'Bag of Water', others: 'General Errand',
 }
 
 const taskTypeIcons: Record<string, React.ReactNode> = {
@@ -125,7 +132,7 @@ const getWhatsAppHref = (phone: string) => {
   const normalized = digits.startsWith('0') && digits.length === 11 ? `234${digits.slice(1)}` : digits
   return `https://wa.me/${normalized}`
 }
-const canRetryOrder = (order: Order) => order.status === 'completed' || order.status === 'cancelled'
+const canRetryOrder = (order: Order) => order.taskType !== 'copy_notes' && (order.status === 'completed' || order.status === 'cancelled')
 const getMostRecentOrder = (orders: Order[]) => [...orders].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())[0]
 const shouldRedirectToReview = (order: Order) => order.status === 'completed' && Boolean(order.taskerId)
 export function getTaskerSearchMessage(elapsedMs: number): { phase: SwiftySearchPhase; heading: string; detail: string; speech?: string } {
@@ -497,6 +504,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4">
+            {currentOrder && <FirstOrderPriceBreakdown order={currentOrder} />}
             <div className="rounded-2xl bg-slate-950 p-4 text-white">
               <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Transfer Amount</p>
               <p className="mt-2 text-3xl font-bold">{formatCurrency(transferAmount)}</p>

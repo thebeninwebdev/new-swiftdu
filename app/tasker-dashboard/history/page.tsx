@@ -1,4 +1,5 @@
 'use client'
+import { FirstOrderBonusNotice } from '@/components/first-order-bonus'
 
 import React, { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -26,6 +27,10 @@ interface Order {
   description: string
   amount: number
   commission?: number
+  firstOrderBonusApplied?: boolean
+  firstOrderBonusAmount?: number
+  platformFeeBeforeFirstOrderBonus?: number
+  pricingModel?: string
   platformFee?: number
   taskerFee?: number
   totalAmount?: number
@@ -62,7 +67,6 @@ const taskTypeLabels: Record<string, string> = {
   copy_notes: 'Copy Notes',
   shopping: 'Shopping',
   indomie: 'Buy Indomie',
-  dry_cleaning: 'Dry Cleaning',
   water: 'Bag of Water',
   others: 'Other Errands',
 }
@@ -361,6 +365,8 @@ export default function HistoryPage() {
                       </div>
                     </div>
 
+                    <FirstOrderBonusNotice order={order} tasker />
+                    <p className="text-sm font-semibold text-violet-700 dark:text-violet-300">Your tasker fee: {convertToNaira(order.taskerFee || 0)}</p>
                     {/* Financial Details */}
                     <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-950/50">
                       <div className="flex items-center justify-between">

@@ -1,3 +1,4 @@
+import { releaseCancelledBonus } from '@/lib/first-order-bonus'
 import { emitOrderUpdated } from '@/lib/socket'
 import { TASKER_SEARCH_TIMEOUT_MS } from '@/lib/order-tracking'
 import { Order } from '@/models/order'
@@ -9,6 +10,9 @@ export async function expireUnmatchedOrder(orderId: string, userId: string) {
       _id: orderId,
       userId,
       status: 'pending',
+      hasPaid: { $ne: true },
+      paymentStatus: { $ne: 'paid' },
+      cafeInquiryFeePaid: { $ne: true },
       taskerId: { $in: [null, ''] },
       cafeInquiryStatus: { $in: [null, 'waiting_for_tasker'] },
       createdAt: { $lte: new Date(cancelledAt.getTime() - TASKER_SEARCH_TIMEOUT_MS) },
@@ -33,6 +37,6 @@ export async function expireUnmatchedOrder(orderId: string, userId: string) {
     },
     { new: true },
   )
-  if (order) emitOrderUpdated(order)
+  if (order) { await releaseCancelledBonus(order); emitOrderUpdated(order) }
   return order
 }

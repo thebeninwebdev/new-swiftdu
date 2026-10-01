@@ -279,10 +279,10 @@ export default function AdminOrdersPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading admin panel...</p>
+          <p className="text-slate-500">Loading admin panel...</p>
         </div>
       </div>
     )
@@ -291,14 +291,14 @@ export default function AdminOrdersPage() {
   if (!admin) return null
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <div className="border-b border-border">
+      <div className="border-b border-slate-200/80 bg-white/80">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <h1 className="text-2xl font-bold text-foreground sm:text-3xl">Order Management</h1>
-              <p className="text-muted-foreground mt-1">Monitor and manage all platform orders</p>
+              <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Order Management</h1>
+              <p className="text-slate-500 mt-1">Monitor and manage all platform orders</p>
             </div>
             <Badge variant="secondary" className="w-fit px-3 py-1">
               Admin Panel
@@ -313,7 +313,7 @@ export default function AdminOrdersPage() {
           <CardContent className="pt-6">
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-6">
               <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
                 <Input
                   placeholder="Search orders..."
                   value={searchTerm}
@@ -385,8 +385,8 @@ export default function AdminOrdersPage() {
           {orders.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
-                <ShoppingBag className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">No orders found</p>
+                <ShoppingBag className="w-12 h-12 mx-auto mb-4 text-slate-500" />
+                <p className="text-slate-500">No orders found</p>
               </CardContent>
             </Card>
           ) : (
@@ -395,13 +395,13 @@ export default function AdminOrdersPage() {
                 <CardContent className="p-6">
                   <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
                     <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:space-x-4 sm:gap-0">
-                      <div className="w-12 h-12 bg-primary/10 rounded-full flex items-center justify-center">
-                        <ShoppingBag className="w-6 h-6 text-primary" />
+                      <div className="w-12 h-12 bg-violet-50 rounded-full flex items-center justify-center">
+                        <ShoppingBag className="w-6 h-6 text-violet-600" />
                       </div>
 
                       <div>
                         <h3 className="font-semibold text-lg capitalize">{order.taskType} Task</h3>
-                        <div className="mt-2 flex flex-col gap-2 text-sm text-muted-foreground sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
+                        <div className="mt-2 flex flex-col gap-2 text-sm text-slate-500 sm:flex-row sm:flex-wrap sm:items-center sm:gap-4">
                           <div className="flex items-center">
                             <User className="w-4 h-4 mr-1" />
                             {order.userName}
@@ -436,10 +436,10 @@ export default function AdminOrdersPage() {
                           ) : null}
                         </div>
                         <p className="text-lg font-bold">₦{(order.totalAmount || order.amount).toLocaleString()}</p>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-sm text-slate-500">
                           {new Date(order.createdAt).toLocaleDateString()}
                         </p>
-                        <p className="text-xs text-muted-foreground">
+                        <p className="text-xs text-slate-500">
                           {formatResponseSummary(order)}
                         </p>
                       </div>
@@ -490,17 +490,17 @@ export default function AdminOrdersPage() {
 
                   {/* Expanded Details */}
                   {expandedId === order._id && (
-                    <div className="mt-6 pt-6 border-t border-border">
+                    <div className="mt-6 pt-6 border-t border-slate-200">
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Order ID</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Order ID</p>
                           <p className="text-sm font-mono">{order._id}</p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Customer</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Customer</p>
                           <p className="text-sm">{order.userName}</p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-xs text-slate-500">
                             {order.source === 'whatsapp'
                               ? order.customerPhone || 'WhatsApp'
                               : order.userEmail}
@@ -508,32 +508,32 @@ export default function AdminOrdersPage() {
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Source</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Source</p>
                           <p className="text-sm">{order.source === 'whatsapp' ? 'WhatsApp' : 'Website'}</p>
                         </div>
 
                         {order.taskerName && (
                           <div>
-                            <p className="text-sm font-medium text-muted-foreground mb-1">Assigned Tasker</p>
+                            <p className="text-sm font-medium text-slate-500 mb-1">Assigned Tasker</p>
                             <p className="text-sm">{order.taskerName}</p>
                           </div>
                         )}
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Task Type</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Task Type</p>
                           <p className="text-sm capitalize">{order.taskType}</p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Location</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Location</p>
                           <p className="text-sm">{order.location}</p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Amount</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Amount</p>
                           <p className="text-sm font-semibold">₦{order.amount.toLocaleString()}</p>
                           {order.totalAmount && (
-                            <p className="text-xs text-muted-foreground mt-1">
+                            <p className="text-xs text-slate-500 mt-1">
                               (+₦{order.platformFee || order.commission || 0} service fee = ₦{order.totalAmount.toLocaleString()} total)
                             </p>
                           )}
@@ -541,25 +541,25 @@ export default function AdminOrdersPage() {
 
                         {order.store && (
                           <div>
-                            <p className="text-sm font-medium text-muted-foreground mb-1">Store</p>
+                            <p className="text-sm font-medium text-slate-500 mb-1">Store</p>
                             <p className="text-sm">{order.store}</p>
                           </div>
                         )}
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Deadline</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Deadline</p>
                           <p className="text-sm">{formatDeadline(order.dueDate || order.deadline, order.deadlineDate, order.deadlineValue, order.deadlineUnit)}</p>
                         </div>
 
                         {order.taskType === 'copy_notes' ? (
                           <>
                             <div>
-                              <p className="text-sm font-medium text-muted-foreground mb-1">Note Size</p>
+                              <p className="text-sm font-medium text-slate-500 mb-1">Note Size</p>
                               <p className="text-sm capitalize">{order.noteSize || (order.copyNotesType === 'hardback' ? 'big' : order.copyNotesType) || 'Not set'}</p>
                             </div>
 
                             <div>
-                              <p className="text-sm font-medium text-muted-foreground mb-1">Pages</p>
+                              <p className="text-sm font-medium text-slate-500 mb-1">Pages</p>
                               <p className="text-sm">{order.numberOfPages || order.copyNotesPages || 'Not set'}</p>
                             </div>
 
@@ -567,41 +567,41 @@ export default function AdminOrdersPage() {
                         ) : null}
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Status</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Status</p>
                           <Badge className={getStatusColor(order.status)}>
                             {order.status.replace('_', ' ').toUpperCase()}
                           </Badge>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Created</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Created</p>
                           <p className="text-sm">
                             {new Date(order.createdAt).toLocaleString()}
                           </p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Booked</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Booked</p>
                           <p className="text-sm">{formatDateTime(order.bookedAt || order.createdAt)}</p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Accepted</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Accepted</p>
                           <p className="text-sm">{formatDateTime(order.acceptedAt)}</p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Cancelled</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Cancelled</p>
                           <p className="text-sm">{formatDateTime(order.cancelledAt)}</p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Response Time</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Response Time</p>
                           <p className="text-sm">{formatResponseSummary(order)}</p>
                         </div>
 
                         <div>
-                          <p className="text-sm font-medium text-muted-foreground mb-1">Last Updated</p>
+                          <p className="text-sm font-medium text-slate-500 mb-1">Last Updated</p>
                           <p className="text-sm">
                             {new Date(order.updatedAt).toLocaleString()}
                           </p>
@@ -609,13 +609,13 @@ export default function AdminOrdersPage() {
                       </div>
 
                       <div className="mt-4">
-                        <p className="text-sm font-medium text-muted-foreground mb-2">Description</p>
-                        <p className="text-sm bg-muted/50 p-3 rounded-lg">{order.description}</p>
-                        {order.cafeInquiry && <div className="rounded-lg border border-indigo-200 p-3 text-sm"><strong>Cafe check · {order.store}</strong><p>{order.cafeInquiryStatus ? cafeStatusLabels[order.cafeInquiryStatus] : 'Legacy cafe inquiry'}</p>{Boolean(order.cafeAvailableItems?.length || order.cafeSelectedItems?.length) && <p>Legacy food details are saved with this inquiry.</p>}</div>}
+                        <p className="text-sm font-medium text-slate-500 mb-2">Description</p>
+                        <p className="text-sm bg-slate-50 p-3 rounded-lg">{order.description}</p>
+                        {order.cafeInquiry && <div className="rounded-2xl border border-indigo-200 p-3 text-sm"><strong>Cafe check • {order.store}</strong><p>{order.cafeInquiryStatus ? cafeStatusLabels[order.cafeInquiryStatus] : 'Legacy cafe inquiry'}</p>{Boolean(order.cafeAvailableItems?.length || order.cafeSelectedItems?.length) && <p>Legacy food details are saved with this inquiry.</p>}</div>}
                       </div>
 
                       {order.isDeclinedTask ? (
-                        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4">
+                        <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4">
                           <div className="flex items-start gap-2">
                             <AlertCircle className="mt-0.5 h-4 w-4 text-red-600" />
                             <div>
@@ -661,7 +661,7 @@ export default function AdminOrdersPage() {
               Previous
             </Button>
 
-            <span className="px-4 py-2 text-sm text-muted-foreground">
+            <span className="px-4 py-2 text-sm text-slate-500">
               Page {currentPage} of {totalPages}
             </span>
 

@@ -161,10 +161,10 @@ export default function AdminTransactionsPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading admin panel...</p>
+          <p className="text-slate-500">Loading admin panel...</p>
         </div>
       </div>
     )
@@ -173,14 +173,14 @@ export default function AdminTransactionsPage() {
   if (!admin) return null
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-slate-50">
       {/* Header */}
-      <div className="border-b border-border">
+      <div className="border-b border-slate-200/80 bg-white/80">
         <div className="max-w-7xl mx-auto px-4 py-6">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-3xl font-bold text-foreground">Financial Transactions</h1>
-              <p className="text-muted-foreground mt-1">Monitor all platform financial activity</p>
+              <h1 className="text-3xl font-bold text-slate-900">Financial Transactions</h1>
+              <p className="text-slate-500 mt-1">Monitor all platform financial activity</p>
             </div>
             <Badge variant="secondary" className="px-3 py-1">
               Admin Panel
@@ -195,66 +195,66 @@ export default function AdminTransactionsPage() {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Volume</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <DollarSign className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">₦{stats?.totalVolume?.toLocaleString() || "0"}</div>
-              <p className="text-xs text-muted-foreground">All transactions</p>
+              <p className="text-xs text-slate-500">All transactions</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total Transactions</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <TrendingUp className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats?.totalTransactions?.toLocaleString() || "0"}</div>
-              <p className="text-xs text-muted-foreground">Transaction count</p>
+              <p className="text-xs text-slate-500">Transaction count</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Service Fees</CardTitle>
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
+              <DollarSign className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">₦{stats?.totalPlatformFees?.toLocaleString() || "0"}</div>
-              <p className="text-xs text-muted-foreground">Revenue earned</p>
+              <p className="text-xs text-slate-500">Revenue earned</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Recorded Payouts</CardTitle>
-              <TrendingDown className="h-4 w-4 text-muted-foreground" />
+              <TrendingDown className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">₦{stats?.totalTaskerFees?.toLocaleString() || "0"}</div>
-              <p className="text-xs text-muted-foreground">Paid to taskers</p>
+              <p className="text-xs text-slate-500">Paid to taskers</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Paystack Fees</CardTitle>
-              <TrendingDown className="h-4 w-4 text-muted-foreground" />
+              <TrendingDown className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">₦{stats?.totalPaystackSettlementFees?.toLocaleString() || "0"}</div>
-              <p className="text-xs text-muted-foreground">1.5% of platform fees</p>
+              <p className="text-xs text-slate-500">1.5% of platform fees</p>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Net Revenue</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
+              <TrendingUp className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold text-green-600">₦{stats?.netRevenue?.toLocaleString() || "0"}</div>
-              <p className="text-xs text-muted-foreground">After Paystack fees</p>
+              <p className="text-xs text-slate-500">After Paystack fees</p>
             </CardContent>
           </Card>
         </div>
@@ -264,7 +264,7 @@ export default function AdminTransactionsPage() {
           <CardContent className="pt-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="relative">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
                 <Input
                   placeholder="Search transactions..."
                   value={searchTerm}
@@ -309,8 +309,8 @@ export default function AdminTransactionsPage() {
           {transactions.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
-                <DollarSign className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">No transactions found</p>
+                <DollarSign className="w-12 h-12 mx-auto mb-4 text-slate-500" />
+                <p className="text-slate-500">No transactions found</p>
               </CardContent>
             </Card>
           ) : (
@@ -329,7 +329,7 @@ export default function AdminTransactionsPage() {
 
                       <div>
                         <h3 className="font-semibold text-lg">{transaction.description}</h3>
-                        <div className="flex items-center space-x-4 text-sm text-muted-foreground">
+                        <div className="flex items-center space-x-4 text-sm text-slate-500">
                           <div className="flex items-center">
                             <Calendar className="w-4 h-4 mr-1" />
                             {new Date(transaction.timestamp).toLocaleDateString()}
@@ -380,7 +380,7 @@ export default function AdminTransactionsPage() {
               Previous
             </Button>
 
-            <span className="px-4 py-2 text-sm text-muted-foreground">
+            <span className="px-4 py-2 text-sm text-slate-500">
               Page {currentPage} of {totalPages}
             </span>
 

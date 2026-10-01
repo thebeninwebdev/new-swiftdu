@@ -1,8 +1,7 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
-import DryCleaner from '@/models/dry-cleaner'
 import { Order } from '@/models/order'
 import {Review} from '@/models/review'
 import {
@@ -18,7 +17,13 @@ import { getApprovedExpenditureTotal } from '@/lib/expenditures'
 // Returns dashboard statistics and recent activity.
 // Restricted to admin role only.
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const requestedPage = Number(request.nextUrl.searchParams.get('activityPage') || '1')
+  const requestedLimit = Number(request.nextUrl.searchParams.get('activityLimit') || '10')
+  const activityPage = Number.isFinite(requestedPage) ? Math.max(1, Math.floor(requestedPage)) : 1
+  const activityLimit = Number.isFinite(requestedLimit) ? Math.min(50, Math.max(1, Math.floor(requestedLimit))) : 10
+  const activityOffset = (activityPage - 1) * activityLimit
+  const activityFetchLimit = activityOffset + activityLimit
   try {
     // TODO: Add admin auth check
     // const session = await authClient.getSession()
@@ -41,8 +46,6 @@ export async function GET() {
       completedOrders,
       totalReviews,
       pendingTaskerApprovals,
-      activeDryCleaners,
-      pendingDryCleanerApprovals,
       declinedTasks
     ] = await Promise.all([
       User.countDocuments(),
@@ -56,8 +59,6 @@ export async function GET() {
       Order.countDocuments(excludeTestOrders({ status: 'completed' })),
       Review.countDocuments(),
       Tasker.countDocuments({ isVerified: false, isRejected: false }),
-      DryCleaner.countDocuments({ status: 'approved' }),
-      DryCleaner.countDocuments({ status: 'pending' }),
       Order.countDocuments(excludeTestOrders({ isDeclinedTask: true }))
     ])
 
@@ -88,102 +89,69 @@ export async function GET() {
     // Get recent activity (last 10 items)
     const recentOrders = await Order.find(nonTestMatch)
       .sort({ createdAt: -1 })
-      .limit(5)
+      .limit(activityFetchLimit)
       .populate('taskerId', 'name')
       .lean()
 
     const recentTaskers = await Tasker.find({ isVerified: false, isRejected: false })
       .sort({ createdAt: -1 })
-      .limit(3)
+      .limit(activityFetchLimit)
       .populate('userId', 'name')
       .lean()
 
     const recentReviews = await Review.find()
       .sort({ createdAt: -1 })
-      .limit(2)
+      .limit(activityFetchLimit)
       .populate('userId', 'name')
       .lean()
 
-    const recentDryCleaners = await DryCleaner.find({ status: 'pending' })
-      .sort({ createdAt: -1 })
-      .limit(3)
-      .lean()
 
     const recentDeclinedOrders = await Order.find(excludeTestOrders({ isDeclinedTask: true }))
       .sort({ declinedAt: -1, updatedAt: -1 })
-      .limit(3)
+      .limit(activityFetchLimit)
       .lean()
 
     const recentActivity = [
       ...recentOrders.map(order => ({
-        id: order._id.toString(),
-        type: 'order' as const,
+        id: order._id.toString(), type: 'order' as const,
         message: `New order: ${order.taskType} task in ${order.location}`,
-        timestamp: order.createdAt,
-        status: order.status
+        timestamp: order.createdAt, status: order.status
       })),
       ...recentTaskers.map(tasker => ({
-        id: tasker._id.toString(),
-        type: 'tasker' as const,
+        id: tasker._id.toString(), type: 'tasker' as const,
         message: `${(tasker as { userId?: { name?: string } }).userId?.name || 'New user'} applied to be a tasker`,
-        timestamp: tasker.createdAt,
-        status: 'pending'
-      })),
-      ...recentDryCleaners.map(dryCleaner => ({
-        id: dryCleaner._id.toString(),
-        type: 'dry-cleaner' as const,
-        message: `${dryCleaner.businessName} applied to be a dry cleaner`,
-        timestamp: dryCleaner.createdAt,
-        status: 'pending'
+        timestamp: tasker.createdAt, status: 'pending'
       })),
       ...recentReviews.map(review => ({
-        id: review._id.toString(),
-        type: 'review' as const,
+        id: review._id.toString(), type: 'review' as const,
         message: `${(review as { userId?: { name?: string } }).userId?.name || 'User'} left a review`,
         timestamp: review.createdAt
       })),
       ...recentDeclinedOrders.map(order => ({
-        id: order._id.toString(),
-        type: 'declined' as const,
+        id: order._id.toString(), type: 'declined' as const,
         message: `Transfer issue flagged for ${order.taskType} in ${order.location}`,
-        timestamp: order.declinedAt || order.updatedAt || order.createdAt,
-        status: 'declined'
+        timestamp: order.declinedAt || order.updatedAt || order.createdAt, status: 'declined'
       }))
-    ]
-    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-    .slice(0, 10)
+    ].sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(activityOffset, activityOffset + activityLimit)
+
+    const totalActivityItems = (await Promise.all([
+      Order.countDocuments(nonTestMatch),
+      Tasker.countDocuments({ isVerified: false, isRejected: false }),
+      Review.countDocuments(),
+      Order.countDocuments(excludeTestOrders({ isDeclinedTask: true }))
+    ])).reduce((total, count) => total + count, 0)
 
     const stats = {
-      totalUsers,
-      totalTaskers,
-      totalOrders,
-      grossRevenue,
-      profit: businessProfit,
-      netPlatformProfit: profit,
-      approvedExpenditures,
-      totalPlatformFees,
-      paystackSettlementFees,
-      totalCompensation,
-      totalRevenue: totalRevenue[0]?.total || 0, // legacy
-      pendingOrders,
-      completedOrders,
-      totalReviews,
-      pendingTaskerApprovals,
-      activeDryCleaners,
-      pendingDryCleanerApprovals,
-      declinedTasks
+      totalUsers, totalTaskers, totalOrders, grossRevenue, profit: businessProfit,
+      netPlatformProfit: profit, approvedExpenditures, totalPlatformFees,
+      paystackSettlementFees, totalCompensation, totalRevenue: totalRevenue[0]?.total || 0,
+      pendingOrders, completedOrders, totalReviews, pendingTaskerApprovals, declinedTasks
     }
 
-    return NextResponse.json({
-      stats,
-      recentActivity,
-    })
-
+    return NextResponse.json({ stats, recentActivity, activityPagination: { page: activityPage, limit: activityLimit, totalItems: totalActivityItems, totalPages: Math.max(1, Math.ceil(totalActivityItems / activityLimit)) } })
   } catch (error) {
     console.error('[GET /api/admin/dashboard]', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch dashboard data' },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: 'Failed to fetch dashboard data' }, { status: 500 })
   }
 }
