@@ -1,4 +1,4 @@
-import { Schema, Document, models, model, connection } from "mongoose";
+import { Schema, Document, models, model, deleteModel } from "mongoose";
 
 export type ExcoRole = "CFO" | "CMO" | "COO" | "CTO";
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
@@ -169,8 +169,8 @@ const UserSchema = new Schema<IUser>(
 
 // Refresh the development model after adding bonus fields.
 if (models.user && !models.user.schema.path('firstOrderBonusOrderId')) {
-  delete models.user;
-  delete connection.models.user;
+  // Mongoose clears both its global registry and default connection registry.
+  deleteModel('user');
 }
 
 export const User =

@@ -5,6 +5,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { lockTaskerWork, WorkError } from '@/lib/tasker-work-server'
 import { TaskerWorkSession } from '@/models/tasker-work-session'
+import { areOperationsEnabled, canWorkOnOrder, OPERATIONS_SUSPENDED } from '@/lib/operations'
 import { emitOrderUpdated } from '@/lib/socket'
 import { TASKER_SEARCH_TIMEOUT_MS } from '@/lib/order-tracking'
 import { ensureCompletionTimer } from '@/lib/completion-timer'
@@ -102,7 +103,7 @@ export async function GET(request: NextRequest) {
     // Keep the mode filter in $and so later available-task $or clauses cannot replace it.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const filter: Record<string, any> = {
-      $and: [getTaskerOrderModeFilter(taskerForMode || undefined)],
+      $and: [getTaskerOrderModeFilter(taskerForMode || undefined), ...(!areOperationsEnabled() ? [{ isTestOrder: true }] : [])],
     }
 
     if (accepted === 'true' && taskerId) {
@@ -257,6 +258,10 @@ export async function POST(request: NextRequest) {
         { error: 'Errand not found' },
         { status: 404 }
       )
+    }
+
+    if (!canWorkOnOrder(order.isTestOrder === true)) {
+      return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 })
     }
 
     if (

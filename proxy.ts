@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { areOperationsEnabled } from '@/lib/operations';
-import { EXCO_DASHBOARD_PATHS, getExcoDashboardPath } from '@/lib/exco-constants';
+import { areOperationsEnabled, isCustomerOperationRoute } from '@/lib/operations';
+import { EXCO_DASHBOARD_PATHS, getExcoDashboardPath, normalizeExcoRole } from '@/lib/exco-constants';
 
 const PUBLIC_ROUTES = [
   '/',
@@ -39,19 +39,14 @@ export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const currentPath = `${pathname}${search}`;
 
-  // Check suspension before public routes or authentication, except tasker signup.
-  if (!areOperationsEnabled()) {
-    if (
-      pathname === '/suspended' ||
-      pathname === '/tasker-signup' ||
-      pathname.startsWith('/tasker-signup/')
-    ) return NextResponse.next();
-    const response = NextResponse.redirect(new URL('/suspended', request.url));
-    response.headers.set('Cache-Control', 'no-store');
-    return response;
+  const operationsEnabled = areOperationsEnabled();
+
+  // Customer ordering is paused, but authentication and authorized internal setup remain available.
+  if (!operationsEnabled && pathname === '/suspended') {
+    return NextResponse.next();
   }
 
-  if (pathname === '/suspended') {
+  if (operationsEnabled && pathname === '/suspended') {
     const response = NextResponse.redirect(new URL('/', request.url));
     response.headers.set('Cache-Control', 'no-store');
     return response;
@@ -65,6 +60,11 @@ export async function proxy(request: NextRequest) {
   // Importing lib/auth initializes its MongoDB client, so load it only after
   // public routes have been handled.
   if (isPublicRoute) {
+    if (!operationsEnabled && isCustomerOperationRoute(pathname)) {
+      const response = NextResponse.redirect(new URL('/suspended', request.url));
+      response.headers.set('Cache-Control', 'no-store');
+      return response;
+    }
     return NextResponse.next();
   }
 
@@ -76,6 +76,7 @@ export async function proxy(request: NextRequest) {
   const user = session?.user;
   const role = user?.role ?? 'user';
   const excoRole = (user as { excoRole?: string | null } | undefined)?.excoRole;
+  const normalizedExcoRole = normalizeExcoRole(excoRole);
   const defaultRoute = getDefaultRouteForRole(role, excoRole);
   const isExcoDashboardRoute = EXCO_DASHBOARD_ROUTES.some((route) =>
     pathname.startsWith(route)
@@ -87,7 +88,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(authUrl);
   }
 
-  if (pathname.startsWith('/admin') && role !== 'admin') {
+  if (pathname.startsWith('/admin') && role !== 'admin' && !normalizedExcoRole) {
     return NextResponse.redirect(new URL(defaultRoute, request.url));
   }
 
@@ -105,6 +106,12 @@ export async function proxy(request: NextRequest) {
     role !== 'tasker'
   ) {
     return NextResponse.redirect(new URL(defaultRoute, request.url));
+  }
+
+  if (!operationsEnabled && isCustomerOperationRoute(pathname)) {
+    const response = NextResponse.redirect(new URL('/suspended', request.url));
+    response.headers.set('Cache-Control', 'no-store');
+    return response;
   }
 
   return NextResponse.next();

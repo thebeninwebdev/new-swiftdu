@@ -33,6 +33,7 @@ import {
   sendPushNotification,
 } from '@/lib/push-notifications';
 import { shouldSendOrderNotification } from '@/lib/test-orders';
+import { canWorkOnOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 const COMPLETION_EXTENSION_MINUTES = 10;
@@ -74,6 +75,10 @@ export async function PATCH(
         { error: 'Forbidden: You do not own this order' },
         { status: 403 }
       );
+    }
+
+    if (isTaskerOwner && !canWorkOnOrder(order.isTestOrder === true)) {
+      return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 });
     }
 
     // Authorize before returning the original completion receipt on retries.

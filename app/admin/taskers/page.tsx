@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
+import { downloadPendingTaskerApplicationsPdf } from '@/lib/tasker-applications-pdf'
 
 
 interface TaskerUser {
@@ -64,6 +65,8 @@ export default function AdminTaskersPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [bankEdits, setBankEdits] = useState<Record<string, Tasker['bankDetails']>>({})
+  const [downloadCount, setDownloadCount] = useState(10)
+  const [isDownloading, setIsDownloading] = useState(false)
 
 
   useEffect(() => {
@@ -206,6 +209,31 @@ export default function AdminTaskersPage() {
   }
 
 
+  const handleDownloadPendingApplications = async () => {
+    const count = Math.min(Math.max(1, downloadCount), taskers.length)
+    if (!count) return
+
+    setIsDownloading(true)
+    try {
+      await downloadPendingTaskerApplicationsPdf(taskers.slice(0, count).map((tasker) => ({
+        name: tasker.user?.name || 'Tasker applicant',
+        email: tasker.user?.email || '',
+        phone: tasker.phone,
+        location: tasker.location,
+        studentId: tasker.studentId,
+        level: tasker.level,
+        availability: tasker.availability,
+        motivation: tasker.motivation,
+        motivationOther: tasker.motivationOther,
+        createdAt: tasker.createdAt,
+      })))
+      toast.success(`Downloaded ${count} pending application${count === 1 ? '' : 's'} as a PDF`)
+    } catch {
+      toast.error('Could not create the applications PDF. Please try again.')
+    } finally {
+      setIsDownloading(false)
+    }
+  }
   const FILTERS: { key: StatusFilter; label: string }[] = [
     { key: 'pending', label: 'Pending' },
     { key: 'verified', label: 'Approved' },
@@ -244,6 +272,13 @@ export default function AdminTaskersPage() {
         <div className="mb-6 flex gap-2 overflow-x-auto rounded-2xl border border-slate-200/80 bg-white p-2 shadow-sm">
           {FILTERS.map(({ key, label }) => <button key={key} type="button" onClick={() => setActiveFilter(key)} className={`min-h-11 shrink-0 rounded-xl px-4 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300 ${activeFilter === key ? 'bg-violet-600 text-white' : 'text-slate-600 hover:bg-violet-50 hover:text-violet-700'}`}>{label}{activeFilter === key && taskers.length > 0 && <span className="ml-2 rounded-full bg-white/20 px-2 py-0.5 text-xs">{taskers.length}</span>}</button>)}
         </div>
+
+                {activeFilter === 'pending' && taskers.length > 0 ? (
+          <section className="mb-6 flex flex-col gap-3 rounded-2xl border border-violet-100 bg-violet-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div><h2 className="font-semibold text-violet-950">Download pending applications</h2><p className="mt-1 text-sm text-violet-800">Choose how many of the newest pending applications to include in the PDF.</p></div>
+            <div className="flex flex-wrap items-center gap-2"><label className="sr-only" htmlFor="pending-applications-download-count">Number of applications</label><select id="pending-applications-download-count" value={Math.min(downloadCount, taskers.length)} onChange={(event) => setDownloadCount(Number(event.target.value))} className="min-h-11 rounded-xl border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-950 focus:outline-none focus:ring-2 focus:ring-violet-300">{Array.from({ length: taskers.length }, (_, index) => index + 1).map((count) => <option key={count} value={count}>{count} application{count === 1 ? '' : 's'}</option>)}</select><button type="button" onClick={() => void handleDownloadPendingApplications()} disabled={isDownloading} className="min-h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white transition hover:bg-violet-700 disabled:opacity-60">{isDownloading ? 'Creating PDF…' : 'Download PDF'}</button></div>
+          </section>
+        ) : null}
 
         {isFetching ? <div className="flex items-center gap-3 rounded-3xl border border-slate-200/80 bg-white px-6 py-10 text-sm text-slate-500 shadow-sm"><span className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-violet-600" />Loading taskers…</div> : taskers.length === 0 ? <div className="rounded-3xl border border-slate-200/80 bg-white px-6 py-12 text-center shadow-sm"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-50 text-violet-700">✓</div><p className="mt-4 font-semibold">No {activeFilter} taskers</p><p className="mt-1 text-sm text-slate-500">{activeFilter === 'pending' ? 'All caught up — no applications waiting for review.' : `No taskers have been ${activeFilter} yet.`}</p></div> : <div className="space-y-4">
           {taskers.map((tasker) => {

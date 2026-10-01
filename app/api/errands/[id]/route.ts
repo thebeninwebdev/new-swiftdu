@@ -3,6 +3,7 @@ import { currentTasker, WorkError } from '@/lib/tasker-work-server'
 import { Order } from '@/models/order'
 import { getTaskerOrderModeFilter } from '@/lib/test-orders'
 import { TASKER_SEARCH_TIMEOUT_MS } from '@/lib/order-tracking'
+import { areOperationsEnabled } from '@/lib/operations'
 
 // Preview exposes task instructions, never customer identity/contact or payment credentials.
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -10,7 +11,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const tasker = await currentTasker(request.headers)
     if (!tasker.isVerified || tasker.isRejected) throw new WorkError('Your tasker account needs approval.', 403)
     const { id } = await params
-    const order = await Order.findOne({ _id: id, status: 'pending', createdAt: { $gt: new Date(Date.now() - TASKER_SEARCH_TIMEOUT_MS) }, ...getTaskerOrderModeFilter(tasker) })
+    const order = await Order.findOne({ _id: id, status: 'pending', createdAt: { $gt: new Date(Date.now() - TASKER_SEARCH_TIMEOUT_MS) }, $and: [getTaskerOrderModeFilter(tasker), ...(!areOperationsEnabled() ? [{ isTestOrder: true }] : [])] })
       .select('taskType description amount commission taskerFee platformFee firstOrderBonusApplied firstOrderBonusAmount platformFeeBeforeFirstOrderBonus pricingModel totalAmount store location packaging restaurantPeopleCount restaurantTakeawayCount restaurantPackagingFee cafeInquiry cafeInquiryStatus cafeInquiryDetailsSubmitted indomiePacks eggCount noteSize numberOfPages printingServiceType printingNeedsEditing copyNotesType copyNotesPages deadline dueDate deadlineDate deadlineValue deadlineUnit serviceFeeDiscountApplied discountCommissionAmount status createdAt isTestOrder')
       .lean()
     if (!order) throw new WorkError('This task is no longer available. Choose another task.', 409)
