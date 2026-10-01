@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/site'
 const PAYSTACK_API_BASE_URL = 'https://api.paystack.co'
 
 function getPaystackSecretKey() {
@@ -12,13 +13,8 @@ function getPaystackSecretKey() {
 }
 
 export function getAppBaseUrl(fallbackOrigin?: string) {
-  return (
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    process.env.BASE_URL ||
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    fallbackOrigin ||
-    'http://localhost:3000'
-  ).replace(/\/$/, '')
+  if (process.env.NODE_ENV === 'production') return getSiteUrl()
+  return (process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || fallbackOrigin || 'http://localhost:3000').replace(/\/$/, '')
 }
 
 async function paystackRequest<T>(

@@ -1,4 +1,4 @@
-const DEFAULT_SITE_URL = "https://swiftdu.vercel.app";
+export const DEFAULT_SITE_URL = "https://swiftdu.org";
 const ADSENSE_PUBLISHER_ID = "4657526411072658";
 
 function normalizeUrl(value?: string | null) {
@@ -49,8 +49,6 @@ export function getSiteUrl() {
     getPublicSiteUrl(process.env.BASE_URL) ||
     getPublicSiteUrl(process.env.NEXT_PUBLIC_SITE_URL) ||
     getPublicSiteUrl(process.env.BETTER_AUTH_URL) ||
-    getPublicSiteUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL) ||
-    getPublicSiteUrl(process.env.VERCEL_URL) ||
     DEFAULT_SITE_URL
   );
 }

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { areOperationsEnabled, isCustomerOperationRoute } from '@/lib/operations';
-import { EXCO_DASHBOARD_PATHS, getExcoDashboardPath, normalizeExcoRole } from '@/lib/exco-constants';
+import { EXCO_DASHBOARD_PATHS, normalizeExcoRole } from '@/lib/exco-constants';
 
 const PUBLIC_ROUTES = [
   '/',
@@ -15,14 +15,12 @@ const PUBLIC_ROUTES = [
   '/signup',
   '/complete-profile',
   '/tasker-signup',
-  '/tasker/onboarding',
   '/terms',
 ];
 
 const EXCO_DASHBOARD_ROUTES = Object.values(EXCO_DASHBOARD_PATHS);
 function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) {
-  const excoDashboardPath = getExcoDashboardPath(excoRole);
-  if (excoDashboardPath) return excoDashboardPath;
+  if (normalizeExcoRole(excoRole)) return '/admin';
 
   switch (role) {
     case 'admin':
@@ -31,7 +29,7 @@ function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) 
       return '/tasker-dashboard';
     case 'user':
     default:
-      return '/dashboard';
+      return '/';
   }
 }
 

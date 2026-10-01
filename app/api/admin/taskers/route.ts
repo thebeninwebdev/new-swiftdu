@@ -35,11 +35,10 @@ export async function GET(req: NextRequest) {
     const status = searchParams.get('status') // 'pending' | 'verified' | 'rejected'
 
     // Build filter
-    type TaskerFilter = { isVerified?: boolean; isRejected?: boolean }
-    let filter: TaskerFilter = {}
+    let filter: Record<string, unknown> = {}
 
     if (status === 'pending') {
-      filter = { isVerified: false, isRejected: false }
+      filter = { isVerified: { $ne: true }, isRejected: { $ne: true } }
     } else if (status === 'verified') {
       filter = { isVerified: true }
     } else if (status === 'rejected') {
