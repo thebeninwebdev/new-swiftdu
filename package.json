@@ -7,7 +7,8 @@
     "build": "next build --webpack",
     "start": "tsx server.mts",
     "lint": "eslint",
-    "test:cafe": "tsx --test lib/cafe-inquiry.test.ts lib/order-sync.test.ts lib/order-tracking.test.tsx"
+    "test:cafe": "tsx --test lib/cafe-inquiry.test.ts lib/order-sync.test.ts lib/order-tracking.test.tsx",
+    "test:businesses": "tsx --test lib/business-directory.test.ts lib/business-api.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1037.0",
@@ -15,6 +16,7 @@
     "@better-auth/passkey": "^1.5.5",
     "@dicebear/adventurer-neutral": "^9.4.2",
     "@dicebear/core": "^9.4.2",
+    "@google/genai": "^2.26.0",
     "@paystack/inline-js": "^2.22.8",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@react-email/components": "^1.0.9",
@@ -41,6 +43,7 @@
     "recharts": "^3.8.1",
     "resend": "^6.9.3",
     "shadcn": "^4.0.7",
+    "sharp": "^0.35.5",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3",
     "sonner": "^2.0.7",

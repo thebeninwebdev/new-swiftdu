@@ -4,6 +4,7 @@ import { areOperationsEnabled, isCustomerOperationRoute } from '@/lib/operations
 import { EXCO_DASHBOARD_PATHS, normalizeExcoRole } from '@/lib/exco-constants';
 
 const PUBLIC_ROUTES = [
+  '/businesses',
   '/',
   '/about-us',
   '/contact-us',

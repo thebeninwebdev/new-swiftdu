@@ -11,6 +11,7 @@ import {
   LogOut,
   Menu,
   ShoppingBag,
+  Store,
   ShieldCheck,
   Star,
   Users,
@@ -18,6 +19,7 @@ import {
 } from 'lucide-react'
 
 const adminNavigation = [
+  { label: 'Businesses', href: '/admin/businesses', icon: Store, description: 'Review community listings' },
   {
     label: 'Overview',
     href: '/admin',

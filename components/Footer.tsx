@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Mail, MapPin, Phone } from "lucide-react";
 
 const footerGroups = [
-  { title: "Community", links: [{ label: "About SwiftDU", href: "/about-us" }, { label: "Student reviews", href: "/reviews" }, { label: "Contact us", href: "/contact-us" }] },
+  { title: "Community", links: [{ label: "Business Directory", href: "/businesses" }, { label: "About SwiftDU", href: "/about-us" }, { label: "Student reviews", href: "/reviews" }, { label: "Contact us", href: "/contact-us" }] },
   { title: "Get started", links: [{ label: "Join SwiftDU", href: "/auth" }, { label: "Become a Swifter", href: "/tasker-signup" }, { label: "Log in", href: "/auth" }] },
   { title: "Services", links: [{ label: "Post a task", href: "/auth" }, { label: "Available tasks", href: "/available-tasks" }, { label: "Dry cleaning", href: "/dry-cleaner-signup" }] },
   { title: "Legal", links: [{ label: "Terms & conditions", href: "/terms" }] },

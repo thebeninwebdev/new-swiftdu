@@ -1,0 +1,102 @@
+import { createHash } from "node:crypto";
+import sharp from "sharp";
+import { MAX_BUSINESS_IMAGE_BYTES } from "./business-directory-policy";
+
+export async function validateBusinessImage(file: File) {
+  if (
+    !["image/jpeg", "image/png", "image/webp"].includes(file.type) ||
+    file.size === 0 ||
+    file.size > MAX_BUSINESS_IMAGE_BYTES
+  )
+    throw new Error("Use one JPEG, PNG or WebP image up to 2 MB.");
+  const bytes = Buffer.from(await file.arrayBuffer());
+  // Decode rather than trusting the browser MIME type; strip metadata and bound dimensions.
+  const decoder = sharp(bytes, { limitInputPixels: 25000000, animated: false });
+  const meta = await decoder.metadata();
+  if (
+    !["jpeg", "png", "webp"].includes(meta.format ?? "") ||
+    (meta.pages ?? 1) > 1
+  )
+    throw new Error("Invalid image.");
+  const image = await decoder
+    .rotate()
+    .resize({
+      width: 1200,
+      height: 1200,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .webp({ quality: 82 })
+    .toBuffer();
+  return { image, mimeType: "image/webp" };
+}
+function config() {
+  const cloud =
+    process.env.CLOUDINARY_CLOUD_NAME ||
+    process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME;
+  const key =
+      process.env.CLOUDINARY_API_KEY ||
+      process.env.NEXT_PUBLIC_CLOUDINARY_API_KEY,
+    secret = process.env.CLOUDINARY_API_SECRET;
+  if (!cloud || !key || !secret)
+    throw new Error("Cloudinary server credentials are not configured");
+  return { cloud, key, secret };
+}
+async function cloudinary(
+  action: string,
+  fields: Record<string, string>,
+  image?: Buffer,
+) {
+  const { cloud, key, secret } = config();
+  fields.timestamp = String(Math.floor(Date.now() / 1000));
+  const signature = createHash("sha1")
+    .update(
+      Object.keys(fields)
+        .sort()
+        .map((k) => `${k}=${fields[k]}`)
+        .join("&") + secret,
+    )
+    .digest("hex");
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.set(k, v);
+  form.set("api_key", key);
+  form.set("signature", signature);
+  if (image)
+    form.set(
+      "file",
+      new Blob([new Uint8Array(image)], { type: "image/webp" }),
+      "business.webp",
+    );
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloud)}/image/${action}`,
+    { method: "POST", body: form, signal: AbortSignal.timeout(20000) },
+  );
+  if (!response.ok)
+    throw new Error(`Cloudinary ${action} failed (${response.status})`);
+  return response.json();
+}
+export async function uploadBusinessImage(image: Buffer, publicId: string) {
+  const preset = process.env.CLOUDINARY_BUSINESS_UPLOAD_PRESET;
+  const result = await cloudinary(
+    "upload",
+    {
+      public_id: publicId,
+      overwrite: "false",
+      ...(preset ? { upload_preset: preset } : {}),
+    },
+    image,
+  );
+  if (
+    typeof result.secure_url !== "string" ||
+    !result.secure_url.startsWith("https://res.cloudinary.com/") ||
+    result.public_id !== publicId
+  )
+    throw new Error("Invalid Cloudinary response");
+  return {
+    imageUrl: result.secure_url as string,
+    imagePublicId: result.public_id as string,
+  };
+}
+export async function deleteBusinessImage(publicId: string) {
+  await cloudinary("destroy", { public_id: publicId });
+}
