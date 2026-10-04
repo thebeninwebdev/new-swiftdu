@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Image from "next/image";
 import {
   Dialog,
@@ -23,6 +23,7 @@ export default function BusinessSubmissionForm({
   onOpenChange: (v: boolean) => void;
   onListed: () => void;
 }) {
+  const resultRef = useRef<HTMLDivElement>(null);
   const [busy, setBusy] = useState(false),
     [preview, setPreview] = useState(""),
     [file, setFile] = useState<File | null>(null);
@@ -40,6 +41,12 @@ export default function BusinessSubmissionForm({
     setPreview(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
+  useEffect(() => {
+    if (result) {
+      resultRef.current?.focus({ preventScroll: true });
+      resultRef.current?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [result]);
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (busy) return;
@@ -51,7 +58,12 @@ export default function BusinessSubmissionForm({
         method: "POST",
         body: form,
       });
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
+      if (!data || typeof data !== "object") {
+        throw new Error(response.status === 503
+          ? "The submission service is temporarily unavailable. Please wait a minute and try again."
+          : "Unable to submit your listing. Please try again.");
+      }
       if (response.status === 201) {
         setResult({ message: "Your business is now listed 🎉", done: true });
         onListed();
@@ -69,9 +81,11 @@ export default function BusinessSubmissionForm({
               }
             : {}),
         });
-    } catch {
+    } catch (error) {
       setResult({
-        message: "Unable to submit your listing. Please try again.",
+        message: error instanceof Error && error.message !== "Failed to fetch"
+          ? error.message
+          : "Unable to connect. Check your connection and try again.",
       });
     } finally {
       setBusy(false);
@@ -104,7 +118,9 @@ export default function BusinessSubmissionForm({
         </DialogDescription>
         {result && (
           <div
-            role="status"
+            ref={resultRef}
+            tabIndex={-1}
+            role={result.done ? "status" : "alert"}
             className="rounded-2xl bg-indigo-50 p-4 text-sm text-indigo-900"
           >
             {result.message}

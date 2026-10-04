@@ -1,3 +1,5 @@
+import { canTaskerDeliver } from '@/lib/delivery-policy'
+import { User } from '@/models/user'
 import { connectDB } from '@/lib/db'
 import { Order } from '@/models/order'
 import Tasker from "@/models/tasker"
@@ -44,6 +46,8 @@ const ERRAND_LIST_FIELDS = [
   'deadline',
   'deadlineDate',
   'location',
+  'roomNumber',
+  'taskerGenderRestriction',
   'store',
   'packaging',
   'cafeInquiry',
@@ -177,7 +181,12 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    return NextResponse.json(orders, {
+    const session = await auth.api.getSession({ headers: request.headers })
+    const account = session?.user?.id ? await User.findById(session.user.id).select('gender').lean() : null
+    const visibleOrders = orders.filter(order =>
+      (session?.user?.taskerId && String(order.taskerId) === session.user.taskerId) || canTaskerDeliver(order, account?.gender)
+    )
+    return NextResponse.json(visibleOrders, {
       headers: {
         'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
       },
@@ -260,6 +269,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    const taskerAccount = await User.findById(session.user.id).select('gender').lean()
+    if (!canTaskerDeliver(order, taskerAccount?.gender)) {
+      return NextResponse.json({ error: 'You are not eligible to deliver to this destination.' }, { status: 403 })
+    }
+
     if (!canWorkOnOrder(order.isTestOrder === true)) {
       return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 })
     }
@@ -295,6 +309,8 @@ export async function POST(request: NextRequest) {
         return await Order.findOneAndUpdate(
       {
         _id: orderId,
+        location: order.location,
+        updatedAt: order.updatedAt,
         status: 'pending',
         createdAt: { $gt: new Date(acceptedAt.getTime() - TASKER_SEARCH_TIMEOUT_MS) },
         ...getTaskerOrderModeFilter(tasker),

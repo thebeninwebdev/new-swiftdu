@@ -17,7 +17,7 @@ export interface DuplicateCandidate {
   productsServices: string[];
 }
 export function businessReviewModel() {
-  return process.env.GEMINI_BUSINESS_REVIEW_MODEL || "gemini-3.8-flash";
+  return process.env.GEMINI_BUSINESS_REVIEW_MODEL || "gemini-3.1-flash-lite";
 }
 const properties = {
   decision: { type: "string", enum: ["approve", "reject", "review"] },
@@ -88,7 +88,7 @@ export async function reviewBusiness(
         additionalProperties: false,
       },
       temperature: 0,
-      httpOptions: { timeout: 25000 },
+      httpOptions: { timeout: 12000 },
     },
   });
   const review = parseBusinessAIReview(

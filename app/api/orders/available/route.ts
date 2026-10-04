@@ -1,3 +1,5 @@
+import { canTaskerDeliver } from '@/lib/delivery-policy';
+import { User } from '@/models/user';
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import {Order} from "@/models/order"
@@ -33,7 +35,8 @@ export async function GET(request: NextRequest) {
       .sort({ createdAt: -1 })
       .lean();
 
-    return NextResponse.json(availableTasks);
+    const account = await User.findById(session.user.id).select('gender').lean();
+    return NextResponse.json(availableTasks.filter(order => canTaskerDeliver(order, account?.gender)));
   } catch (error) {
     console.error('[Available Tasks GET Error]:', error);
     return NextResponse.json(

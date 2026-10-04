@@ -1,3 +1,4 @@
+import { classifyDeliveryLocation, getRoomDestination, type TaskerGenderRestriction } from '@/lib/delivery-policy'
 import type { CafeInquiryFields } from '@/lib/cafe-inquiry'
 import mongoose, { Schema, Document, type Model } from 'mongoose';
 
@@ -27,6 +28,10 @@ export interface IOrder extends Document, CafeInquiryFields {
   pricingModel: 'tiered' | 'water' | 'copy_notes';
   totalAmount: number;
   location: string;
+  roomNumber?: string;
+  deliveryDestinationKey?: string;
+  deliveryCoordinates?: { latitude: number; longitude: number; accuracy?: number; capturedAt: Date };
+  taskerGenderRestriction?: TaskerGenderRestriction;
   deliveryLocation?: string;
   store?: string;
   packaging?: string;
@@ -202,11 +207,24 @@ const orderSchema = new Schema<IOrder>(
       required: true,
       min: 0,
     },
+    taskerGenderRestriction: { type: String, enum: ['male', 'female', 'any'] },
     location: {
       type: String,
       required: true,
     },
     deliveryLocation: String,
+    roomNumber: { type: String, trim: true, maxlength: 40 },
+    deliveryDestinationKey: String,
+    deliveryCoordinates: {
+      type: new Schema({
+        latitude: { type: Number, required: true, min: -90, max: 90 },
+        longitude: { type: Number, required: true, min: -180, max: 180 },
+        accuracy: { type: Number, min: 0 },
+        capturedAt: { type: Date, required: true },
+      }, { _id: false }),
+      select: false,
+      default: undefined,
+    },
     taskerHasPaid: {
       type: Boolean,
       default: false,
@@ -435,9 +453,17 @@ const orderSchema = new Schema<IOrder>(
     testOrderCreatedBy: String,
     testOrderCreatedByRole: String,
   },
-  { timestamps: true }
+  { timestamps: true, toJSON: { transform: (_doc, ret) => { delete ret.deliveryCoordinates; return ret; } } }
 );
 
+orderSchema.pre('validate', function () {
+  if (this.isNew || this.isModified('location')) {
+    this.taskerGenderRestriction = classifyDeliveryLocation(this.location);
+    this.deliveryDestinationKey = getRoomDestination(this.location)?.id;
+  }
+});
+
+orderSchema.index({ deliveryDestinationKey: 1, roomNumber: 1, status: 1 });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ userId: 1, isTestOrder: 1, status: 1 });
 orderSchema.index({ taskerId: 1, status: 1, createdAt: -1 });
@@ -457,7 +483,7 @@ const existingTaskTypePath = existingOrderModel?.schema.path('taskType') as
 if (
   existingOrderModel &&
   existingTaskTypePath?.enumValues &&
-  (!existingTaskTypePath.enumValues.includes('indomie') || !existingOrderModel.schema.path('cafeInquiryStatus') || !existingOrderModel.schema.path('firstOrderBonusApplied'))
+  (!existingTaskTypePath.enumValues.includes('indomie') || !existingOrderModel.schema.path('cafeInquiryStatus') || !existingOrderModel.schema.path('firstOrderBonusApplied') || !existingOrderModel.schema.path('taskerGenderRestriction') || !existingOrderModel.schema.path('roomNumber'))
 ) {
   const mutableModels = mongoose.models as unknown as Record<string, Model<IOrder> | undefined>;
   const mutableConnectionModels = mongoose.connection.models as unknown as Record<

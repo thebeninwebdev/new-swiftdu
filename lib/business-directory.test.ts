@@ -265,3 +265,21 @@ test("directory stays public with operations disabled, including nested routes",
     assert.equal(response.headers.get("location"), null);
   }
 });
+
+ test("temporary Gemini failures retry once without bypassing moderation", async () => {
+  let calls = 0;
+  const result = await moderateBusinessSubmission({} as BusinessInput, Buffer.alloc(0), "image/webp", [], async () => {
+    if (++calls === 1) throw Object.assign(new Error("busy"), { status: 503 });
+    return approved;
+  });
+  assert.equal(calls, 2);
+  assert.equal(result.outcome, "approve");
+  calls = 0;
+  const failed = await moderateBusinessSubmission({} as BusinessInput, Buffer.alloc(0), "image/webp", [], async () => {
+    calls++;
+    throw Object.assign(new Error("busy"), { status: 503 });
+  });
+  assert.equal(calls, 2);
+  assert.equal(failed.outcome, "unavailable");
+  assert.match(failed.error ?? "", /busy right now/);
+ });

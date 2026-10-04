@@ -1,8 +1,6 @@
-import OrderAlertEmail from '@/emails/orderAlertEmail'
-import { sendTransactionalEmail } from '@/lib/email'
-import { getSupportEmailAddress } from '@/lib/email-config'
+import { getOrderRestriction, type TaskerGenderRestriction } from '@/lib/delivery-policy'
 import { getSiteUrl } from '@/lib/site'
-import { getTelegramChatIdForTask, sendTelegramMessage } from '@/lib/telegram'
+import { getTelegramOrderChatIds, sendTelegramMessage } from '@/lib/telegram'
 import { shouldSendOrderNotification } from '@/lib/test-orders'
 import { User } from '@/models/user'
 
@@ -13,6 +11,7 @@ type OrderLike = {
   description?: string
   amount?: number
   totalAmount?: number
+  taskerGenderRestriction?: TaskerGenderRestriction
   location?: string
   noteSize?: 'small' | 'big'
   numberOfPages?: number
@@ -48,7 +47,6 @@ interface NotifyAdminsOfOrderEventResult {
   telegram: AlertChannelResult
 }
 
-const EMAIL_ADDRESS_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 interface AlertChannelResult {
   recipientCount: number
@@ -65,25 +63,6 @@ function serializeId(value?: { toString(): string } | string | null) {
   }
 
   return typeof value === 'string' ? value : value.toString()
-}
-
-function serializeDate(value?: Date | string) {
-  if (!value) {
-    return undefined
-  }
-
-  return value instanceof Date ? value.toISOString() : value
-}
-
-function parseConfiguredRecipients(value?: string | null) {
-  if (!value) {
-    return []
-  }
-
-  return value
-    .split(/[;,]/)
-    .map((entry) => entry.trim().toLowerCase())
-    .filter((entry) => EMAIL_ADDRESS_PATTERN.test(entry))
 }
 
 function formatTaskType(taskType?: string) {
@@ -149,30 +128,6 @@ function getActorLabel(
   }
 }
 
-async function getOrderAlertRecipients() {
-  const configuredRecipients = [
-    ...parseConfiguredRecipients(process.env.ORDER_ALERT_EMAILS),
-    ...parseConfiguredRecipients(process.env.ADMIN_ALERT_EMAILS),
-  ]
-
-  const adminUsers = await User.find({
-    role: 'admin',
-    isSuspended: { $ne: true },
-  })
-    .select('email')
-    .lean()
-
-  const supportEmail = getSupportEmailAddress()
-
-  return Array.from(
-    new Set(
-      [...configuredRecipients, ...adminUsers.map((user) => user.email), supportEmail]
-        .map((value) => value?.trim().toLowerCase())
-        .filter((value): value is string => Boolean(value && EMAIL_ADDRESS_PATTERN.test(value)))
-    )
-  )
-}
-
 function createSkippedChannelResult(reason: string): AlertChannelResult {
   return {
     recipientCount: 0,
@@ -188,6 +143,7 @@ function buildTelegramOrderAlertMessage(input: {
   description?: string
   amount: number
   totalAmount: number
+  taskerGenderRestriction?: TaskerGenderRestriction
   location: string
   customerName?: string | null
   customerEmail?: string | null
@@ -266,6 +222,7 @@ async function sendTelegramOrderAlertDirect(input: {
   description?: string
   amount: number
   totalAmount: number
+  taskerGenderRestriction?: TaskerGenderRestriction
   location: string
   customerName?: string | null
   customerEmail?: string | null
@@ -278,18 +235,21 @@ async function sendTelegramOrderAlertDirect(input: {
   copyNotesType?: string
   copyNotesPages?: number
 }): Promise<AlertChannelResult> {
-  const delivered = await sendTelegramMessage(
-    input.taskType === 'copy_notes'
-      ? formatCopyNotesTelegramMessage(input, input.customerName, input.dashboardUrl)
-      : buildTelegramOrderAlertMessage(input),
-    getTelegramChatIdForTask(input.taskType)
-  )
-
+  const chatIds = getTelegramOrderChatIds(getOrderRestriction(input))
+  if (!chatIds.length) {
+    console.error('[Telegram Order Alert] Destination is unclassified or order chats are not configured.')
+    return createSkippedChannelResult('Destination is unclassified or order chats are not configured.')
+  }
+  const message = input.taskType === 'copy_notes'
+    ? formatCopyNotesTelegramMessage(input, input.customerName, input.dashboardUrl)
+    : buildTelegramOrderAlertMessage(input)
+  const results = await Promise.allSettled(chatIds.map(chatId => sendTelegramMessage(message, chatId)))
+  const deliveredCount = results.filter(result => result.status === 'fulfilled' && result.value).length
   return {
-    recipientCount: 1,
-    deliveredCount: delivered ? 1 : 0,
+    recipientCount: chatIds.length,
+    deliveredCount,
     skipped: false,
-    reason: delivered ? undefined : 'Telegram send failed.',
+    reason: deliveredCount === chatIds.length ? undefined : 'Telegram send failed.',
   }
 }
 
@@ -300,6 +260,7 @@ async function sendTelegramOrderAlert(input: {
   description?: string
   amount: number
   totalAmount: number
+  taskerGenderRestriction?: TaskerGenderRestriction
   location: string
   customerName?: string | null
   customerEmail?: string | null
@@ -318,159 +279,9 @@ async function sendTelegramOrderAlert(input: {
     return createSkippedChannelResult('Telegram alerts are disabled.')
   }
 
-  const sammyBaseUrl =
-    process.env.SAMMY_NOTIFICATIONS_URL?.trim() ||
-    process.env.SAMMY_API_URL?.trim() ||
-    process.env.NEXT_PUBLIC_SAMMY_URL?.trim()
-
-  if (!sammyBaseUrl) {
-    return sendTelegramOrderAlertDirect(input)
-  }
-
-  try {
-    const url = new URL('/notifications/telegram/order-alert', sammyBaseUrl)
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-    }
-    const internalSecret = process.env.SAMMY_INTERNAL_SECRET?.trim()
-
-    if (internalSecret) {
-      headers.Authorization = `Bearer ${internalSecret}`
-    }
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(input),
-    })
-
-    const data = (await response.json().catch(() => null)) as
-      | { ok?: boolean; result?: AlertChannelResult; error?: string }
-      | null
-    const delivered = response.ok && Boolean(data?.ok)
-
-    if (data?.result?.deliveredCount) {
-      return data.result
-    }
-
-    const sammyResult = {
-      recipientCount: 1,
-      deliveredCount: delivered ? 1 : 0,
-      skipped: false,
-      reason: delivered
-        ? undefined
-        : data?.error || `Sammy Telegram notification failed with ${response.status}.`,
-    }
-
-    if (delivered) {
-      return sammyResult
-    }
-
-    const directResult = await sendTelegramOrderAlertDirect(input)
-
-    return {
-      ...directResult,
-      failures: data?.result?.failures,
-    }
-  } catch (error) {
-    const directResult = await sendTelegramOrderAlertDirect(input)
-    const failure = error instanceof Error ? error.message : 'Unknown Telegram error'
-
-    return directResult.deliveredCount > 0
-      ? directResult
-      : {
-          ...directResult,
-          failures: [failure],
-        }
-  }
-}
-
-async function sendEmailOrderAlerts(input: {
-  recipients: string[]
-  subject: string
-  event: OrderAlertEvent
-  orderId: string
-  taskType?: string
-  description?: string
-  amount: number
-  totalAmount: number
-  location: string
-  customerName?: string | null
-  customerEmail?: string | null
-  actorLabel: string
-  taskerName?: string
-  createdAt?: string
-  cancelledAt?: string
-  dashboardUrl: string
-}) {
-  if (!process.env.RESEND_API_KEY?.trim()) {
-    return createSkippedChannelResult('Email configuration is missing.')
-  }
-
-  if (input.recipients.length === 0) {
-    return createSkippedChannelResult('No admin alert recipients are configured.')
-  }
-
-  const results = await Promise.allSettled(
-    input.recipients.map(async (recipient) => {
-      const providerId = await sendTransactionalEmail({
-        to: recipient,
-        subject: input.subject,
-        react: OrderAlertEmail({
-          event: input.event,
-          orderId: input.orderId,
-          taskType: input.taskType,
-          description: input.description,
-          amount: input.amount,
-          totalAmount: input.totalAmount,
-          location: input.location,
-          customerName: input.customerName ?? undefined,
-          customerEmail: input.customerEmail ?? undefined,
-          actorLabel: input.actorLabel,
-          taskerName: input.taskerName,
-          createdAt: input.createdAt,
-          cancelledAt: input.cancelledAt,
-          dashboardUrl: input.dashboardUrl,
-        }),
-        tags: [
-          { name: 'email_type', value: 'order_alert' },
-          { name: 'order_event', value: input.event },
-          { name: 'order_id', value: input.orderId },
-        ],
-        headers: {
-          'X-SwiftDU-Order-Id': input.orderId,
-          'X-SwiftDU-Order-Event': input.event,
-        },
-      })
-
-      return { recipient, providerId }
-    })
-  )
-
-  const delivered = results.filter((result) => result.status === 'fulfilled')
-  const failures = results
-    .map((result, index) => {
-      if (result.status === 'fulfilled') {
-        return null
-      }
-
-      const reason =
-        result.reason instanceof Error ? result.reason.message : String(result.reason)
-
-      return `${input.recipients[index]}: ${reason}`
-    })
-    .filter((failure): failure is string => Boolean(failure))
-
-  return {
-    recipientCount: input.recipients.length,
-    deliveredCount: delivered.length,
-    skipped: false,
-    reason: failures.length ? 'Some email sends failed.' : undefined,
-    providerIds: delivered
-      .map((result) => result.value.providerId)
-      .filter((providerId): providerId is string => Boolean(providerId)),
-    failures: failures.length ? failures : undefined,
-  }
+  // The legacy Sammy relay cannot guarantee destination-specific recipients.
+  // Reuse the existing direct sender for all order alerts, including copy notes.
+  return sendTelegramOrderAlertDirect(input)
 }
 
 export async function notifyAdminsOfOrderEvent(
@@ -503,39 +314,13 @@ export async function notifyAdminsOfOrderEvent(
 
   const customer = await User.findById(userId).select('name email').lean()
   const dashboardUrl = `${getSiteUrl()}/tasker-dashboard`
-  const subjectPrefix =
-    input.event === 'cancelled' ? 'Booking cancelled' : 'New booking received'
-  const subject = `${subjectPrefix}: ${formatTaskType(input.order.taskType)} in ${
-    input.order.location || 'SwiftDU'
-  }`
   const actorLabel = getActorLabel(input.actorRole, input.actorName, input.actorEmail)
   const amount = Number(input.order.amount || 0)
   const totalAmount = Number(input.order.totalAmount || input.order.amount || 0)
   const location = input.order.location || 'Location not provided'
-  const createdAt = serializeDate(input.order.createdAt)
-  const cancelledAt = serializeDate(input.order.cancelledAt)
-  const recipients = await getOrderAlertRecipients()
-
-  const [emailSettled, telegramSettled] = await Promise.allSettled([
-    sendEmailOrderAlerts({
-      recipients,
-      subject,
-      event: input.event,
-      orderId,
-      taskType: input.order.taskType,
-      description: input.order.description,
-      amount,
-      totalAmount,
-      location,
-      customerName: customer?.name,
-      customerEmail: customer?.email,
-      actorLabel,
-      taskerName: input.order.taskerName,
-      createdAt,
-      cancelledAt,
-      dashboardUrl,
-    }),
+  const [telegramSettled] = await Promise.allSettled([
     sendTelegramOrderAlert({
+      taskerGenderRestriction: getOrderRestriction(input.order),
       event: input.event,
       orderId,
       taskType: input.order.taskType,
@@ -558,21 +343,6 @@ export async function notifyAdminsOfOrderEvent(
     }),
   ])
 
-  const emailResult =
-    emailSettled.status === 'fulfilled'
-      ? emailSettled.value
-      : {
-          recipientCount: recipients.length,
-          deliveredCount: 0,
-          skipped: false,
-          reason: 'Email send failed.',
-          failures: [
-            emailSettled.reason instanceof Error
-              ? emailSettled.reason.message
-              : String(emailSettled.reason),
-          ],
-        }
-
   const telegramResult =
     telegramSettled.status === 'fulfilled'
       ? telegramSettled.value
@@ -589,14 +359,11 @@ export async function notifyAdminsOfOrderEvent(
         }
 
   return {
-    recipientCount: emailResult.recipientCount + telegramResult.recipientCount,
-    deliveredCount: emailResult.deliveredCount + telegramResult.deliveredCount,
-    skipped: emailResult.skipped && telegramResult.skipped,
-    reason:
-      emailResult.reason && telegramResult.reason
-        ? `${emailResult.reason} ${telegramResult.reason}`
-        : emailResult.reason || telegramResult.reason,
-    email: emailResult,
+    recipientCount: telegramResult.recipientCount,
+    deliveredCount: telegramResult.deliveredCount,
+    skipped: telegramResult.skipped,
+    reason: telegramResult.reason,
+    email: createSkippedChannelResult('Order emails are disabled.'),
     telegram: telegramResult,
   }
 }

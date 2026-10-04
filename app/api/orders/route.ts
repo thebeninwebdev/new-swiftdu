@@ -1,3 +1,4 @@
+import { classifyDeliveryLocation, validateDeliveryRoom } from '@/lib/delivery-policy';
 import { saveNewOrderWithBonus } from '@/lib/first-order-bonus';
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
@@ -105,6 +106,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (typeof location !== 'string' || !classifyDeliveryLocation(location)) {
+      return NextResponse.json({ error: 'Choose a recognized delivery destination and include it with your room or landmark details.' }, { status: 400 });
+    }
+
+    let roomNumber: string | undefined;
+    try { roomNumber = validateDeliveryRoom(location, body.roomNumber); } catch (error) {
+      return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+    }
     const normalizedDescription = String(description || '').trim();
     const normalizedTaskType = String(taskType || '').trim();
     const isCafeInquiry = normalizedTaskType === 'restaurant' && cafeInquiry === true;
@@ -426,6 +435,7 @@ export async function POST(request: NextRequest) {
       pricingModel: pricing.pricingModel,
       totalAmount,
       location,
+      roomNumber,
       store:
         normalizedTaskType === 'copy_notes' ||
         normalizedTaskType === WATER_TASK_TYPE ||
@@ -485,7 +495,7 @@ export async function POST(request: NextRequest) {
 
     if (shouldSendOrderNotification(order)) {
       const taskerPushResult = await sendPushNotification({
-        audience: { roles: ['tasker'] },
+        audience: { roles: ['tasker'], taskerGenderRestriction: order.taskerGenderRestriction || null },
         title: 'New Task Available',
         body: isCafeInquiry
           ? `Cafe inquiry in ${location} - NGN ${CAFE_INQUIRY_SERVICE_FEE.toLocaleString()} service fee`

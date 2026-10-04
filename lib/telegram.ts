@@ -1,3 +1,14 @@
+import type { TaskerGenderRestriction } from './delivery-policy';
+
+export function getTelegramOrderChatIds(restriction?: TaskerGenderRestriction | null) {
+  const girls = process.env.TELEGRAM_GIRLS_ORDERS_CHAT_ID?.trim();
+  const boys = process.env.TELEGRAM_BOYS_ORDERS_CHAT_ID?.trim();
+  const targets = restriction === 'female' ? [girls] : restriction === 'male' ? [boys] : restriction === 'any' ? [girls, boys] : [];
+  // Never fall back to an unfiltered channel.
+  if (!targets.length || targets.some(id => !id) || (girls && girls === boys)) return [];
+  return [...new Set(targets)] as string[];
+}
+
 interface TelegramMessage {
   chat_id: string;
   text: string;
@@ -73,6 +84,7 @@ export async function sendTelegramMessage(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(message),
+      signal: AbortSignal.timeout(10000),
     });
 
     const data: TelegramSendMessageResponse = await response.json();

@@ -1,4 +1,5 @@
 'use client'
+import { getRoomDestination, validateDeliveryRoom } from '@/lib/delivery-policy'
 import { FirstOrderPriceBreakdown } from '@/components/first-order-bonus'
 import { priceWithOrderDiscounts } from '@/lib/first-order-pricing'
 import { mergeOrderUpdate } from '@/lib/order-sync'
@@ -72,6 +73,7 @@ interface ErrandData {
   taskType: string
   description: string
   amount: string
+  roomNumber?: string
   location: string
   store?: string
   waterBags?: string
@@ -919,7 +921,7 @@ export default function ErrandWizardPage() {
       name === 'restaurantItemPrice'
         ? formatRestaurantCost(value)
         : name === 'amount' ? formatMoneyInput(value) : value
-    setFormData((previous) => ({ ...previous, [name]: nextValue }))
+    setFormData((previous) => ({ ...previous, [name]: nextValue, ...(name === 'location' && previous.location !== nextValue ? { roomNumber: '' } : {}) }))
     clearError(name)
     if (
       name === 'restaurantItemPrice' ||
@@ -939,6 +941,7 @@ export default function ErrandWizardPage() {
       store: value === 'restaurant' ? 'tasker_choose' : '',
       description: '',
       location: '',
+      roomNumber: '',
       waterBags: '',
       noteSize: '',
       numberOfPages: '',
@@ -983,7 +986,7 @@ export default function ErrandWizardPage() {
 
   const handleLocationSelect = (value: string) => {
     pauseRealtime()
-    setFormData((previous) => ({ ...previous, location: value }))
+    setFormData((previous) => ({ ...previous, location: value, roomNumber: previous.location === value ? previous.roomNumber : '' }))
     clearError('location')
   }
 
@@ -1167,6 +1170,7 @@ if (stepNumber === detailsStep) {
 }
 
  if (stepNumber === deliveryStep) {
+  try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { nextErrors.roomNumber = (error as Error).message }
   if (!formData.location.trim()) {
     nextErrors.location = 'Enter the delivery location.'
   }
@@ -1198,6 +1202,7 @@ if (stepNumber === detailsStep) {
   }
 
   const createOrder = async () => {
+    try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { toast.error((error as Error).message); return }
     pauseRealtime(REALTIME_PAUSE_MS * 2)
 
     setSubmissionFailed(false)
@@ -1210,6 +1215,7 @@ if (stepNumber === detailsStep) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
+          roomNumber: getRoomDestination(formData.location)?.requiresRoomNumber ? formData.roomNumber : undefined,
           description: formData.taskType === WATER_TASK_TYPE ? '' : description,
           amount: String(amount),
           cafeInquiry: isCafeInquiry,
@@ -1457,7 +1463,7 @@ if (stepNumber === detailsStep) {
   const renderCafeReview = () => bonusPreview.firstOrderBonusApplied ? <div className="space-y-3"><p className="font-bold">{selectedStoreLabel || formData.store} &middot; {formData.location}</p><FirstOrderPriceBreakdown order={previewOrder} preview /></div> : <CafeInquiryReview cafe={selectedStoreLabel || formData.store || ''} location={formData.location} serviceFee={pricing.serviceFee} discounted={hasAvailableServiceFeeDiscount} />
 
   const renderRestaurantEstimate = () => (
-    <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Estimated food cost (includes takeaway)</span><span className="font-bold tabular-nums">{formatNaira(restaurantEstimate.amount)}</span></div>
+    <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Subtotal</span><span className="font-bold tabular-nums">{formatNaira(restaurantEstimate.amount)}</span></div>
   )
 
   const renderRestaurantCosts = () => (
@@ -1848,6 +1854,14 @@ if (stepNumber === detailsStep) {
     </div>
   )
 
+  const renderRoomNumber = () => getRoomDestination(formData.location)?.requiresRoomNumber ? (
+    <div>
+      <label htmlFor="delivery-room" className="mb-2 block text-sm font-bold">Room number <span className="text-red-500">*</span></label>
+      <input id="delivery-room" name="roomNumber" value={formData.roomNumber || ''} onChange={handleInputChange} required maxLength={40} placeholder="e.g. A12" aria-invalid={Boolean(errors.roomNumber)} aria-describedby={errors.roomNumber ? 'delivery-room-error' : undefined} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm dark:border-slate-800 dark:bg-slate-900" />
+      {errors.roomNumber && <p id="delivery-room-error" className="mt-2 text-sm text-red-500">{errors.roomNumber}</p>}
+    </div>
+  ) : null
+
   const renderQuickDetails = () => (
     <div className="space-y-4">
       {formData.taskType === 'restaurant' && !isCafeInquiry ? renderRestaurantReview() : null}
@@ -1870,6 +1884,7 @@ if (stepNumber === detailsStep) {
           ))}
         </div>
         {errors.location ? <p className="mt-2 text-sm text-red-500">{errors.location}</p> : null}
+        {renderRoomNumber()}
       </div>
     </div>
   )
@@ -1891,7 +1906,7 @@ if (stepNumber === detailsStep) {
       ) : null}
       <div className="flex justify-between gap-4">
         <span className="text-slate-500">Location</span>
-        <span className="text-right font-semibold">{formData.location || 'Not set'}</span>
+        <span className="text-right font-semibold">{formData.location || 'Not set'}{formData.roomNumber ? ' - Room ' + formData.roomNumber : ''}</span>
       </div>
       {formData.taskType === 'restaurant' ? (
         <>
@@ -1929,7 +1944,7 @@ if (stepNumber === detailsStep) {
           {renderServiceFeeAmount('font-medium')}
         </div>
         <div className="mt-3 flex items-end justify-between">
-          <span className="font-bold text-slate-900 dark:text-white">Estimated Total</span>
+          <span className="font-bold text-slate-900 dark:text-white">Total</span>
           <span className="text-2xl font-black text-slate-950 dark:text-white">{formatNaira(displayedTotalAmount)}</span>
         </div>
       </div>}
@@ -3268,6 +3283,7 @@ if (stepNumber === detailsStep) {
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><MapPin className="h-4 w-4 text-indigo-500" />Delivery Location</label>
                     <input type="text" name="location" value={formData.location} onChange={handleInputChange} placeholder="Library 2nd Floor, Hall B Room 204..." className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />
                     {errors.location ? <p className="mt-2 text-sm text-red-500">{errors.location}</p> : null}
+                    {renderRoomNumber()}
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {['Amnesty Hostel', 'Girls Hostel', 'Staff Quarters', 'PLT', 'Lecturers Block', 'Bursary', 'NDDC Auditorium', 'Library'].map((location) => (

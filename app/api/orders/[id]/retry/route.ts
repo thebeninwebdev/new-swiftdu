@@ -1,3 +1,4 @@
+import { validateDeliveryRoom } from '@/lib/delivery-policy';
 import { saveNewOrderWithBonus } from '@/lib/first-order-bonus';
 import { calculateOrderPricing } from '@/lib/pricing';
 import { NextResponse, type NextRequest } from 'next/server';
@@ -103,6 +104,9 @@ export async function POST(
         : fullServiceFee
       : 0;
 
+    try { validateDeliveryRoom(order.location, order.roomNumber); } catch (error) {
+      return NextResponse.json({ error: (error as Error).message + ' Create a new order with your room number.' }, { status: 400 });
+    }
     const retriedOrder = new Order({
       userId: order.userId,
       source: order.source,
@@ -128,6 +132,7 @@ export async function POST(
       pricingModel: pricing.pricingModel,
       totalAmount: pricing.totalAmount,
       location: order.location,
+      roomNumber: order.roomNumber,
       deliveryLocation: order.deliveryLocation,
       store: order.store,
       packaging: order.cafeInquiry ? undefined : order.packaging,
@@ -176,7 +181,7 @@ export async function POST(
 
     if (shouldSendOrderNotification(retriedOrder)) {
       const taskerPushResult = await sendPushNotification({
-        audience: { roles: ['tasker'] },
+        audience: { roles: ['tasker'], taskerGenderRestriction: retriedOrder.taskerGenderRestriction || null },
         title: 'New Task Available',
         body: `${formatPushTaskType(retriedOrder.taskType)} in ${retriedOrder.location} - NGN ${Number(
           retriedOrder.totalAmount || 0

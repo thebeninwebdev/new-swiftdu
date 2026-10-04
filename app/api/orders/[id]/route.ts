@@ -1,3 +1,5 @@
+import { validateDeliveryCoordinates } from '@/lib/delivery-coordinates';
+import { classifyDeliveryLocation, validateDeliveryRoom } from '@/lib/delivery-policy';
 import { clearZeroFeeSettlement, saveOrderLifecycle, OrderChangedError } from '@/lib/first-order-bonus';
 import { priceWithOrderDiscounts } from '@/lib/first-order-pricing';
 import { canPayCafeInquiry } from '@/lib/cafe-inquiry';
@@ -235,6 +237,7 @@ export async function PATCH(
       description !== undefined ||
       amount !== undefined ||
       deadlineDate !== undefined ||
+      body.roomNumber !== undefined ||
       location !== undefined ||
       store !== undefined ||
       packaging !== undefined ||
@@ -264,6 +267,7 @@ export async function PATCH(
         amount === undefined &&
         deadlineDate === undefined &&
         location === undefined &&
+        body.roomNumber === undefined &&
         store === undefined &&
         packaging === undefined &&
         waterBags === undefined &&
@@ -416,6 +420,11 @@ export async function PATCH(
         );
       }
 
+      if (location !== undefined || body.roomNumber !== undefined) {
+        try { order.roomNumber = validateDeliveryRoom(location ?? order.location, body.roomNumber !== undefined ? body.roomNumber : order.roomNumber); } catch (error) {
+          return NextResponse.json({ error: (error as Error).message }, { status: 400 });
+        }
+      }
       const nextTaskType = taskType !== undefined ? String(taskType) : order.taskType;
       const nextCafeInquiry = nextTaskType === 'restaurant' && (cafeInquiry === undefined ? order.cafeInquiry === true : cafeInquiry === true);
       const nextDescription =
@@ -762,7 +771,12 @@ export async function PATCH(
       order.deadlineDate = nextTaskType === 'copy_notes' ? nextDeadlineDate : undefined;
       order.deadlineValue = undefined;
       order.deadlineUnit = undefined;
-      if (location !== undefined) order.location = location;
+      if (location !== undefined) {
+        if (typeof location !== 'string' || !classifyDeliveryLocation(location)) {
+          return NextResponse.json({ error: 'Choose a recognized delivery destination.' }, { status: 400 });
+        }
+        order.location = location;
+      }
       order.store =
         nextTaskType === 'copy_notes' ||
         nextTaskType === WATER_TASK_TYPE ||
@@ -854,8 +868,8 @@ export async function PATCH(
         order.settlementDueAt = undefined;
         order.settlementFailureReason = undefined;
       } else if (status === 'completed') {
-        if (order.cafeInquiry && order.status !== 'in_progress' && order.status !== 'paid') {
-          return NextResponse.json({ error: 'Only an active cafe inquiry can be completed.' }, { status: 409 });
+        if (order.status !== 'in_progress' && order.status !== 'paid') {
+          return NextResponse.json({ error: 'Only an active order can be completed.' }, { status: 409 });
         }
         if (!isTaskerOwner) {
           return NextResponse.json(
@@ -883,6 +897,12 @@ export async function PATCH(
 
         if (order.cafeInquiryStatus && !canPayCafeInquiry(order.cafeInquiryStatus)) {
           return NextResponse.json({ error: 'Tasker must reach the cafe before completion.' }, { status: 409 });
+        }
+        try {
+          const coordinates = validateDeliveryCoordinates(body.deliveryCoordinates);
+          if (coordinates) order.deliveryCoordinates = coordinates;
+        } catch (error) {
+          return NextResponse.json({ error: (error as Error).message }, { status: 400 });
         }
         if (order.cafeInquiryStatus) order.cafeInquiryStatus = 'completed';
         order.status = 'completed';

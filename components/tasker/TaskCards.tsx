@@ -12,7 +12,7 @@ export interface TaskCardData {
   firstOrderBonusAmount?: number
   platformFeeBeforeFirstOrderBonus?: number
   pricingModel?: string
-  _id: string; taskType: string; description?: string; store?: string; location: string; status: string
+  _id: string; taskType: string; description?: string; store?: string; location: string; roomNumber?: string; status: string
   taskerFee?: number; serviceFeeDiscountApplied?: boolean; discountCommissionAmount?: number
   cafeInquiry?: boolean; cafeInquiryStatus?: string; isTestOrder?: boolean; isDeclinedTask?: boolean
   hasPaid?: boolean; createdAt: string; deadline?: string; dueDate?: string; deadlineDate?: string

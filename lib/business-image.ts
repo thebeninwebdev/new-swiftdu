@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import sharp from "sharp";
 import { MAX_BUSINESS_IMAGE_BYTES } from "./business-directory-policy";
 
@@ -48,19 +47,8 @@ async function cloudinary(
   image?: Buffer,
 ) {
   const { cloud, key, secret } = config();
-  fields.timestamp = String(Math.floor(Date.now() / 1000));
-  const signature = createHash("sha1")
-    .update(
-      Object.keys(fields)
-        .sort()
-        .map((k) => `${k}=${fields[k]}`)
-        .join("&") + secret,
-    )
-    .digest("hex");
   const form = new FormData();
   for (const [k, v] of Object.entries(fields)) form.set(k, v);
-  form.set("api_key", key);
-  form.set("signature", signature);
   if (image)
     form.set(
       "file",
@@ -69,7 +57,14 @@ async function cloudinary(
     );
   const response = await fetch(
     `https://api.cloudinary.com/v1_1/${encodeURIComponent(cloud)}/image/${action}`,
-    { method: "POST", body: form, signal: AbortSignal.timeout(20000) },
+    {
+      method: "POST",
+      // Server-only HTTPS authentication avoids signatures depending on the host clock.
+      headers: { Authorization: `Basic ${Buffer.from(`${key}:${secret}`).toString("base64")}` },
+      body: form,
+      redirect: "error",
+      signal: AbortSignal.timeout(20000),
+    },
   );
   if (!response.ok)
     throw new Error(`Cloudinary ${action} failed (${response.status})`);

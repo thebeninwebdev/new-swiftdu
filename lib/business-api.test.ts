@@ -68,6 +68,10 @@ test(
         });
       }
       if (address.includes("api.cloudinary.com")) {
+        assert.equal(new Headers(init?.headers).get("Authorization"),
+          `Basic ${Buffer.from("test-key:test-secret").toString("base64")}`);
+        assert.equal((init?.body as FormData).has("timestamp"), false);
+        assert.equal((init?.body as FormData).has("signature"), false);
         if (address.endsWith("/destroy"))
           return Response.json({ result: "ok" });
         uploads++;

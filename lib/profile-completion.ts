@@ -2,7 +2,7 @@ import { normalizeExcoRole } from "@/lib/exco-constants";
 
 export type RequiredProfileField = "name" | "gender" | "phone" | "defaultLocation";
 export type AuthProfileUser = { role?: string | null; excoRole?: string | null; name?: string | null; email?: string | null; phone?: string | null; location?: string | null; defaultLocation?: string | null; profileImage?: string | null; gender?: string | null; birthdayDay?: number | null; birthdayMonth?: number | null; dateOfBirth?: string | Date | null; taskerId?: string | null };
-export const LOCATIONS = ["Amnesty", "Girls Hostel", "Law Hall", "Staff Quarters"] as const;
+export const LOCATIONS = ["Amnesty", "Girls Hostel", "Staff Quarters"] as const;
 export const COMPLETE_PROFILE_PATH = "/complete-profile";
 const hasText = (value?: string | null) => Boolean(value?.trim());
 export function getDefaultLocation(user?: AuthProfileUser | null) { return user?.defaultLocation?.trim() || user?.location?.trim() || ""; }

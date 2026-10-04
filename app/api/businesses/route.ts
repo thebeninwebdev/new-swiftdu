@@ -125,6 +125,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   let recordId: Types.ObjectId | undefined;
   let uploadId: string | undefined;
+  let stage = "database";
   try {
     if (!req.headers.get("content-type")?.startsWith("multipart/form-data"))
       return fail(
@@ -228,7 +229,7 @@ export async function POST(req: NextRequest) {
         candidates.splice(5);
       }
     }
-    const { outcome, review } = await moderateBusinessSubmission(
+    const { outcome, review, error: moderationError } = await moderateBusinessSubmission(
       input,
       imageData.image,
       imageData.mimeType,
@@ -245,7 +246,7 @@ export async function POST(req: NextRequest) {
     if (outcome === "unavailable" || !review)
       return fail(
         "MODERATION_UNAVAILABLE",
-        "Automatic safety checks are temporarily unavailable. Please try again shortly.",
+        moderationError || "Automatic safety checks are temporarily unavailable. Please try again shortly.",
         503,
       );
     if (review && outcome === "duplicate")
@@ -288,6 +289,7 @@ export async function POST(req: NextRequest) {
       pendingImageMime: imageData.mimeType,
     });
     uploadId = `swiftdu-businesses/${recordId}`;
+    stage = "image_upload";
     const uploaded = await uploadBusinessImage(imageData.image, uploadId);
     business.set({
       ...uploaded,
@@ -296,6 +298,7 @@ export async function POST(req: NextRequest) {
       pendingImage: undefined,
       pendingImageMime: undefined,
     });
+    stage = "database_save";
     await business.save();
     return NextResponse.json(
       { message: "Your business is now listed ðŸŽ‰", slug: business.slug },
@@ -331,11 +334,13 @@ export async function POST(req: NextRequest) {
       return duplicate();
     console.error(
       "[POST /api/businesses]",
-      error instanceof Error ? error.name : "Error",
+      { stage, error: error instanceof Error ? error.name : "Error" },
     );
     return fail(
-      recordId ? "UPLOAD_FAILED" : "SUBMISSION_UNAVAILABLE",
-      "Your listing could not be saved. Please try again.",
+      stage === "image_upload" ? "UPLOAD_FAILED" : "SUBMISSION_UNAVAILABLE",
+      stage === "image_upload"
+        ? "Your business image could not be uploaded. Please try again shortly."
+        : "Your listing could not be saved to the directory. Please try again shortly.",
       503,
     );
   }

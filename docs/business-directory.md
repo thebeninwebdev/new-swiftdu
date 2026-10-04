@@ -4,9 +4,9 @@
 
 ## Setup
 
-Set `GEMINI_API_KEY` on the server. `GEMINI_BUSINESS_REVIEW_MODEL` defaults to `gemini-3.8-flash`; override it with a multimodal, structured-output Flash model available in your Google project. Enable billing/quota as appropriate for that project. No Gemini credentials belong in `NEXT_PUBLIC_*`.
+Set `GEMINI_API_KEY` on the server. `GEMINI_BUSINESS_REVIEW_MODEL` defaults to `gemini-3.1-flash-lite`; override it with a multimodal, structured-output Flash model available in your Google project. Enable billing/quota as appropriate for that project. No Gemini credentials belong in `NEXT_PUBLIC_*`.
 
-Reuse `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME`, or set `CLOUDINARY_CLOUD_NAME`. Add server-only `CLOUDINARY_API_KEY` and `CLOUDINARY_API_SECRET` from the same Cloudinary account. Uploads are signed on the server. No new unsigned preset is needed, and the existing profile preset is unchanged. Optionally create a **signed** image upload preset and set `CLOUDINARY_BUSINESS_UPLOAD_PRESET`; it must permit WebP and preserve the supplied `swiftdu-businesses/…` public ID. With this variable blank, signed upload parameters work without a dashboard preset.
+Reuse `NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME`, or set `CLOUDINARY_CLOUD_NAME`. Add server-only `CLOUDINARY_API_KEY` and `CLOUDINARY_API_SECRET` from the same Cloudinary account. Uploads use server-only HTTP Basic Authentication over HTTPS, avoiding timestamp signature failures when the host clock drifts. No new unsigned preset is needed, and the existing profile preset is unchanged. Optionally create a **signed** image upload preset and set `CLOUDINARY_BUSINESS_UPLOAD_PRESET`; it must permit WebP and preserve the supplied `swiftdu-businesses/…` public ID. With this variable blank, authenticated upload parameters work without a dashboard preset.
 
 The existing `MONGODB_URI` is reused. The new `Business` collection creates name, contact, Instagram, slug, category, status and date indexes. MongoDB must permit index creation. Unique name/Instagram indexes and a unique multikey contact index back up human-friendly duplicate queries and prevent concurrent exact-contact races, including swapped phone/WhatsApp numbers.
 

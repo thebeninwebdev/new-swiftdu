@@ -44,7 +44,6 @@ const STEP_TITLES = ['About You', 'Availability', 'Final Questions']
 const LOCATION_OPTIONS: ChoiceOption[] = [
   { value: 'Amnesty', label: 'Amnesty' },
   { value: 'Girls Hostel', label: 'Girls Hostel' },
-  { value: 'Law Hall', label: 'Law Hall' },
   { value: 'Staff Quarters', label: 'Staff Quarters' },
   { value: 'Off campus', label: 'Outside school' },
   { value: 'Other', label: 'Somewhere else' },

@@ -1,3 +1,5 @@
+import { User } from '@/models/user'
+import type { TaskerGenderRestriction } from '@/lib/delivery-policy'
 import webpush, {
   type PushSubscription as WebPushSubscription,
   type SendResult,
@@ -15,7 +17,7 @@ import { TaskerWorkSession } from '@/models/tasker-work-session'
 
 type PushAudience =
   | { userIds: string[] }
-  | { roles: Array<'user' | 'admin' | 'tasker'> }
+  | { roles: Array<'user' | 'admin' | 'tasker'>; taskerGenderRestriction?: TaskerGenderRestriction | null }
 
 interface SendPushNotificationInput {
   audience: PushAudience
@@ -186,6 +188,13 @@ async function getSubscriptionsForAudience(audience: PushAudience) {
 
   if (isTaskerAudience(audience)) {
     userIds = await getApprovedTaskerUserIds()
+    if ('roles' in audience && audience.taskerGenderRestriction !== undefined) {
+      if (!audience.taskerGenderRestriction) return []
+      if (audience.taskerGenderRestriction !== 'any') {
+        const eligible = await User.find({ _id: { $in: userIds }, gender: audience.taskerGenderRestriction }).select('_id').lean()
+        userIds = eligible.map(user => String(user._id))
+      }
+    }
   } else if (isUserIdAudience(audience)) {
     userIds = audience.userIds
   }
