@@ -24,6 +24,7 @@ export default function OfflinePage() {
             height={512}
             className="h-11 w-auto"
             priority
+            unoptimized
           />
           <div className="mt-6 inline-flex items-center gap-3 rounded-full bg-indigo-50 px-4 py-2 text-sm font-semibold text-indigo-700">
             <span className="h-2.5 w-2.5 rounded-full bg-indigo-500 shadow-[0_0_0_8px_rgba(99,102,241,0.12)]" />
@@ -33,9 +34,8 @@ export default function OfflinePage() {
             You&apos;re offline for now.
           </h1>
           <p className="mt-4 text-base leading-7 text-slate-600 sm:text-lg">
-            Swiftdu will reconnect automatically when your internet comes back.
-            You can retry now or return to the homepage once you&apos;re online
-            again.
+            SwiftDU needs an internet connection to place and manage orders.
+            Check your connection and try again.
           </p>
           <OfflineActions />
         </section>

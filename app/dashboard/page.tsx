@@ -1,4 +1,5 @@
 'use client'
+import { DECLINED_TRANSFER_MESSAGE } from '@/lib/tasker-access'
 import { getRoomDestination, validateDeliveryRoom } from '@/lib/delivery-policy'
 import { FirstOrderPriceBreakdown } from '@/components/first-order-bonus'
 import { priceWithOrderDiscounts } from '@/lib/first-order-pricing'
@@ -1292,8 +1293,7 @@ if (stepNumber === detailsStep) {
     ? activeOrder.status === 'pending'
       ? 'We are actively notifying taskers for this errand right now. You can still post another task below.'
       : activeOrder.isDeclinedTask
-        ? activeOrder.declinedMessage ||
-          'The transfer is under review. You can still create another task while our team follows up.'
+        ? DECLINED_TRANSFER_MESSAGE
         : activeOrder.hasPaid
           ? 'Your payment has been confirmed and the task is moving. You can still book another errand below.'
           : 'This order is waiting for payment confirmation. You can open the tracker anytime and still post another task now.'

@@ -1,12 +1,16 @@
 'use client'
 
-import {useState, useEffect, type ReactNode} from 'react'
+import {useState, useEffect, useSyncExternalStore, type ReactNode} from 'react'
 import {useRouter, usePathname} from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
 import {ChevronLeft, LogOut, PlusCircle, ListTodo, User, Bell, Star, BriefcaseBusiness, Menu, X} from 'lucide-react'
 import { useIdleEffect } from '@/hooks/use-idle-effect'
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 
+
+const subscribeToHydration = () => () => {}
+const getClientSnapshot = () => true
+const getServerSnapshot = () => false
 
 // Navigation items configuration
 const navigationItems = [
@@ -91,7 +95,10 @@ function getDashboardPageTitle(pathname: string, pageTitle?: string) {
 }
 
 export default function DashboardMenu({ pageTitle, children }: DashboardMenuProps) {
-  const { data: session } = authClient.useSession()
+  const { data: cachedSession } = authClient.useSession()
+  // Cached client sessions must not change the initial server-rendered markup.
+  const hasHydrated = useSyncExternalStore(subscribeToHydration, getClientSnapshot, getServerSnapshot)
+  const session = hasHydrated ? cachedSession : null
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [hasNotification, setHasNotification] = useState(false)
   const [excoDashboard, setExcoDashboard] = useState<ExcoDashboardAccess | null>(null)

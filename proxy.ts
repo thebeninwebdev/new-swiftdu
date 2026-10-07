@@ -38,6 +38,9 @@ export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const currentPath = `${pathname}${search}`;
 
+  // Public, session-independent fallback, including during suspension.
+  if (pathname === '/offline') return NextResponse.next();
+
   const operationsEnabled = areOperationsEnabled();
 
   // Customer ordering is paused, but authentication and authorized internal setup remain available.

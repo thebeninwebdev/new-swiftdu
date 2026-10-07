@@ -1,16 +1,32 @@
 import type { NextConfig } from "next";
+import { createHash, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import withSerwistInit from "@serwist/next";
 
-const withPWA = require("next-pwa")({
-  dest: "public",
-  disable: process.env.NODE_ENV === "development",
+const withSerwist = withSerwistInit({
+  swSrc: "app/sw.ts",
+  swDest: "public/sw.js",
+  disable: process.env.NODE_ENV !== "production",
   register: true,
-  importScripts: ["/sw-push.js"],
-  cacheStartUrl: false,
-  dynamicStartUrl: false,
-  runtimeCaching: require("./pwa/runtime-caching"),
-  fallbacks: {
-    document: "/offline",
-  },
+  cacheOnNavigation: false,
+  reloadOnOnline: false,
+  // A fresh build replaces the fallback even when HEAD has not changed.
+  additionalPrecacheEntries: [
+    { url: "/offline", revision: randomUUID() },
+    ...["logo.png", "pwa-192x192.png", "pwa-512x512.png", "apple-icon.png"].map((file) => ({
+      url: "/" + file,
+      revision: createHash("sha256").update(readFileSync("public/" + file)).digest("hex"),
+    })),
+  ],
+  // Exclude pages, RSC, API data, arbitrary public files and old workers.
+  manifestTransforms: [async (entries) => ({
+    manifest: entries.filter(({ url }) =>
+      url === "/offline" ||
+      /^\/_next\/static\/.*\.(?:js|css|woff2?|ttf|otf)$/.test(url) ||
+      /^\/(?:logo(?:-white)?|pwa-192x192|pwa-512x512|apple-icon)\.png$/.test(url)
+    ),
+    warnings: [],
+  })],
 });
 
 const nextConfig: NextConfig = {
@@ -54,4 +70,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default withPWA(nextConfig);
+export default withSerwist(nextConfig);

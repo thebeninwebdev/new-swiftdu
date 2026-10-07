@@ -1,4 +1,5 @@
 'use client'
+import { DECLINED_TRANSFER_MESSAGE } from '@/lib/tasker-access'
 import { FirstOrderPriceBreakdown } from '@/components/first-order-bonus'
 import { TrackingHero, TrackingTimeline, TrackingTasker, TrackingOrderSummary, TrackingSupport } from '@/components/customer-order-tracking'
 import { type CafeInquiryFields } from '@/lib/cafe-inquiry'
@@ -228,7 +229,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
         }
         if (previousSnapshotRef.current?.id === nextCurrentOrder._id && !previousSnapshotRef.current.taskerId && nextCurrentOrder.taskerId) toast.success('A tasker accepted your order.')
         if (previousSnapshotRef.current?.id === nextCurrentOrder._id && !previousSnapshotRef.current.hasPaid && nextCurrentOrder.hasPaid) toast.success('Your transfer has been confirmed. Your task is now moving.')
-        if (previousSnapshotRef.current?.id === nextCurrentOrder._id && !previousSnapshotRef.current.isDeclinedTask && Boolean(nextCurrentOrder.isDeclinedTask)) toast.error(nextCurrentOrder.declinedMessage || 'We could not confirm that transfer. Our team will contact you within 24 hours.')
+        if (previousSnapshotRef.current?.id === nextCurrentOrder._id && !previousSnapshotRef.current.isDeclinedTask && Boolean(nextCurrentOrder.isDeclinedTask)) toast.error(DECLINED_TRANSFER_MESSAGE)
       }
       previousSnapshotRef.current = nextCurrentOrder ? { id: nextCurrentOrder._id, taskerId: nextCurrentOrder.taskerId, hasPaid: nextCurrentOrder.hasPaid, isDeclinedTask: nextCurrentOrder.isDeclinedTask } : null
       trackedOrderIdRef.current = isTrackingPage ? nextCurrentOrder?._id || null : null
@@ -252,7 +253,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
       if (nextOrder === existingOrder) return true
       if (!existingOrder.taskerId && nextOrder.taskerId) toast.success('A tasker accepted your order.')
       if (!existingOrder.hasPaid && nextOrder.hasPaid) toast.success('Your transfer has been confirmed. Your task is now moving.')
-      if (!existingOrder.isDeclinedTask && Boolean(nextOrder.isDeclinedTask)) toast.error(nextOrder.declinedMessage || 'We could not confirm that transfer. Our team will contact you within 24 hours.')
+      if (!existingOrder.isDeclinedTask && Boolean(nextOrder.isDeclinedTask)) toast.error(DECLINED_TRANSFER_MESSAGE)
       previousSnapshotRef.current = { id: nextOrder._id, taskerId: nextOrder.taskerId, hasPaid: nextOrder.hasPaid, isDeclinedTask: nextOrder.isDeclinedTask }
       trackedOrderIdRef.current = nextOrder._id; setCurrentOrder(nextOrder)
       setRecentOrders((previous) => previous.map((order) => order._id === nextOrder._id ? mergeOrderUpdate<Order>(order, nextOrder) : order))

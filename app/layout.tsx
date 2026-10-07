@@ -1,3 +1,4 @@
+import { DevelopmentWorkerCleanup } from "@/components/DevelopmentWorkerCleanup";
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { DeferredAppScripts } from "@/components/DeferredAppScripts";
@@ -95,6 +96,7 @@ export default function RootLayout({
       >
         <PublicNavigationShell>{children}</PublicNavigationShell>
         <DeferredAppScripts />
+        <DevelopmentWorkerCleanup />
       </body>
     </html>
   );

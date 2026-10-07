@@ -56,9 +56,11 @@ async function getReadyServiceWorkerRegistration() {
     existingRegistration &&
     existingRegistration.active?.scriptURL !== expectedWorkerUrl
   ) {
-    // Replace stale next-pwa/PushEngage-era workers so push events use our Web Push handler.
-    await existingRegistration.unregister()
-    existingRegistration = undefined
+    // Update in place: unregistering can discard an existing push subscription.
+    existingRegistration = await navigator.serviceWorker.register(expectedWorkerPath, {
+      scope: '/',
+      updateViaCache: 'none',
+    })
   }
 
   if (!existingRegistration) {
@@ -111,6 +113,7 @@ export function PushSubscriptionManager() {
   const [isEnabling, setIsEnabling] = useState(false)
 
   const subscribeToPush = useCallback(async (requestPermission: boolean) => {
+    if (process.env.NODE_ENV !== 'production') return
     if (
       !('serviceWorker' in navigator) ||
       !('PushManager' in window) ||
@@ -200,7 +203,7 @@ export function PushSubscriptionManager() {
   }, [])
 
   useEffect(() => {
-    if (isPending || !session?.user?.id) {
+    if (process.env.NODE_ENV !== 'production' || isPending || !session?.user?.id) {
       return
     }
 

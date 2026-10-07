@@ -53,6 +53,23 @@ export function getSiteUrl() {
   );
 }
 
+export function getAuthBaseUrl() {
+  const url = new URL(
+    process.env.NODE_ENV === "production"
+      ? getSiteUrl()
+      : process.env.NEXT_PUBLIC_BASE_URL?.trim() ||
+          process.env.BASE_URL?.trim() ||
+          process.env.BETTER_AUTH_URL?.trim() ||
+          "http://localhost:3000"
+  );
+
+  if (process.env.NODE_ENV !== "production" && url.hostname === "0.0.0.0") {
+    url.hostname = "localhost";
+  }
+
+  return url.origin;
+}
+
 export const siteUrl = getSiteUrl();
 export const adsenseAccount = `ca-pub-${ADSENSE_PUBLISHER_ID}`;
 export const adsenseScriptSrc =

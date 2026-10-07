@@ -50,7 +50,14 @@ export function TrackingHero({ order, stage, nowMs, searchMessage }: {
         <p className="mt-3 max-w-md break-words text-sm leading-6 text-violet-900/80 dark:text-violet-200">{searching?.detail || stage.detail}</p>
       </div>
       <div className="flex justify-center py-3">
-        <OrderMascot mood={stage.mood} interaction={stage.mood === 'success' ? 'complete' : stage.mood === 'matched' ? 'celebrate' : stage.mood === 'warning' ? 'attention' : stage.mood === 'searching' ? 'scan' : 'consider'} searchPhase={searching?.phase} size="md" />
+        {stage.key === 'review' ? (
+          <Link href="/contact-us" className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-xl bg-violet-600 px-5 py-3 text-sm font-semibold text-white hover:bg-violet-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-600">
+            <MessageCircle aria-hidden="true" className="h-5 w-5" />
+            Contact support
+          </Link>
+        ) : (
+          <OrderMascot mood={stage.mood} interaction={stage.mood === 'success' ? 'complete' : stage.mood === 'matched' ? 'celebrate' : stage.mood === 'warning' ? 'attention' : stage.mood === 'searching' ? 'scan' : 'consider'} searchPhase={searching?.phase} size="md" />
+        )}
       </div>
       {eta ? <div className="border-t border-violet-200/70 pt-4 dark:border-violet-800">
         <p className="text-sm font-semibold">{eta.label}</p>

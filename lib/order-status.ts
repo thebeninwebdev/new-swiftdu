@@ -42,3 +42,19 @@ export function canTaskerCancelOrder(order: {
     !isCustomerPaymentConfirmed(order)
   );
 }
+
+export function canTaskerReportTransferIssue(order: {
+  status: string;
+  hasPaid?: boolean;
+  paymentStatus?: string;
+  isDeclinedTask?: boolean;
+  paymentDisputeResolvedAt?: string | Date;
+  paymentDisputeResolution?: string;
+}) {
+  return (
+    isActiveOrderStatus(order.status) &&
+    isCustomerPaymentConfirmed(order) &&
+    !order.paymentDisputeResolvedAt &&
+    order.paymentDisputeResolution !== "tasker_confirmed_received"
+  );
+}

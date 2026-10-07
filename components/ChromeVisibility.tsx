@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
 
 export const HIDDEN_CHROME_PREFIXES = [
+  "/offline",
   "/suspended",
   "/admin",
   "/cfo-dashboard",

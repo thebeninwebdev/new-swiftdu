@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { Order } from '../models/order'
 import { TaskCard } from '../components/tasker/TaskCards'
 import { PaymentReviewActions } from '../components/tasker/PaymentReviewActions'
-import { canTaskerCancelOrder, isCustomerPaymentConfirmed } from './order-status'
+import { canTaskerCancelOrder, canTaskerReportTransferIssue, isCustomerPaymentConfirmed } from './order-status'
 import { ensureCompletionTimer } from './completion-timer'
 
 test('review actions expose navigation and receipt confirmation, never delivery or cancellation', () => {
@@ -88,4 +88,13 @@ test('active-task cards retain the disputed order alongside a newer task', () =>
   assert.match(html, /href="\/tasker-dashboard\/disputed"/)
   assert.match(html, /Transfer under review/)
   assert.match(html, /href="\/tasker-dashboard\/newer"/)
+})
+
+test('a tasker cannot report payment missing again after confirming receipt', () => {
+  const paidOrder = { status: 'in_progress', hasPaid: true, paymentStatus: 'paid' }
+  assert.equal(canTaskerReportTransferIssue(paidOrder), true)
+  assert.equal(canTaskerReportTransferIssue({ ...paidOrder, isDeclinedTask: true }), false)
+  assert.equal(canTaskerReportTransferIssue({ ...paidOrder, paymentDisputeResolvedAt: new Date().toISOString() }), false)
+  assert.equal(canTaskerReportTransferIssue({ ...paidOrder, paymentDisputeResolution: 'tasker_confirmed_received' }), false)
+  assert.equal(canTaskerReportTransferIssue({ ...paidOrder, status: 'completed' }), false)
 })

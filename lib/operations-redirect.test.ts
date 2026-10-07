@@ -27,7 +27,7 @@ test('suspension blocks customer ordering routes while leaving public setup rout
     assert.equal(home.headers.get('location'), 'https://swiftdu.test/suspended')
     assert.equal(home.headers.get('cache-control'), 'no-store')
 
-    for (const path of ['/auth', '/tasker-signup', '/tasker-signup/signup', '/suspended']) {
+    for (const path of ['/auth', '/tasker-signup', '/tasker-signup/signup', '/suspended', '/offline']) {
       const allowed = await proxy(new NextRequest('https://swiftdu.test' + path))
       assert.equal(allowed.headers.get('location'), null)
       assert.equal(allowed.headers.get('x-middleware-next'), '1')

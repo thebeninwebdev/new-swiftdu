@@ -1,4 +1,5 @@
 'use client'
+import { DECLINED_TRANSFER_MESSAGE } from '@/lib/tasker-access'
 
 import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -121,8 +122,7 @@ export default function DashboardNotifications() {
                   </CardTitle>
                   <p className="mt-1 text-sm leading-6 text-slate-600 dark:text-slate-300">
                     {taskTypeLabels[order.taskType] || 'This order'} is waiting for manual review.{' '}
-                    {order.declinedMessage ||
-                      'The transaction was not found and we will contact you within 24 hours.'}
+                    {DECLINED_TRANSFER_MESSAGE}
                   </p>
                 </div>
               </div>
