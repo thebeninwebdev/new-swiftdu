@@ -53,7 +53,8 @@ Created:
 - `lib/business-directory-policy.ts`
 - `lib/business-ai-review.ts`
 - `lib/business-submission.ts`
-- `lib/business-image.ts`
+- `lib/business-image-validation.ts`
+- `lib/business-image-storage.ts`
 - `lib/business-admin.ts`
 - `lib/business-directory.test.ts`
 - `lib/business-api.test.ts`

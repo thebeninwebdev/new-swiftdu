@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import mongoose from "mongoose";
 import sharp from "sharp";
+import { validateBusinessImage } from "./business-image-validation";
 import { NextRequest } from "next/server";
 
 test(
@@ -227,3 +228,32 @@ test(
     );
   },
 );
+
+
+test("business images decode JPEG/PNG/WebP, resize and convert without enlargement", async () => {
+  for (const format of ["jpeg", "png", "webp"] as const) {
+    const bytes = await sharp({
+      create: { width: 1600, height: 800, channels: 3, background: "#6633ee" },
+    }).toFormat(format).toBuffer();
+    const result = await validateBusinessImage(new File([new Uint8Array(bytes)], "image", { type: `image/${format}` }));
+    const metadata = await sharp(result.image).metadata();
+    assert.equal(result.mimeType, "image/webp");
+    assert.equal(metadata.format, "webp");
+    assert.equal(metadata.width, 1200);
+    assert.equal(metadata.height, 600);
+  }
+  const small = await sharp({ create: { width: 10, height: 20, channels: 3, background: "red" } }).png().toBuffer();
+  const result = await validateBusinessImage(new File([new Uint8Array(small)], "small.png", { type: "image/png" }));
+  const metadata = await sharp(result.image).metadata();
+  assert.equal(metadata.width, 10);
+  assert.equal(metadata.height, 20);
+});
+
+test("business image validation rejects oversized, empty, unsupported and corrupt files", async () => {
+  for (const file of [
+    new File([new Uint8Array(2 * 1024 * 1024 + 1)], "large.png", { type: "image/png" }),
+    new File([], "empty.png", { type: "image/png" }),
+    new File(["<svg/>"], "image.svg", { type: "image/svg+xml" }),
+    new File(["not an image"], "fake.png", { type: "image/png" }),
+  ]) await assert.rejects(() => validateBusinessImage(file));
+});

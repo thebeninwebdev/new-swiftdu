@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { isValidObjectId } from "mongoose";
 import { connectDB } from "@/lib/db";
 import { isBusinessAdmin } from "@/lib/business-admin";
-import { uploadBusinessImage, deleteBusinessImage } from "@/lib/business-image";
+import { uploadBusinessImage, deleteBusinessImage } from "@/lib/business-image-storage";
 import Business from "@/models/business";
 type Context = { params: Promise<{ id: string }> };
 export async function GET(req: NextRequest, context: Context) {

@@ -18,11 +18,11 @@ import {
   type DuplicateCandidate,
 } from "@/lib/business-ai-review";
 import { moderateBusinessSubmission } from "@/lib/business-submission";
+import { validateBusinessImage } from "@/lib/business-image-validation";
 import {
-  validateBusinessImage,
   uploadBusinessImage,
   deleteBusinessImage,
-} from "@/lib/business-image";
+} from "@/lib/business-image-storage";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
