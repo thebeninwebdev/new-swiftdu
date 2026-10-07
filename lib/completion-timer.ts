@@ -10,6 +10,7 @@ type CompletionTimerOrder = {
   taskType?: string | null
   location?: string | null
   hasPaid?: boolean
+  isDeclinedTask?: boolean
   paymentStatus?: string
   paidAt?: Date
   paymentVerifiedAt?: Date
@@ -54,6 +55,7 @@ export function ensureCompletionTimer(order: CompletionTimerOrder) {
 
   if (
     !isPaid ||
+    order.isDeclinedTask ||
     order.status === 'completed' ||
     order.status === 'cancelled'
   ) {

@@ -20,6 +20,7 @@ export async function expireUnmatchedOrder(orderId: string, userId: string) {
     {
       $set: {
         status: 'cancelled',
+        cancellationReason: 'tasker_search_timeout',
         cancelledAt,
         paymentStatus: 'cancelled',
         settlementStatus: 'not_due',

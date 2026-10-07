@@ -10,8 +10,9 @@ export function isCustomerPaymentConfirmed(order: {
   status: string;
   hasPaid?: boolean;
   paymentStatus?: string;
+  isDeclinedTask?: boolean;
 }) {
-  return order.paymentStatus === "paid" || !!order.hasPaid;
+  return !order.isDeclinedTask && (order.paymentStatus === "paid" || !!order.hasPaid);
 }
 
 export function canCustomerCancelOrder(order: {

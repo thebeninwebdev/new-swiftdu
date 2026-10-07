@@ -183,6 +183,7 @@ export default function TaskerDashboardPage() {
 
   const [errands, setErrands] = useState<Errand[]>([])
   const [acceptedErrands, setAcceptedErrands] = useState<Errand[]>([])
+  const [acceptingTaskId, setAcceptingTaskId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -435,6 +436,22 @@ export default function TaskerDashboardPage() {
     }, REALTIME_REVALIDATE_DELAY_MS)
   }, [])
 
+  const acceptTaskFromCard = useCallback(async (orderId: string) => {
+    if (acceptingTaskId) return
+    setAcceptingTaskId(orderId)
+    try {
+      const response = await fetch('/api/errands', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) })
+      const order = await response.json()
+      if (!response.ok) throw new Error(order.error || 'This task is no longer available.')
+      window.dispatchEvent(new Event('swiftdu-work-updated'))
+      router.push(`/tasker-dashboard/${order._id}`)
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Could not accept this task. Please try again.')
+      void loadDashboardRef.current(false)
+    } finally {
+      setAcceptingTaskId(null)
+    }
+  }, [acceptingTaskId, router])
   useEffect(() => {
     if (sessionPending || loadingTaskerProfile) {
       return
@@ -606,5 +623,5 @@ export default function TaskerDashboardPage() {
     return <div className="min-h-screen bg-[#faf9ff] px-4 py-5 text-slate-900 dark:bg-slate-950 dark:text-slate-100"><div className="mx-auto flex max-w-md items-center gap-2 px-1 text-xl font-black tracking-tight text-violet-700 dark:text-violet-300">SwiftDU <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Tasker</span></div><div className="mx-auto mt-7 w-full max-w-md"><div role="dialog" aria-modal="true" aria-labelledby="bank-details-title" className="overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="bg-violet-50 px-6 pb-5 pt-6 dark:bg-violet-950/30"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-lg shadow-violet-500/25"><Building2 className="h-6 w-6" /></div><p className="mt-5 text-sm font-bold text-violet-700 dark:text-violet-300">Get paid</p><h1 id="bank-details-title" className="mt-1 text-2xl font-extrabold leading-tight tracking-tight">Drop account number</h1><p className="mt-2 text-sm leading-5 text-slate-600 dark:text-slate-300">Add your bank and account number so customers can pay you.</p></div><div className="p-6"><div className="mb-6 flex items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:bg-emerald-950/35 dark:text-emerald-100"><ShieldCheck className="h-5 w-5 shrink-0" /><p><span className="font-bold">Your details are private.</span> Only use an account in your own name.</p></div><BankDetailsForm onSaved={(details) => setTaskerProfile((current) => current ? { ...current, bankDetails: details } : current)} /><p className="mt-5 text-center text-xs leading-5 text-slate-500">Please double-check your account number before saving.</p></div></div></div></div>
   }
 
-  return <TaskerHome name={taskerName} errands={errands} accepted={acceptedErrands} loading={loading} refreshing={refreshing} error={error} newTaskAlert={newTaskAlert} refresh={() => void loadDashboard(false)} taskType={taskTypeFilter} setTaskType={setTaskTypeFilter} location={locationFilter} setLocation={setLocationFilter} />
+  return <TaskerHome name={taskerName} errands={errands} accepted={acceptedErrands} loading={loading} refreshing={refreshing} error={error} newTaskAlert={newTaskAlert} refresh={() => void loadDashboard(false)} onAcceptTask={taskId => void acceptTaskFromCard(taskId)} acceptingTaskId={acceptingTaskId} taskType={taskTypeFilter} setTaskType={setTaskTypeFilter} location={locationFilter} setLocation={setLocationFilter} />
 }

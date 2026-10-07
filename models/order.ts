@@ -79,6 +79,7 @@ export interface IOrder extends Document, CafeInquiryFields {
   prematureCompletionReported?: boolean;
   prematureCompletionReportedAt?: Date;
   cancelledAt?: Date;
+  cancellationReason?: 'tasker_search_timeout';
   createdAt: Date;
   hasPaid: boolean;
   updatedAt: Date;
@@ -88,6 +89,9 @@ export interface IOrder extends Document, CafeInquiryFields {
   declinedReason?: 'transaction_not_found' | 'other';
   declinedMessage?: string;
   declinedByTaskerAt?: Date;
+  paymentDisputeResolvedAt?: Date;
+  paymentDisputeResolution?: 'tasker_confirmed_received';
+  paymentEventuallyReceivedAt?: Date;
   paymentProvider?: 'flutterwave' | 'manual_transfer';
   paymentStatus: 'unpaid' | 'initialized' | 'paid' | 'failed' | 'cancelled';
   paymentReference?: string;
@@ -389,6 +393,7 @@ const orderSchema = new Schema<IOrder>(
     },
     prematureCompletionReportedAt: Date,
     cancelledAt: Date,
+    cancellationReason: { type: String, enum: ['tasker_search_timeout'] },
     hasPaid: {
       type: Boolean,
       default: false
@@ -405,6 +410,9 @@ const orderSchema = new Schema<IOrder>(
     },
     declinedMessage: String,
     declinedByTaskerAt: Date,
+    paymentDisputeResolvedAt: Date,
+    paymentDisputeResolution: { type: String, enum: ['tasker_confirmed_received'] },
+    paymentEventuallyReceivedAt: Date,
     taskerName: String,
     paymentProvider: {
       type: String,

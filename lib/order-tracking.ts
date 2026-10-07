@@ -5,9 +5,11 @@ export const TASKER_SEARCH_TIMEOUT_MS = 7 * 60 * 1000
 
 export type TrackingOrder = CafeInquiryFields & {
   status: string
+  cancellationReason?: string
   taskerId?: string
   hasPaid?: boolean
   isDeclinedTask?: boolean
+  paymentDisputeResolution?: string
   cafeInquiry?: boolean
   cafeInquiryFeePaid?: boolean
   cafeInquiryDetailsSubmitted?: boolean
@@ -56,9 +58,10 @@ export function getTrackingStage(order: TrackingOrder): TrackingStage {
   const workingLabel = inquiry ? 'Checking the cafe' : shopping ? 'Getting your order' : 'Working on your task'
   const steps = ['Finding a tasker', 'Order accepted', workingLabel, inquiry ? 'Inquiry completed' : 'Delivered']
   // Terminal status takes precedence over retained assignment/payment/cafe history.
-  if (order.status === 'cancelled') return { key: 'cancelled', title: 'Order cancelled', label: 'Cancelled', detail: 'This order was cancelled.', activeIndex: 0, steps: ['Order cancelled'], mood: 'warning' }
+  if (order.status === 'cancelled') return { key: 'cancelled', title: 'Order cancelled', label: 'Cancelled', detail: order.cancellationReason === 'tasker_search_timeout' ? 'No tasker accepted within 7 minutes, so your request was automatically cancelled. Please retry to find a tasker.' : 'This order was cancelled.', activeIndex: 0, steps: ['Order cancelled'], mood: 'warning' }
   if (order.status === 'completed') return { key: 'completed', title: inquiry ? 'Your cafe check is complete!' : 'Your order has arrived!', label: inquiry ? 'Completed' : 'Delivered', detail: inquiry ? 'Your tasker has finished checking the cafe.' : 'Your tasker marked your order as delivered. Thank you for using SwiftDU.', activeIndex: 3, steps, mood: 'success' }
   if (order.isDeclinedTask) return { key: 'review', title: 'We’re checking your payment', label: 'Payment under review', detail: 'SwiftDU is reviewing the transfer. Contact support if you need help.', activeIndex: 2, steps: [...steps.slice(0, 2), 'Checking payment', steps[3]], mood: 'warning' }
+  if (order.paymentDisputeResolution === 'tasker_confirmed_received' && isCustomerPaymentConfirmed(order)) return { key: 'working', title: 'Payment confirmed \u2713', label: 'Payment confirmed', detail: 'Your Tasker has confirmed receiving your payment. Your order is continuing.', activeIndex: 2, steps, mood: 'matched' }
   if (order.cafeInquiryStatus && !['waiting_for_tasker', 'tasker_assigned'].includes(order.cafeInquiryStatus)) return { key: 'working', title: 'Your tasker is checking the cafe', label: 'Cafe check in progress', detail: cafeStatusLabels[order.cafeInquiryStatus], activeIndex: 2, steps, mood: 'thinking' }
   // Payment enables fulfilment; it does not prove pickup or departure. There is
   // no separate heading-to-customer event in the current order model.

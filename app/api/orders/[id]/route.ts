@@ -1,3 +1,4 @@
+import { resolvePaymentDispute } from '@/lib/payment-dispute';
 import { validateDeliveryCoordinates } from '@/lib/delivery-coordinates';
 import { classifyDeliveryLocation, validateDeliveryRoom } from '@/lib/delivery-policy';
 import { clearZeroFeeSettlement, saveOrderLifecycle, OrderChangedError } from '@/lib/first-order-bonus';
@@ -135,31 +136,25 @@ export async function PATCH(
     }
 
     if (clearDeclinedTask === true) {
-      if (!isTaskerOwner || isUserOwner) {
-        return NextResponse.json(
-          { error: 'Only the assigned tasker can clear this declined task flag.' },
-          { status: 403 }
-        );
+      if (!isTaskerOwner || !order.taskerId || isUserOwner) {
+        return NextResponse.json({ error: 'Only the assigned tasker can confirm receiving this payment.' }, { status: 403 });
       }
-
-      if (order.status !== 'in_progress') {
-        return NextResponse.json(
-          { error: 'Only in-progress tasks can be cleared from the tasker dashboard.' },
-          { status: 400 }
-        );
+      if (order.status !== 'in_progress' && order.status !== 'paid') {
+        return NextResponse.json({ error: 'Only active orders can have their payment confirmed.' }, { status: 409 });
       }
-
+      // A repeated confirmation returns the saved result without restarting its timer.
       if (!order.isDeclinedTask) {
-        return NextResponse.json(
-          { error: 'This task is not currently declined.' },
-          { status: 400 }
-        );
+        if (order.paymentDisputeResolution === 'tasker_confirmed_received' && order.hasPaid && order.paymentStatus === 'paid') return NextResponse.json(order);
+        return NextResponse.json({ error: 'This order is not under payment review.' }, { status: 409 });
       }
+      const resolved = await resolvePaymentDispute(order, order.taskerId);
+      if (!resolved) return NextResponse.json({ error: 'This order changed. Refresh and try again.' }, { status: 409 });
+      emitOrderUpdated(resolved);
+      return NextResponse.json(resolved);
+    }
 
-      resetDeclinedTask();
-      await order.save();
-      emitOrderUpdated(order);
-      return NextResponse.json(order);
+    if (order.isDeclinedTask) {
+      return NextResponse.json({ error: 'Payment is under review. Confirm receipt of the payment before continuing this order.' }, { status: 409 });
     }
 
     if (extendCompletionTimer === true) {

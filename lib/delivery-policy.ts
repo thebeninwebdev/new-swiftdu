@@ -15,17 +15,19 @@ export const DELIVERY_DESTINATIONS: ReadonlyArray<{
 
 export function classifyDeliveryLocation(location?: string | null): TaskerGenderRestriction | undefined {
   const normalized = String(location || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  if (!normalized) return undefined
   const matches = DELIVERY_DESTINATIONS.filter(destination => destination.aliases.some(alias =>
     ` ${normalized} `.includes(` ${alias} `)
   ))
   const restricted = new Set(matches.map(destination => destination.restriction).filter(value => value !== 'any'))
   if (restricted.size > 1) return undefined
-  return restricted.size === 1 ? [...restricted][0] : matches.length ? 'any' : undefined
+  return restricted.size === 1 ? [...restricted][0] : 'any'
 }
 
 export function getOrderRestriction(order: { location?: string | null; taskerGenderRestriction?: TaskerGenderRestriction | null }) {
-  // Reclassify known destinations so stale/imported metadata cannot weaken them.
-  return classifyDeliveryLocation(order.location) ?? order.taskerGenderRestriction ?? undefined
+  // The delivery destination alone determines eligibility, including other locations.
+  // Stale stored restrictions must neither exclude taskers nor weaken hostel rules.
+  return classifyDeliveryLocation(order.location)
 }
 
 export function canTaskerDeliver(order: { location?: string | null; taskerGenderRestriction?: TaskerGenderRestriction | null }, gender?: string | null) {

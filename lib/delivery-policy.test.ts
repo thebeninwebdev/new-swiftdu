@@ -11,16 +11,21 @@ test('destination classification is independent of customer gender and persists 
   assert.equal(classifyDeliveryLocation('Boys Hostel room 4'), 'male')
   assert.equal(classifyDeliveryLocation('Amnesty Hostel room 4'), 'male')
   assert.equal(classifyDeliveryLocation('Amnesty'), 'male')
-  assert.equal(classifyDeliveryLocation('Law Hall'), undefined)
+  assert.equal(classifyDeliveryLocation('Law Hall'), 'any')
   assert.equal(classifyDeliveryLocation('Library 2nd floor'), 'any')
-  assert.equal(classifyDeliveryLocation('unknown building'), undefined)
+  assert.equal(classifyDeliveryLocation('unknown building'), 'any')
   assert.equal(classifyDeliveryLocation('Girls Hostel / Boys Hostel'), undefined)
   assert.equal(canTaskerDeliver({ location: 'Girls Hostel', taskerGenderRestriction: 'any' }, 'male'), false)
-  assert.equal(canTaskerDeliver({ location: 'Unknown' }, 'female'), false)
+  assert.equal(canTaskerDeliver({ location: 'Unknown' }, 'female'), true)
+  assert.equal(classifyDeliveryLocation('   '), undefined)
+  for (const gender of ['male', 'female', 'other', undefined]) {
+    assert.equal(canTaskerDeliver({ location: 'New campus building', taskerGenderRestriction: 'female' }, gender), true)
+  }
+  assert.equal(canTaskerDeliver({ location: 'Girls Hostel / Boys Hostel', taskerGenderRestriction: 'any' }, 'male'), false)
   const order = new Order({ userId: 'customer', taskType: 'restaurant', location: 'Girls Hostel', amount: 1, commission: 1, totalAmount: 2, taskerGenderRestriction: 'any' })
   await order.validate()
   assert.equal(order.taskerGenderRestriction, 'female')
-  order.location = 'Library'
+  order.location = 'New campus building'
   await order.validate()
   assert.equal(order.taskerGenderRestriction, 'any')
 })
@@ -58,7 +63,7 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
     event: 'created', order: { _id: 'order', userId: 'customer', location, taskType, amount: 100 },
   })
   for (const [location, expected] of [
-    ['Girls Hostel', ['-1001']], ['Amnesty Hostel', ['-1002']], ['Library', ['-1001', '-1002']],
+    ['Girls Hostel', ['-1001']], ['Amnesty Hostel', ['-1002']], ['Library', ['-1001', '-1002']], ['New campus building', ['-1001', '-1002']],
   ] as const) {
     sent.length = 0
     const result = await notify(location)
@@ -127,6 +132,9 @@ test('direct acceptance endpoint rejects opposite and missing gender before assi
   assert.equal((await accept()).status, 200)
   gender = 'female'
   assert.equal((await accept()).status, 200)
-  assert.equal(assignments, 4)
+  location = 'New campus building'
+  gender = undefined
+  assert.equal((await accept()).status, 200)
+  assert.equal(assignments, 5)
 })
 

@@ -42,6 +42,14 @@ export async function POST(
       )
     }
 
+    if (order.isDeclinedTask) {
+      return NextResponse.json({ order })
+    }
+
+    if (order.paymentDisputeResolvedAt) {
+      return NextResponse.json({ error: 'You already confirmed receiving this payment. Contact support for further help.' }, { status: 409 })
+    }
+
     if (!order.hasPaid && order.paymentStatus !== 'paid') {
       return NextResponse.json(
         { error: 'The customer has not marked this transfer as sent yet.' },
@@ -49,10 +57,7 @@ export async function POST(
       )
     }
 
-    if (order.isDeclinedTask) {
-      return NextResponse.json({ order })
-    }
-
+    order.$where = { updatedAt: order.updatedAt, status: order.status, taskerId: order.taskerId }
     order.hasPaid = false
     order.paidAt = undefined
     order.completionTimerStartedAt = undefined
@@ -84,6 +89,9 @@ export async function POST(
       order,
     })
   } catch (error) {
+    if (error instanceof Error && error.name === 'DocumentNotFoundError') {
+      return NextResponse.json({ error: 'This order changed. Refresh and try again.' }, { status: 409 })
+    }
     console.error('[POST /api/orders/[id]/report-transfer-issue]', error)
 
     return NextResponse.json(

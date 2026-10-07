@@ -194,3 +194,13 @@ test('tasker identity uses an icon and real contact data, with no invented ratin
   assert.match(missing, /Contact details are unavailable/)
   assert.doesNotMatch(missing, /href="#"|<img/)
 })
+
+test('timed out searches retain the retry explanation through realtime updates', () => {
+  const order = { ...assigned, status: 'cancelled', taskerId: undefined, cancellationReason: 'tasker_search_timeout' }
+  const payload = toOrderSocketPayload(order)
+  assert.equal(payload.cancellationReason, 'tasker_search_timeout')
+  const stage = getTrackingStage({ ...order, ...payload })
+  assert.match(stage.detail, /7 minutes/)
+  assert.match(stage.detail, /Please retry/)
+  assert.equal(isWaitingForTasker(order), false)
+})

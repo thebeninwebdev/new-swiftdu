@@ -8,11 +8,11 @@ lib/delivery-policy.ts is the shared destination catalogue. The current booking 
 
 - Girls Hostel / Female Hostel: female.
 - Amnesty / Amnesty Hostel / Boys Hostel / Male Hostel: male.
-- Library, PLT, NDDC Auditorium, Staff Quarters, Lecturers Block, Bursary: any.
-- Unknown or conflicting destinations: unclassified; no Telegram broadcast or acceptance. Creation/location edits reject unrecognized destinations.
-- Law Hall was removed from profile and tasker signup location options, as requested. Existing Law Hall destinations are unclassified.
+- Every other non-empty destination: any (open to all taskers).
+- Empty or conflicting hostel destinations: unclassified; no Telegram broadcast or acceptance. Creation/location edits reject these ambiguous destinations.
+- Other free-text destinations, including legacy Law Hall orders, are open to all taskers.
 
-models/order.ts derives taskerGenderRestriction on validation of new orders and location changes, covering creation and retry. Legacy orders use the same catalogue at read/accept time, so a bulk database migration is not required for recognized destinations. Imported records with a structured restriction can use it when a destination cannot be classified.
+models/order.ts derives taskerGenderRestriction on validation of new orders and location changes, covering creation and retry. Legacy orders use the same catalogue at read/accept time, so a bulk database migration is not required for recognized destinations. Stored restrictions never override the delivery destination; non-hostel destinations remain open to all taskers.
 
 ## Telegram configuration
 

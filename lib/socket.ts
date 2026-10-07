@@ -11,9 +11,13 @@ export type OrderSocketPayload = CafeInquiryFields & {
   taskerId?: string
   taskerName?: string
   status: string
+  cancellationReason?: string
   hasPaid?: boolean
   isDeclinedTask?: boolean
   declinedMessage?: string
+  paymentDisputeResolution?: string
+  paymentDisputeResolvedAt?: string
+  paymentEventuallyReceivedAt?: string
   cafeInquiry?: boolean
   cafeInquiryDetailsSubmitted?: boolean
   serviceFee?: number
@@ -66,9 +70,13 @@ type SocketOrderLike = CafeInquiryFields & {
   taskerId?: { toString(): string } | string | null
   taskerName?: string
   status: string
+  cancellationReason?: string
   hasPaid?: boolean
   isDeclinedTask?: boolean
   declinedMessage?: string
+  paymentDisputeResolution?: string
+  paymentDisputeResolvedAt?: Date | string
+  paymentEventuallyReceivedAt?: Date | string
   cafeInquiry?: boolean
   cafeInquiryDetailsSubmitted?: boolean
   serviceFee?: number
@@ -146,9 +154,13 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     taskerId: serializeId(order.taskerId),
     taskerName: order.taskerName,
     status: String(order.status),
+    cancellationReason: order.cancellationReason,
     hasPaid: order.hasPaid,
     isDeclinedTask: order.isDeclinedTask,
     declinedMessage: order.declinedMessage,
+    paymentDisputeResolution: order.paymentDisputeResolution,
+    paymentDisputeResolvedAt: serializeDate(order.paymentDisputeResolvedAt),
+    paymentEventuallyReceivedAt: serializeDate(order.paymentEventuallyReceivedAt),
     cafeInquiry: order.cafeInquiry,
     cafeInquiryStatus: order.cafeInquiryStatus,
     cafeAvailableItems: order.cafeAvailableItems,

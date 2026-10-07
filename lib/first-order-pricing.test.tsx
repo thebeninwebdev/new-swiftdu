@@ -35,7 +35,7 @@ test('bonus removes only actual platform share across every pricing model', () =
 })
 
 test('repricing from normal pricing never subtracts twice', () => {
-  let order = { ...calculateOrderPricing({ taskType: 'restaurant', amount: 2000 }), ...priceWithOrderDiscounts(calculateOrderPricing({ taskType: 'restaurant', amount: 2000 }), { firstOrderBonus: true }) }
+  let order: ReturnType<typeof priceWithOrderDiscounts> = { ...calculateOrderPricing({ taskType: 'restaurant', amount: 2000 }), ...priceWithOrderDiscounts(calculateOrderPricing({ taskType: 'restaurant', amount: 2000 }), { firstOrderBonus: true }) }
   const normal = calculateOrderPricing({ taskType: 'restaurant', amount: 2500, restaurantPeopleCount: 4, restaurantTakeawayCount: 3 })
   for (let i = 0; i < 5; i++) {
     order = { ...order, ...normal, ...priceWithOrderDiscounts(normal, { firstOrderBonus: true }) }

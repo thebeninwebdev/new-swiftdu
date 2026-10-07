@@ -49,6 +49,7 @@ interface Order extends CafeInquiryFields {
   cafeInquiry?: boolean
   cafeInquiryFeePaid?: boolean
   cafeInquiryDetailsSubmitted?: boolean
+  cancellationReason?: string
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   taskerName?: string
   taskerId?: string
@@ -56,6 +57,7 @@ interface Order extends CafeInquiryFields {
   updatedAt?: string
   hasPaid?: boolean
   isDeclinedTask?: boolean
+  paymentDisputeResolution?: string
   declinedMessage?: string
   paymentStatus?: 'unpaid' | 'initialized' | 'paid' | 'failed' | 'cancelled'
   paymentLink?: string
@@ -331,8 +333,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
           currentOrderRef.current = order
           setCurrentOrderState(order)
           setRecentOrders((previous) => [order, ...previous.filter((item) => item._id !== orderId)])
-          toast.info('No tasker accepted within 7 minutes. Your request was cancelled.')
-          router.replace('/dashboard/tasks')
+          toast.info('No tasker accepted within 7 minutes. Your request was cancelled. Please retry.')
           return
         }
         if (response.status === 409) {
@@ -349,7 +350,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
 
     timer = window.setTimeout(expire, Math.max(0, startedAt + TASKER_SEARCH_TIMEOUT_MS - Date.now()))
     return () => { stopped = true; window.clearTimeout(timer) }
-  }, [waitingOrderId, waitingStartedAt, router])
+  }, [waitingOrderId, waitingStartedAt])
 
   if (loading) {
     return (
@@ -406,7 +407,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
           </section> : null}
           <TrackingSupport>
             {canCancelCurrentOrder ? <button type="button" onClick={requestCancelOrder} disabled={Boolean(updatingAction || confirmingTransfer)} className="min-h-11 rounded-xl px-4 text-sm font-semibold text-rose-600 hover:bg-rose-50 disabled:opacity-50 dark:text-rose-300 dark:hover:bg-rose-950/30">{updatingAction === 'cancel' ? 'Cancelling...' : 'Cancel order'}</button> : null}
-            {canRetryOrder(currentOrder) ? <button type="button" onClick={() => void handleRetryOrder(currentOrder)} disabled={Boolean(updatingAction || confirmingTransfer)} className="min-h-11 rounded-xl px-4 text-sm font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-50 dark:text-violet-300 dark:hover:bg-violet-950">{updatingAction === 'retry' ? 'Sending...' : 'Order again'}</button> : null}
+            {canRetryOrder(currentOrder) ? <button type="button" onClick={() => void handleRetryOrder(currentOrder)} disabled={Boolean(updatingAction || confirmingTransfer)} className="min-h-11 rounded-xl px-4 text-sm font-semibold text-violet-700 hover:bg-violet-50 disabled:opacity-50 dark:text-violet-300 dark:hover:bg-violet-950">{updatingAction === 'retry' ? 'Sending...' : currentOrder.status === 'cancelled' ? 'Retry task' : 'Order again'}</button> : null}
           </TrackingSupport>
         </> : isTrackingPage ? <section className="py-12 text-center">
           <OrderMascot mood="warning" interaction="attention" size="md" />
