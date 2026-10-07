@@ -10,6 +10,7 @@ import {
   LayoutDashboard,
   LogOut,
   Menu,
+  MapPin,
   ShoppingBag,
   Store,
   ShieldCheck,
@@ -20,6 +21,7 @@ import {
 
 const adminNavigation = [
   { label: 'Businesses', href: '/admin/businesses', icon: Store, description: 'Review community listings' },
+  { label: 'Locations', href: '/admin/locations', icon: MapPin, description: 'Map the campus' },
   {
     label: 'Overview',
     href: '/admin',

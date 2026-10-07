@@ -69,3 +69,9 @@ npx.cmd tsx --test lib/delivery-coordinates.integration.test.ts lib/cafe-inquiry
 
 The API tests invoke the real handlers with mocked authentication/persistence dependencies; the separate MongoDB test verifies actual storage, query exclusion and JSON redaction. Browser geolocation uses deterministic success/error doubles, so physical-device permission prompts still require a manual device check.
 
+
+## Campus mapping - stage 2
+
+Authorized administrators and executive management can now create verified, manually captured campus points at `/admin/locations`. `CampusLocation` is a separate self-referencing collection: every parent landmark and child room/entrance is independently addressable, while duplicate normalized names are prevented only within the same parent. It stores coordinates, accuracy, capture time, active state, creation actor, source (`admin_manual`), observation count, and future confidence metadata.
+
+This is deliberately separate from delivery observations. Mapping coordinates are validated for freshness only when an admin submits a new capture; their stored `capturedAt` timestamp is historical metadata and is not treated as an expiry on read. No automated delivery-coordinate averaging or matching is part of this stage.
