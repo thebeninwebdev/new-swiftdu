@@ -7,7 +7,7 @@ import { twoFactor } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 import { magicLink } from "better-auth/plugins";
 import { AuthEmailRateLimit } from "@/models/auth-email-rate-limit";
-import { getAuthBaseUrl } from "@/lib/site";
+import { getAuthBaseUrl, getTrustedOrigins } from "@/lib/site";
 
 const client = await clientPromise;
 const db = client.db();
@@ -131,6 +131,7 @@ const requiredSignupDetailsGuard = (): BetterAuthPlugin => ({
 export const auth = betterAuth({
   appName: "SwiftDU",
   baseURL: appURL.origin,
+  trustedOrigins: getTrustedOrigins(),
   session: {
     expiresIn: THIRTY_DAYS_IN_SECONDS,
     updateAge: ONE_DAY_IN_SECONDS,

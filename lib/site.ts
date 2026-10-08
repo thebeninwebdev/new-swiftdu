@@ -47,6 +47,26 @@ export function getAuthBaseUrl() {
   return url.origin;
 }
 
+
+export function getTrustedOrigins() {
+  const origins = new Set<string>()
+  const isPreview = process.env.VERCEL_ENV === "preview"
+  const isLocal = process.env.NODE_ENV !== "production" && !process.env.VERCEL_ENV
+
+  if (isPreview) {
+    // VERCEL_URL is platform-provided; never derive trust from a request header.
+    origins.add(getAuthBaseUrl())
+  } else if (isLocal) {
+    origins.add("http://localhost:3000")
+    origins.add(getAuthBaseUrl())
+  } else {
+    origins.add(DEFAULT_SITE_URL)
+    origins.add("https://www.swiftdu.org")
+    origins.add(getAuthBaseUrl())
+  }
+
+  return [...origins]
+}
 export const siteUrl = getSiteUrl();
 export const adsenseAccount = `ca-pub-${ADSENSE_PUBLISHER_ID}`;
 export const adsenseScriptSrc =
