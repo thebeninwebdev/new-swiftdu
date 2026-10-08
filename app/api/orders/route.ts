@@ -44,6 +44,7 @@ import { canCreateOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 
 export async function POST(request: NextRequest) {
+  const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() || undefined
   try {
     await connectDB();
 
@@ -53,6 +54,14 @@ export async function POST(request: NextRequest) {
 
     if (!session || !session.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    // A retry must only ever see its own original order.
+    if (idempotencyKey) {
+      const existingOrder = await Order.findOne({ userId: session.user.id, idempotencyKey }).lean()
+      if (existingOrder) {
+        return NextResponse.json(existingOrder)
+      }
     }
 
     // Customer operational details are required to place an order, not to authenticate.
@@ -415,6 +424,7 @@ export async function POST(request: NextRequest) {
 
     const order = new Order({
       userId: session.user.id,
+      idempotencyKey,
       source: 'website',
       taskType: normalizedTaskType,
       description: isCafeInquiry ? 'Text me what is in cafe' : normalizedDescription,
@@ -536,6 +546,14 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(order, { status: 201 });
   } catch (error) {
+    // The unique sparse index closes the race between two simultaneous retries.
+    if (idempotencyKey && (error as { code?: number }).code === 11000) {
+      const session = await auth.api.getSession({ headers: request.headers })
+      if (session?.user?.id) {
+        const existingOrder = await Order.findOne({ userId: session.user.id, idempotencyKey }).lean()
+        if (existingOrder) return NextResponse.json(existingOrder)
+      }
+    }
     console.error('[Orders POST Error]:', error);
     return NextResponse.json(
       { error: 'Failed to create order' },

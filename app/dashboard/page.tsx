@@ -364,6 +364,7 @@ export default function ErrandWizardPage() {
   const fetchingActiveOrderRef = useRef(false)
   const isRealtimePausedRef = useRef(false)
   const realtimeResumeTimeoutRef = useRef<number | null>(null)
+  const orderIdempotencyKeyRef = useRef<string | null>(null)
 
   const [formData, setFormData] = useState<ErrandData>({
     taskType: 'restaurant',
@@ -1203,6 +1204,9 @@ if (stepNumber === detailsStep) {
   }
 
   const createOrder = async () => {
+    // Keep one key across retries of this logical submission.
+    const idempotencyKey = orderIdempotencyKeyRef.current || crypto.randomUUID()
+    orderIdempotencyKeyRef.current = idempotencyKey
     try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { toast.error((error as Error).message); return }
     pauseRealtime(REALTIME_PAUSE_MS * 2)
 
@@ -1213,7 +1217,7 @@ if (stepNumber === detailsStep) {
     try {
       const response = await fetch('/api/orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
           ...formData,
           roomNumber: getRoomDestination(formData.location)?.requiresRoomNumber ? formData.roomNumber : undefined,

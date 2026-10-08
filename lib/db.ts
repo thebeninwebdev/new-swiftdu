@@ -13,6 +13,11 @@ import mongoose from "mongoose";
 
 const MONGODB_URI = process.env.MONGODB_URI!;
 
+function positiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value || '', 10)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+}
+
 if (!MONGODB_URI) {
   throw new Error("Please define the MONGODB_URI environment variable");
 }
@@ -35,6 +40,15 @@ export async function connectDB() {
   if (!cached.promise) {
     cached.promise = mongoose.connect(MONGODB_URI, {
       bufferCommands: false,
+      // Each Fluid Compute instance has its own pool. Keep this deliberately
+      // conservative and let deployments tune it to their Atlas tier.
+      maxPoolSize: positiveInteger(process.env.MONGODB_MAX_POOL_SIZE, 10),
+      minPoolSize: positiveInteger(process.env.MONGODB_MIN_POOL_SIZE, 0),
+      maxIdleTimeMS: positiveInteger(process.env.MONGODB_MAX_IDLE_TIME_MS, 30_000),
+      serverSelectionTimeoutMS: positiveInteger(
+        process.env.MONGODB_SERVER_SELECTION_TIMEOUT_MS,
+        10_000
+      ),
     });
   }
 

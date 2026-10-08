@@ -12,7 +12,8 @@ import { Building2, ShieldCheck } from 'lucide-react'
 import { BankDetailsForm } from '@/components/tasker/BankDetailsForm'
 
 const REALTIME_REVALIDATE_DELAY_MS = 1200
-const REALTIME_POLL_INTERVAL_MS = 10000
+const HEALTHY_SOCKET_RECONCILE_INTERVAL_MS = 60_000
+const UNHEALTHY_SOCKET_POLL_INTERVAL_MS = 10_000
 
 interface Errand extends CafeInquiryFields {
   cafeInquiry?: boolean
@@ -192,6 +193,7 @@ export default function TaskerDashboardPage() {
   const [newTaskAlert, setNewTaskAlert] = useState(false)
   const [taskerProfile, setTaskerProfile] = useState<TaskerData | null>(null)
   const [loadingTaskerProfile, setLoadingTaskerProfile] = useState(true)
+  const [socketHealthy, setSocketHealthy] = useState(false)
 
 
   const fetchingRef = useRef(false)
@@ -426,8 +428,9 @@ export default function TaskerDashboardPage() {
   }, [loadDashboard])
 
   const scheduleDashboardRefresh = useCallback(() => {
+    // Local socket state is immediate; one timer coalesces event bursts.
     if (refreshTimeoutRef.current) {
-      window.clearTimeout(refreshTimeoutRef.current)
+      return
     }
 
     refreshTimeoutRef.current = window.setTimeout(() => {
@@ -474,10 +477,15 @@ export default function TaskerDashboardPage() {
 
     const socket = acquireSharedSocket()
     const handleConnect = () => {
+      setSocketHealthy(true)
       socket.emit('tasks:watch', { taskerMode: taskerProfile.taskerMode || 'live' })
       void loadDashboardRef.current(false)
     }
+    const handleDisconnect = () => {
+      setSocketHealthy(false)
+    }
     const handleConnectError = () => {
+      setSocketHealthy(false)
       scheduleDashboardRefresh()
     }
     const handleTaskUpdate = (payload?: RealtimeTaskPayload) => {
@@ -567,6 +575,7 @@ export default function TaskerDashboardPage() {
     }
 
     socket.on('connect', handleConnect)
+    socket.on('disconnect', handleDisconnect)
     socket.on('connect_error', handleConnectError)
     socket.on('tasks:updated', handleTaskUpdate)
     handleConnect()
@@ -576,6 +585,7 @@ export default function TaskerDashboardPage() {
         socket.emit('tasks:unwatch')
       }
       socket.off('connect', handleConnect)
+      socket.off('disconnect', handleDisconnect)
       socket.off('connect_error', handleConnectError)
       socket.off('tasks:updated', handleTaskUpdate)
       releaseSharedSocket(socket)
@@ -604,7 +614,9 @@ export default function TaskerDashboardPage() {
 
   useVisibleInterval(
     () => void loadDashboardRef.current(false, { silent: true }),
-    shouldPollForTasks ? REALTIME_POLL_INTERVAL_MS : null
+    shouldPollForTasks
+      ? (socketHealthy ? HEALTHY_SOCKET_RECONCILE_INTERVAL_MS : UNHEALTHY_SOCKET_POLL_INTERVAL_MS)
+      : null
   )
 
   useEffect(() => {

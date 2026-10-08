@@ -4,6 +4,7 @@ import mongoose, { Schema, Document, type Model } from 'mongoose';
 
 export interface IOrder extends Document, CafeInquiryFields {
   userId: string;
+  idempotencyKey?: string;
   trackingToken?: string;
   source?: 'website' | 'whatsapp';
   customerPhone?: string;
@@ -124,6 +125,7 @@ const orderSchema = new Schema<IOrder>(
       required: true,
       index: true,
     },
+    idempotencyKey: { type: String, trim: true, maxlength: 200 },
     trackingToken: {
       type: String,
       index: {
@@ -472,6 +474,8 @@ orderSchema.pre('validate', function () {
 });
 
 orderSchema.index({ deliveryDestinationKey: 1, roomNumber: 1, status: 1 });
+// Returns the original order when a mobile client retries one submission.
+orderSchema.index({ userId: 1, idempotencyKey: 1 }, { unique: true, sparse: true });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ userId: 1, isTestOrder: 1, status: 1 });
 orderSchema.index({ taskerId: 1, status: 1, createdAt: -1 });
