@@ -13,7 +13,19 @@ const client = await clientPromise;
 const db = client.db();
 const THIRTY_DAYS_IN_SECONDS = 60 * 60 * 24 * 30;
 const ONE_DAY_IN_SECONDS = 60 * 60 * 24;
-const appURL = new URL(getAuthBaseUrl());
+const authBaseUrl = getAuthBaseUrl();
+const trustedOrigins = getTrustedOrigins();
+const appURL = new URL(authBaseUrl);
+
+if (process.env.VERCEL_ENV === "preview") {
+  console.info("[auth:preview-config]", {
+    vercelEnv: process.env.VERCEL_ENV,
+    vercelUrl: process.env.VERCEL_URL,
+    vercelBranchUrl: process.env.VERCEL_BRANCH_URL,
+    authBaseUrl,
+    trustedOrigins,
+  });
+}
 const googleClientId =
   process.env.GOOGLE_CLIENT_ID?.trim() ||
   process.env.AUTH_GOOGLE_ID?.trim() ||
@@ -131,7 +143,7 @@ const requiredSignupDetailsGuard = (): BetterAuthPlugin => ({
 export const auth = betterAuth({
   appName: "SwiftDU",
   baseURL: appURL.origin,
-  trustedOrigins: getTrustedOrigins(),
+  trustedOrigins,
   session: {
     expiresIn: THIRTY_DAYS_IN_SECONDS,
     updateAge: ONE_DAY_IN_SECONDS,

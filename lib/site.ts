@@ -25,6 +25,10 @@ function getVercelDeploymentUrl() {
   return normalizeUrl(process.env.VERCEL_URL);
 }
 
+function getVercelBranchUrl() {
+  return normalizeUrl(process.env.VERCEL_BRANCH_URL);
+}
+
 export function getSiteUrl() {
   if (process.env.VERCEL_ENV === "preview") {
     const deploymentUrl = getVercelDeploymentUrl();
@@ -54,8 +58,11 @@ export function getTrustedOrigins() {
   const isLocal = process.env.NODE_ENV !== "production" && !process.env.VERCEL_ENV
 
   if (isPreview) {
-    // VERCEL_URL is platform-provided; never derive trust from a request header.
+    // Vercel provides both immutable and branch-alias hosts; never derive trust
+    // from a request header.
     origins.add(getAuthBaseUrl())
+    const branchUrl = getVercelBranchUrl()
+    if (branchUrl) origins.add(branchUrl)
   } else if (isLocal) {
     origins.add("http://localhost:3000")
     origins.add(getAuthBaseUrl())
