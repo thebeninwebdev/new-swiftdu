@@ -2,71 +2,48 @@ export const DEFAULT_SITE_URL = "https://swiftdu.org";
 const ADSENSE_PUBLISHER_ID = "4657526411072658";
 
 function normalizeUrl(value?: string | null) {
-  if (!value) {
-    return null;
-  }
-
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return null;
-  }
-
-  const withProtocol = trimmed.startsWith("http")
-    ? trimmed
-    : `https://${trimmed}`;
-
-  return withProtocol.replace(/\/$/, "");
-}
-
-function isLocalUrl(value: string) {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const withProtocol = trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
   try {
-    const { hostname } = new URL(value);
-
-    return (
-      hostname === "localhost" ||
-      hostname === "127.0.0.1" ||
-      hostname === "0.0.0.0"
-    );
+    return new URL(withProtocol).origin;
   } catch {
-    return true;
+    return null;
   }
 }
 
-function getPublicSiteUrl(value?: string | null) {
-  const normalizedUrl = normalizeUrl(value);
+function getConfiguredUrl() {
+  return normalizeUrl(process.env.NEXT_PUBLIC_BASE_URL) ||
+    normalizeUrl(process.env.BASE_URL) ||
+    normalizeUrl(process.env.NEXT_PUBLIC_SITE_URL) ||
+    normalizeUrl(process.env.BETTER_AUTH_URL);
+}
 
-  if (!normalizedUrl || isLocalUrl(normalizedUrl)) {
-    return null;
-  }
-
-  return normalizedUrl;
+// Preview deployments always use their own immutable deployment host. This must
+// take precedence over production-scoped variables inherited by a Vercel build.
+function getVercelDeploymentUrl() {
+  return normalizeUrl(process.env.VERCEL_URL);
 }
 
 export function getSiteUrl() {
-  return (
-    getPublicSiteUrl(process.env.NEXT_PUBLIC_BASE_URL) ||
-    getPublicSiteUrl(process.env.BASE_URL) ||
-    getPublicSiteUrl(process.env.NEXT_PUBLIC_SITE_URL) ||
-    getPublicSiteUrl(process.env.BETTER_AUTH_URL) ||
-    DEFAULT_SITE_URL
-  );
+  if (process.env.VERCEL_ENV === "preview") {
+    const deploymentUrl = getVercelDeploymentUrl();
+    if (!deploymentUrl) throw new Error("VERCEL_URL is required for Vercel Preview deployments.");
+    return deploymentUrl;
+  }
+
+  const configured = getConfiguredUrl();
+  if (configured) return configured;
+
+  if (process.env.NODE_ENV !== "production") return "http://localhost:3000";
+  return DEFAULT_SITE_URL;
 }
 
 export function getAuthBaseUrl() {
-  const url = new URL(
-    process.env.NODE_ENV === "production"
-      ? getSiteUrl()
-      : process.env.NEXT_PUBLIC_BASE_URL?.trim() ||
-          process.env.BASE_URL?.trim() ||
-          process.env.BETTER_AUTH_URL?.trim() ||
-          "http://localhost:3000"
-  );
-
+  const url = new URL(getSiteUrl());
   if (process.env.NODE_ENV !== "production" && url.hostname === "0.0.0.0") {
     url.hostname = "localhost";
   }
-
   return url.origin;
 }
 

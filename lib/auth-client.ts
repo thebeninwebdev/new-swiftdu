@@ -3,7 +3,8 @@ import {inferAdditionalFields, magicLinkClient, twoFactorClient} from "better-au
 import { passkeyClient } from "@better-auth/passkey/client";
 
 export const authClient = createAuthClient({
-  baseURL: process.env.NEXT_PUBLIC_BASE_URL || (process.env.NODE_ENV === "production" ? "https://swiftdu.org" : "http://localhost:3000"),
+  // Browser auth must always target the deployment currently being viewed.
+  baseURL: typeof window === "undefined" ? undefined : window.location.origin,
   plugins: [
     inferAdditionalFields({
       user: {

@@ -11,9 +11,8 @@ function getFlutterwaveSecretKey() {
   return secretKey
 }
 
-export function getAppBaseUrl(fallbackOrigin?: string) {
-  if (process.env.NODE_ENV === 'production') return getSiteUrl()
-  return (process.env.NEXT_PUBLIC_BASE_URL || process.env.BASE_URL || process.env.NEXT_PUBLIC_SITE_URL || fallbackOrigin || 'http://localhost:3000').replace(/\/$/, '')
+export function getAppBaseUrl(_fallbackOrigin?: string) {
+  return getSiteUrl()
 }
 
 async function flutterwaveRequest<T>(

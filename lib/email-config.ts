@@ -1,3 +1,4 @@
+import { getSiteUrl } from '@/lib/site'
 export const DEFAULT_SUPPORT_EMAIL = 'support@swiftdu.org'
 export const DEFAULT_EMAIL_FROM_NAME = 'SwiftDU Support'
 export const DEFAULT_EMAIL_SITE_URL = 'https://swiftdu.org'
@@ -75,22 +76,5 @@ export function getEmailSupportMailto() {
 }
 
 export function getEmailSiteUrl() {
-  const configuredUrl =
-    process.env.EMAIL_SITE_URL?.trim() ||
-    process.env.NEXT_PUBLIC_BASE_URL?.trim() ||
-    process.env.BETTER_AUTH_URL?.trim()
-
-  if (!configuredUrl) {
-    return DEFAULT_EMAIL_SITE_URL
-  }
-
-  try {
-    const url = new URL(
-      configuredUrl.startsWith('http') ? configuredUrl : `https://${configuredUrl}`
-    )
-
-    return url.toString().replace(/\/$/, '')
-  } catch {
-    return DEFAULT_EMAIL_SITE_URL
-  }
+  return process.env.EMAIL_SITE_URL?.trim() || getSiteUrl()
 }
