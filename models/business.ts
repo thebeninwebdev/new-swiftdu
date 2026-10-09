@@ -26,6 +26,10 @@ const businessSchema = new Schema(
     instagram: String,
     normalizedInstagram: { type: String, unique: true, sparse: true },
     location: String,
+    searchText: { type: String, default: "", select: false },
+    searchEmbedding: { type: [Number], default: undefined, select: false },
+    searchEmbeddingModel: { type: String, default: "", select: false },
+    searchEmbeddingUpdatedAt: { type: Date, select: false },
     status: {
       type: String,
       enum: ["approved", "rejected", "review"],

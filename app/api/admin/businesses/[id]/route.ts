@@ -1,3 +1,4 @@
+import { BUSINESS_SEARCH_SELECTION, prepareBusinessEmbedding } from "@/lib/business-search";
 import { NextRequest, NextResponse } from "next/server";
 import { isValidObjectId } from "mongoose";
 import { connectDB } from "@/lib/db";
@@ -49,7 +50,7 @@ export async function PATCH(req: NextRequest, context: Context) {
       return NextResponse.json({ error: "Invalid action." }, { status: 400 });
     await connectDB();
     const business = await Business.findById(id).select(
-      "+pendingImage +pendingImageMime",
+      `+pendingImage +pendingImageMime ${BUSINESS_SEARCH_SELECTION}`,
     );
     if (!business)
       return NextResponse.json(
@@ -68,6 +69,7 @@ export async function PATCH(req: NextRequest, context: Context) {
       Object.assign(
         update,
         await uploadBusinessImage(business.pendingImage, uploadedId),
+        await prepareBusinessEmbedding(business),
         { status: "approved", isVisible: true },
       );
     } else if (action === "reject")
@@ -83,6 +85,7 @@ export async function PATCH(req: NextRequest, context: Context) {
           { status: 409 },
         );
       update.isVisible = action === "restore";
+      if (action === "restore") Object.assign(update, await prepareBusinessEmbedding(business));
     }
     const result = await Business.updateOne(
       { _id: id, updatedAt: business.updatedAt },

@@ -14,14 +14,11 @@ export default function BusinessesPage() {
           <p className="mb-5 text-sm font-bold uppercase tracking-widest text-indigo-600">
             The WDU community
           </p>
-          <h1 className="text-5xl font-extrabold leading-tight tracking-tight sm:text-7xl">
-            WDU businesses.
-            <br />
-            <span className="text-indigo-600">All in one place.</span>
+          <h1 className="text-4xl font-extrabold leading-tight tracking-tight sm:text-6xl">
+            What are you looking for?
           </h1>
           <p className="mt-6 max-w-xl text-lg leading-8 text-slate-600">
-            Discover student businesses, services and creators across the
-            Western Delta University community.
+            Find products and services from businesses in the WDU community.
           </p>
         </header>
         <BusinessDirectory />

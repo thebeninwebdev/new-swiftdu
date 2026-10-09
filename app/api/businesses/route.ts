@@ -1,3 +1,4 @@
+import { prepareBusinessEmbedding } from "@/lib/business-search";
 import { NextRequest, NextResponse } from "next/server";
 import { Types } from "mongoose";
 import { connectDB } from "@/lib/db";
@@ -292,6 +293,7 @@ export async function POST(req: NextRequest) {
     stage = "image_upload";
     const uploaded = await uploadBusinessImage(imageData.image, uploadId);
     business.set({
+      ...await prepareBusinessEmbedding(business),
       ...uploaded,
       status: "approved",
       isVisible: true,

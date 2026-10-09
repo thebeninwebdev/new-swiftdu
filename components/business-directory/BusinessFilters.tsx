@@ -1,43 +1,53 @@
+﻿import type { FormEvent, RefObject } from "react";
 import { Input } from "@/components/ui/input";
-import { BUSINESS_CATEGORIES } from "@/lib/business-directory-policy";
+import { Button } from "@/components/ui/button";
 export default function BusinessFilters({
   query,
-  category,
   onQuery,
-  onCategory,
+  onSubmit,
+  busy,
+  inputRef,
 }: {
   query: string;
-  category: string;
-  onQuery: (v: string) => void;
-  onCategory: (v: string) => void;
+  onQuery: (value: string) => void;
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  busy: boolean;
+  inputRef: RefObject<HTMLInputElement | null>;
 }) {
   return (
-    <div className="mb-8 grid gap-4 rounded-3xl bg-white p-5 shadow-sm md:grid-cols-[1fr_280px]">
-      <label htmlFor="business-directory-search" className="space-y-2 text-sm font-semibold">
-        <span>Find your next campus favourite</span>
+    <form
+      onSubmit={onSubmit}
+      className="mb-8 max-w-2xl rounded-3xl bg-white p-5 shadow-sm"
+    >
+      <label
+        htmlFor="business-directory-search"
+        className="mb-3 block text-sm font-semibold"
+      >
+        What do you need?
+      </label>
+      <div className="flex flex-col gap-3 sm:flex-row">
         <Input
+          ref={inputRef}
           id="business-directory-search"
+          type="search"
+          enterKeyHint="search"
           value={query}
-          maxLength={100}
-          onChange={(e) => onQuery(e.target.value)}
-          placeholder="Search businesses, products or services"
-          className="h-12 rounded-xl"
+          minLength={2}
+          maxLength={200}
+          required
+          disabled={busy}
+          onChange={(event) => onQuery(event.target.value)}
+          placeholder="e.g. someone to build me a flyer"
+          className="h-12 min-w-0 flex-1 rounded-xl"
         />
-      </label>
-      <label htmlFor="business-directory-category" className="space-y-2 text-sm font-semibold">
-        <span>Category</span>
-        <select
-          id="business-directory-category"
-          value={category}
-          onChange={(e) => onCategory(e.target.value)}
-          className="h-12 w-full rounded-xl border bg-white px-3"
+        <Button
+          type="submit"
+          disabled={busy || query.trim().length < 2}
+          className="h-12 rounded-xl bg-indigo-600 px-6 text-white hover:bg-indigo-700"
         >
-          <option value="">All categories</option>
-          {BUSINESS_CATEGORIES.map((c) => (
-            <option key={c}>{c}</option>
-          ))}
-        </select>
-      </label>
-    </div>
+          Search
+        </Button>
+      </div>
+    </form>
   );
 }

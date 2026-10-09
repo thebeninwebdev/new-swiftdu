@@ -33,6 +33,11 @@ test(
     globalThis.fetch = async (url, init) => {
       const address = url instanceof Request ? url.url : String(url);
       if (address.includes("generativelanguage.googleapis.com")) {
+        if (address.includes("embedContent") || address.includes("batchEmbedContents")) {
+          if (mode === "embedding-failure") return Response.json({ error: { message: "unavailable" } }, { status: 503 });
+          const values = Array.from({ length: 768 }, (_, i) => i === 0 ? 1 : 0);
+          return Response.json(address.includes("batchEmbedContents") ? { embeddings: [{ values }] } : { embedding: { values } });
+        }
         aiCalls++;
         if (mode === "unavailable")
           return Response.json(
@@ -150,6 +155,19 @@ test(
     );
     const data = await publicResponse.json();
     assert.equal(data.businesses.length, 1);
+    const saved = await Business.findOne({ businessName: "Campus Foods" }).select("+searchEmbedding +searchText");
+    assert.equal(saved?.searchEmbedding?.length, 768);
+    assert.equal(data.businesses[0].searchEmbedding, undefined);
+    assert.equal(data.businesses[0].searchText, undefined);
+    const lookup = await GET(new NextRequest(`https://swiftdu.test/api/businesses?listing=${data.businesses[0].slug}`));
+    assert.equal((await lookup.json()).businesses[0].slug, data.businesses[0].slug);
+    const { GET: searchGET } = await import("../app/api/businesses/search/route");
+    for (const query of ["", "x", "a".repeat(201)]) {
+      assert.equal((await searchGET(new NextRequest(`https://swiftdu.test/api/businesses/search?q=${query}`))).status, 400);
+    }
+    const fallback = await searchGET(new NextRequest("https://swiftdu.test/api/businesses/search?q=Snacks"));
+    assert.equal(fallback.status, 200);
+    assert.equal((await fallback.json()).businesses[0].businessName, "Campus Foods");
     assert.equal(data.businesses[0].moderation, undefined);
     assert.equal(data.businesses[0].normalizedPhone, undefined);
     assert.equal(data.businesses[0].pendingImage, undefined);
@@ -178,8 +196,11 @@ test(
     assert.equal((await POST(request("Explicit Studio", "08077777777"))).status, 422);
     assert.equal(await Business.countDocuments({ businessName: "Explicit Studio" }), 0);
     assert.equal(uploads, 1);
-    mode = "approve";
+    mode = "embedding-failure";
     assert.equal((await POST(request("Retry Services", "08066666666"))).status, 201);
+    const deferred = await Business.findOne({ businessName: "Retry Services" }).select("+searchEmbedding");
+    assert.equal(deferred?.isVisible, true);
+    assert.equal(deferred?.searchEmbedding?.length, 0);
     await Business.deleteOne({ businessName: "Retry Services" });
     mode = "upload-failure";
     assert.equal(

@@ -8,7 +8,8 @@
     "start": "tsx server.mts",
     "lint": "eslint",
     "test:cafe": "tsx --test lib/cafe-inquiry.test.ts lib/order-sync.test.ts lib/order-tracking.test.tsx",
-    "test:businesses": "tsx --test lib/business-directory.test.ts lib/business-api.test.ts"
+    "test:businesses": "tsx --test lib/business-directory.test.ts lib/business-api.test.ts lib/business-search.test.ts",
+    "businesses:backfill-embeddings": "tsx scripts/backfill-business-embeddings.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1037.0",
