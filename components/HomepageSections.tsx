@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
-import { AnimatePresence, motion, type MotionValue, useReducedMotion, useScroll, useTransform } from "framer-motion";
+import { AnimatePresence, motion, type MotionValue, useReducedMotion, useScroll, useSpring, useTransform } from "framer-motion";
 import signupImage from "@/public/sign-up.jpg";
 import supportImage from "@/public/support.jpeg";
 import earnImage from "@/public/earn.jpeg";
@@ -177,43 +177,49 @@ function HowItWorksStackVisual({ step }: { step: number }) {
 }
 
 function HowItWorksStackCard({ step, index }: { step: typeof howItWorksStackSteps[number]; index: number }) {
-  const cardRef = useRef<HTMLElement>(null);
+  const entranceRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
-  const [tilt, setTilt] = useState(9);
+  const [motionSettings, setMotionSettings] = useState({ entranceTilt: 16, settledTilt: 5, entranceY: 100, entranceScale: 0.94 });
   const { scrollYProgress } = useScroll({
-    target: cardRef,
-    offset: ["start 90%", "start 20%"],
+    target: entranceRef,
+    offset: ["start 95%", "start 35%"],
   });
-  const rotateX = useTransform(scrollYProgress, [0, 1], [tilt, 0]);
-  const y = useTransform(scrollYProgress, [0, 1], [45, 0]);
-  const scale = useTransform(scrollYProgress, [0, 1], [0.97, 1]);
-  const opacity = useTransform(scrollYProgress, [0, 1], [0.9, 1]);
+  const smoothProgress = useSpring(scrollYProgress, { stiffness: 120, damping: 25, mass: 0.25 });
+  const rotateX = useTransform(smoothProgress, [0, 1], [motionSettings.entranceTilt, motionSettings.settledTilt]);
+  const y = useTransform(smoothProgress, [0, 1], [motionSettings.entranceY, 0]);
+  const scale = useTransform(smoothProgress, [0, 1], [motionSettings.entranceScale, 1]);
   const topClass = index === 0
-    ? "top-20 sm:top-24 lg:top-28"
+    ? "top-20 sm:top-24"
     : index === 1
-      ? "top-[5.5rem] sm:top-[6.5rem] lg:top-[7.5rem]"
-      : "top-24 sm:top-[7rem] lg:top-[8rem]";
+      ? "top-24 sm:top-[7.5rem]"
+      : "top-28 sm:top-36";
 
   useEffect(() => {
-    const updateTilt = () => setTilt(window.innerWidth < 640 ? 6 : window.innerWidth < 1024 ? 8 : 9);
-    updateTilt();
-    window.addEventListener("resize", updateTilt);
-    return () => window.removeEventListener("resize", updateTilt);
+    const updateMotionSettings = () => setMotionSettings(
+      window.innerWidth < 640
+        ? { entranceTilt: 10, settledTilt: 3, entranceY: 60, entranceScale: 0.96 }
+        : window.innerWidth < 1024
+          ? { entranceTilt: 13, settledTilt: 4, entranceY: 80, entranceScale: 0.95 }
+          : { entranceTilt: 16, settledTilt: 5, entranceY: 100, entranceScale: 0.94 },
+    );
+    updateMotionSettings();
+    window.addEventListener("resize", updateMotionSettings);
+    return () => window.removeEventListener("resize", updateMotionSettings);
   }, []);
 
-  return <div className={`relative [perspective:1200px] lg:[perspective:1500px] ${index < howItWorksStackSteps.length - 1 ? "min-h-[58svh] sm:min-h-[64svh] lg:min-h-[68vh]" : "min-h-0"}`}>
+  return <>
+      <div ref={entranceRef} aria-hidden="true" className="h-px" />
       <motion.article
-        ref={cardRef}
         style={{
           zIndex: (index + 1) * 10,
           rotateX: reducedMotion ? 0 : rotateX,
           y: reducedMotion ? 0 : y,
           scale: reducedMotion ? 1 : scale,
-          opacity: reducedMotion ? 1 : opacity,
+          opacity: 1,
           transformStyle: "preserve-3d",
-          transformOrigin: "50% 50%",
+          transformOrigin: "50% 100%",
         }}
-        className={`relative sticky h-[430px] overflow-hidden rounded-[22px] border border-black/[0.06] shadow-[0_30px_70px_rgba(30,22,70,0.12)] sm:h-[490px] sm:rounded-[24px] lg:h-[530px] ${topClass}`}
+        className={`relative sticky h-[430px] overflow-hidden rounded-[22px] border border-black/[0.06] shadow-[0_30px_70px_rgba(30,22,70,0.12)] sm:h-[490px] sm:rounded-[24px] lg:h-[530px] ${index < howItWorksStackSteps.length - 1 ? "mb-[18svh] sm:mb-[20svh] lg:mb-[22vh]" : "mb-0"} ${topClass}`}
       >
         <HowItWorksStackVisual step={index} />
         <span className={`absolute left-5 top-5 z-10 text-xs font-black tracking-[0.16em] ${index === 2 ? "text-white/75" : "text-slate-500"}`}>{step.number}</span>
@@ -222,12 +228,12 @@ function HowItWorksStackCard({ step, index }: { step: typeof howItWorksStackStep
           <p className={`mx-auto mt-2 max-w-xl text-sm leading-6 sm:text-base ${index === 2 ? "text-slate-300" : "text-slate-600"}`}>{step.description}</p>
         </div>
       </motion.article>
-  </div>;
+  </>;
 }
 
 function HowItWorks() {
   const reducedMotion = useReducedMotion();
-  return <section id="how-it-works" aria-label="How SwiftDU works" className="overflow-x-clip bg-[#faf9ff] pt-24 pb-14 sm:pt-28 sm:pb-16 lg:pt-32 lg:pb-20"><div className="mx-auto max-w-[1380px] px-4 sm:px-8 lg:px-10"><motion.div initial={reducedMotion ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.4 }} transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }} className="mx-auto max-w-2xl text-center"><p className="text-sm font-bold uppercase tracking-[0.18em] text-violet-600">How SwiftDU works</p><h2 className="mt-4 text-4xl font-black tracking-[-0.055em] text-slate-950 sm:text-5xl lg:text-6xl">Get it done in <span className="text-violet-600">3.</span></h2><p className="mt-5 text-base leading-7 text-slate-500 sm:text-lg">Getting help on campus is simple. Tell us what you need, a verified Swifter takes the task, and you follow it until it&apos;s done.</p></motion.div><div className="mx-auto mt-12 max-w-[1080px] sm:mt-16 xl:max-w-[1160px]">{howItWorksStackSteps.map((step, index) => <HowItWorksStackCard key={step.number} step={step} index={index} />)}</div></div></section>;
+  return <section id="how-it-works" aria-label="How SwiftDU works" className="overflow-x-clip bg-[#faf9ff] pt-24 pb-14 sm:pt-28 sm:pb-16 lg:pt-32 lg:pb-20"><div className="mx-auto max-w-[1380px] px-4 sm:px-8 lg:px-10"><motion.div initial={reducedMotion ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.4 }} transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }} className="mx-auto max-w-2xl text-center"><p className="text-sm font-bold uppercase tracking-[0.18em] text-violet-600">How SwiftDU works</p><h2 className="mt-4 text-4xl font-black tracking-[-0.055em] text-slate-950 sm:text-5xl lg:text-6xl">Get it done in <span className="text-violet-600">3.</span></h2><p className="mt-5 text-base leading-7 text-slate-500 sm:text-lg">Getting help on campus is simple. Tell us what you need, a verified Swifter takes the task, and you follow it until it&apos;s done.</p></motion.div><div className="relative mx-auto mt-12 max-w-[1080px] [perspective:900px] sm:mt-16 lg:[perspective:1000px] xl:max-w-[1160px]">{howItWorksStackSteps.map((step, index) => <HowItWorksStackCard key={step.number} step={step} index={index} />)}</div></div></section>;
 }
 
 function OpportunitiesSection() {
@@ -358,7 +364,7 @@ function LegacyTrustAndCTA() {
 function TrustAndCTA() {
   const reducedMotion = useReducedMotion();
   const lines = ["Belong.", "Support. Earn.", "Learn. Grow."];
-  return <section className="bg-white px-5 py-20 sm:px-8 sm:py-24 lg:px-10 lg:py-28"><motion.div initial={reducedMotion ? false : { opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.2 }} transition={{ duration: reducedMotion ? 0 : 0.8, ease: [0.16, 1, 0.3, 1] }} className="relative isolate mx-auto flex min-h-[540px] max-w-[1480px] overflow-hidden bg-[#0d1236] px-6 py-8 text-white sm:min-h-[580px] sm:px-10 sm:py-10 lg:min-h-[660px] lg:px-14 lg:py-12"><div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 opacity-30 [background-image:linear-gradient(rgba(255,255,255,.10)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.10)_1px,transparent_1px)] [background-size:72px_72px]" /><motion.div aria-hidden="true" animate={reducedMotion ? undefined : { x: [0, 10, 0], y: [0, -8, 0], scale: [1, 1.04, 1] }} transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }} className="pointer-events-none absolute -right-24 -top-24 -z-10 h-[28rem] w-[28rem] rounded-full bg-violet-600/40 blur-[95px]" /><div aria-hidden="true" className="pointer-events-none absolute right-[8%] top-[16%] h-40 w-40 rounded-full border border-violet-200/35 sm:h-56 sm:w-56" /><div aria-hidden="true" className="pointer-events-none absolute right-[11%] top-[20%] flex h-10 w-10 items-center justify-center rounded-full border border-white/25 text-lg text-violet-200">↗</div><div aria-hidden="true" className="pointer-events-none absolute bottom-[-13%] right-[-1%] select-none text-[clamp(8rem,19vw,19rem)] font-black leading-none tracking-[-0.09em] text-white/[0.035]">BELONG</div><div className="relative z-10 flex w-full flex-col"><motion.p initial={reducedMotion ? false : { opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: reducedMotion ? 0 : 0.6, delay: reducedMotion ? 0 : 0.12, ease: [0.16, 1, 0.3, 1] }} className="text-xs font-bold uppercase tracking-[0.2em] text-violet-200">Your place is here</motion.p><p className="absolute right-0 top-0 hidden text-[10px] font-bold tracking-[0.18em] text-violet-200/80 sm:block">01 / COMMUNITY</p><h2 className="mt-auto max-w-5xl text-[clamp(3.5rem,7vw,7.5rem)] font-black leading-[0.9] tracking-[-0.07em]">{lines.map((line, index) => <motion.span key={line} initial={reducedMotion ? false : { opacity: 0, y: 35 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: reducedMotion ? 0 : 0.78, delay: reducedMotion ? 0 : 0.14 + index * 0.09, ease: [0.16, 1, 0.3, 1] }} className={`block ${index === 2 ? "text-violet-300" : ""}`}>{line}</motion.span>)}</h2><div className="mt-8 flex flex-col gap-7 lg:mt-10 lg:flex-row lg:items-end lg:justify-between"><motion.p initial={reducedMotion ? false : { opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: reducedMotion ? 0 : 0.65, delay: reducedMotion ? 0 : 0.42, ease: [0.16, 1, 0.3, 1] }} className="max-w-md text-sm leading-7 text-indigo-100 sm:text-base sm:leading-8">Whether you need help getting things done or have time and skills to give, SwiftDU has a place for you.</motion.p><motion.div initial={reducedMotion ? false : { opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: reducedMotion ? 0 : 0.65, delay: reducedMotion ? 0 : 0.5, ease: [0.16, 1, 0.3, 1] }} className="flex flex-col gap-3 sm:flex-row"><Link href="/auth" className="group inline-flex h-14 items-center justify-center gap-3 rounded-full bg-white px-7 text-sm font-bold text-[#17151d] transition duration-300 hover:scale-[1.02] hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">Join the community <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" /></Link><Link href="/tasker-signup" className="inline-flex h-14 items-center justify-center rounded-full border border-white/25 px-7 text-sm font-bold text-white transition duration-300 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">Become a Swifter</Link></motion.div></div></div></motion.div></section>;
+  return <section className="bg-white pt-20 sm:pt-24 lg:pt-28"><motion.div initial={reducedMotion ? false : { opacity: 0, y: 40 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.2 }} transition={{ duration: reducedMotion ? 0 : 0.8, ease: [0.16, 1, 0.3, 1] }} className="relative isolate flex min-h-[540px] w-full overflow-hidden bg-[#0d1236] px-6 py-8 text-white sm:min-h-[580px] sm:px-10 sm:py-10 lg:min-h-[660px] lg:px-14 lg:py-12"><div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 opacity-30 [background-image:linear-gradient(rgba(255,255,255,.10)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.10)_1px,transparent_1px)] [background-size:72px_72px]" /><motion.div aria-hidden="true" animate={reducedMotion ? undefined : { x: [0, 10, 0], y: [0, -8, 0], scale: [1, 1.04, 1] }} transition={{ duration: 10, repeat: Infinity, ease: "easeInOut" }} className="pointer-events-none absolute -right-24 -top-24 -z-10 h-[28rem] w-[28rem] rounded-full bg-violet-600/40 blur-[95px]" /><div aria-hidden="true" className="pointer-events-none absolute right-[8%] top-[16%] h-40 w-40 rounded-full border border-violet-200/35 sm:h-56 sm:w-56" /><div aria-hidden="true" className="pointer-events-none absolute right-[11%] top-[20%] flex h-10 w-10 items-center justify-center rounded-full border border-white/25 text-lg text-violet-200">↗</div><div aria-hidden="true" className="pointer-events-none absolute bottom-[-13%] right-[-1%] select-none text-[clamp(8rem,19vw,19rem)] font-black leading-none tracking-[-0.09em] text-white/[0.035]">BELONG</div><div className="relative z-10 flex w-full flex-col"><motion.p initial={reducedMotion ? false : { opacity: 0, y: 15 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: reducedMotion ? 0 : 0.6, delay: reducedMotion ? 0 : 0.12, ease: [0.16, 1, 0.3, 1] }} className="text-xs font-bold uppercase tracking-[0.2em] text-violet-200">Your place is here</motion.p><p className="absolute right-0 top-0 hidden text-[10px] font-bold tracking-[0.18em] text-violet-200/80 sm:block">01 / COMMUNITY</p><h2 className="mt-auto max-w-5xl text-[clamp(3.5rem,7vw,7.5rem)] font-black leading-[0.9] tracking-[-0.07em]">{lines.map((line, index) => <motion.span key={line} initial={reducedMotion ? false : { opacity: 0, y: 35 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: reducedMotion ? 0 : 0.78, delay: reducedMotion ? 0 : 0.14 + index * 0.09, ease: [0.16, 1, 0.3, 1] }} className={`block ${index === 2 ? "text-violet-300" : ""}`}>{line}</motion.span>)}</h2><div className="mt-8 flex flex-col gap-7 lg:mt-10 lg:flex-row lg:items-end lg:justify-between"><motion.p initial={reducedMotion ? false : { opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: reducedMotion ? 0 : 0.65, delay: reducedMotion ? 0 : 0.42, ease: [0.16, 1, 0.3, 1] }} className="max-w-md text-sm leading-7 text-indigo-100 sm:text-base sm:leading-8">Whether you need help getting things done or have time and skills to give, SwiftDU has a place for you.</motion.p><motion.div initial={reducedMotion ? false : { opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: reducedMotion ? 0 : 0.65, delay: reducedMotion ? 0 : 0.5, ease: [0.16, 1, 0.3, 1] }} className="flex flex-col gap-3 sm:flex-row"><Link href="/auth" className="group inline-flex h-14 items-center justify-center gap-3 rounded-full bg-white px-7 text-sm font-bold text-[#17151d] transition duration-300 hover:scale-[1.02] hover:bg-violet-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">Join the community <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" /></Link><Link href="/tasker-signup" className="inline-flex h-14 items-center justify-center rounded-full border border-white/25 px-7 text-sm font-bold text-white transition duration-300 hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white">Become a Swifter</Link></motion.div></div></div></motion.div></section>;
 }
 
 // Retained only as the previous short marquee reference.
