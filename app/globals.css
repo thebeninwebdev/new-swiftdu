@@ -198,6 +198,11 @@
   50% { transform: translate3d(0, 10px, 0); }
 }
 
+@keyframes trustMarquee {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(-50%, 0, 0); }
+}
+
 .landing-reveal,
 .landing-pop,
 .landing-scroll-reveal,
@@ -332,6 +337,11 @@
 .partner-float-one { animation: partnerCardFloatOne 5.5s ease-in-out infinite; }
 .partner-float-two { animation: partnerCardFloatTwo 6.5s ease-in-out -2s infinite; }
 
+.trust-marquee-track {
+  animation: trustMarquee 28s linear infinite;
+  will-change: transform;
+}
+
 @media (max-width: 767px) {
   @keyframes partnerCardFloatOne {
     0%, 100% { transform: translate3d(0, 0, 0); }
@@ -358,6 +368,7 @@
   .landing-float-card,
   .partner-float-one,
   .partner-float-two,
+  .trust-marquee-track,
   .landing-spin-slow {
     animation: none;
     opacity: 1;
