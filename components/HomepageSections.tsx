@@ -176,9 +176,58 @@ function HowItWorksStackVisual({ step }: { step: number }) {
   return <div aria-hidden="true" className="absolute inset-0 overflow-hidden bg-[#17151d] text-white"><div className="absolute -right-10 top-0 h-64 w-64 rounded-full bg-violet-700/30 blur-3xl" /><div className="absolute left-1/2 top-[11%] w-[58%] min-w-[285px] max-w-[410px] -translate-x-1/2 rounded-2xl border border-white/10 bg-white/[0.08] p-4 shadow-2xl backdrop-blur-sm sm:p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-violet-300">Your task</p><h3 className="mt-1 text-xl font-black">Restaurant order</h3></div><span className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-bold text-emerald-300">Active</span></div><div className="mt-5 space-y-3.5">{[["Accepted", "Your Swifter is ready", true], ["On the way", "Heading to Girls' Hostel", true], ["Delivered", "Confirm when it arrives", false]].map(([title, body, done], index) => <div key={title as string} className="relative flex gap-3"><span className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${done ? "bg-violet-500" : "border border-white/30 bg-white/10"}`}>{done ? <Check className="h-3.5 w-3.5" /> : <span className="h-2 w-2 rounded-full bg-white/70" />}</span>{index < 2 ? <span className="absolute left-3.5 top-7 h-4 w-px bg-white/20" /> : null}<div><p className="text-sm font-bold">{title}</p><p className="text-xs text-slate-300">{body}</p></div></div>)}</div><div className="mt-5 rounded-xl bg-white p-2.5 text-center text-sm font-bold text-violet-700">Confirm received</div></div></div>;
 }
 
+function HowItWorksStackCard({ step, index }: { step: typeof howItWorksStackSteps[number]; index: number }) {
+  const cardRef = useRef<HTMLElement>(null);
+  const reducedMotion = useReducedMotion();
+  const [tilt, setTilt] = useState(9);
+  const { scrollYProgress } = useScroll({
+    target: cardRef,
+    offset: ["start 90%", "start 20%"],
+  });
+  const rotateX = useTransform(scrollYProgress, [0, 1], [tilt, 0]);
+  const y = useTransform(scrollYProgress, [0, 1], [45, 0]);
+  const scale = useTransform(scrollYProgress, [0, 1], [0.97, 1]);
+  const opacity = useTransform(scrollYProgress, [0, 1], [0.9, 1]);
+  const topClass = index === 0
+    ? "top-20 sm:top-24 lg:top-28"
+    : index === 1
+      ? "top-[5.5rem] sm:top-[6.5rem] lg:top-[7.5rem]"
+      : "top-24 sm:top-[7rem] lg:top-[8rem]";
+
+  useEffect(() => {
+    const updateTilt = () => setTilt(window.innerWidth < 640 ? 6 : window.innerWidth < 1024 ? 8 : 9);
+    updateTilt();
+    window.addEventListener("resize", updateTilt);
+    return () => window.removeEventListener("resize", updateTilt);
+  }, []);
+
+  return <div className={`relative [perspective:1200px] lg:[perspective:1500px] ${index < howItWorksStackSteps.length - 1 ? "min-h-[58svh] sm:min-h-[64svh] lg:min-h-[68vh]" : "min-h-0"}`}>
+      <motion.article
+        ref={cardRef}
+        style={{
+          zIndex: (index + 1) * 10,
+          rotateX: reducedMotion ? 0 : rotateX,
+          y: reducedMotion ? 0 : y,
+          scale: reducedMotion ? 1 : scale,
+          opacity: reducedMotion ? 1 : opacity,
+          transformStyle: "preserve-3d",
+          transformOrigin: "50% 50%",
+        }}
+        className={`relative sticky h-[430px] overflow-hidden rounded-[22px] border border-black/[0.06] shadow-[0_30px_70px_rgba(30,22,70,0.12)] sm:h-[490px] sm:rounded-[24px] lg:h-[530px] ${topClass}`}
+      >
+        <HowItWorksStackVisual step={index} />
+        <span className={`absolute left-5 top-5 z-10 text-xs font-black tracking-[0.16em] ${index === 2 ? "text-white/75" : "text-slate-500"}`}>{step.number}</span>
+        <div className={`absolute inset-x-0 bottom-0 z-10 px-5 pb-5 pt-16 text-center sm:px-10 sm:pb-8 ${index === 2 ? "bg-gradient-to-t from-[#17151d] via-[#17151d]/80 to-transparent text-white" : "bg-gradient-to-t from-white via-white/85 to-transparent text-slate-950"}`}>
+          <h3 className="text-2xl font-black tracking-[-0.045em] sm:text-3xl">{step.title}</h3>
+          <p className={`mx-auto mt-2 max-w-xl text-sm leading-6 sm:text-base ${index === 2 ? "text-slate-300" : "text-slate-600"}`}>{step.description}</p>
+        </div>
+      </motion.article>
+  </div>;
+}
+
 function HowItWorks() {
   const reducedMotion = useReducedMotion();
-  return <section id="how-it-works" aria-label="How SwiftDU works" className="overflow-x-clip bg-[#faf9ff] pt-24 pb-14 sm:pt-28 sm:pb-16 lg:pt-32 lg:pb-20"><div className="mx-auto max-w-[1380px] px-5 sm:px-8 lg:px-10"><motion.div initial={reducedMotion ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.4 }} transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }} className="mx-auto max-w-2xl text-center"><p className="text-sm font-bold uppercase tracking-[0.18em] text-violet-600">How SwiftDU works</p><h2 className="mt-4 text-4xl font-black tracking-[-0.055em] text-slate-950 sm:text-5xl lg:text-6xl">Get it done in <span className="text-violet-600">3.</span></h2><p className="mt-5 text-base leading-7 text-slate-500 sm:text-lg">Getting help on campus is simple. Tell us what you need, a verified Swifter takes the task, and you follow it until it&apos;s done.</p></motion.div><div className="mx-auto mt-12 max-w-[880px] space-y-0 pb-[10svh] sm:mt-16 sm:pb-[12svh] lg:pb-[14vh]">{howItWorksStackSteps.map((step, index) => <article key={step.number} style={{ zIndex: (index + 1) * 10 }} className={`relative sticky aspect-[4/3] overflow-hidden rounded-[24px] border border-black/[0.06] shadow-[0_18px_45px_rgba(30,22,70,0.10)] sm:aspect-[1.7/1] lg:aspect-[1.82/1] lg:max-h-[480px] lg:min-h-[410px] ${index < howItWorksStackSteps.length - 1 ? "mb-[26svh] sm:mb-[30svh] lg:mb-[34vh]" : "mb-0"} ${index === 0 ? "top-20 -rotate-[1.25deg] sm:top-24 lg:top-28" : index === 1 ? "top-[5.5rem] rotate-[1deg] sm:top-28 lg:top-[8.5rem]" : "top-24 -rotate-[0.75deg] sm:top-32 lg:top-36"}`}><HowItWorksStackVisual step={index} /><span className={`absolute left-5 top-5 z-10 text-xs font-black tracking-[0.16em] ${index === 2 ? "text-white/75" : "text-slate-500"}`}>{step.number}</span><div className={`absolute inset-x-0 bottom-0 z-10 px-5 pb-5 pt-16 text-center sm:px-10 sm:pb-8 ${index === 2 ? "bg-gradient-to-t from-[#17151d] via-[#17151d]/80 to-transparent text-white" : "bg-gradient-to-t from-white via-white/85 to-transparent text-slate-950"}`}><h3 className="text-2xl font-black tracking-[-0.045em] sm:text-3xl">{step.title}</h3><p className={`mx-auto mt-2 max-w-xl text-sm leading-6 sm:text-base ${index === 2 ? "text-slate-300" : "text-slate-600"}`}>{step.description}</p></div></article>)}</div></div></section>;
+  return <section id="how-it-works" aria-label="How SwiftDU works" className="overflow-x-clip bg-[#faf9ff] pt-24 pb-14 sm:pt-28 sm:pb-16 lg:pt-32 lg:pb-20"><div className="mx-auto max-w-[1380px] px-4 sm:px-8 lg:px-10"><motion.div initial={reducedMotion ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.4 }} transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }} className="mx-auto max-w-2xl text-center"><p className="text-sm font-bold uppercase tracking-[0.18em] text-violet-600">How SwiftDU works</p><h2 className="mt-4 text-4xl font-black tracking-[-0.055em] text-slate-950 sm:text-5xl lg:text-6xl">Get it done in <span className="text-violet-600">3.</span></h2><p className="mt-5 text-base leading-7 text-slate-500 sm:text-lg">Getting help on campus is simple. Tell us what you need, a verified Swifter takes the task, and you follow it until it&apos;s done.</p></motion.div><div className="mx-auto mt-12 max-w-[1080px] sm:mt-16 xl:max-w-[1160px]">{howItWorksStackSteps.map((step, index) => <HowItWorksStackCard key={step.number} step={step} index={index} />)}</div></div></section>;
 }
 
 function OpportunitiesSection() {
