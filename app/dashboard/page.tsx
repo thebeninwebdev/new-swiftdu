@@ -5,9 +5,14 @@ import { FirstOrderPriceBreakdown } from '@/components/first-order-bonus'
 import { priceWithOrderDiscounts } from '@/lib/first-order-pricing'
 import { mergeOrderUpdate } from '@/lib/order-sync'
 import { formatRestaurantCost, getRestaurantEstimate } from '@/lib/restaurant-estimate'
+import taskFoodImage from '@/public/dashboard/tasks/task-food.png'
+import taskStoreShoppingImage from '@/public/dashboard/tasks/task-store-shopping.png'
+import taskIndomieImage from '@/public/dashboard/tasks/task-indomie.png'
+import taskPrintingImage from '@/public/dashboard/tasks/task-printing.png'
+import taskWaterImage from '@/public/dashboard/tasks/task-water.png'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Image from 'next/image'
+import Image, { type StaticImageData } from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
@@ -121,6 +126,7 @@ interface TaskTypeConfig {
   mobileDescription: string
   icon: LucideIcon
   accent: string
+  image?: string
 }
 
 interface TaskTypeUsageResponse {
@@ -144,6 +150,7 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'Food & meals',
     icon: ShoppingBag,
     accent: 'from-blue-500 to-cyan-500',
+    image: '/dashboard/tasks/task-food.png',
   },
   {
     value: 'shopping',
@@ -152,6 +159,7 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'Groceries',
     icon: Store,
     accent: 'from-emerald-500 to-teal-500',
+    image: '/dashboard/tasks/task-store-shopping.png',
   },
   {
     value: INDOMIE_TASK_TYPE,
@@ -160,6 +168,7 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'Noodles & eggs',
     icon: ShoppingBag,
     accent: 'from-rose-500 to-amber-500',
+    image: '/dashboard/tasks/task-indomie.png',
   },
   {
     value: 'printing',
@@ -168,6 +177,7 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'Documents',
     icon: FileText,
     accent: 'from-sky-500 to-indigo-500',
+    image: '/dashboard/tasks/task-printing.png',
   },
   // {
   //   value: DRY_CLEANING_TASK_TYPE,
@@ -184,9 +194,17 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'Per bag',
     icon: Droplets,
     accent: 'from-cyan-500 to-blue-500',
+    image: '/dashboard/tasks/task-water.png',
   },
 ]
 
+const taskArtwork: Record<string, StaticImageData> = {
+  '/dashboard/tasks/task-food.png': taskFoodImage,
+  '/dashboard/tasks/task-store-shopping.png': taskStoreShoppingImage,
+  '/dashboard/tasks/task-indomie.png': taskIndomieImage,
+  '/dashboard/tasks/task-printing.png': taskPrintingImage,
+  '/dashboard/tasks/task-water.png': taskWaterImage,
+}
 const storeOptions: Record<string, Array<{ value: string; label: string }>> = {
   printing: [
     { value: '', label: 'Select a store...' },
@@ -1353,45 +1371,34 @@ if (stepNumber === detailsStep) {
       {sortedTaskTypes.map((item) => {
         const Icon = item.icon
         const selected = formData.taskType === item.value
+        const isWater = item.value === WATER_TASK_TYPE
+        const compactTitle = item.label.replace(' Food', '').replace(' Services', '')
+        const artwork = item.image ? taskArtwork[item.image] : undefined
         return (
           <button
             key={item.value}
             type="button"
+            aria-pressed={selected}
             onClick={() => {
               selectTaskType(item.value)
-              if (compact) {
-                setStep(2)
-              }
+              if (compact) setStep(2)
             }}
-            className={`group flex ${compact ? 'min-h-28 w-full flex-col items-center justify-center gap-2 rounded-2xl px-3 py-4 text-center shadow-sm' : 'min-h-24 items-center gap-3 rounded-2xl p-4 text-left'} border transition active:scale-[0.98] ${
-              selected
-                ? compact
-                  ? 'border-blue-500 bg-blue-50 text-blue-950 shadow-sm dark:border-blue-500 dark:bg-blue-950/30 dark:text-blue-100'
-                  : 'border-blue-500 bg-blue-50 text-blue-950 shadow-sm dark:border-blue-500 dark:bg-blue-950/30 dark:text-blue-100'
-                : compact
-                  ? 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50/50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-900'
-                  : 'border-slate-200 bg-white text-slate-700 hover:border-blue-200 hover:bg-blue-50/50 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-blue-900'
+            className={`group relative overflow-hidden border text-left transition duration-300 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 ${
+              compact
+                ? `${isWater ? 'col-span-2 min-h-[136px]' : 'min-h-[160px]'} w-full rounded-[22px] p-4 shadow-[0_8px_28px_rgba(15,23,42,0.06)] ${selected ? 'border-violet-500 bg-violet-50/50 dark:bg-violet-950/40' : 'border-slate-200/80 bg-white hover:border-violet-200 dark:border-slate-700 dark:bg-slate-900'}`
+                : `flex min-h-[124px] items-center gap-4 rounded-2xl p-4 pr-[32%] shadow-sm ${selected ? 'border-violet-500 bg-violet-50/50 dark:bg-violet-950/40' : 'border-slate-200 bg-white hover:border-violet-200 dark:border-slate-700 dark:bg-slate-900'}`
             }`}
           >
-            <span className={`flex ${compact ? 'h-11 w-11' : 'h-12 w-12'} shrink-0 items-center justify-center rounded-2xl ${selected ? 'bg-[#5b3df5] text-white' : 'bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300'}`}>
-              <Icon className="h-5 w-5" />
-            </span>
-            <span className={compact ? 'min-w-0' : 'min-w-0 flex-1'}>
-              <span className={compact ? 'block text-[0.95rem] font-black leading-tight sm:text-base' : 'block text-sm font-bold'}>
-                {item.label.replace(' Food', '').replace(' Services', '')}
-              </span>
-              <span className={compact ? 'mt-0.5 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400' : 'block text-xs text-slate-500 dark:text-slate-400'}>
-                {compact ? item.mobileDescription : item.description.split('.')[0]}
-              </span>
-            </span>
-            {selected ? <Check className={`h-4 w-4 ${compact ? 'text-blue-600' : 'text-blue-600'}`} /> : null}
+            <span className={`relative z-10 flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${selected ? 'bg-[#5b3df5] text-white' : 'bg-violet-100 text-violet-700 dark:bg-violet-950/60 dark:text-violet-300'}`}><Icon className="h-5 w-5" aria-hidden="true" /></span>
+            {artwork ? <Image src={artwork} alt="" aria-hidden="true" width={220} height={180} className={`pointer-events-none absolute z-0 object-contain ${compact ? isWater ? 'bottom-[-8px] right-5 h-[118px] w-[42%] max-[340px]:w-[38%]' : 'right-[-4px] top-4 h-[88px] w-[52%] max-[340px]:h-[76px] max-[340px]:w-[48%]' : 'right-2 top-1/2 h-[104px] w-[32%] -translate-y-1/2'}`} /> : null}
+            <span className={`relative z-10 ${compact ? 'mt-5 block max-w-[62%]' : 'min-w-0 flex-1'}`}><span className={compact ? 'block text-[1.05rem] font-black leading-tight text-slate-950 dark:text-white' : 'block text-sm font-bold text-slate-950 dark:text-white'}>{compact ? compactTitle : item.label}</span><span className={compact ? 'mt-1 block text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400' : 'mt-1 block text-xs text-slate-500 dark:text-slate-400'}>{compact ? item.mobileDescription : item.description.split('.')[0]}</span></span>
+            {selected ? <span className="absolute bottom-4 right-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-[#5b3df5] text-white shadow-sm"><Check className="h-5 w-5" aria-hidden="true" /></span> : <span aria-hidden="true" className="absolute bottom-4 right-4 z-10 flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 shadow-sm dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"><ArrowRight className="h-4 w-4" /></span>}
           </button>
         )
       })}
-      {errors.taskType ? <p className="text-sm text-red-500">{errors.taskType}</p> : null}
+      {errors.taskType ? <p className="col-span-2 text-sm text-red-500">{errors.taskType}</p> : null}
     </div>
   )
-
   const renderShoppingDistanceNotice = () => shoppingDistanceFee > 0 ? (
     <p className="mt-2 text-sm text-amber-700 dark:text-amber-300">
       This store has an extra {formatNaira(shoppingDistanceFee)} distance fee, included in the service fee and total.

@@ -33,6 +33,10 @@ const nextConfig: NextConfig = {
   images: {
     localPatterns: [
       {
+        pathname: "/businesses/*.png",
+        search: "",
+      },
+      {
         pathname: "/mascot/**",
       },
       {

@@ -1,5 +1,6 @@
-﻿"use client";
+"use client";
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { LoaderCircle, Search, Store } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { PublicBusiness } from "@/lib/business-directory";
 import BusinessCard from "./BusinessCard";
@@ -8,7 +9,6 @@ import BusinessSubmissionForm from "./BusinessSubmissionForm";
 export default function BusinessDirectory() {
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState<string | null>(null);
-  const [searchOpen, setSearchOpen] = useState(false);
   const [businesses, setBusinesses] = useState<PublicBusiness[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -49,21 +49,23 @@ export default function BusinessDirectory() {
     setLoading(false);
     setSubmitted(null);
     setError("");
-    setSearchOpen(true);
     window.history.replaceState(null, "", "/businesses");
     requestAnimationFrame(() => {
       inputRef.current?.focus();
       inputRef.current?.select();
     });
   }
-  async function search(event: FormEvent<HTMLFormElement>) {
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (requestRef.current) return;
-    const value = query.trim();
+    void search(query);
+  }
+  async function search(rawQuery: string) {
+    const value = rawQuery.trim();
     if (value.length < 2 || value.length > 200) {
       setError("Enter what you need (2–200 characters).");
       return;
     }
+    requestRef.current?.abort();
     const controller = new AbortController();
     requestRef.current = controller;
     setQuery(value);
@@ -91,21 +93,21 @@ export default function BusinessDirectory() {
   }
   return (
     <>
-      <div className="mb-8 flex max-w-xl flex-col gap-3 sm:flex-row">
-        <Button
-          onClick={searchAgain}
-          disabled={loading}
-          className="h-auto min-h-12 whitespace-normal rounded-full bg-indigo-600 px-6 py-3 text-white hover:bg-indigo-700"
-        >
-          {submitted === null
-            ? "Search for a product or service"
-            : "Search again"}
-        </Button>
+      <BusinessFilters
+        query={query}
+        onQuery={setQuery}
+        onSubmit={submitSearch}
+        onSuggestion={(value) => void search(value)}
+        busy={loading}
+        inputRef={inputRef}
+      />
+      <div className="mb-14 mt-7 flex justify-center sm:mb-20 lg:mb-32">
         <Button
           variant="outline"
           onClick={() => setOpen(true)}
-          className="h-12 rounded-full px-6"
+          className="min-h-11 rounded-full border-slate-200/80 bg-white/60 px-5 text-xs text-slate-600 hover:border-indigo-200 hover:bg-white"
         >
+          <Store aria-hidden="true" className="size-4" />
           List your business
         </Button>
       </div>
@@ -117,30 +119,32 @@ export default function BusinessDirectory() {
           requestRef.current = null;
           setLoading(false);
           setSubmitted(null);
-          setSearchOpen(false);
           setQuery("");
           setError("");
           window.history.replaceState(null, "", "/businesses");
         }}
       />
-      {searchOpen && (
-        <BusinessFilters
-          query={query}
-          onQuery={setQuery}
-          onSubmit={search}
-          busy={loading}
-          inputRef={inputRef}
-        />
-      )}
       <section
         aria-label="Business search results"
         aria-busy={loading}
         aria-live="polite"
       >
         {loading ? (
-          <p role="status" className="py-12 text-slate-500">
-            Searching WDU businesses…
-          </p>
+          <div
+            role="status"
+            className="flex flex-col items-center rounded-3xl bg-indigo-50/60 px-5 py-12 text-center"
+          >
+            <LoaderCircle
+              aria-hidden="true"
+              className="mb-4 size-7 text-indigo-600 motion-safe:animate-spin"
+            />
+            <p className="font-semibold text-slate-900">
+              Searching WDU businesses&hellip;
+            </p>
+            <p className="mt-2 text-sm text-slate-600">
+              Looking for the best matches.
+            </p>
+          </div>
         ) : error ? (
           <div role="alert" className="py-8">
             <p>{error}</p>
@@ -150,22 +154,48 @@ export default function BusinessDirectory() {
           </div>
         ) : submitted !== null ? (
           <>
-            {submitted && (
-              <h2 className="mb-6 break-words text-lg font-semibold">
-                Results for &quot;{submitted}&quot;
-              </h2>
-            )}
             {businesses.length ? (
-              <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-                {businesses.map((b) => (
-                  <BusinessCard key={b.slug} business={b} />
-                ))}
-              </div>
+              <>
+                <div className="mb-6 flex flex-col items-start justify-between gap-3 sm:flex-row">
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-bold tracking-tight sm:text-2xl">
+                      {submitted
+                        ? `I found ${businesses.length} ${businesses.length === 1 ? "business" : "businesses"} that may help`
+                        : "Here's the business you're looking for"}
+                    </h2>
+                    {submitted && (
+                      <p className="mt-2 break-words text-slate-600">
+                        &ldquo;{submitted}&rdquo;
+                      </p>
+                    )}
+                  </div>
+                  <Button
+                    variant="ghost"
+                    onClick={searchAgain}
+                    className="min-h-11 shrink-0 text-indigo-700"
+                  >
+                    Search again
+                  </Button>
+                </div>
+                <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+                  {businesses.map((b) => (
+                    <BusinessCard key={b.slug} business={b} />
+                  ))}
+                </div>
+              </>
             ) : (
               <div className="rounded-3xl bg-white px-6 py-12 text-center">
+                <Search
+                  aria-hidden="true"
+                  className="mx-auto mb-4 size-7 text-indigo-500"
+                />
                 <h2 className="text-xl font-bold">
-                  We couldn&apos;t find a business for that yet.
+                  I couldn&apos;t find an exact match yet.
                 </h2>
+                <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-600">
+                  Try describing what you need another way. You can be as
+                  specific or general as you like.
+                </p>
                 <Button
                   variant="outline"
                   className="mt-6"
