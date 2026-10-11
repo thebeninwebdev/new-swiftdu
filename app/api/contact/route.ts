@@ -5,7 +5,7 @@ import ContactSupportEmail from '@/emails/contactSupportEmail'
 import { sendTransactionalEmail } from '@/lib/email'
 import { getSupportEmailAddress } from '@/lib/email-config'
 
-const allowedCategories = new Set(['general', 'support', 'business', 'student'])
+const allowedCategories = new Set(['general', 'support', 'business', 'student', 'order', 'account'])
 
 function normalizeValue(value: unknown) {
   return typeof value === 'string' ? value.trim() : ''

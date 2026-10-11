@@ -4,20 +4,15 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { ArrowUpRight, House, Info, Mail, Store } from "lucide-react";
+import { ArrowUpRight, House, Mail, Store } from "lucide-react";
 
 const navLinks = [
-  { label: "Businesses", href: "/businesses", icon: Store },
   {
     label: "Home",
     href: "/",
     icon: House,
   },
-  {
-    label: "About us",
-    href: "/about-us",
-    icon: Info,
-  },
+  { label: "Businesses", href: "/businesses", icon: Store },
   {
     label: "Contact us",
     href: "/contact-us",

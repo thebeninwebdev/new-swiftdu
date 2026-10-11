@@ -16,6 +16,9 @@ const categoryLabels: Record<string, string> = {
   support: 'Technical Support',
   business: 'Business Partnership',
   student: 'Student Issue',
+  order: 'Order or Payment',
+  account: 'Account or Technical Issue',
+  ceo: 'Direct CEO Report',
 }
 
 export default function ContactConfirmationEmail({
@@ -31,7 +34,7 @@ export default function ContactConfirmationEmail({
       eyebrow="Support Confirmation"
       title="We received your message"
       greeting={`Hi ${name},`}
-      intro="Thanks for contacting SwiftDU. Our support team has received your message and will review it as soon as possible."
+      intro={category === 'ceo' ? "Your report has been received through SwiftDU's leadership escalation channel." : "Thanks for contacting SwiftDU. Our support team has received your message and will review it as soon as possible."}
     >
       <Section className="rounded-[20px] border border-slate-200 bg-slate-50 px-6 py-5">
         <Text className="m-0 text-[14px] font-semibold uppercase tracking-[0.18em] text-slate-500">
@@ -50,8 +53,7 @@ export default function ContactConfirmationEmail({
           What happens next
         </Text>
         <Text className="m-0 mt-2 text-[14px] leading-6 text-emerald-800">
-          We usually respond within 24 hours. If your request is urgent, you can
-          also email our team directly.
+          {category === 'ceo' ? "We have recorded your report. It may be shared internally where needed to investigate or resolve the issue." : "We will get back to you through the contact details you provided."}
         </Text>
       </Section>
 

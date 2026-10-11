@@ -17,6 +17,9 @@ const categoryLabels: Record<string, string> = {
   support: 'Technical Support',
   business: 'Business Partnership',
   student: 'Student Issue',
+  order: 'Order or Payment',
+  account: 'Account or Technical Issue',
+  ceo: 'Direct CEO Report',
 }
 
 export default function ContactSupportEmail({

@@ -47,6 +47,11 @@ export function getSupportEmailAddress() {
   )
 }
 
+export function getCeoContactEmailAddress() {
+  const email = process.env.CEO_CONTACT_EMAIL?.trim().toLowerCase()
+  return email && EMAIL_ADDRESS_PATTERN.test(email) && !isBlockedEmail(email) ? email : null
+}
+
 export function getEmailFromName() {
   return process.env.EMAIL_FROM_NAME?.trim() || DEFAULT_EMAIL_FROM_NAME
 }
