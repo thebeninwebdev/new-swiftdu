@@ -188,6 +188,16 @@
   }
 }
 
+@keyframes partnerCardFloatOne {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -14px, 0); }
+}
+
+@keyframes partnerCardFloatTwo {
+  0%, 100% { transform: translate3d(0, -6px, 0); }
+  50% { transform: translate3d(0, 10px, 0); }
+}
+
 .landing-reveal,
 .landing-pop,
 .landing-scroll-reveal,
@@ -314,6 +324,26 @@
   animation: landingFloatCardB 6s ease-in-out 500ms infinite;
 }
 
+.partner-float-one,
+.partner-float-two {
+  will-change: transform;
+}
+
+.partner-float-one { animation: partnerCardFloatOne 5.5s ease-in-out infinite; }
+.partner-float-two { animation: partnerCardFloatTwo 6.5s ease-in-out -2s infinite; }
+
+@media (max-width: 767px) {
+  @keyframes partnerCardFloatOne {
+    0%, 100% { transform: translate3d(0, 0, 0); }
+    50% { transform: translate3d(0, -8px, 0); }
+  }
+
+  @keyframes partnerCardFloatTwo {
+    0%, 100% { transform: translate3d(0, -3px, 0); }
+    50% { transform: translate3d(0, 7px, 0); }
+  }
+}
+
 .landing-spin-slow {
   animation: landingSpin 20s linear infinite;
   will-change: transform;
@@ -326,6 +356,8 @@
   .landing-scroll-pop,
   .landing-float,
   .landing-float-card,
+  .partner-float-one,
+  .partner-float-two,
   .landing-spin-slow {
     animation: none;
     opacity: 1;

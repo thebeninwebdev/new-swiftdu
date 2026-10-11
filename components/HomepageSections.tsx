@@ -11,6 +11,8 @@ import learnImage from "@/public/learn.jpeg";
 import opportunityEarnImage from "@/public/opportunity-earn.jpg";
 import opportunityLearnImage from "@/public/opportunity-learn.jpg";
 import opportunityCommunityImage from "@/public/opportunity-community.jpg";
+import wduBlogLogo from "@/public/partners/wdu-blog.jpeg";
+import yaliEdoLogo from "@/public/partners/yali-edo.jpg";
 import {
   ArrowRight, ArrowUpRight, BadgeCheck, Banknote, Bell, BookOpen, BriefcaseBusiness, Check, ChevronLeft, ChevronRight, FileText,
   GraduationCap, Headphones, Heart, Lightbulb, MapPin, PackageCheck, Shield, ShoppingBag,
@@ -91,7 +93,7 @@ function PillarsSection() {
       <motion.div {...reveal()} className="lg:sticky lg:top-[20vh] lg:h-fit lg:self-start">
         <div className="border-b border-slate-200/80 pb-10 sm:pb-12 lg:border-b-0 lg:pb-0"><p className="text-sm font-bold uppercase tracking-[0.18em] text-violet-600">There&apos;s a place for you here</p><h2 className="mt-4 text-4xl font-black leading-[1.02] tracking-[-0.055em] text-slate-950 sm:text-5xl lg:text-6xl">What can you do<br className="hidden lg:block" /> in SwiftDU?</h2><p className="mt-6 max-w-xl text-base leading-8 text-slate-600 sm:text-lg">Whether you need help, want to earn, or want to grow, there&apos;s a place for you in the SwiftDU community.</p></div>
       </motion.div>
-      <div className="space-y-5 lg:space-y-0 lg:pb-[64vh]">{pillars.map((pillar, index) => <article key={pillar.title} style={{ zIndex: index + 10 }} className={`group relative min-h-[560px] overflow-hidden rounded-[32px] border border-slate-200/70 bg-slate-100 shadow-[0_18px_50px_rgba(30,22,70,0.07)] transition-[border-color,box-shadow] duration-500 hover:border-violet-200 hover:shadow-[0_22px_55px_rgba(30,22,70,0.12)] sm:min-h-[600px] lg:sticky lg:mb-[78vh] lg:min-h-[660px] lg:max-h-[720px] last:lg:mb-0 ${index === 0 ? "lg:top-28" : index === 1 ? "lg:top-32" : "lg:top-36"}`}>
+      <div className="space-y-5 lg:space-y-0 lg:pb-[64vh]">{pillars.map((pillar, index) => <article key={pillar.title} style={{ zIndex: index + 10 }} className={`group relative min-h-[560px] overflow-hidden rounded-[32px] border border-slate-200/70 bg-slate-100 shadow-[0_18px_50px_rgba(30,22,70,0.07)] transition-[border-color,box-shadow] duration-500 hover:border-violet-200 hover:shadow-[0_22px_55px_rgba(30,22,70,0.12)] sm:min-h-[600px] lg:sticky lg:mb-[78vh] lg:min-h-[660px] lg:max-h-[720px] ${index === 0 ? "lg:top-28" : index === 1 ? "lg:top-32" : "lg:top-36"}`}>
         <Image src={pillar.image} alt={pillar.alt} fill sizes="(max-width: 1023px) 100vw, 56vw" className="object-cover transition-transform duration-700 ease-out group-hover:scale-[1.015]" />
         <div aria-hidden="true" className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-slate-950/25 via-slate-950/5 to-transparent" />
         <span className="absolute left-5 top-5 flex h-9 min-w-9 items-center justify-center rounded-full border border-white/70 bg-white/90 px-3 text-xs font-black text-slate-900 shadow-sm backdrop-blur-sm">0{index + 1}</span>
@@ -114,7 +116,9 @@ function LegacyHowItWorks() {
   </div></section>;
 }
 
-function HowItWorks() {
+// Kept temporarily as a reference for the existing SwiftDU mockup content.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function LegacyHowItWorksCarousel() {
   const reducedMotion = useReducedMotion();
   const carouselRef = useRef<HTMLDivElement>(null);
   const [activeHowStep, setActiveHowStep] = useState(0);
@@ -160,6 +164,23 @@ function HowItWorks() {
       <div className="mt-9 grid items-center gap-10 lg:grid-cols-[1.12fr_0.88fr] lg:gap-16"><button type="button" aria-label="Previous step" onClick={() => goToStep(activeHowStep - 1)} className="absolute left-0 top-[55%] z-20 hidden h-12 w-12 -translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm transition hover:bg-violet-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 lg:flex"><ChevronLeft className="h-5 w-5" /></button><button type="button" aria-label="Next step" onClick={() => goToStep(activeHowStep + 1)} className="absolute right-0 top-[55%] z-20 hidden h-12 w-12 translate-x-1/2 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm transition hover:bg-violet-600 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 lg:flex"><ChevronRight className="h-5 w-5" /></button><AnimatePresence mode="wait" custom={direction}><motion.div key={`visual-${activeHowStep}`} custom={direction} initial={{ opacity: 0, x: direction * 25 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: direction * -25 }} transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }} className="h-[360px] sm:h-[430px] lg:h-[550px]">{visual()}</motion.div></AnimatePresence><AnimatePresence mode="wait" custom={direction}><motion.div key={`copy-${activeHowStep}`} custom={direction} initial={{ opacity: 0, x: direction * 25 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: direction * -25 }} transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }} className="lg:py-8"><p className="text-sm font-black tracking-[0.16em] text-violet-600">{activeStep.number}</p><h3 className="mt-3 text-3xl font-black tracking-[-0.045em] text-slate-950 sm:text-4xl">{activeStep.title}</h3><p className="mt-5 max-w-lg text-base leading-8 text-slate-600 sm:text-lg">{activeStep.description}</p><div className="mt-8 space-y-5">{activeStep.rows.map((row) => <div key={row.title} className="flex gap-4"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-600"><row.icon className="h-4 w-4" aria-hidden="true" /></span><div><h4 className="font-bold text-slate-950">{row.title}</h4><p className="mt-0.5 text-sm leading-6 text-slate-500">{row.body}</p></div></div>)}</div></motion.div></AnimatePresence></div><div className="mt-8 flex justify-center gap-3 lg:hidden"><button type="button" aria-label="Previous step" onClick={() => goToStep(activeHowStep - 1)} className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"><ChevronLeft className="h-5 w-5" /></button><button type="button" aria-label="Next step" onClick={() => goToStep(activeHowStep + 1)} className="flex h-12 w-12 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-900 shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500"><ChevronRight className="h-5 w-5" /></button></div></div>
   </div></section>;
 }
+const howItWorksStackSteps = [
+  { number: "01", title: "Tell us what you need", description: "Choose a service, add the details and tell us where it should go." },
+  { number: "02", title: "A Swifter takes the task", description: "Available verified students can accept your request and get to work." },
+  { number: "03", title: "Follow it until it’s done", description: "Track the task, stay updated and confirm everything when it arrives." },
+] as const;
+
+function HowItWorksStackVisual({ step }: { step: number }) {
+  if (step === 0) return <div aria-hidden="true" className="absolute inset-0 overflow-hidden bg-[#f4f0ff]"><div className="absolute -right-16 -top-24 h-72 w-72 rounded-full bg-violet-200/70 blur-3xl" /><div className="absolute left-1/2 top-[10%] w-[58%] min-w-[275px] max-w-[390px] -translate-x-1/2 rounded-[22px] border border-violet-100 bg-white p-4 shadow-[0_28px_60px_rgba(69,45,151,0.16)] sm:p-5"><div className="flex items-center justify-between"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-sm font-black text-white">S</span><span className="text-xs font-bold text-slate-400">SwiftDU</span></div><h3 className="mt-4 text-xl font-black tracking-tight text-slate-950">What do you need?</h3><div className="mt-3 grid grid-cols-2 gap-2">{[["Food", "bg-orange-100 text-orange-600"], ["Shopping", "bg-emerald-100 text-emerald-600"], ["Printing", "bg-sky-100 text-sky-600"], ["Water", "bg-violet-100 text-violet-600"]].map(([label, color]) => <div key={label} className="rounded-xl border border-slate-100 p-2.5 sm:p-3"><span className={`flex h-7 w-7 items-center justify-center rounded-lg ${color}`}><ShoppingBag className="h-3.5 w-3.5" /></span><p className="mt-1.5 text-xs font-bold text-slate-700">{label}</p></div>)}</div><div className="mt-3 flex items-center gap-3 rounded-xl bg-violet-50 p-2.5"><MapPin className="h-4 w-4 text-violet-600" /><div><p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Deliver to</p><p className="text-xs font-bold text-slate-800">Girls&apos; Hostel</p></div></div></div></div>;
+  if (step === 1) return <div aria-hidden="true" className="absolute inset-0 overflow-hidden bg-[#f7f3ff]"><div className="absolute -bottom-24 -left-12 h-64 w-64 rounded-full bg-violet-200/70 blur-3xl" /><div className="absolute left-1/2 top-[12%] w-[57%] min-w-[280px] max-w-[410px] -translate-x-1/2 rounded-2xl border border-violet-100 bg-white p-4 shadow-[0_22px_50px_rgba(69,45,151,0.13)] sm:p-5"><div className="flex items-center justify-between"><span className="text-xs font-bold text-violet-600">TASK POSTED</span><span className="h-2.5 w-2.5 rounded-full bg-amber-400" /></div><h3 className="mt-3 text-xl font-black text-slate-950">Restaurant</h3><div className="mt-3 flex items-center gap-2 text-sm font-semibold text-slate-500"><MapPin className="h-4 w-4 text-violet-500" />Girls&apos; Hostel</div><div className="mt-4 flex items-center gap-3 rounded-xl bg-violet-50 p-3"><span className="flex h-8 w-8 items-center justify-center rounded-full border-2 border-violet-200 border-t-violet-600" /><span className="text-sm font-bold text-violet-700">Finding a Swifter…</span></div></div><div className="absolute right-[15%] top-[54%] w-[40%] min-w-[205px] rounded-2xl bg-slate-950 p-4 text-white shadow-xl"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-500"><BadgeCheck className="h-5 w-5" /></span><div><p className="text-sm font-bold">Swifter found</p><p className="text-xs text-slate-300">Task accepted</p></div></div></div></div>;
+  return <div aria-hidden="true" className="absolute inset-0 overflow-hidden bg-[#17151d] text-white"><div className="absolute -right-10 top-0 h-64 w-64 rounded-full bg-violet-700/30 blur-3xl" /><div className="absolute left-1/2 top-[11%] w-[58%] min-w-[285px] max-w-[410px] -translate-x-1/2 rounded-2xl border border-white/10 bg-white/[0.08] p-4 shadow-2xl backdrop-blur-sm sm:p-5"><div className="flex items-center justify-between"><div><p className="text-xs font-bold uppercase tracking-wider text-violet-300">Your task</p><h3 className="mt-1 text-xl font-black">Restaurant order</h3></div><span className="rounded-full bg-emerald-400/15 px-3 py-1 text-xs font-bold text-emerald-300">Active</span></div><div className="mt-5 space-y-3.5">{[["Accepted", "Your Swifter is ready", true], ["On the way", "Heading to Girls' Hostel", true], ["Delivered", "Confirm when it arrives", false]].map(([title, body, done], index) => <div key={title as string} className="relative flex gap-3"><span className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${done ? "bg-violet-500" : "border border-white/30 bg-white/10"}`}>{done ? <Check className="h-3.5 w-3.5" /> : <span className="h-2 w-2 rounded-full bg-white/70" />}</span>{index < 2 ? <span className="absolute left-3.5 top-7 h-4 w-px bg-white/20" /> : null}<div><p className="text-sm font-bold">{title}</p><p className="text-xs text-slate-300">{body}</p></div></div>)}</div><div className="mt-5 rounded-xl bg-white p-2.5 text-center text-sm font-bold text-violet-700">Confirm received</div></div></div>;
+}
+
+function HowItWorks() {
+  const reducedMotion = useReducedMotion();
+  return <section id="how-it-works" aria-label="How SwiftDU works" className="overflow-x-clip bg-[#faf9ff] py-24 sm:py-32 lg:py-36"><div className="mx-auto max-w-[1380px] px-5 sm:px-8 lg:px-10"><motion.div initial={reducedMotion ? false : { opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true, amount: 0.4 }} transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1] }} className="mx-auto max-w-2xl text-center"><p className="text-sm font-bold uppercase tracking-[0.18em] text-violet-600">How SwiftDU works</p><h2 className="mt-4 text-4xl font-black tracking-[-0.055em] text-slate-950 sm:text-5xl lg:text-6xl">Get it done in <span className="text-violet-600">3.</span></h2><p className="mt-5 text-base leading-7 text-slate-500 sm:text-lg">Getting help on campus is simple. Tell us what you need, a verified Swifter takes the task, and you follow it until it&apos;s done.</p></motion.div><div className="mx-auto mt-12 max-w-[880px] space-y-5 sm:mt-16 lg:space-y-0 lg:pb-[58vh]">{howItWorksStackSteps.map((step, index) => <article key={step.number} style={{ zIndex: (index + 1) * 10 }} className={`relative aspect-[4/3] overflow-hidden rounded-[24px] border border-black/[0.06] shadow-[0_18px_45px_rgba(30,22,70,0.10)] sm:aspect-[1.7/1] lg:sticky lg:mb-[76vh] lg:aspect-[1.82/1] lg:max-h-[480px] lg:min-h-[410px] ${index === 0 ? "lg:top-28" : index === 1 ? "lg:top-[8.5rem]" : "lg:top-36 lg:mb-0"}`}><HowItWorksStackVisual step={index} /><span className={`absolute left-5 top-5 z-10 text-xs font-black tracking-[0.16em] ${index === 2 ? "text-white/75" : "text-slate-500"}`}>{step.number}</span><div className={`absolute inset-x-0 bottom-0 z-10 px-5 pb-5 pt-16 text-center sm:px-10 sm:pb-8 ${index === 2 ? "bg-gradient-to-t from-[#17151d] via-[#17151d]/80 to-transparent text-white" : "bg-gradient-to-t from-white via-white/85 to-transparent text-slate-950"}`}><h3 className="text-2xl font-black tracking-[-0.045em] sm:text-3xl">{step.title}</h3><p className={`mx-auto mt-2 max-w-xl text-sm leading-6 sm:text-base ${index === 2 ? "text-slate-300" : "text-slate-600"}`}>{step.description}</p></div></article>)}</div></div></section>;
+}
+
 function OpportunitiesSection() {
   const reducedMotion = useReducedMotion();
   const reveal = (delay = 0) => ({ initial: reducedMotion ? false as const : { opacity: 0, y: 30 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: 0.25 }, transition: { duration: 0.7, delay, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] } });
@@ -177,6 +198,82 @@ function OpportunitiesSection() {
     <motion.div {...reveal(0.15)} className="mt-12 grid border-t border-slate-200 pt-6 sm:grid-cols-3">{[{ label: "Real campus tasks", icon: PackageCheck }, { label: "Real responsibility", icon: ShieldCheck }, { label: "Real growth", icon: TrendingUp }].map((item) => <div key={item.label} className="flex items-center gap-3 py-3 text-sm font-semibold text-slate-600 sm:justify-center"><item.icon className="h-4 w-4 text-violet-600" aria-hidden="true" />{item.label}</div>)}</motion.div>
   </div></section>;
 }
+
+const partners = [
+  {
+    number: "01",
+    name: "Western Delta Blog",
+    category: "Media & Community",
+    description: "Amplifying student stories, opportunities and innovations across the Western Delta community.",
+    logo: wduBlogLogo,
+    logoAlt: "Western Delta Blog logo",
+    href: "https://www.instagram.com/westerndeltablog_/",
+    annotation: <>Stronger voices<br />for student communities.</>,
+    floatClass: "partner-float-one",
+    rotationClass: "-rotate-[2.5deg]",
+  },
+  {
+    number: "02",
+    name: "YALI Network Edo",
+    category: "Youth Leadership & Community",
+    description: "Empowering young people with leadership skills, opportunities and stronger communities in Edo State.",
+    logo: yaliEdoLogo,
+    logoAlt: "YALI Network Edo logo",
+    href: "https://www.instagram.com/yali_networkedo/",
+    annotation: <>Empowering<br />the next generation.</>,
+    floatClass: "partner-float-two",
+    rotationClass: "rotate-[2.5deg]",
+  },
+] as const;
+
+function PartnerCard({ partner }: { partner: typeof partners[number] }) {
+  return <div className={partner.rotationClass}>
+    <div className={partner.floatClass}>
+      <a href={partner.href} target="_blank" rel="noreferrer" aria-label={`Visit ${partner.name} on Instagram`} className="group block rounded-[30px] border border-violet-100/90 bg-white p-5 shadow-[0_22px_55px_rgba(49,35,92,0.10)] transition-[box-shadow,transform] duration-500 hover:scale-[1.015] hover:shadow-[0_30px_68px_rgba(49,35,92,0.16)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-4 sm:rounded-[34px] sm:p-7">
+        <div className="flex items-start justify-between gap-4">
+          <span className="rounded-full border border-violet-200 bg-violet-50 px-3 py-1.5 text-xs font-black tracking-[0.12em] text-violet-700">{partner.number}</span>
+          <span aria-hidden="true" className="flex h-11 w-11 items-center justify-center rounded-full border border-violet-100 bg-violet-50 text-violet-700 transition-transform duration-300 group-hover:translate-x-1 group-hover:-translate-y-1"><ArrowUpRight className="h-5 w-5" /></span>
+        </div>
+        <div className="mt-7 flex min-h-28 items-center justify-center rounded-[22px] bg-[#faf9ff] px-5 py-4 sm:min-h-32">
+          <Image src={partner.logo} alt={partner.logoAlt} width={300} height={150} sizes="(max-width: 640px) 58vw, 280px" className="max-h-24 w-auto max-w-full object-contain sm:max-h-28" />
+        </div>
+        <h3 className="mt-7 text-2xl font-black tracking-[-0.045em] text-slate-950 sm:text-[1.75rem]">{partner.name}</h3>
+        <p className="mt-2 text-xs font-black uppercase tracking-[0.12em] text-violet-600">{partner.category}</p>
+        <div className="mt-5 h-px bg-violet-100" />
+        <p className="mt-5 max-w-md text-sm leading-6 text-slate-600 sm:text-[0.95rem] sm:leading-7">{partner.description}</p>
+      </a>
+    </div>
+  </div>;
+}
+
+function PartnersSection() {
+  const reducedMotion = useReducedMotion();
+  const reveal = (delay = 0) => ({ initial: reducedMotion ? false as const : { opacity: 0, y: 34 }, whileInView: { opacity: 1, y: 0 }, viewport: { once: true, amount: 0.18 }, transition: { duration: 0.75, delay, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] } });
+  return <section id="partners" aria-labelledby="partners-heading" className="relative isolate overflow-hidden bg-[#fcfbf8] py-24 sm:py-28 lg:py-40">
+    <div aria-hidden="true" className="pointer-events-none absolute -left-12 top-5 select-none text-[clamp(8rem,16vw,18.75rem)] font-black uppercase leading-none tracking-[-0.09em] text-violet-950/[0.045]">Partners</div>
+    <div aria-hidden="true" className="pointer-events-none absolute right-[8%] top-[20%] h-72 w-72 rounded-full bg-violet-200/35 blur-3xl" />
+    <div aria-hidden="true" className="pointer-events-none absolute -right-24 bottom-[13%] h-64 w-64 rotate-[-18deg] rounded-[4rem] bg-purple-100/65" />
+    <svg aria-hidden="true" className="pointer-events-none absolute right-[4%] top-[30%] hidden h-56 w-[31rem] text-violet-300/70 lg:block" viewBox="0 0 496 224" fill="none"><path d="M8 170C106 194 119 33 240 82c97 39 92 140 242 92" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /><circle cx="8" cy="170" r="4" fill="currentColor" /><circle cx="482" cy="174" r="4" fill="currentColor" /></svg>
+    <div className="relative mx-auto max-w-[1440px] px-5 sm:px-8 lg:px-10">
+      <div className="grid items-center gap-16 lg:grid-cols-[0.9fr_1.1fr] lg:gap-12 xl:gap-16">
+        <motion.div {...reveal()} className="relative z-10 max-w-[620px]">
+          <p className="text-sm font-black uppercase tracking-[0.18em] text-violet-600">Partners</p>
+          <h2 id="partners-heading" className="mt-5 max-w-[620px] text-[clamp(2.8rem,5vw,6rem)] font-black leading-[0.88] tracking-[-0.075em] text-slate-950">Built with people who believe in <span className="text-violet-600">the mission.</span></h2>
+          <p className="mt-7 max-w-[520px] text-base leading-8 text-slate-600 sm:text-lg">We work with trusted communities and organizations helping SwiftDU grow beyond errands.</p>
+          <Link href="/contact-us" className="group mt-9 inline-flex h-14 items-center gap-3 rounded-2xl bg-violet-600 px-6 text-sm font-bold text-white shadow-[0_12px_28px_rgba(124,58,237,0.22)] transition duration-300 hover:-translate-y-0.5 hover:bg-violet-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2">Partner with SwiftDU <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" aria-hidden="true" /></Link>
+        </motion.div>
+        <div className="relative mx-auto w-full max-w-[700px] pb-7 pt-5 lg:min-h-[720px] lg:pt-0 xl:min-h-[760px]">
+          <p aria-hidden="true" className="pointer-events-none absolute left-[3%] top-0 z-0 hidden rotate-[-7deg] font-serif text-lg italic leading-5 text-violet-500/80 lg:block">{partners[0].annotation}</p>
+          <motion.div {...reveal(0.14)} className="relative z-10 hover:z-30 w-[92%] sm:w-[88%] lg:absolute lg:left-0 lg:top-10 lg:w-[72%]"><PartnerCard partner={partners[0]} /></motion.div>
+          <p aria-hidden="true" className="pointer-events-none absolute right-[3%] top-[35%] z-0 hidden rotate-[6deg] font-serif text-lg italic leading-5 text-violet-500/80 lg:block">{partners[1].annotation}</p>
+          <motion.div {...reveal(0.26)} className="relative z-20 hover:z-30 ml-auto mt-9 w-[92%] sm:w-[88%] lg:absolute lg:right-0 lg:top-[42%] lg:mt-0 lg:w-[72%]"><PartnerCard partner={partners[1]} /></motion.div>
+        </div>
+      </div>
+      <motion.div {...reveal(0.12)} className="mt-14 flex items-center gap-4 border-t border-violet-100 pt-7 sm:mt-20"><span aria-hidden="true" className="flex -space-x-1.5"><i className="h-3.5 w-3.5 rounded-full bg-violet-300" /><i className="h-3.5 w-3.5 rounded-full bg-violet-500" /><i className="h-3.5 w-3.5 rounded-full bg-purple-700" /></span><p className="text-lg font-bold tracking-[-0.03em] text-slate-800 sm:text-xl">Stronger communities.<br className="sm:hidden" /> More opportunities.</p></motion.div>
+    </div>
+  </section>;
+}
+
 function TrustAndCTA() {
   const items = [{ label: "Verified Swifters", icon: BadgeCheck }, { label: "Secure payments", icon: Shield }, { label: "Order tracking", icon: PackageCheck }, { label: "Community standards", icon: Users }, { label: "Dedicated support", icon: Headphones }, { label: "Safe & reliable", icon: ShieldCheck }];
   return <section className="bg-white px-5 py-24 sm:px-8 sm:py-32 lg:px-10"><div className="mx-auto grid max-w-[1380px] overflow-hidden bg-[#0d1236] text-white lg:grid-cols-[1.05fr_0.95fr]">
@@ -186,5 +283,5 @@ function TrustAndCTA() {
 }
 
 export default function HomepageSections() {
-  return <><CommunitySection /><PillarsSection /><HowItWorks /><OpportunitiesSection /><TrustAndCTA /></>;
+  return <><CommunitySection /><PillarsSection /><HowItWorks /><OpportunitiesSection /><PartnersSection /><TrustAndCTA /></>;
 }
