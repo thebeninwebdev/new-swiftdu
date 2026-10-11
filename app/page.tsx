@@ -462,8 +462,6 @@ export default function LandingPage() {
     if (!isPending && session?.user) router.replace('/dashboard');
   }, [isPending, router, session?.user]);
 
-  if (isPending || session?.user) return null;
-
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-indigo-100 selection:text-indigo-900">
       <main>

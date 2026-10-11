@@ -198,7 +198,7 @@
   50% { transform: translate3d(0, 10px, 0); }
 }
 
-@keyframes trustMarquee {
+@keyframes trustMarqueeScroll {
   from { transform: translate3d(0, 0, 0); }
   to { transform: translate3d(-50%, 0, 0); }
 }
@@ -338,7 +338,9 @@
 .partner-float-two { animation: partnerCardFloatTwo 6.5s ease-in-out -2s infinite; }
 
 .trust-marquee-track {
-  animation: trustMarquee 28s linear infinite;
+  display: flex;
+  width: max-content;
+  animation: trustMarqueeScroll 38s linear infinite;
   will-change: transform;
 }
 
