@@ -31,6 +31,11 @@ export interface IOrder extends Document, CafeInquiryFields {
   location: string;
   roomNumber?: string;
   deliveryDestinationKey?: string;
+  batchId?: string;
+  batchWindowStart?: Date;
+  batchWindowEnd?: Date;
+  batchingStatus?: 'waiting' | 'batched' | 'released_single';
+  taskerSearchStartedAt?: Date;
   deliveryCoordinates?: { latitude: number; longitude: number; accuracy?: number; capturedAt: Date };
   taskerGenderRestriction?: TaskerGenderRestriction;
   deliveryLocation?: string;
@@ -221,6 +226,11 @@ const orderSchema = new Schema<IOrder>(
     deliveryLocation: String,
     roomNumber: { type: String, trim: true, maxlength: 40 },
     deliveryDestinationKey: String,
+    batchId: { type: String, index: true },
+    batchWindowStart: Date,
+    batchWindowEnd: Date,
+    batchingStatus: { type: String, enum: ['waiting', 'batched', 'released_single'], index: true },
+    taskerSearchStartedAt: { type: Date, index: true },
     deliveryCoordinates: {
       type: new Schema({
         latitude: { type: Number, required: true, min: -90, max: 90 },
@@ -481,6 +491,7 @@ orderSchema.index({ userId: 1, isTestOrder: 1, status: 1 });
 orderSchema.index({ taskerId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ taskType: 1, status: 1, createdAt: -1 });
 orderSchema.index({ isTestOrder: 1, status: 1, createdAt: -1 });
+orderSchema.index({ batchingStatus: 1, batchWindowEnd: 1, taskType: 1 });
 
 
 type MongooseStringSchemaPath = {

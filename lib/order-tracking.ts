@@ -18,6 +18,9 @@ export type TrackingOrder = CafeInquiryFields & {
   taskType?: string
   store?: string
   completionDueAt?: string | Date
+  batchingStatus?: 'waiting' | 'batched' | 'released_single'
+  batchWindowEnd?: string | Date
+  taskerSearchStartedAt?: string | Date
 }
 
 export function getTrackingStore(order: Pick<TrackingOrder, 'taskType' | 'store'>) {
@@ -49,7 +52,8 @@ export function isTaskerSearchExpired(
   nowMs: number,
 ) {
   if (!order || !isWaitingForTasker(order)) return false
-  const startedAt = new Date(order.createdAt).getTime()
+  if (order.batchingStatus === 'waiting') return false
+  const startedAt = new Date(order.taskerSearchStartedAt || order.createdAt).getTime()
   return Number.isFinite(startedAt) && nowMs >= startedAt + TASKER_SEARCH_TIMEOUT_MS
 }
 
@@ -58,6 +62,10 @@ export function getTrackingStage(order: TrackingOrder): TrackingStage {
   const shopping = order.taskType === 'restaurant' || order.taskType === 'shopping' || order.taskType === 'indomie' || order.taskType === 'water'
   const workingLabel = inquiry ? 'Checking the cafe' : shopping ? 'Getting your order' : 'Working on your task'
   const steps = ['Finding a tasker', 'Order accepted', workingLabel, inquiry ? 'Inquiry completed' : 'Delivered']
+  if (order.batchingStatus === 'waiting') {
+    const closes = order.batchWindowEnd ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(order.batchWindowEnd)) : 'soon'
+    return { key: 'searching', title: 'Preparing your Indomie batch', label: 'Collecting nearby orders', detail: `We’re grouping nearby Indomie orders for an efficient trip. Your batch closes at ${closes}.`, activeIndex: 0, steps, mood: 'searching' }
+  }
   // Terminal status takes precedence over retained assignment/payment/cafe history.
   if (order.status === 'cancelled') return { key: 'cancelled', title: 'Order cancelled', label: 'Cancelled', detail: order.cancellationReason === 'tasker_search_timeout' ? 'No tasker accepted within 7 minutes, so your request was automatically cancelled. Please retry to find a tasker.' : 'This order was cancelled.', activeIndex: 0, steps: ['Order cancelled'], mood: 'warning' }
   if (order.status === 'completed') return { key: 'completed', title: inquiry ? 'Your cafe check is complete!' : 'Your order has arrived!', label: inquiry ? 'Completed' : 'Delivered', detail: inquiry ? 'Your tasker has finished checking the cafe.' : 'Your tasker marked your order as delivered. Thank you for using SwiftDU.', activeIndex: 3, steps, mood: 'success' }

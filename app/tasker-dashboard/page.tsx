@@ -16,6 +16,11 @@ const HEALTHY_SOCKET_RECONCILE_INTERVAL_MS = 60_000
 const UNHEALTHY_SOCKET_POLL_INTERVAL_MS = 10_000
 
 interface Errand extends CafeInquiryFields {
+  batchId?: string
+  isBatch?: boolean
+  orderCount?: number
+  totalIndomiePacks?: number
+  totalEggCount?: number
   cafeInquiry?: boolean
   _id: string
   userId: string
@@ -360,6 +365,9 @@ export default function TaskerDashboardPage() {
         }
 
         const availableErrands: Errand[] = availableRes ? await availableRes.json() : []
+        const batchRes = work.data?.checkedIn ? await fetch('/api/indomie-batches', { cache: 'no-store' }) : null
+        const batches: Array<{ _id: string; orderCount: number; destinationLabel?: string; status: string; availableAt?: string; orders: Array<{ indomiePacks?: number; eggCount?: number; taskerFee?: number }> }> = batchRes?.ok ? await batchRes.json() : []
+        const batchErrands: Errand[] = batches.map(batch => ({ _id: `batch-${batch._id}`, batchId: batch._id, isBatch: true, userId: '', taskType: 'indomie', description: '', amount: 0, taskerFee: batch.orders.reduce((sum, order) => sum + Number(order.taskerFee || 0), 0), location: batch.destinationLabel || 'Campus', status: batch.status === 'available' ? 'pending' : 'in_progress', isTestOrder: false, createdAt: batch.availableAt || new Date().toISOString(), orderCount: batch.orderCount, totalIndomiePacks: batch.orders.reduce((sum, order) => sum + Number(order.indomiePacks || 0), 0), totalEggCount: batch.orders.reduce((sum, order) => sum + Number(order.eggCount || 0), 0) }))
 
         const visibleAvailableErrands = availableErrands.filter(
           (errand) => String(errand.taskerId || '') !== taskerProfile._id
@@ -370,7 +378,7 @@ export default function TaskerDashboardPage() {
         }
         prevErrandsCount.current = visibleAvailableErrands.length
 
-        setErrands(sortErrands(visibleAvailableErrands))
+        setErrands(sortErrands([...visibleAvailableErrands, ...batchErrands]))
         setError(null)
 
         if (initial) {
@@ -443,11 +451,13 @@ export default function TaskerDashboardPage() {
     if (acceptingTaskId) return
     setAcceptingTaskId(orderId)
     try {
-      const response = await fetch('/api/errands', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) })
+      const isBatch = orderId.startsWith('batch:')
+      const actualId = isBatch ? orderId.slice('batch:'.length) : orderId
+      const response = await fetch(isBatch ? `/api/indomie-batches/${actualId}/accept` : '/api/errands', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: isBatch ? undefined : JSON.stringify({ orderId }) })
       const order = await response.json()
       if (!response.ok) throw new Error(order.error || 'This task is no longer available.')
       window.dispatchEvent(new Event('swiftdu-work-updated'))
-      router.push(`/tasker-dashboard/${order._id}`)
+      router.push(isBatch ? `/tasker-dashboard/batches/${order._id}` : `/tasker-dashboard/${order._id}`)
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Could not accept this task. Please try again.')
       void loadDashboardRef.current(false)

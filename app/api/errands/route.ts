@@ -22,6 +22,7 @@ import {
   getTaskerOrderModeFilter,
   shouldSendOrderNotification,
 } from '@/lib/test-orders'
+import { releaseDueIndomieBatches } from '@/lib/indomie-batch-release'
 
 export const dynamic = 'force-dynamic'
 
@@ -89,6 +90,7 @@ const allowedSortFields = new Set([
 export async function GET(request: NextRequest) {
   try {
     await connectDB()
+    await releaseDueIndomieBatches()
 
     const taskType = request.nextUrl.searchParams.get('taskType')
     const location = request.nextUrl.searchParams.get('location')
@@ -118,12 +120,13 @@ export async function GET(request: NextRequest) {
       filter.$or = [
         {
           status: 'pending',
-          createdAt: { $gt: new Date(Date.now() - TASKER_SEARCH_TIMEOUT_MS) },
-          $or: [
-            { taskerId: { $exists: false } },
-            { taskerId: null },
-            { taskerId: '' },
-          ],
+          $and: [{ $or: [
+            { taskerSearchStartedAt: { $gt: new Date(Date.now() - TASKER_SEARCH_TIMEOUT_MS) } },
+            { taskerSearchStartedAt: { $exists: false }, createdAt: { $gt: new Date(Date.now() - TASKER_SEARCH_TIMEOUT_MS) } },
+          ] }, { $or: [
+            { taskerId: { $exists: false } }, { taskerId: null }, { taskerId: '' },
+          ] }],
+          batchingStatus: { $ne: 'waiting' },
         },
         taskerId
           ? {
@@ -312,7 +315,11 @@ export async function POST(request: NextRequest) {
         location: order.location,
         updatedAt: order.updatedAt,
         status: 'pending',
-        createdAt: { $gt: new Date(acceptedAt.getTime() - TASKER_SEARCH_TIMEOUT_MS) },
+        $or: [
+          { taskerSearchStartedAt: { $gt: new Date(acceptedAt.getTime() - TASKER_SEARCH_TIMEOUT_MS) } },
+          { taskerSearchStartedAt: { $exists: false }, createdAt: { $gt: new Date(acceptedAt.getTime() - TASKER_SEARCH_TIMEOUT_MS) } },
+        ],
+        batchingStatus: { $ne: 'waiting' },
         ...getTaskerOrderModeFilter(tasker),
       },
       {

@@ -3,14 +3,19 @@ export type TaskerGenderRestriction = 'male' | 'female' | 'any'
 // The booking form currently accepts free text. Keep explicit destination aliases
 // here until delivery locations have their own persisted IDs.
 export const DELIVERY_DESTINATIONS: ReadonlyArray<{
-  id?: string
+  id: string
   requiresRoomNumber?: boolean
   aliases: readonly string[]
   restriction: TaskerGenderRestriction
 }> = [
   { id: 'girls-hostel', requiresRoomNumber: true, aliases: ['girls hostel', 'female hostel'], restriction: 'female' },
   { id: 'amnesty', requiresRoomNumber: true, aliases: ['amnesty', 'amnesty hostel', 'boys hostel', 'male hostel'], restriction: 'male' },
-  { aliases: ['library', 'plt', 'nddc auditorium', 'staff quarters', 'lecturers block', 'bursary'], restriction: 'any' },
+  { id: 'library', aliases: ['library'], restriction: 'any' },
+  { id: 'plt', aliases: ['plt'], restriction: 'any' },
+  { id: 'nddc-auditorium', aliases: ['nddc auditorium', 'auditorium'], restriction: 'any' },
+  { id: 'staff-quarters', aliases: ['staff quarters'], restriction: 'any' },
+  { id: 'lecturers-block', aliases: ['lecturers block'], restriction: 'any' },
+  { id: 'bursary', aliases: ['bursary'], restriction: 'any' },
 ]
 
 export function classifyDeliveryLocation(location?: string | null): TaskerGenderRestriction | undefined {
@@ -38,6 +43,10 @@ export function canTaskerDeliver(order: { location?: string | null; taskerGender
 export function getRoomDestination(location?: string | null) {
   const restriction = classifyDeliveryLocation(location)
   return DELIVERY_DESTINATIONS.find(item => item.requiresRoomNumber && item.restriction === restriction)
+}
+export function getDeliveryDestination(location?: string | null) {
+  const normalized = String(location || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  return DELIVERY_DESTINATIONS.find(item => item.aliases.some(alias => ` ${normalized} `.includes(` ${alias} `)))
 }
 export function normalizeRoomNumber(value: unknown): string | undefined {
   if (value === undefined || value === null || value === '') return undefined

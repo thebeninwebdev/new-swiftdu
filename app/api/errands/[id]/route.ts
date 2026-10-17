@@ -11,7 +11,8 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const tasker = await currentTasker(request.headers)
     if (!tasker.isVerified || tasker.isRejected) throw new WorkError('Your tasker account needs approval.', 403)
     const { id } = await params
-    const order = await Order.findOne({ _id: id, status: 'pending', createdAt: { $gt: new Date(Date.now() - TASKER_SEARCH_TIMEOUT_MS) }, $and: [getTaskerOrderModeFilter(tasker), ...(!areOperationsEnabled() ? [{ isTestOrder: true }] : [])] })
+    const cutoff = new Date(Date.now() - TASKER_SEARCH_TIMEOUT_MS)
+    const order = await Order.findOne({ _id: id, status: 'pending', batchingStatus: { $ne: 'waiting' }, $and: [{ $or: [{ taskerSearchStartedAt: { $gt: cutoff } }, { taskerSearchStartedAt: { $exists: false }, createdAt: { $gt: cutoff } }] }, getTaskerOrderModeFilter(tasker), ...(!areOperationsEnabled() ? [{ isTestOrder: true }] : [])] })
       .select('taskType description amount commission taskerFee platformFee firstOrderBonusApplied firstOrderBonusAmount platformFeeBeforeFirstOrderBonus pricingModel totalAmount store location packaging restaurantPeopleCount restaurantTakeawayCount restaurantPackagingFee cafeInquiry cafeInquiryStatus cafeInquiryDetailsSubmitted indomiePacks eggCount noteSize numberOfPages printingServiceType printingNeedsEditing copyNotesType copyNotesPages deadline dueDate deadlineDate deadlineValue deadlineUnit serviceFeeDiscountApplied discountCommissionAmount status createdAt isTestOrder')
       .lean()
     if (!order) throw new WorkError('This task is no longer available. Choose another task.', 409)

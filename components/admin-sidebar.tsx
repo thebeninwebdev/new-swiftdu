@@ -14,12 +14,14 @@ import {
   ShoppingBag,
   Store,
   ShieldCheck,
+  Settings2,
   Star,
   Users,
   X,
 } from 'lucide-react'
 
 const adminNavigation = [
+  { label: 'Indomie batching', href: '/admin/indomie-batching', icon: Settings2, description: 'Set collection windows' },
   { label: 'Businesses', href: '/admin/businesses', icon: Store, description: 'Review community listings' },
   { label: 'Locations', href: '/admin/locations', icon: MapPin, description: 'Map the campus' },
   {

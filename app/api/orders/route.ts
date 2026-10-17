@@ -40,6 +40,7 @@ import {
 } from '@/lib/push-notifications';
 import { isProfileComplete } from '@/lib/profile-completion';
 import { canCreateOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
+import { batchingMetadata } from '@/lib/indomie-batch-release';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 
@@ -421,6 +422,7 @@ export async function POST(request: NextRequest) {
       : pricing.totalAmount;
 
     const bookedAt = new Date();
+    const batching = await batchingMetadata(normalizedTaskType, bookedAt)
 
     const order = new Order({
       userId: session.user.id,
@@ -487,6 +489,7 @@ export async function POST(request: NextRequest) {
       deadlineUnit: undefined,
       status: 'pending',
       bookedAt,
+      ...batching,
       paymentProvider: 'manual_transfer',
       paymentStatus: 'unpaid',
       taskerHasPaid: false,
@@ -503,7 +506,9 @@ export async function POST(request: NextRequest) {
 
     emitOrderUpdated(order);
 
-    if (shouldSendOrderNotification(order)) {
+    // Orders held for an Indomie collection window are deliberately invisible
+    // until the release materializer creates one batch notification.
+    if (shouldSendOrderNotification(order) && order.batchingStatus !== 'waiting') {
       const taskerPushResult = await sendPushNotification({
         audience: { roles: ['tasker'], taskerGenderRestriction: order.taskerGenderRestriction || null },
         title: 'New Task Available',

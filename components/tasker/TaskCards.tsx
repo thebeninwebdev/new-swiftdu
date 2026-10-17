@@ -8,6 +8,7 @@ import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { workCard } from './WorkProvider'
 
 export interface TaskCardData {
+  batchId?: string; isBatch?: boolean; orderCount?: number; totalIndomiePacks?: number; totalEggCount?: number
   firstOrderBonusApplied?: boolean
   firstOrderBonusAmount?: number
   platformFeeBeforeFirstOrderBonus?: number
@@ -36,12 +37,12 @@ export function TaskCard({ task, active, now, onAccept, accepting = false }: { t
   return <article className={`${workCard} transition hover:border-violet-300`}>
     <div className="flex items-center justify-between gap-2"><CategoryBadge type={task.taskType} /><strong className="text-lg tracking-tight text-violet-700 dark:text-violet-300">{convertToNaira(taskerEarnings(task))}</strong></div>
     {task.isTestOrder && <p className="mt-2 text-xs font-semibold text-violet-700">Training task · simulated earnings</p>}
-    <p className="mt-4 font-bold text-slate-900 dark:text-white">{task.cafeInquiry ? `Check availability at ${task.store || 'the cafe'}` : task.store || categoryLabels[task.taskType]}</p>
+    <p className="mt-4 font-bold text-slate-900 dark:text-white">{task.isBatch ? `INDOMIE BATCH · ${task.orderCount} orders` : task.cafeInquiry ? `Check availability at ${task.store || 'the cafe'}` : task.store || categoryLabels[task.taskType]}</p>
     <p className="mt-1 flex items-center gap-2 text-sm text-slate-500"><ArrowRight size={14} />{task.location || 'See task instructions'}</p>
-    <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{task.description || 'Open task for details.'}</p>
+    <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{task.isBatch ? `${task.totalIndomiePacks || 0} Indomie · ${task.totalEggCount || 0} eggs` : task.description || 'Open task for details.'}</p>
     <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3 text-xs dark:border-slate-800">
       <span className="text-slate-500">{active ? task.isDeclinedTask ? 'Transfer under review' : paid ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, '0')} remaining` : task.cafeInquiry ? 'Continue cafe inquiry' : 'Awaiting customer payment' : deadline ? `Due ${new Date(deadline).toLocaleString('en-NG', { dateStyle: 'short', timeStyle: 'short' })}` : `Posted ${new Date(task.createdAt).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' })}`}</span>
-      {active ? <Link href={`/tasker-dashboard/${task._id}`} className="font-bold text-violet-700 hover:underline">Continue task</Link> : task.status === 'pending' ? <div className="flex items-center gap-3"><Link href={`/tasker-dashboard/${task._id}?preview=true`} className="font-bold text-violet-700 hover:underline">View details</Link>{onAccept ? <button type="button" onClick={() => onAccept(task._id)} disabled={accepting} className="min-h-9 rounded-lg bg-violet-600 px-3 font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60">{accepting ? 'Accepting...' : 'Accept task'}</button> : null}</div> : <span className="font-bold text-slate-500">Already in progress</span>}
+      {active ? <Link href={task.isBatch ? `/tasker-dashboard/batches/${task.batchId}` : `/tasker-dashboard/${task._id}`} className="font-bold text-violet-700 hover:underline">Continue task</Link> : task.status === 'pending' ? <div className="flex items-center gap-3">{!task.isBatch && <Link href={`/tasker-dashboard/${task._id}?preview=true`} className="font-bold text-violet-700 hover:underline">View details</Link>}{onAccept ? <button type="button" onClick={() => onAccept(task.isBatch ? `batch:${task.batchId}` : task._id)} disabled={accepting} className="min-h-9 rounded-lg bg-violet-600 px-3 font-bold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-60">{accepting ? 'Accepting...' : task.isBatch ? 'Accept batch' : 'Accept task'}</button> : null}</div> : <span className="font-bold text-slate-500">Already in progress</span>}
     </div>
   </article>
 }

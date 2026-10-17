@@ -15,7 +15,10 @@ export async function expireUnmatchedOrder(orderId: string, userId: string) {
       cafeInquiryFeePaid: { $ne: true },
       taskerId: { $in: [null, ''] },
       cafeInquiryStatus: { $in: [null, 'waiting_for_tasker'] },
-      createdAt: { $lte: new Date(cancelledAt.getTime() - TASKER_SEARCH_TIMEOUT_MS) },
+      $or: [
+        { taskerSearchStartedAt: { $lte: new Date(cancelledAt.getTime() - TASKER_SEARCH_TIMEOUT_MS) } },
+        { taskerSearchStartedAt: { $exists: false }, createdAt: { $lte: new Date(cancelledAt.getTime() - TASKER_SEARCH_TIMEOUT_MS) } },
+      ],
     },
     {
       $set: {
