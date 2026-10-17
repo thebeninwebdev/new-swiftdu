@@ -534,6 +534,10 @@ export async function POST(request: NextRequest) {
           requiredUnits: order.indomieSlotCount,
           save: async (taskerId) => {
             order.taskerId = taskerId
+            const assignedTasker = await (await import('@/models/tasker')).default.findById(taskerId).select('userId').lean()
+            const assignedUser = assignedTasker?.userId ? await User.findById(assignedTasker.userId).select('name').lean() : null
+            order.taskerName = assignedUser?.name || 'Your tasker'
+            order.acceptedBy = assignedTasker?.userId ? String(assignedTasker.userId) : undefined
             order.acceptedAt = bookedAt
             order.status = 'in_progress'
             order.batchStatus = 'booked'

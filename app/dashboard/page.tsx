@@ -48,6 +48,7 @@ import { OrderFlowProgress, OrderMascot } from '@/components/order-mascot'
 import { SERVICE_MESSAGES } from '@/components/swifty/swifty-messages'
 import type { SwiftyInteraction } from '@/components/swifty/swifty-config'
 import { ProfileCompletionCard } from '@/components/profile-completion-card'
+import { IndomieFlow } from '@/components/indomie/IndomieFlow'
 import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { authClient } from '@/lib/auth-client'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
@@ -2174,6 +2175,14 @@ if (stepNumber === detailsStep) {
   )
 
   if (!mounted) return null
+
+  // Indomie has its own customer journey; every other service remains on this wizard.
+  if (formData.taskType === INDOMIE_TASK_TYPE) {
+    return <IndomieFlow initialLocation={formData.location} onClose={() => {
+      setFormData(previous => ({ ...previous, taskType: 'restaurant', location: '', roomNumber: '' }))
+      setStep(1)
+    }} />
+  }
 
   if (isSubmitting) return (
     <main className="flex min-h-[calc(100dvh-5rem)] flex-col items-center justify-center px-5 py-10 text-center">
