@@ -23,6 +23,7 @@ import {
   shouldSendOrderNotification,
 } from '@/lib/test-orders'
 import { releaseDueIndomieBatches } from '@/lib/indomie-batch-release'
+import { getTaskerRemainingCapacity, MAX_TASKER_ACTIVE_ORDERS } from '@/lib/indomie-capacity'
 
 export const dynamic = 'force-dynamic'
 
@@ -58,6 +59,8 @@ const ERRAND_LIST_FIELDS = [
   'restaurantPackagingFee',
   'indomiePacks',
   'eggCount',
+  'batchId',
+  'scheduledFor',
   'status',
   'taskerId',
   'acceptedBy',
@@ -308,6 +311,9 @@ export async function POST(request: NextRequest) {
       try {
         if (!await TaskerWorkSession.exists({ taskerId: String(tasker._id), open: true })) {
           throw new WorkError('Check in before accepting a new task.', 403)
+        }
+        if (await getTaskerRemainingCapacity(String(tasker._id)) < 1) {
+          throw new WorkError(`You already have the maximum of ${MAX_TASKER_ACTIVE_ORDERS} active orders.`, 409)
         }
         return await Order.findOneAndUpdate(
       {

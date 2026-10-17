@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({ headers: request.headers })
   const tasker = session?.user?.id ? await Tasker.findOne({ userId: session.user.id }).lean() : null
   if (!tasker) return NextResponse.json([])
-  const user = await User.findById(session.user.id).select('gender').lean()
+  const user = session?.user?.id ? await User.findById(session.user.id).select('gender').lean() : null
   const status = request.nextUrl.searchParams.get('accepted') === 'true' ? 'in_progress' : 'available'
   const batches = await IndomieBatch.find({ status, ...(status === 'in_progress' ? { taskerId: String(tasker._id) } : { isTestBatch: getTaskerMode(tasker) === 'training' }) }).sort({ availableAt: -1 }).lean()
   const visible = batches.filter(batch => canTaskerDeliver({ location: batch.destinationLabel, taskerGenderRestriction: batch.taskerGenderRestriction }, user?.gender))

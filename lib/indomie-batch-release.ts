@@ -7,6 +7,18 @@ import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings'
 
 /** Idempotent materialization called from tasker/customer reads; no scheduler is required. */
 export async function releaseDueIndomieBatches(now = new Date()) {
+  // New scheduled orders are reserved against a compatible Live tasker at booking
+  // time. At departure they simply enter that tasker's normal task workflow;
+  // they are never offered for a second manual batch acceptance.
+  const reserved = await Order.find({ taskType: 'indomie', batchingStatus: 'waiting', status: 'pending', taskerId: { $nin: [null, ''] }, batchWindowEnd: { $lte: now } })
+  for (const order of reserved) {
+    order.status = 'in_progress'
+    order.batchingStatus = 'batched'
+    order.batchStatus = 'dispatched'
+    order.taskerSearchStartedAt = now
+    await order.save()
+    emitOrderUpdated(order)
+  }
   const due = await Order.find({ taskType: 'indomie', batchingStatus: 'waiting', status: 'pending', batchWindowEnd: { $lte: now }, taskerId: { $in: [null, ''] } }).sort({ createdAt: 1 })
   const groups = new Map<string, typeof due>()
   for (const order of due) { if (!order.batchWindowStart) continue; const key = indomieBatchGroupKey(order, order.batchWindowStart); groups.set(key, [...(groups.get(key) || []), order]) }
@@ -30,5 +42,5 @@ export async function releaseDueIndomieBatches(now = new Date()) {
 }
 export async function batchingMetadata(taskType: string, now = new Date()) {
   const window = taskType === 'indomie' ? getIndomieBatchWindow(now, await getIndomieBatchSettings()) : null
-  return window ? { batchingStatus: 'waiting' as const, batchWindowStart: window.start, batchWindowEnd: window.end } : { taskerSearchStartedAt: now }
+  return window ? { batchingStatus: 'waiting' as const, batchStatus: 'booked' as const, batchWindowStart: window.start, batchWindowEnd: window.end, scheduledFor: window.end } : { taskerSearchStartedAt: now }
 }

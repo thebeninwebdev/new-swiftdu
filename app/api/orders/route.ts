@@ -41,6 +41,9 @@ import {
 import { isProfileComplete } from '@/lib/profile-completion';
 import { canCreateOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
 import { batchingMetadata } from '@/lib/indomie-batch-release';
+import { reserveIndomieCapacity } from '@/lib/indomie-capacity';
+import { getNextAvailableIndomieRun, isRunStillBookable } from '@/lib/indomie-runs';
+import { randomUUID } from 'node:crypto';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 
@@ -93,6 +96,7 @@ export async function POST(request: NextRequest) {
       waterBags,
       indomiePacks,
       eggCount,
+      indomieMeals,
       noteSize,
       numberOfPages,
       printingServiceType,
@@ -148,10 +152,17 @@ export async function POST(request: NextRequest) {
         : undefined;
     const parsedWaterBags =
       normalizedTaskType === WATER_TASK_TYPE ? Number(waterBags) : undefined;
-    const parsedIndomiePacks =
-      normalizedTaskType === INDOMIE_TASK_TYPE ? Number(indomiePacks) : undefined;
-    const parsedEggCount =
-      normalizedTaskType === INDOMIE_TASK_TYPE ? Number(eggCount) : undefined;
+    const suppliedMeals = normalizedTaskType === INDOMIE_TASK_TYPE && Array.isArray(indomieMeals) ? indomieMeals : undefined;
+    const normalizedIndomieMeals = suppliedMeals?.map((meal) => ({
+      indomiePacks: Number(meal?.indomiePacks), eggCount: Number(meal?.eggCount), amount: Number(meal?.amount),
+      description: typeof meal?.description === 'string' ? meal.description.trim() || undefined : undefined,
+    }));
+    const parsedIndomiePacks = normalizedTaskType === INDOMIE_TASK_TYPE
+      ? normalizedIndomieMeals ? normalizedIndomieMeals.reduce((total, meal) => total + meal.indomiePacks, 0) : Number(indomiePacks) : undefined;
+    const parsedEggCount = normalizedTaskType === INDOMIE_TASK_TYPE
+      ? normalizedIndomieMeals ? normalizedIndomieMeals.reduce((total, meal) => total + meal.eggCount, 0) : Number(eggCount) : undefined;
+    const parsedIndomieAmount = normalizedTaskType === INDOMIE_TASK_TYPE && normalizedIndomieMeals
+      ? normalizedIndomieMeals.reduce((total, meal) => total + meal.amount, 0) : Number(amount);
     const normalizedNoteSize = normalizeNoteSize(
       String(noteSize || copyNotesType || '').trim()
     );
@@ -302,6 +313,9 @@ export async function POST(request: NextRequest) {
     }
 
     if (normalizedTaskType === INDOMIE_TASK_TYPE) {
+      if (normalizedIndomieMeals && (normalizedIndomieMeals.length < 1 || normalizedIndomieMeals.length > 3 || normalizedIndomieMeals.some(meal => !Number.isInteger(meal.indomiePacks) || meal.indomiePacks < 1 || !Number.isInteger(meal.eggCount) || meal.eggCount < 0 || !Number.isFinite(meal.amount) || meal.amount <= 0))) {
+        return NextResponse.json({ error: 'Each Indomie meal needs packs, eggs and a valid budget.' }, { status: 400 });
+      }
       if (!Number.isInteger(parsedIndomiePacks) || Number(parsedIndomiePacks) < 1) {
         return NextResponse.json(
           { error: 'Enter how many indomie packs you want.' },
@@ -321,7 +335,7 @@ export async function POST(request: NextRequest) {
       amount:
         normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE
           ? 0
-          : parsedAmount,
+          : normalizedTaskType === INDOMIE_TASK_TYPE ? parsedIndomieAmount : parsedAmount,
       taskType: normalizedTaskType,
       store: typeof store === 'string' ? store : undefined,
       restaurantPeopleCount: normalizedRestaurantPeopleCount,
@@ -422,7 +436,11 @@ export async function POST(request: NextRequest) {
       : pricing.totalAmount;
 
     const bookedAt = new Date();
-    const batching = await batchingMetadata(normalizedTaskType, bookedAt)
+    const indomieRunAt = normalizedTaskType === INDOMIE_TASK_TYPE ? getNextAvailableIndomieRun(bookedAt) : null
+    if (normalizedTaskType === INDOMIE_TASK_TYPE && (!indomieRunAt || !isRunStillBookable(indomieRunAt, bookedAt))) {
+      return NextResponse.json({ error: 'There is no Indomie run open for booking right now.', code: 'INDOMIE_RUN_CLOSED' }, { status: 409 })
+    }
+    const batching = normalizedTaskType === INDOMIE_TASK_TYPE ? {} : await batchingMetadata(normalizedTaskType, bookedAt)
 
     const order = new Order({
       userId: session.user.id,
@@ -475,6 +493,12 @@ export async function POST(request: NextRequest) {
       waterFee: pricing.waterFee,
       indomiePacks: normalizedTaskType === INDOMIE_TASK_TYPE ? pricing.indomiePacks : undefined,
       eggCount: normalizedTaskType === INDOMIE_TASK_TYPE ? pricing.eggCount : undefined,
+      indomieMeals: normalizedIndomieMeals,
+      indomieSlotCount: normalizedTaskType === INDOMIE_TASK_TYPE ? (normalizedIndomieMeals?.length || 1) : undefined,
+      indomieRunAt: indomieRunAt || undefined,
+      scheduledFor: indomieRunAt || undefined,
+      indomieRunStatus: normalizedTaskType === INDOMIE_TASK_TYPE ? 'reserved' : undefined,
+      indomieReservationGroupId: normalizedTaskType === INDOMIE_TASK_TYPE ? randomUUID() : undefined,
       noteSize: pricing.noteSize,
       numberOfPages: pricing.numberOfPages,
       printingServiceType: pricing.printingServiceType,
@@ -502,13 +526,37 @@ export async function POST(request: NextRequest) {
         : undefined,
     });
 
-    await saveNewOrderWithBonus(order, pricing);
+    try {
+      if (normalizedTaskType === INDOMIE_TASK_TYPE) {
+        await reserveIndomieCapacity({
+          location,
+          isTestOrder,
+          requiredUnits: order.indomieSlotCount,
+          save: async (taskerId) => {
+            order.taskerId = taskerId
+            order.acceptedAt = bookedAt
+            order.status = 'in_progress'
+            order.batchStatus = 'booked'
+            order.batchId = `indomie:${order.indomieRunAt?.toISOString()}:${taskerId}:${order.deliveryDestinationKey || 'campus'}`
+            await saveNewOrderWithBonus(order, pricing)
+            return order
+          },
+        })
+      } else {
+        await saveNewOrderWithBonus(order, pricing)
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('No compatible Live tasker capacity')) {
+        return NextResponse.json({ error: error.message, code: 'INDOMIE_BATCH_FULL' }, { status: 409 })
+      }
+      throw error
+    }
 
     emitOrderUpdated(order);
 
     // Orders held for an Indomie collection window are deliberately invisible
     // until the release materializer creates one batch notification.
-    if (shouldSendOrderNotification(order) && order.batchingStatus !== 'waiting') {
+    if (shouldSendOrderNotification(order) && order.batchingStatus !== 'waiting' && normalizedTaskType !== INDOMIE_TASK_TYPE) {
       const taskerPushResult = await sendPushNotification({
         audience: { roles: ['tasker'], taskerGenderRestriction: order.taskerGenderRestriction || null },
         title: 'New Task Available',
@@ -609,6 +657,7 @@ export async function GET(request: NextRequest) {
 
     if (currentOnly) {
       query.status = { $in: [...ACTIVE_ORDER_STATUSES] };
+      query.taskType = { $ne: INDOMIE_TASK_TYPE };
     } else if (statusParam) {
       const statuses = statusParam
         .split(',')

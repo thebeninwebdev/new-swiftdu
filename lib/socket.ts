@@ -46,6 +46,8 @@ export type OrderSocketPayload = CafeInquiryFields & {
   restaurantPackagingFee?: number
   indomiePacks?: number
   eggCount?: number
+  batchId?: string
+  scheduledFor?: Date | string
   acceptedAt?: string
   createdAt?: string
   updatedAt?: string
@@ -105,6 +107,8 @@ type SocketOrderLike = CafeInquiryFields & {
   restaurantPackagingFee?: number
   indomiePacks?: number
   eggCount?: number
+  batchId?: string
+  scheduledFor?: Date | string
   acceptedAt?: Date | string
   createdAt?: Date | string
   updatedAt?: Date | string
@@ -193,6 +197,8 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
     restaurantPackagingFee: order.restaurantPackagingFee,
     indomiePacks: order.indomiePacks,
     eggCount: order.eggCount,
+    batchId: order.batchId,
+    scheduledFor: serializeDate(order.scheduledFor),
     acceptedAt: serializeDate(order.acceptedAt),
     createdAt: serializeDate(order.createdAt),
     updatedAt: serializeDate(order.updatedAt),

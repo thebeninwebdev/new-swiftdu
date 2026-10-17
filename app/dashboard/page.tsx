@@ -113,6 +113,8 @@ interface ActiveOrder {
   isDeclinedTask?: boolean
   declinedMessage?: string
   taskerId?: string | null
+  batchingStatus?: 'waiting' | 'batched' | 'released_single'
+  scheduledFor?: string
 }
 
 type ActiveOrderRealtimePayload = Partial<ActiveOrder> & {
@@ -368,6 +370,7 @@ export default function ErrandWizardPage() {
   const [isTaskerAvailabilityNoticeDismissed, setIsTaskerAvailabilityNoticeDismissed] = useState(false)
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
+  const [indomieRun, setIndomieRun] = useState<{ scheduledFor: string; bookingClosesAt: string; availableSlots: number; status: string } | null>(null)
   const [serviceFeeDiscount, setServiceFeeDiscount] = useState<{
     firstOrderBonusAvailable?: boolean
     hasAvailableDiscount: boolean
@@ -463,6 +466,16 @@ export default function ErrandWizardPage() {
       ignore = true
     }
   }, [sessionUserId, activeOrder?._id, activeOrder?.status])
+
+  useEffect(() => {
+    if (formData.taskType !== INDOMIE_TASK_TYPE || !formData.location.trim()) { setIndomieRun(null); return }
+    let cancelled = false
+    void fetch(`/api/indomie/runs/next?location=${encodeURIComponent(formData.location)}`, { cache: 'no-store' })
+      .then(response => response.ok ? response.json() : null)
+      .then(payload => { if (!cancelled) setIndomieRun(payload?.active ? payload : null) })
+      .catch(() => { if (!cancelled) setIndomieRun(null) })
+    return () => { cancelled = true }
+  }, [formData.taskType, formData.location])
 
   useIdleEffect(() => {
     if (!sessionUserId) {
@@ -1256,6 +1269,7 @@ if (stepNumber === detailsStep) {
             formData.taskType === INDOMIE_TASK_TYPE ? indomiePacks : undefined,
           eggCount:
             formData.taskType === INDOMIE_TASK_TYPE ? eggCount : undefined,
+          indomieMeals: formData.taskType === INDOMIE_TASK_TYPE ? [{ indomiePacks, eggCount, amount: Number(amount), description: description || undefined }] : undefined,
         }),
       })
 
@@ -1268,7 +1282,7 @@ if (stepNumber === detailsStep) {
       }
 
       const createdOrder = await response.json()
-      toast.success(createdOrder.isTestOrder ? 'Training order posted successfully.' : 'Task posted successfully. Taskers can see it now.')
+      toast.success(createdOrder.taskType === INDOMIE_TASK_TYPE ? 'Your Indomie run is reserved. Send payment to your tasker.' : createdOrder.isTestOrder ? 'Training order posted successfully.' : 'Task posted successfully. Taskers can see it now.')
       setActiveOrder(createdOrder)
       setTaskTypeUsageCounts((previous) => ({
         ...previous,
@@ -1303,7 +1317,9 @@ if (stepNumber === detailsStep) {
   }
 
   const activeStatusLabel = activeOrder
-    ? activeOrder.status === 'pending'
+    ? activeOrder.batchingStatus === 'waiting'
+      ? 'Indomie run spot reserved'
+      : activeOrder.status === 'pending'
       ? 'Searching for a tasker'
       : activeOrder.isDeclinedTask
         ? 'Payment under review'
@@ -1312,7 +1328,9 @@ if (stepNumber === detailsStep) {
           : 'Tasker assigned, payment required'
     : null
   const activeStatusDescription = activeOrder
-    ? activeOrder.status === 'pending'
+    ? activeOrder.batchingStatus === 'waiting'
+      ? `Your tasker will be dispatched around ${activeOrder.scheduledFor ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(activeOrder.scheduledFor)) : 'the scheduled time'}. You can still place other SwiftDU orders.`
+      : activeOrder.status === 'pending'
       ? 'We are actively notifying taskers for this errand right now. You can still post another task below.'
       : activeOrder.isDeclinedTask
         ? DECLINED_TRANSFER_MESSAGE
@@ -1668,6 +1686,13 @@ if (stepNumber === detailsStep) {
 
       {formData.taskType === INDOMIE_TASK_TYPE ? (
         <>
+          {indomieRun ? (
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-100">
+              <p className="text-xs font-bold tracking-wider text-rose-600 dark:text-rose-300">INDOMIE RUN</p>
+              <p className="mt-1 text-lg font-bold">Someone is heading to get Indomie at {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(indomieRun.scheduledFor))}</p>
+              <p className="mt-1 text-sm">{indomieRun.availableSlots} {indomieRun.availableSlots === 1 ? 'spot' : 'spots'} left · Order before {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(indomieRun.bookingClosesAt))}</p>
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">How many indomie?</label>

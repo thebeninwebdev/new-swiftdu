@@ -20,6 +20,7 @@ export type TrackingOrder = CafeInquiryFields & {
   completionDueAt?: string | Date
   batchingStatus?: 'waiting' | 'batched' | 'released_single'
   batchWindowEnd?: string | Date
+  scheduledFor?: string | Date
   taskerSearchStartedAt?: string | Date
 }
 

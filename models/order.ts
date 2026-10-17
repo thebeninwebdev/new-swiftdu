@@ -34,6 +34,8 @@ export interface IOrder extends Document, CafeInquiryFields {
   batchId?: string;
   batchWindowStart?: Date;
   batchWindowEnd?: Date;
+  scheduledFor?: Date;
+  batchStatus?: 'booked' | 'waiting' | 'assigned' | 'dispatched' | 'at_vendor' | 'on_the_way' | 'completed' | 'cancelled';
   batchingStatus?: 'waiting' | 'batched' | 'released_single';
   taskerSearchStartedAt?: Date;
   deliveryCoordinates?: { latitude: number; longitude: number; accuracy?: number; capturedAt: Date };
@@ -53,6 +55,13 @@ export interface IOrder extends Document, CafeInquiryFields {
   waterFee?: number;
   indomiePacks?: number;
   eggCount?: number;
+  indomieSlotCount?: number;
+  indomieMeals?: Array<{ indomiePacks: number; eggCount: number; amount: number; description?: string }>;
+  indomieRunAt?: Date;
+  indomieRunStatus?: 'reserved' | 'waiting' | 'dispatched' | 'at_vendor' | 'on_the_way' | 'completed' | 'cancelled';
+  indomieReservationGroupId?: string;
+  indomieParentOrderId?: string;
+  isIndomieAddon?: boolean;
   noteSize?: 'small' | 'big';
   numberOfPages?: number;
   printingServiceType?: 'printing' | 'photocopying';
@@ -229,6 +238,8 @@ const orderSchema = new Schema<IOrder>(
     batchId: { type: String, index: true },
     batchWindowStart: Date,
     batchWindowEnd: Date,
+    scheduledFor: { type: Date, index: true },
+    batchStatus: { type: String, enum: ['booked', 'waiting', 'assigned', 'dispatched', 'at_vendor', 'on_the_way', 'completed', 'cancelled'], index: true },
     batchingStatus: { type: String, enum: ['waiting', 'batched', 'released_single'], index: true },
     taskerSearchStartedAt: { type: Date, index: true },
     deliveryCoordinates: {
@@ -296,6 +307,13 @@ const orderSchema = new Schema<IOrder>(
       type: Number,
       min: 0,
     },
+    indomieSlotCount: { type: Number, min: 1, max: 3 },
+    indomieMeals: { type: [{ _id: false, indomiePacks: { type: Number, min: 1, required: true }, eggCount: { type: Number, min: 0, required: true }, amount: { type: Number, min: 1, required: true }, description: String }], default: undefined },
+    indomieRunAt: { type: Date, index: true },
+    indomieRunStatus: { type: String, enum: ['reserved', 'waiting', 'dispatched', 'at_vendor', 'on_the_way', 'completed', 'cancelled'], index: true },
+    indomieReservationGroupId: { type: String, index: true },
+    indomieParentOrderId: { type: String, index: true },
+    isIndomieAddon: { type: Boolean, default: false },
     copyNotesType: {
       type: String,
       enum: ['big', 'small', 'hardback'],
@@ -492,6 +510,8 @@ orderSchema.index({ taskerId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ taskType: 1, status: 1, createdAt: -1 });
 orderSchema.index({ isTestOrder: 1, status: 1, createdAt: -1 });
 orderSchema.index({ batchingStatus: 1, batchWindowEnd: 1, taskType: 1 });
+orderSchema.index({ taskerId: 1, batchingStatus: 1, scheduledFor: 1 });
+orderSchema.index({ userId: 1, indomieRunAt: 1, indomieReservationGroupId: 1 });
 
 
 type MongooseStringSchemaPath = {

@@ -8,7 +8,7 @@ import { getCompletionWindowMinutes } from '@/lib/completion-timer'
 import { workCard } from './WorkProvider'
 
 export interface TaskCardData {
-  batchId?: string; isBatch?: boolean; orderCount?: number; totalIndomiePacks?: number; totalEggCount?: number
+  batchId?: string; scheduledFor?: string; isBatch?: boolean; orderCount?: number; totalIndomiePacks?: number; totalEggCount?: number
   firstOrderBonusApplied?: boolean
   firstOrderBonusAmount?: number
   platformFeeBeforeFirstOrderBonus?: number

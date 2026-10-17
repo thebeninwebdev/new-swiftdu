@@ -25,6 +25,9 @@ export function getIndomieBatchWindow(now = new Date(), schedule: IndomieBatchSc
   const start = lagosDate(p, Math.floor(startOfWindow / 60), startOfWindow % 60)
   return { start, end: new Date(start.getTime() + schedule.windowMinutes * 60_000) }
 }
+export function getNextIndomieBatch(now = new Date(), schedule: IndomieBatchSchedule = { startMinute: 18 * 60, endMinute: 21 * 60, windowMinutes: BATCH_WINDOW_MINUTES }) {
+  return getIndomieBatchWindow(now, schedule)
+}
 export function normalizeBatchDestination(location?: string | null) {
   return getDeliveryDestination(location)?.id || String(location || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-')
 }
