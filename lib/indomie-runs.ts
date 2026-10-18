@@ -1,39 +1,30 @@
-/** The customer-facing Indomie timetable. All dates returned are real UTC dates. */
-export const INDOMIE_RUN_START_MINUTE = 18 * 60
-export const INDOMIE_RUN_END_MINUTE = 21 * 60
-export const INDOMIE_RUN_INTERVAL_MINUTES = 30
-export const INDOMIE_BOOKING_CUTOFF_MINUTES = 10
+import { getLagosDateParts, lagosDateAtMinute } from '@/lib/operations-settings'
+import { DEFAULT_INDOMIE_BATCH_SETTINGS, type IndomieBatchSettingsValue } from '@/lib/indomie-batch-settings'
+
 export const INDOMIE_ARRIVAL_MINUTES = { start: 15, end: 30 }
 
-const lagosParts = (date: Date) => {
-  const local = new Date(date.getTime() + 60 * 60_000)
-  return { year: local.getUTCFullYear(), month: local.getUTCMonth(), day: local.getUTCDate(), minute: local.getUTCHours() * 60 + local.getUTCMinutes() }
-}
-const lagosDate = (p: ReturnType<typeof lagosParts>, minute: number) =>
-  new Date(Date.UTC(p.year, p.month, p.day, 0, minute - 60, 0, 0))
-
-export function isIndomieRunPeriod(now = new Date()) {
-  const p = lagosParts(now)
-  return p.minute >= INDOMIE_RUN_START_MINUTE && p.minute <= INDOMIE_RUN_END_MINUTE
+export function isIndomieRunPeriod(now = new Date(), settings: IndomieBatchSettingsValue = DEFAULT_INDOMIE_BATCH_SETTINGS) {
+  const minute = getLagosDateParts(now).minute
+  return minute >= settings.startMinute && minute < settings.endMinute
 }
 
-export function getNextIndomieRun(now = new Date()) {
-  const p = lagosParts(now)
-  for (let minute = INDOMIE_RUN_START_MINUTE; minute <= INDOMIE_RUN_END_MINUTE; minute += INDOMIE_RUN_INTERVAL_MINUTES) {
-    const run = lagosDate(p, minute)
+export function getNextIndomieRun(now = new Date(), settings: IndomieBatchSettingsValue = DEFAULT_INDOMIE_BATCH_SETTINGS) {
+  for (let minute = settings.startMinute; minute <= settings.endMinute; minute += settings.runIntervalMinutes) {
+    const run = lagosDateAtMinute(now, minute)
     if (run.getTime() > now.getTime()) return run
   }
   return null
 }
 
-export function isRunStillBookable(runAt: Date, now = new Date()) {
-  return now.getTime() < runAt.getTime() - INDOMIE_BOOKING_CUTOFF_MINUTES * 60_000
+export function isRunStillBookable(runAt: Date, now = new Date(), settings: IndomieBatchSettingsValue = DEFAULT_INDOMIE_BATCH_SETTINGS) {
+  const runMinute = getLagosDateParts(runAt).minute
+  return runMinute >= settings.startMinute && runMinute <= settings.endMinute && now.getTime() < runAt.getTime() - settings.bookingCutoffMinutes * 60_000
 }
 
-export function getNextAvailableIndomieRun(now = new Date()) {
-  let run = getNextIndomieRun(now)
-  while (run && !isRunStillBookable(run, now)) run = new Date(run.getTime() + INDOMIE_RUN_INTERVAL_MINUTES * 60_000)
-  return run && lagosParts(run).minute <= INDOMIE_RUN_END_MINUTE ? run : null
+export function getNextAvailableIndomieRun(now = new Date(), settings: IndomieBatchSettingsValue = DEFAULT_INDOMIE_BATCH_SETTINGS) {
+  let run = getNextIndomieRun(now, settings)
+  while (run && !isRunStillBookable(run, now, settings)) run = new Date(run.getTime() + settings.runIntervalMinutes * 60_000)
+  return run && getLagosDateParts(run).minute <= settings.endMinute ? run : null
 }
 
 export function formatIndomieRunTime(runAt: Date) {

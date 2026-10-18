@@ -3,6 +3,18 @@ import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
 import { IndomieBatchSettings } from '@/models/indomie-batch-settings'
 import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings'
+import { getOperationsSettings } from '@/lib/operations-settings'
+
 async function admin(request: NextRequest) { const session = await auth.api.getSession({ headers: request.headers }); return session?.user?.role === 'admin' ? session : null }
 export async function GET(request: NextRequest) { if (!await admin(request)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 }); await connectDB(); return NextResponse.json({ ...await getIndomieBatchSettings(), timezone: 'Africa/Lagos' }) }
-export async function PATCH(request: NextRequest) { const session = await admin(request); if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 }); const body = await request.json(); const startMinute = Number(body.startMinute), endMinute = Number(body.endMinute), windowMinutes = Number(body.windowMinutes); if (![startMinute,endMinute,windowMinutes].every(Number.isInteger) || startMinute < 0 || endMinute > 1440 || startMinute >= endMinute || windowMinutes < 5 || windowMinutes > 60 || 1440 % windowMinutes !== 0 || endMinute - startMinute < windowMinutes) return NextResponse.json({ error: 'Choose a valid Lagos start/end time and a 5–60 minute window.' }, { status: 400 }); await connectDB(); const settings = await IndomieBatchSettings.findOneAndUpdate({ key: 'default' }, { $set: { startMinute, endMinute, windowMinutes, updatedBy: session.user.id } }, { upsert: true, new: true, setDefaultsOnInsert: true }); return NextResponse.json({ startMinute: settings.startMinute, endMinute: settings.endMinute, windowMinutes: settings.windowMinutes, timezone: 'Africa/Lagos' }) }
+export async function PATCH(request: NextRequest) {
+  const session = await admin(request); if (!session) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  await connectDB()
+  const body = await request.json()
+  const startMinute = Number(body.startMinute), endMinute = Number(body.endMinute), runIntervalMinutes = Number(body.runIntervalMinutes), bookingCutoffMinutes = Number(body.bookingCutoffMinutes)
+  if (![startMinute, endMinute, runIntervalMinutes, bookingCutoffMinutes].every(Number.isInteger) || startMinute < 0 || endMinute > 1440 || startMinute >= endMinute || runIntervalMinutes < 5 || runIntervalMinutes > 120 || bookingCutoffMinutes < 1 || bookingCutoffMinutes >= runIntervalMinutes) return NextResponse.json({ error: 'Choose valid batching hours, run interval, and a cutoff shorter than the run interval.' }, { status: 400 })
+  const operations = await getOperationsSettings()
+  if (!(operations.openMinute < startMinute && startMinute < endMinute && endMinute <= operations.closeMinute)) return NextResponse.json({ error: 'Indomie batching must start after SwiftDU opens and end no later than SwiftDU closes.' }, { status: 400 })
+  const settings = await IndomieBatchSettings.findOneAndUpdate({ key: 'default' }, { $set: { startMinute, endMinute, runIntervalMinutes, bookingCutoffMinutes, updatedBy: session.user.id }, $unset: { windowMinutes: 1 } }, { upsert: true, new: true, setDefaultsOnInsert: true })
+  return NextResponse.json({ startMinute: settings.startMinute, endMinute: settings.endMinute, runIntervalMinutes: settings.runIntervalMinutes, bookingCutoffMinutes: settings.bookingCutoffMinutes, timezone: 'Africa/Lagos' })
+}

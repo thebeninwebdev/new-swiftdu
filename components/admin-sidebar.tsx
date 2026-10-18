@@ -15,12 +15,14 @@ import {
   Store,
   ShieldCheck,
   Settings2,
+  Clock3,
   Star,
   Users,
   X,
 } from 'lucide-react'
 
 const adminNavigation = [
+  { label: 'Operating hours', href: '/admin/operations', icon: Clock3, description: 'Set daily opening hours' },
   { label: 'Indomie batching', href: '/admin/indomie-batching', icon: Settings2, description: 'Set collection windows' },
   { label: 'Businesses', href: '/admin/businesses', icon: Store, description: 'Review community listings' },
   { label: 'Locations', href: '/admin/locations', icon: MapPin, description: 'Map the campus' },

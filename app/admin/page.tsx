@@ -14,6 +14,7 @@ import {
   TrendingUp,
   Activity,
   AlertCircle,
+  Clock3,
 } from 'lucide-react'
 
 interface DashboardStats {
@@ -260,6 +261,15 @@ export default function AdminDashboard() {
               <CardDescription>Common admin tasks</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => router.push('/admin/operations')}
+              >
+                <Clock3 className="w-4 h-4 mr-2" />
+                Set Operating Hours
+              </Button>
+
               <Button
                 variant="outline"
                 className="w-full justify-between text-left"

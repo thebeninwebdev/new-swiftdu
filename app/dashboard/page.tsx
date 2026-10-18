@@ -372,6 +372,7 @@ export default function ErrandWizardPage() {
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [indomieRun, setIndomieRun] = useState<{ scheduledFor: string; bookingClosesAt: string; availableSlots: number; status: string } | null>(null)
+  const [operationsStatus, setOperationsStatus] = useState<{ enabled: boolean; open: boolean; openingTime: string; closingTime: string; nextOpeningAt: string; indomie: { mode: 'normal' | 'batching' | 'closed'; batchingStartsAt: string; batchingEndsAt: string } } | null>(null)
   const [serviceFeeDiscount, setServiceFeeDiscount] = useState<{
     firstOrderBonusAvailable?: boolean
     hasAvailableDiscount: boolean
@@ -431,6 +432,14 @@ export default function ErrandWizardPage() {
   useEffect(() => {
     activeOrderRef.current = activeOrder
   }, [activeOrder])
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () => void fetch('/api/operations/status', { cache: 'no-store' }).then(async (response) => response.ok ? response.json() : null).then((payload) => { if (!cancelled && payload) setOperationsStatus(payload) }).catch(() => undefined)
+    load()
+    const interval = window.setInterval(load, 60_000)
+    return () => { cancelled = true; window.clearInterval(interval) }
+  }, [])
 
   // useEffect(() => {
   //   if(activeOrder) router.replace(`/dashboard/tasks/${activeOrder._id}`)
@@ -1271,6 +1280,7 @@ if (stepNumber === detailsStep) {
           eggCount:
             formData.taskType === INDOMIE_TASK_TYPE ? eggCount : undefined,
           indomieMeals: formData.taskType === INDOMIE_TASK_TYPE ? [{ indomiePacks, eggCount, amount: Number(amount), description: description || undefined }] : undefined,
+          expectedIndomieMode: formData.taskType === INDOMIE_TASK_TYPE ? 'normal' : undefined,
         }),
       })
 
@@ -2176,12 +2186,20 @@ if (stepNumber === detailsStep) {
 
   if (!mounted) return null
 
-  // Indomie has its own customer journey; every other service remains on this wizard.
-  if (formData.taskType === INDOMIE_TASK_TYPE) {
+  if (operationsStatus && !operationsStatus.open && step > 1) {
+    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">SwiftDU is closed for today</h1><p className="mt-3 text-slate-600 dark:text-slate-300">We open again at {operationsStatus.openingTime}. Your existing orders will continue normally.</p><div className="mt-8 w-full space-y-3"><Link href="/dashboard/tasks" className="flex min-h-12 items-center justify-center rounded-xl bg-violet-600 px-4 font-bold text-white">View my orders</Link><Button variant="outline" className="min-h-12 w-full" onClick={() => setStep(1)}>Back to dashboard</Button></div></main>
+  }
+
+  // Scheduled Indomie owns the evening flow only; daytime Indomie stays in the generic wizard.
+  if (formData.taskType === INDOMIE_TASK_TYPE && operationsStatus?.indomie.mode === 'batching') {
     return <IndomieFlow initialLocation={formData.location} onClose={() => {
       setFormData(previous => ({ ...previous, taskType: 'restaurant', location: '', roomNumber: '' }))
       setStep(1)
     }} />
+  }
+
+  if (formData.taskType === INDOMIE_TASK_TYPE && operationsStatus?.indomie.mode === 'closed') {
+    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">Indomie is done for tonight 🍜</h1><p className="mt-3 text-slate-600 dark:text-slate-300">Evening Indomie runs have ended. You can order again tomorrow from {operationsStatus.openingTime}.</p><p className="mt-3 text-sm text-slate-500">Other SwiftDU services are still available until {operationsStatus.closingTime}.</p><Button className="mt-8 min-h-12 w-full bg-violet-600" onClick={() => { setFormData(previous => ({ ...previous, taskType: 'restaurant' })); setStep(1) }}>Choose another service</Button></main>
   }
 
   if (isSubmitting) return (
@@ -2200,6 +2218,7 @@ if (stepNumber === detailsStep) {
   return (
     <div className="min-h-screen px-4 py-4 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl space-y-0 lg:space-y-5">
+        {operationsStatus && <div className={operationsStatus.open ? 'mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800' : 'mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800'}><b>{operationsStatus.open ? '● SwiftDU is open' : 'SwiftDU is closed for today'}</b><span className="ml-2">{operationsStatus.open ? `Closes at ${operationsStatus.closingTime}` : `Opens at ${operationsStatus.openingTime}`}</span></div>}
         {renderTopNotices()}
 
         {DesktopErrandWizard()}

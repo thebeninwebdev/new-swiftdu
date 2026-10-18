@@ -74,7 +74,7 @@ export function IndomieFlow({ initialLocation = '', onClose }: { initialLocation
     if (!location || (requiresRoom && !roomNumber.trim())) { setError(requiresRoom ? 'Add your room number before confirming.' : 'Choose a delivery location.'); return }
     setBusy(true); setError('')
     try {
-      const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ taskType: 'indomie', location, roomNumber: requiresRoom ? roomNumber : undefined, amount: itemTotal, indomiePacks: packs, eggCount: eggs, indomieMeals: meals.map((meal) => ({ ...meal, amount: Number(meal.amount) })) }) })
+      const response = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': crypto.randomUUID() }, body: JSON.stringify({ taskType: 'indomie', expectedIndomieMode: 'batching', location, roomNumber: requiresRoom ? roomNumber : undefined, amount: itemTotal, indomiePacks: packs, eggCount: eggs, indomieMeals: meals.map((meal) => ({ ...meal, amount: Number(meal.amount) })) }) })
       const order = await response.json(); if (!response.ok) throw new Error(order.error || 'Could not add your order to this run.')
       setReservation([order]); await loadTasker(order._id); setScreen('payment')
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not add your order.') } finally { setBusy(false) }
