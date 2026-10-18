@@ -3,11 +3,11 @@ import { test } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { calculateOrderPricing, CAFE_INQUIRY_EXTRA_FEE } from './pricing'
-import { canReleaseFirstOrderReservation, priceWithOrderDiscounts } from './first-order-pricing'
+import { canReleaseFirstOrderReservation, FIRST_ORDER_BONUS_AMOUNT, priceWithOrderDiscounts } from './first-order-pricing'
 import { taskerEarnings } from './tasker-work'
 import { FirstOrderBonusNotice, FirstOrderPriceBreakdown } from '../components/first-order-bonus'
 
-test('bonus removes only actual platform share across every pricing model', () => {
+test('bonus deducts at most ₦100 from the platform share across every pricing model', () => {
   const inputs = [
     { taskType: 'restaurant', amount: 2000, restaurantPeopleCount: 3 },
     { taskType: 'restaurant', amount: 0, cafeInquiry: true },
@@ -24,12 +24,13 @@ test('bonus removes only actual platform share across every pricing model', () =
     const bonus = priceWithOrderDiscounts(normal, { firstOrderBonus: true, cafeInquiry: input.cafeInquiry })
     assert.equal(bonus.taskerFee, fees.taskerFee)
     assert.equal(taskerEarnings(bonus), taskerEarnings(fees))
-    assert.equal(bonus.platformFee, 0)
-    assert.equal(bonus.totalAmount, fees.totalAmount - fees.platformFee)
-    assert.equal(bonus.serviceFee, fees.serviceFee - fees.platformFee)
+    const saving = Math.min(FIRST_ORDER_BONUS_AMOUNT, fees.platformFee)
+    assert.equal(bonus.platformFee, fees.platformFee - saving)
+    assert.equal(bonus.totalAmount, fees.totalAmount - saving)
+    assert.equal(bonus.serviceFee, fees.serviceFee - saving)
     assert.equal(bonus.commission, bonus.serviceFee)
     assert.equal(normal.amount + bonus.commission, bonus.totalAmount)
-    assert.equal(bonus.firstOrderBonusAmount, fees.platformFee)
+    assert.equal(bonus.firstOrderBonusAmount, saving)
     assert.equal(bonus.platformFeeBeforeFirstOrderBonus, fees.platformFee)
   }
 })
@@ -39,7 +40,7 @@ test('repricing from normal pricing never subtracts twice', () => {
   const normal = calculateOrderPricing({ taskType: 'restaurant', amount: 2500, restaurantPeopleCount: 4, restaurantTakeawayCount: 3 })
   for (let i = 0; i < 5; i++) {
     order = { ...order, ...normal, ...priceWithOrderDiscounts(normal, { firstOrderBonus: true }) }
-    assert.equal(order.totalAmount, normal.totalAmount - priceWithOrderDiscounts(normal).platformFee)
+    assert.equal(order.totalAmount, normal.totalAmount - Math.min(FIRST_ORDER_BONUS_AMOUNT, priceWithOrderDiscounts(normal).platformFee))
   }
 })
 
@@ -49,7 +50,7 @@ test('broader discount is applied first and retained cafe charge is not waived w
     const broader = priceWithOrderDiscounts(normal, { serviceFeeDiscount: true, cafeInquiry })
     const both = priceWithOrderDiscounts(normal, { firstOrderBonus: true, serviceFeeDiscount: true, cafeInquiry })
     assert.equal(both.taskerFee, broader.taskerFee)
-    assert.equal(both.platformFee, 0)
+    assert.equal(both.platformFee, Math.max(0, broader.platformFee - FIRST_ORDER_BONUS_AMOUNT))
     assert.equal(both.totalAmount, broader.totalAmount - (both.firstOrderBonusAmount || 0))
     assert.ok(both.totalAmount >= 0)
     if (!cafeInquiry) assert.equal(both.firstOrderBonusAmount, 0)

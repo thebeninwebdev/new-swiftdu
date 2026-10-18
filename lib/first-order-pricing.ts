@@ -6,6 +6,7 @@ export type FirstOrderBonusFields = {
   platformFeeBeforeFirstOrderBonus?: number
   firstOrderBonusAmount?: number
 }
+export const FIRST_ORDER_BONUS_AMOUNT = 100
 
 export function canReleaseFirstOrderReservation(order: {
   status: string; isTestOrder?: boolean; hasPaid?: boolean; paymentStatus?: string
@@ -34,13 +35,13 @@ export function priceWithOrderDiscounts(pricing: PricingResult, options: {
   const remainingPlatformFee = broaderDiscount
     ? Math.min(normal.platformFee, splitServiceFee(retainedInquiryFee).platformFee)
     : normal.platformFee
-  const saving = options.firstOrderBonus ? Math.min(totalBeforeBonus, remainingPlatformFee) : 0
-  const platformReduction = options.firstOrderBonus ? normal.platformFee : 0
+  const saving = options.firstOrderBonus ? Math.min(FIRST_ORDER_BONUS_AMOUNT, totalBeforeBonus, remainingPlatformFee) : 0
+  const platformReduction = saving
   return {
     commission: normal.serviceFee - platformReduction,
     serviceFee: normal.serviceFee - platformReduction,
     taskerFee: normal.taskerFee,
-    platformFee: options.firstOrderBonus ? 0 : normal.platformFee,
+    platformFee: normal.platformFee - platformReduction,
     totalAmount: totalBeforeBonus - saving,
     firstOrderBonusApplied: Boolean(options.firstOrderBonus),
     platformFeeBeforeFirstOrderBonus: options.firstOrderBonus ? normal.platformFee : undefined,

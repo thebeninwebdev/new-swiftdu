@@ -12,6 +12,8 @@ import { emitOrderUpdated } from '@/lib/socket';
 import { ensureCompletionTimer } from '@/lib/completion-timer';
 import {
   calculateOrderPricing,
+  type PricingResult,
+  withConfiguredServiceFee,
   CAFE_INQUIRY_EXTRA_FEE,
   descriptionMentionsWater,
   normalizeRestaurantPeopleCount,
@@ -24,6 +26,7 @@ import {
   WATER_TASK_TYPE,
   INDOMIE_TASK_TYPE,
 } from '@/lib/pricing';
+import { getConfiguredServiceFee } from '@/lib/pricing-config';
 import { splitServiceFee } from '@/lib/order-finance';
 import {
   getCreatedInMode,
@@ -334,7 +337,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const pricing = calculateOrderPricing({
+    let pricing: PricingResult = calculateOrderPricing({
       amount:
         normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE
           ? 0
@@ -352,6 +355,8 @@ export async function POST(request: NextRequest) {
       printingServiceType: normalizedPrintingServiceType,
       printingNeedsEditing: normalizedPrintingNeedsEditing,
     });
+    const configuredServiceFee = await getConfiguredServiceFee({ taskType: normalizedTaskType, location })
+    if (configuredServiceFee !== null) pricing = withConfiguredServiceFee(pricing, configuredServiceFee + (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
 
     const customerLookupConditions = getUserLookupConditions(session.user);
     const customerAccount = customerLookupConditions.length

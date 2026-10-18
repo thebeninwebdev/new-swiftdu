@@ -1,23 +1,24 @@
 'use client'
 
 import Link from 'next/link'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { ArrowLeft, ArrowRight, CheckCircle2, Clock3, Copy, MapPin, Minus, Plus, Users } from 'lucide-react'
+import { ArrowRight, CheckCircle2, Clock3, Copy, MapPin, Minus, Plus, Users } from 'lucide-react'
 import { Swifty } from '@/components/swifty/Swifty'
-import { calculateOrderPricing } from '@/lib/pricing'
+import { calculateOrderPricing, withConfiguredServiceFee } from '@/lib/pricing'
+import { useServerTime } from '@/hooks/use-server-time'
 
 type Screen = 'home' | 'people' | 'meals' | 'review' | 'payment' | 'success' | 'add' | 'full'
 type Meal = { indomiePacks: number; eggCount: number; amount: string; description: string }
 type Order = { _id: string; indomieRunAt?: string; scheduledFor?: string; taskerName?: string; taskerId?: string; totalAmount: number; hasPaid?: boolean; paymentStatus?: string; indomieMeals?: Array<Omit<Meal, 'amount'> & { amount: number | string }>; indomieSlotCount?: number; location?: string; roomNumber?: string }
 type Tasker = { name: string; bankDetails: { bankName: string; accountName: string; accountNumber: string } }
-type Run = { scheduledFor: string; bookingClosesAt: string; availableSlots: number; estimatedArrivalStart?: string; estimatedArrivalEnd?: string; status: 'available' | 'full' }
+type Run = { scheduledFor: string; bookingClosesAt: string; availableSlots: number; estimatedArrivalStart?: string; estimatedArrivalEnd?: string; status: 'available' | 'full'; serverNow?: string }
 
 const LOCATIONS = ['Amnesty Hostel', 'Girls Hostel', 'Staff Quarters', 'PLT', 'Library']
 const transition = { initial: { opacity: 0, x: 14 }, animate: { opacity: 1, x: 0 }, exit: { opacity: 0, x: -10 }, transition: { duration: 0.22 } }
 const createMeal = (): Meal => ({ indomiePacks: 1, eggCount: 1, amount: '', description: '' })
 const money = (value: number) => `₦${Number(value || 0).toLocaleString('en-NG')}`
-const runTime = (value?: string) => value ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(value)) : ''
+const runTime = (value?: string) => value ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(value)) : ''
 const mealLabel = (index: number, total: number) => index === 0 ? 'Your Indomie' : index === 1 && total === 2 ? "Friend's Indomie" : index === 1 ? 'Second Indomie' : 'Third Indomie'
 
 function PrimaryButton({ children, onClick, disabled, secondary }: { children: React.ReactNode; onClick: () => void; disabled?: boolean; secondary?: boolean }) {
@@ -44,6 +45,9 @@ export function IndomieFlow({ initialLocation = '', onClose }: { initialLocation
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [quotedServiceFee, setQuotedServiceFee] = useState<number | null>(null)
+  const { synchronize } = useServerTime()
+  const hiddenAt = useRef<number | null>(null)
 
   const active = reservation?.[0]
   const scheduledFor = active?.indomieRunAt || active?.scheduledFor || run?.scheduledFor
@@ -53,7 +57,8 @@ export function IndomieFlow({ initialLocation = '', onClose }: { initialLocation
   const itemTotal = meals.reduce((sum, meal) => sum + Number(meal.amount || 0), 0)
   const packs = meals.reduce((sum, meal) => sum + meal.indomiePacks, 0)
   const eggs = meals.reduce((sum, meal) => sum + meal.eggCount, 0)
-  const pricing = useMemo(() => calculateOrderPricing({ taskType: 'indomie', amount: itemTotal, indomiePacks: packs, eggCount: eggs }), [eggs, itemTotal, packs])
+  const basePricing = useMemo(() => calculateOrderPricing({ taskType: 'indomie', amount: itemTotal, indomiePacks: packs, eggCount: eggs }), [eggs, itemTotal, packs])
+  const pricing = quotedServiceFee === null ? basePricing : withConfiguredServiceFee(basePricing, quotedServiceFee)
   const requiresRoom = /amnesty|girls hostel/i.test(location)
   const expectedStart = run?.estimatedArrivalStart || (scheduledFor ? new Date(new Date(scheduledFor).getTime() + 15 * 60_000).toISOString() : undefined)
   const expectedEnd = run?.estimatedArrivalEnd || (scheduledFor ? new Date(new Date(scheduledFor).getTime() + 30 * 60_000).toISOString() : undefined)
@@ -63,7 +68,43 @@ export function IndomieFlow({ initialLocation = '', onClose }: { initialLocation
   const loadReservation = useCallback(async () => { const response = await fetch('/api/indomie/runs/current', { cache: 'no-store' }); if (!response.ok) return null; const groups: Order[][] = await response.json(); const current = groups[0]?.length ? groups[0] : null; setReservation(current); if (current?.[0]?.taskerId) await loadTasker(current[0]._id); return current }, [loadTasker])
 
   useEffect(() => { let cancelled = false; void loadReservation().finally(() => { if (!cancelled) setLoading(false) }); return () => { cancelled = true } }, [loadReservation])
-  useEffect(() => { if (!location || reservation) return; let cancelled = false; setLoading(true); void fetch(`/api/indomie/runs/next?location=${encodeURIComponent(location)}`, { cache: 'no-store' }).then(async (response) => response.ok ? response.json() : null).then((payload) => { if (!cancelled) setRun(payload?.active ? payload : null) }).catch(() => { if (!cancelled) setRun(null) }).finally(() => { if (!cancelled) setLoading(false) }); return () => { cancelled = true } }, [location, reservation])
+  const loadRun = useCallback(async () => {
+    if (!location || reservation) return
+    setLoading(true)
+    const requestStartedAt = Date.now()
+    try {
+      const response = await fetch(`/api/indomie/runs/next?location=${encodeURIComponent(location)}`, { cache: 'no-store' })
+      const payload = await response.json().catch(() => null)
+      const requestFinishedAt = Date.now()
+      if (payload?.serverNow) synchronize({ serverNow: payload.serverNow, requestStartedAt, requestFinishedAt })
+      setRun(response.ok && payload?.active ? payload : null)
+    } catch {
+      setRun(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [location, reservation, synchronize])
+
+  useEffect(() => { void loadRun() }, [loadRun])
+  useEffect(() => {
+    if (!location) { setQuotedServiceFee(null); return }
+    let cancelled = false
+    void fetch(`/api/pricing/quote?taskType=indomie&location=${encodeURIComponent(location)}`, { cache: 'no-store' })
+      .then(async response => response.ok ? response.json() : null)
+      .then(payload => { if (!cancelled) setQuotedServiceFee(typeof payload?.serviceFee === 'number' ? payload.serviceFee : null) })
+      .catch(() => { if (!cancelled) setQuotedServiceFee(null) })
+    return () => { cancelled = true }
+  }, [location])
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') { hiddenAt.current = Date.now(); return }
+      const wasHiddenFor = hiddenAt.current === null ? 0 : Date.now() - hiddenAt.current
+      hiddenAt.current = null
+      if (wasHiddenFor >= 60_000) void loadRun()
+    }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', onVisibilityChange)
+  }, [loadRun])
 
   const updateMeal = (index: number, patch: Partial<Meal>) => setMeals((current) => current.map((meal, mealIndex) => mealIndex === index ? { ...meal, ...patch } : meal))
   const choosePeople = (count: number) => { setPeople(count); setMeals((current) => Array.from({ length: count }, (_, index) => current[index] || createMeal())) }
@@ -99,7 +140,7 @@ export function IndomieFlow({ initialLocation = '', onClose }: { initialLocation
 
   const startAdd = () => { setMeals([createMeal()]); setError(''); setScreen('add') }
 
-  return <main className="min-h-[calc(100dvh-5rem)] bg-linear-to-b from-violet-50/80 via-white to-white px-4 py-5 text-slate-950 dark:from-violet-950/20 dark:via-slate-950 dark:to-slate-950 dark:text-white"><div className="mx-auto flex min-h-[calc(100dvh-7.5rem)] w-full max-w-md flex-col"><header className="mb-5 flex items-center gap-3"><button type="button" onClick={onClose} aria-label="Back to SwiftDU" className="grid h-10 w-10 place-items-center rounded-full hover:bg-white dark:hover:bg-slate-900"><ArrowLeft className="h-5 w-5" /></button><b>Indomie</b>{screen === 'meals' && <span className="ml-auto rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700">{people} {people === 1 ? 'person' : 'people'}</span>}</header><AnimatePresence mode="wait"><motion.section key={screen} {...transition} className="flex flex-1 flex-col">
+  return <main className="min-h-[calc(100dvh-5rem)] bg-linear-to-b from-violet-50/80 via-white to-white px-4 py-5 text-slate-950 dark:from-violet-950/20 dark:via-slate-950 dark:to-slate-950 dark:text-white"><div className="mx-auto flex min-h-[calc(100dvh-7.5rem)] w-full max-w-md flex-col"><header className="mb-5 flex items-center gap-3"><b>Indomie</b>{screen === 'meals' && <span className="ml-auto rounded-full bg-violet-100 px-3 py-1 text-xs font-bold text-violet-700">{people} {people === 1 ? 'person' : 'people'}</span>}</header><AnimatePresence mode="wait"><motion.section key={screen} {...transition} className="flex flex-1 flex-col">
     {loading ? <div className="flex flex-1 flex-col items-center justify-center text-center"><Swifty mood="searching" interaction="scan" size="lg" /><p className="mt-5 font-bold">Finding the next Indomie run…</p></div>
     : screen === 'home' && reservation ? <div className="flex flex-1 flex-col gap-5"><div className="rounded-3xl border border-violet-100 bg-white p-5 shadow-sm dark:border-violet-900 dark:bg-slate-900"><div className="flex items-center justify-between gap-3"><b>Your {runTime(scheduledFor)} Indomie</b><span className={amountDue ? 'rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700' : 'rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700'}>{amountDue ? 'Payment needed' : 'Paid ✓'}</span></div><div className="mt-5 space-y-3 text-sm"><p className="flex items-center gap-3"><Users className="h-4 w-4 text-violet-600" />{reservationMeals} {reservationMeals === 1 ? 'meal' : 'meals'}</p><p className="flex items-center gap-3"><CheckCircle2 className="h-4 w-4 text-violet-600" />{taskerName} is getting your Indomie.</p></div></div><div className="flex items-center gap-4 rounded-3xl bg-violet-50 p-5 dark:bg-violet-950/30"><Clock3 className="h-6 w-6 text-violet-600" /><div><p className="text-xs text-slate-500">Expected arrival</p><b>{runTime(expectedStart)} – {runTime(expectedEnd)}</b></div></div><div className="mt-auto space-y-3">{amountDue ? <PrimaryButton onClick={() => setScreen('payment')}>Pay {taskerName}</PrimaryButton> : <Link href={`/dashboard/tasks/${active?._id}`} className="flex min-h-13 items-center justify-center rounded-2xl bg-linear-to-r from-violet-600 to-purple-600 px-5 py-3.5 font-bold text-white">View my order</Link>}{reservationMeals < 3 && <PrimaryButton secondary onClick={startAdd}>+ Add another Indomie</PrimaryButton>}</div></div>
     : screen === 'home' ? <div className="flex flex-1 flex-col text-center"><Swifty mood="idle" interaction="rest" size="lg" className="mt-2" />{!location ? <div className="mt-6 text-left"><h1 className="text-center text-2xl font-black">Where should we bring it?</h1><div className="mt-6 grid grid-cols-2 gap-3">{LOCATIONS.map((item) => <button key={item} type="button" onClick={() => setLocation(item)} className="min-h-14 rounded-2xl border border-violet-200 bg-white px-3 py-3 text-sm font-bold text-violet-800 shadow-sm dark:border-violet-900 dark:bg-slate-900 dark:text-violet-200">{item}</button>)}</div></div> : !run ? <div className="mt-7 rounded-3xl bg-white p-6 shadow-sm dark:bg-slate-900"><h1 className="text-xl font-black">No run is open right now</h1><p className="mt-2 text-sm text-slate-500">Try again during the evening Indomie period.</p></div> : <><p className="mt-4 text-xl font-black">Someone is going to get<br />Indomie at</p><p className="mt-3 text-5xl font-black text-violet-600">{runTime(run.scheduledFor)}</p><div className="mx-auto mt-5 rounded-full bg-emerald-100 px-5 py-2 text-sm font-bold text-emerald-700">● {run.availableSlots} {run.availableSlots === 1 ? 'spot' : 'spots'} left</div><div className="mt-5 space-y-3"><div className="rounded-2xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700"><Clock3 className="mr-2 inline h-4 w-4" />Order before {runTime(run.bookingClosesAt)}</div><div className="rounded-2xl bg-violet-50 px-4 py-3 text-sm dark:bg-violet-950/30"><span className="text-slate-500">Expected arrival</span><br /><b>{runTime(run.estimatedArrivalStart)} – {runTime(run.estimatedArrivalEnd)}</b></div></div>{requiresRoom && <input value={roomNumber} onChange={(event) => setRoomNumber(event.target.value)} placeholder="Your room number" className="mt-4 h-12 rounded-xl border border-slate-200 bg-white px-4 outline-none focus:border-violet-500 dark:border-slate-700 dark:bg-slate-900" />}<div className="mt-auto pt-6"><PrimaryButton onClick={() => setScreen('people')}>Add my order <ArrowRight className="h-4 w-4" /></PrimaryButton><p className="mt-4 text-xs text-slate-500">You can keep using SwiftDU while you wait.</p></div></>}</div>

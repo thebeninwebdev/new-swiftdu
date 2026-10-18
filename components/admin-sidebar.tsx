@@ -15,6 +15,7 @@ import {
   Store,
   ShieldCheck,
   Settings2,
+  Tags,
   Clock3,
   Star,
   Users,
@@ -22,6 +23,7 @@ import {
 } from 'lucide-react'
 
 const adminNavigation = [
+  { label: 'Pricing', href: '/admin/pricing', icon: Tags, description: 'Set delivery fees' },
   { label: 'Operating hours', href: '/admin/operations', icon: Clock3, description: 'Set daily opening hours' },
   { label: 'Indomie batching', href: '/admin/indomie-batching', icon: Settings2, description: 'Set collection windows' },
   { label: 'Businesses', href: '/admin/businesses', icon: Store, description: 'Review community listings' },

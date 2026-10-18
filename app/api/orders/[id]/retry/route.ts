@@ -1,6 +1,7 @@
 import { validateDeliveryRoom } from '@/lib/delivery-policy';
 import { saveNewOrderWithBonus } from '@/lib/first-order-bonus';
-import { calculateOrderPricing } from '@/lib/pricing';
+import { calculateOrderPricing, type PricingResult, withConfiguredServiceFee } from '@/lib/pricing';
+import { getConfiguredServiceFee } from '@/lib/pricing-config';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { auth } from '@/lib/auth';
@@ -94,11 +95,13 @@ export async function POST(
 
     const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(session.user.id);
     // Reposts always start with today's normal price, never a discounted snapshot.
-    const pricing = calculateOrderPricing({
+    let pricing: PricingResult = calculateOrderPricing({
       ...order.toObject(), amount: order.cafeInquiry ? 0 : Number(order.itemPrice ?? order.amount),
       restaurantPeopleCount: order.cafeInquiry ? 1 : order.restaurantPeopleCount,
       restaurantTakeawayCount: order.cafeInquiry ? 0 : order.restaurantTakeawayCount,
     });
+    const configuredServiceFee = await getConfiguredServiceFee({ taskType: order.taskType, location: order.location });
+    if (configuredServiceFee !== null) pricing = withConfiguredServiceFee(pricing, configuredServiceFee + (order.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0));
     const fullServiceFee = pricing.serviceFee;
     const serviceFeeDiscountApplied = Boolean(
       customerAccount?.serviceFeeDiscountEnabled &&

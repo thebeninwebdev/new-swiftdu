@@ -105,6 +105,12 @@ export interface PricingResult {
   eggCount?: number
 }
 
+/** Applies an authoritative delivery fee without changing item/vendor costs. */
+export function withConfiguredServiceFee(pricing: PricingResult, serviceFee: number): PricingResult {
+  const normalizedFee = roundNaira(Math.max(0, serviceFee))
+  return { ...pricing, serviceFee: normalizedFee, totalAmount: roundNaira(pricing.amount + normalizedFee) }
+}
+
 export interface CopyNotesPricingInput {
   noteSize: string
   numberOfPages: number

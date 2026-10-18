@@ -13,7 +13,7 @@ export type BonusPriceOrder = FirstOrderBonusFields & {
 export function FirstOrderBonusNotice({ order, tasker = false }: { order: FirstOrderBonusFields; tasker?: boolean }) {
   if (!order.firstOrderBonusApplied) return null
   return <p className="rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-900 dark:bg-violet-950/40 dark:text-violet-200">
-    {tasker ? 'First-order bonus: no platform fee to remit.' : <>First-order bonus: {convertToNaira(order.firstOrderBonusAmount || 0)} saved on the SwiftDU platform fee.</>}
+    {tasker ? <>First-order bonus: {convertToNaira(order.firstOrderBonusAmount || 0)} deducted from the platform fee.</> : <>First-order bonus: {convertToNaira(order.firstOrderBonusAmount || 0)} saved on the SwiftDU platform fee.</>}
   </p>
 }
 

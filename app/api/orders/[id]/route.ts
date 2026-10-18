@@ -20,6 +20,8 @@ import { ensureBookedAt } from '@/lib/order-response-time';
 import { consumeServiceFeeDiscountForCompletedOrder } from '@/lib/service-fee-discount';
 import {
   calculateOrderPricing,
+  type PricingResult,
+  withConfiguredServiceFee,
   CAFE_INQUIRY_EXTRA_FEE,
   descriptionMentionsWater,
   normalizeRestaurantPeopleCount,
@@ -31,6 +33,7 @@ import {
   WATER_TASK_TYPE,
   INDOMIE_TASK_TYPE,
 } from '@/lib/pricing';
+import { getConfiguredServiceFee } from '@/lib/pricing-config';
 import {
   formatPushTaskType,
   sendPushNotification,
@@ -311,7 +314,7 @@ export async function PATCH(
           );
         }
 
-        const pricing = calculateOrderPricing({
+        let pricing: PricingResult = calculateOrderPricing({
           amount: Number(order.itemPrice ?? order.amount ?? 0),
           taskType: order.taskType,
           store: order.store,
@@ -321,6 +324,8 @@ export async function PATCH(
             parsedRestaurantPeopleCount
           ),
         });
+        const configuredServiceFee = await getConfiguredServiceFee({ taskType: order.taskType, location: order.location });
+        if (configuredServiceFee !== null) pricing = withConfiguredServiceFee(pricing, configuredServiceFee + (order.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0));
         const baseSettlement = splitServiceFee(pricing.serviceFee);
         const discountStillApplies = Boolean(order.serviceFeeDiscountApplied);
         const settlement = baseSettlement;
@@ -657,7 +662,7 @@ export async function PATCH(
         }
       }
 
-      const pricing = calculateOrderPricing({
+      let pricing: PricingResult = calculateOrderPricing({
         amount:
           nextCafeInquiry || nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE
             ? 0
@@ -675,6 +680,8 @@ export async function PATCH(
         printingNeedsEditing: nextPrintingNeedsEditing,
         cafeInquiry: nextCafeInquiry,
       });
+      const configuredServiceFee = await getConfiguredServiceFee({ taskType: nextTaskType, location });
+      if (configuredServiceFee !== null) pricing = withConfiguredServiceFee(pricing, configuredServiceFee + (nextCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0));
       const baseSettlement =
         pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'
           ? {

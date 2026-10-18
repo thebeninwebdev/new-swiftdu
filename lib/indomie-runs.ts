@@ -28,7 +28,7 @@ export function getNextAvailableIndomieRun(now = new Date(), settings: IndomieBa
 }
 
 export function formatIndomieRunTime(runAt: Date) {
-  return new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(runAt)
+  return new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(runAt)
 }
 
 export function indomieArrivalWindow(runAt: Date) {

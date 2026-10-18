@@ -56,7 +56,7 @@ import { useIdleEffect } from '@/hooks/use-idle-effect'
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 import {
   calculateOrderPricing,
-  getShoppingDistanceFee,
+  withConfiguredServiceFee,
   descriptionMentionsWater,
   PHOTOCOPY_PRICE_PER_PAGE,
   PRINTING_PRICE_PER_PAGE,
@@ -267,6 +267,7 @@ function formatReadyDate(value?: string) {
   return new Intl.DateTimeFormat('en-NG', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    hour12: true,
   }).format(new Date(value))
 }
 
@@ -381,6 +382,7 @@ export default function ErrandWizardPage() {
   } | null>(null)
   const [taskTypeUsageCounts, setTaskTypeUsageCounts] = useState<Record<string, number>>({})
   const [hasExcoDashboardAccess, setHasExcoDashboardAccess] = useState(false)
+  const [quotedServiceFee, setQuotedServiceFee] = useState<number | null>(null)
   const [isExcoTrainingMode, setIsExcoTrainingMode] = useState(false)
   const socketRef = useRef<Socket | null>(null)
   const activeOrderRef = useRef<ActiveOrder | null>(null)
@@ -812,7 +814,7 @@ export default function ErrandWizardPage() {
         : parseMoneyInput(formData.amount || '')
   const description = effectiveDescription
   const taskType = formData.taskType || 'restaurant'
-  const pricing = calculateOrderPricing({
+  const basePricing = calculateOrderPricing({
     amount: Number.isFinite(amount) ? amount : 0,
     taskType,
     store: formData.store,
@@ -827,7 +829,17 @@ export default function ErrandWizardPage() {
     printingNeedsEditing: formData.printingNeedsEditing === 'yes',
     cafeInquiry: isCafeInquiry,
   })
-  const shoppingDistanceFee = getShoppingDistanceFee(taskType, formData.store)
+  const pricing = quotedServiceFee === null ? basePricing : withConfiguredServiceFee(basePricing, quotedServiceFee + (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
+  const shoppingDistanceFee = 0
+  useEffect(() => {
+    if (!['restaurant', 'shopping', 'printing', 'indomie'].includes(taskType) || !formData.location) { setQuotedServiceFee(null); return }
+    let cancelled = false
+    void fetch(`/api/pricing/quote?taskType=${encodeURIComponent(taskType)}&location=${encodeURIComponent(formData.location)}`, { cache: 'no-store' })
+      .then(async response => response.ok ? response.json() : null)
+      .then(payload => { if (!cancelled) setQuotedServiceFee(typeof payload?.serviceFee === 'number' ? payload.serviceFee : null) })
+      .catch(() => { if (!cancelled) setQuotedServiceFee(null) })
+    return () => { cancelled = true }
+  }, [taskType, formData.location])
   const hasAvailableServiceFeeDiscount = Boolean(
     serviceFeeDiscount?.hasAvailableDiscount && pricing.serviceFee > 0
   )
@@ -1340,7 +1352,7 @@ if (stepNumber === detailsStep) {
     : null
   const activeStatusDescription = activeOrder
     ? activeOrder.batchingStatus === 'waiting'
-      ? `Your tasker will be dispatched around ${activeOrder.scheduledFor ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(activeOrder.scheduledFor)) : 'the scheduled time'}. You can still place other SwiftDU orders.`
+      ? `Your tasker will be dispatched around ${activeOrder.scheduledFor ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(activeOrder.scheduledFor)) : 'the scheduled time'}. You can still place other SwiftDU orders.`
       : activeOrder.status === 'pending'
       ? 'We are actively notifying taskers for this errand right now. You can still post another task below.'
       : activeOrder.isDeclinedTask
@@ -1700,8 +1712,8 @@ if (stepNumber === detailsStep) {
           {indomieRun ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-100">
               <p className="text-xs font-bold tracking-wider text-rose-600 dark:text-rose-300">INDOMIE RUN</p>
-              <p className="mt-1 text-lg font-bold">Someone is heading to get Indomie at {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(indomieRun.scheduledFor))}</p>
-              <p className="mt-1 text-sm">{indomieRun.availableSlots} {indomieRun.availableSlots === 1 ? 'spot' : 'spots'} left · Order before {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(indomieRun.bookingClosesAt))}</p>
+              <p className="mt-1 text-lg font-bold">Someone is heading to get Indomie at {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(indomieRun.scheduledFor))}</p>
+              <p className="mt-1 text-sm">{indomieRun.availableSlots} {indomieRun.availableSlots === 1 ? 'spot' : 'spots'} left · Order before {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(indomieRun.bookingClosesAt))}</p>
             </div>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2">

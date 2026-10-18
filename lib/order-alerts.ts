@@ -105,6 +105,7 @@ function formatDateTime(value?: Date | string) {
   return new Intl.DateTimeFormat('en-NG', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    hour12: true,
   }).format(date)
 }
 

@@ -5,7 +5,8 @@ import { Order } from '@/models/order'
 import { lockTaskerWork } from '@/lib/tasker-work-server'
 import { canAssignCapacity } from '@/lib/tasker-capacity'
 import { isRunStillBookable } from '@/lib/indomie-runs'
-import { calculateOrderPricing } from '@/lib/pricing'
+import { calculateOrderPricing, type PricingResult, withConfiguredServiceFee } from '@/lib/pricing'
+import { getConfiguredServiceFee } from '@/lib/pricing-config'
 import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings'
 
 /** Adds a meal without ever changing the amount already marked as paid. */
@@ -26,7 +27,9 @@ export async function POST(request: NextRequest) {
     const fresh = await Order.findById(parent._id)
     if (!fresh || !fresh.taskerId || !fresh.indomieRunAt || !isRunStillBookable(fresh.indomieRunAt, new Date(), settings)) return NextResponse.json({ error: 'This run is no longer available.' }, { status: 409 })
     if (!await canAssignCapacity(fresh.taskerId, 1)) return NextResponse.json({ error: 'This run no longer has room for another meal. Choose the next run.' }, { status: 409 })
-    const pricing = calculateOrderPricing({ amount, taskType: 'indomie', indomiePacks: packs, eggCount: eggs })
+    let pricing: PricingResult = calculateOrderPricing({ amount, taskType: 'indomie', indomiePacks: packs, eggCount: eggs })
+    const configuredServiceFee = await getConfiguredServiceFee({ taskType: 'indomie', location: fresh.location })
+    if (configuredServiceFee !== null) pricing = withConfiguredServiceFee(pricing, configuredServiceFee)
     if (!fresh.hasPaid) {
       const meals = [...(fresh.indomieMeals || [{ indomiePacks: fresh.indomiePacks || 1, eggCount: fresh.eggCount || 0, amount: fresh.amount, description: fresh.description }]), { indomiePacks: packs, eggCount: eggs, amount, description: typeof meal.description === 'string' ? meal.description : undefined }]
       if (meals.length > 3) return NextResponse.json({ error: 'This run already has 3 meals in your order.' }, { status: 409 })

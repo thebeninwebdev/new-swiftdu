@@ -6,6 +6,7 @@ import { connectDB } from '@/lib/db'
 import { getAppBaseUrl, initializePaystackCheckout } from '@/lib/paystack-settlement'
 import { getSettlementDueAt } from '@/lib/order-finance'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
+import { isDevelopmentSettlementSimulation } from '@/lib/settlement-mode'
 import { emitOrderUpdated } from '@/lib/socket'
 import {
   PendingSettlementVerificationError,
@@ -53,7 +54,7 @@ export async function POST(
       )
     }
 
-    if (order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
+    if (order.platformFee <= 0 || order.platformFeeWaivedForFastCompletion) {
       return NextResponse.json({ noSettlementRequired: true, order, message: 'No platform fee to remit.' });
     }
 
@@ -86,6 +87,24 @@ export async function POST(
         { error: 'The platform settlement for this task has already been paid.' },
         { status: 400 }
       )
+    }
+
+    // Keep the production settlement step visible for live orders in local
+    // development, but never create a real provider transaction there.
+    if (isDevelopmentSettlementSimulation()) {
+      order.taskerHasPaid = true
+      order.settlementProvider = undefined
+      order.settlementStatus = 'paid'
+      order.settlementPaidAt = new Date()
+      order.settlementFailureReason = undefined
+      await order.save()
+      emitOrderUpdated(order)
+
+      return NextResponse.json({
+        simulated: true,
+        order,
+        message: 'Development simulation - no real platform-fee payment was made.',
+      })
     }
 
     if (

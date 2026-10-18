@@ -48,6 +48,7 @@ const formatDate = (date?: string) =>
         year: 'numeric',
         hour: '2-digit',
         minute: '2-digit',
+        hour12: true,
       })
     : 'Not available'
 
@@ -162,7 +163,7 @@ function TaskerPaymentPageContent() {
       allowRetry?: boolean
       showSuccessToast?: boolean
     }) => {
-      if (!orderId || !order || order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
+      if (!orderId || !order || order.platformFee <= 0 || order.platformFeeWaivedForFastCompletion) {
         return
       }
 
@@ -341,7 +342,7 @@ function TaskerPaymentPageContent() {
   }, [loadOrder, orderId, router, searchParams, storePendingReference, verifySettlement])
 
   useEffect(() => {
-    if (!order || order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion || !orderId || verifying) {
+    if (!order || order.platformFee <= 0 || order.platformFeeWaivedForFastCompletion || !orderId || verifying) {
       return
     }
 
@@ -366,7 +367,7 @@ function TaskerPaymentPageContent() {
   }, [getStoredPendingReference, order, orderId, verifySettlement, verifying])
 
   const handleStartPayment = async () => {
-    if (!order || order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
+    if (!order || order.platformFee <= 0 || order.platformFeeWaivedForFastCompletion) {
       return
     }
 
@@ -444,7 +445,7 @@ function TaskerPaymentPageContent() {
     )
   }
 
-  if (order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
+  if (order.platformFee <= 0 || order.platformFeeWaivedForFastCompletion) {
     return <div className="mx-auto max-w-xl space-y-4 px-4 py-10"><h1 className="text-2xl font-bold">No platform fee to remit</h1><FirstOrderBonusNotice order={order} tasker /><p>Your tasker fee: <strong>{convertToNaira(order.taskerFee || 0)}</strong></p><p className="text-sm text-slate-500 dark:text-slate-400">No Paystack payment is required for this task.</p><Button onClick={() => router.push('/tasker-dashboard/' + order._id)}>View task</Button></div>
   }
 
