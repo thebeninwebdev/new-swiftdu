@@ -46,6 +46,7 @@ interface AdminUser {
   id: string
   role?: string | null
 }
+interface AcademicSession { _id: string; name: string; isActive: boolean; semesters: Array<{ _id: string; name: string }> }
 
 export default function AdminTransactionsPage() {
   const router = useRouter()
@@ -66,6 +67,9 @@ export default function AdminTransactionsPage() {
     totalTaskerFees: 0,
     netRevenue: 0
   })
+  const [sessions, setSessions] = useState<AcademicSession[]>([])
+  const [sessionId, setSessionId] = useState('')
+  const [semesterId, setSemesterId] = useState('')
 
   // Auth check
   useEffect(() => {
@@ -97,6 +101,7 @@ export default function AdminTransactionsPage() {
         type: typeFilter,
         status: statusFilter
       })
+      if (sessionId === 'all-time') params.set('period', 'all-time'); else if (sessionId) { params.set('sessionId', sessionId); if (semesterId) params.set('semesterId', semesterId) }
 
       const res = await fetch(`/api/admin/transactions?${params}`)
       const data = await res.json()
@@ -114,11 +119,13 @@ export default function AdminTransactionsPage() {
     } finally {
       setIsFetching(false)
     }
-  }, [currentPage, searchTerm, typeFilter, statusFilter])
+  }, [currentPage, searchTerm, typeFilter, statusFilter, sessionId, semesterId])
 
   useEffect(() => {
     if (admin) fetchTransactions()
   }, [admin, fetchTransactions])
+  useEffect(() => { if (!admin) return; void fetch('/api/admin/finance/periods').then(r => r.ok ? r.json() : []).then((items: AcademicSession[]) => { setSessions(items); setSessionId(items.find(item => item.isActive)?._id || 'all-time') }).catch(() => setSessionId('all-time')) }, [admin])
+  const selectedSession = sessions.find(item => item._id === sessionId)
 
   const getTypeColor = (type: string) => {
     switch (type) {
@@ -190,6 +197,7 @@ export default function AdminTransactionsPage() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
+        <div className="mb-6 flex flex-wrap gap-2"><select value={sessionId} onChange={event => { setSessionId(event.target.value); setSemesterId(''); setCurrentPage(1) }} className="h-10 rounded-xl border bg-white px-3 text-sm"><option value="all-time">All Time</option>{sessions.map(item => <option key={item._id} value={item._id}>{item.name}{item.isActive ? ' · Current' : ''}</option>)}</select>{selectedSession && <select value={semesterId} onChange={event => { setSemesterId(event.target.value); setCurrentPage(1) }} className="h-10 rounded-xl border bg-white px-3 text-sm"><option value="">Entire Session</option>{selectedSession.semesters.map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>}</div>
         {/* Stats Cards */}
         <div className="grid grid-cols-1 gap-6 mb-8 md:grid-cols-2 xl:grid-cols-6">
           <Card>

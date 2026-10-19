@@ -10,6 +10,8 @@ import {
   excludeTestOrders,
   getEffectivePlatformFee,
 } from '@/lib/order-finance';
+import { auth } from '@/lib/auth';
+import { buildCreatedAtPeriodMatch, resolveFinancePeriod } from '@/lib/finance-periods';
 
 type TransactionOrder = {
   _id: unknown;
@@ -29,11 +31,8 @@ type TransactionOrder = {
 
 export async function GET(request: NextRequest) {
   try {
-    // TODO: Add admin role check
-    // const session = await auth();
-    // if (!session || session.user.role !== 'admin') {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-    // }
+    const session = await auth.api.getSession({ headers: request.headers });
+    if (session?.user?.role !== 'admin') return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
 
     await connectDB();
 
@@ -42,6 +41,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '10');
     const status = searchParams.get('status');
     const search = searchParams.get('search');
+    const period = await resolveFinancePeriod({ sessionId: searchParams.get('sessionId'), semesterId: searchParams.get('semesterId'), allTime: searchParams.get('period') === 'all-time' });
+    const periodMatch = buildCreatedAtPeriodMatch(period);
 
     const skip = (page - 1) * limit;
 
@@ -58,7 +59,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get orders for transactions
-    const nonTestQuery = excludeTestOrders(query);
+    const nonTestQuery = excludeTestOrders({ ...query, ...periodMatch });
 
     const orders = await Order.find(nonTestQuery)
       .sort({ createdAt: -1 })
@@ -99,7 +100,7 @@ export async function GET(request: NextRequest) {
 
     // Calculate stats
     const [financeOrders, totalOrdersForQuery] = await Promise.all([
-      Order.find(excludeCancelledOrders()).lean(),
+      Order.find(excludeCancelledOrders(periodMatch)).lean(),
       Order.countDocuments(nonTestQuery),
     ]);
     const totalVolume = financeOrders.reduce((sum, order: TransactionOrder) => sum + (order.totalAmount || 0), 0);
@@ -124,6 +125,7 @@ export async function GET(request: NextRequest) {
         totalTaskerFees,
         netRevenue,
       },
+      period,
       totalPages,
     });
   } catch (error) {

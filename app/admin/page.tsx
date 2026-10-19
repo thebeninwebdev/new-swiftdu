@@ -52,6 +52,7 @@ interface ActivityPagination {
   totalItems: number
   totalPages: number
 }
+interface AcademicSession { _id: string; name: string; isActive: boolean; semesters: Array<{ _id: string; name: string }> }
 
 
 export default function AdminDashboard() {
@@ -63,6 +64,9 @@ export default function AdminDashboard() {
   const [activityPage, setActivityPage] = useState(1)
   const [activityPagination, setActivityPagination] = useState<ActivityPagination>({ page: 1, limit: 10, totalItems: 0, totalPages: 1 })
   const [isStatsLoading, setIsStatsLoading] = useState(false)
+  const [sessions, setSessions] = useState<AcademicSession[]>([])
+  const [sessionId, setSessionId] = useState('')
+  const [semesterId, setSemesterId] = useState('')
 
   // Auth check
   useEffect(() => {
@@ -88,7 +92,9 @@ export default function AdminDashboard() {
   const fetchStats = async () => {
     setIsStatsLoading(true)
     try {
-      const response = await fetch(`/api/admin/dashboard?activityPage=${activityPage}&activityLimit=10`)
+      const params = new URLSearchParams({ activityPage: String(activityPage), activityLimit: '10' })
+      if (sessionId === 'all-time') params.set('period', 'all-time'); else if (sessionId) { params.set('sessionId', sessionId); if (semesterId) params.set('semesterId', semesterId) }
+      const response = await fetch(`/api/admin/dashboard?${params}`)
       if (!response.ok) throw new Error('Failed to fetch stats')
 
       const data = await response.json()
@@ -107,7 +113,12 @@ export default function AdminDashboard() {
     if (admin) {
       fetchStats()
     }
-  }, [admin, activityPage])
+  }, [admin, activityPage, sessionId, semesterId])
+
+  useEffect(() => { if (!admin) return; void fetch('/api/admin/finance/periods').then(r => r.ok ? r.json() : []).then((items: AcademicSession[]) => { setSessions(items); const query = new URLSearchParams(window.location.search); const selected = query.get('period') === 'all-time' ? 'all-time' : query.get('sessionId') || items.find(item => item.isActive)?._id || 'all-time'; setSessionId(selected); setSemesterId(query.get('semesterId') || '') }).catch(() => setSessionId('all-time')) }, [admin])
+  const selectedSession = sessions.find(item => item._id === sessionId)
+  const chooseSession = (value: string) => { setSessionId(value); setSemesterId(''); setActivityPage(1); const url = new URL(window.location.href); url.search = value === 'all-time' ? 'period=all-time' : `sessionId=${value}`; window.history.replaceState({}, '', url) }
+  const chooseSemester = (value: string) => { setSemesterId(value); const url = new URL(window.location.href); if (value) url.searchParams.set('semesterId', value); else url.searchParams.delete('semesterId'); window.history.replaceState({}, '', url) }
 
 
   if (isLoading) {
@@ -141,7 +152,7 @@ export default function AdminDashboard() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-8">
-        <p className="mb-3 text-sm font-semibold text-slate-700">Financial performance</p>
+        <div className="mb-3 flex flex-wrap items-end justify-between gap-3"><div><p className="text-sm font-semibold text-slate-700">Financial performance</p><p className="text-xs text-slate-500">{sessionId === 'all-time' ? 'All Time' : selectedSession?.name || 'Loading current session…'}</p></div><div className="flex gap-2"><select value={sessionId} onChange={event => chooseSession(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="all-time">All Time</option>{sessions.map(item => <option key={item._id} value={item._id}>{item.name}{item.isActive ? ' · Current' : ''}</option>)}</select>{selectedSession && <select value={semesterId} onChange={event => chooseSemester(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="">Entire Session</option>{selectedSession.semesters.map(item => <option key={item._id} value={item._id}>{item.name}</option>)}</select>}</div></div>
         {/* Income Breakdown */}
         <div className="mb-8 grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5 md:gap-6">
           <Card>

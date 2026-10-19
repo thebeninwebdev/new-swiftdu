@@ -12,6 +12,8 @@ import {
   excludeTestOrders,
 } from '@/lib/order-finance'
 import { getApprovedExpenditureTotal } from '@/lib/expenditures'
+import { auth } from '@/lib/auth'
+import { buildCreatedAtPeriodMatch, resolveFinancePeriod } from '@/lib/finance-periods'
 
 // ─── GET /api/admin/dashboard ────────────────────────────────────────────────
 // Returns dashboard statistics and recent activity.
@@ -25,16 +27,14 @@ export async function GET(request: NextRequest) {
   const activityOffset = (activityPage - 1) * activityLimit
   const activityFetchLimit = activityOffset + activityLimit
   try {
-    // TODO: Add admin auth check
-    // const session = await authClient.getSession()
-    // const user = session?.data?.user
-    // if (!user || user.role !== 'admin') {
-    //   return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
-    // }
+    const session = await auth.api.getSession({ headers: request.headers })
+    if (session?.user?.role !== 'admin') return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
 
     await connectDB()
-    const financeMatch = excludeCancelledOrders()
-    const nonTestMatch = excludeTestOrders()
+    const period = await resolveFinancePeriod({ sessionId: request.nextUrl.searchParams.get('sessionId'), semesterId: request.nextUrl.searchParams.get('semesterId'), allTime: request.nextUrl.searchParams.get('period') === 'all-time' })
+    const periodMatch = buildCreatedAtPeriodMatch(period)
+    const financeMatch = excludeCancelledOrders(periodMatch)
+    const nonTestMatch = excludeTestOrders(periodMatch)
 
     // Get stats
     const [
@@ -52,14 +52,14 @@ export async function GET(request: NextRequest) {
       Tasker.countDocuments({ isVerified: true }),
       Order.countDocuments(nonTestMatch),
       Order.aggregate([
-        { $match: excludeTestOrders({ status: 'completed' }) },
+        { $match: excludeTestOrders({ ...periodMatch, status: 'completed' }) },
         { $group: { _id: null, total: { $sum: '$amount' } } }
       ]),
-      Order.countDocuments(excludeTestOrders({ status: 'pending' })),
-      Order.countDocuments(excludeTestOrders({ status: 'completed' })),
+      Order.countDocuments(excludeTestOrders({ ...periodMatch, status: 'pending' })),
+      Order.countDocuments(excludeTestOrders({ ...periodMatch, status: 'completed' })),
       Review.countDocuments(),
       Tasker.countDocuments({ isVerified: false, isRejected: false }),
-      Order.countDocuments(excludeTestOrders({ isDeclinedTask: true }))
+      Order.countDocuments(excludeTestOrders({ ...periodMatch, isDeclinedTask: true }))
     ])
 
     // Calculate gross revenue, profit, Paystack settlement fees, and total compensation.
@@ -82,12 +82,13 @@ export async function GET(request: NextRequest) {
     const totalPlatformFees = platformFeeAgg[0]?.total || 0
     const paystackSettlementFees = calculatePaystackSettlementFee(totalPlatformFees)
     const profit = calculateNetPlatformProfit(totalPlatformFees)
-    const approvedExpenditures = await getApprovedExpenditureTotal()
+    const approvedExpenditures = await getApprovedExpenditureTotal(period.startDate && period.endDate ? { approvedAt: { $gte: period.startDate, $lte: period.endDate } } : {})
     const businessProfit = profit - approvedExpenditures
     const totalCompensation = compensationAgg[0]?.total || 0
 
     // Get recent activity (last 10 items)
-    const recentOrders = await Order.find(nonTestMatch)
+    // Recent activity is platform-wide; the selected period scopes financial reporting only.
+    const recentOrders = await Order.find(excludeTestOrders())
       .sort({ createdAt: -1 })
       .limit(activityFetchLimit)
       .populate('taskerId', 'name')
@@ -136,7 +137,7 @@ export async function GET(request: NextRequest) {
       .slice(activityOffset, activityOffset + activityLimit)
 
     const totalActivityItems = (await Promise.all([
-      Order.countDocuments(nonTestMatch),
+      Order.countDocuments(excludeTestOrders()),
       Tasker.countDocuments({ isVerified: false, isRejected: false }),
       Review.countDocuments(),
       Order.countDocuments(excludeTestOrders({ isDeclinedTask: true }))
@@ -149,7 +150,7 @@ export async function GET(request: NextRequest) {
       pendingOrders, completedOrders, totalReviews, pendingTaskerApprovals, declinedTasks
     }
 
-    return NextResponse.json({ stats, recentActivity, activityPagination: { page: activityPage, limit: activityLimit, totalItems: totalActivityItems, totalPages: Math.max(1, Math.ceil(totalActivityItems / activityLimit)) } })
+    return NextResponse.json({ stats, period, recentActivity, activityPagination: { page: activityPage, limit: activityLimit, totalItems: totalActivityItems, totalPages: Math.max(1, Math.ceil(totalActivityItems / activityLimit)) } })
   } catch (error) {
     console.error('[GET /api/admin/dashboard]', error)
     return NextResponse.json({ error: 'Failed to fetch dashboard data' }, { status: 500 })
