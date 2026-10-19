@@ -56,7 +56,6 @@ import { useIdleEffect } from '@/hooks/use-idle-effect'
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 import {
   calculateOrderPricing,
-  withConfiguredServiceFee,
   descriptionMentionsWater,
   PHOTOCOPY_PRICE_PER_PAGE,
   PRINTING_PRICE_PER_PAGE,
@@ -828,8 +827,9 @@ export default function ErrandWizardPage() {
     printingServiceType: formData.printingServiceType,
     printingNeedsEditing: formData.printingNeedsEditing === 'yes',
     cafeInquiry: isCafeInquiry,
+    serviceFee: quotedServiceFee ?? undefined,
   })
-  const pricing = quotedServiceFee === null ? basePricing : withConfiguredServiceFee(basePricing, quotedServiceFee + (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
+  const pricing = basePricing
   const shoppingDistanceFee = 0
   useEffect(() => {
     if (!['restaurant', 'shopping', 'printing', 'indomie'].includes(taskType) || !formData.location) { setQuotedServiceFee(null); return }

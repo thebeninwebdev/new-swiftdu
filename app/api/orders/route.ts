@@ -13,7 +13,6 @@ import { ensureCompletionTimer } from '@/lib/completion-timer';
 import {
   calculateOrderPricing,
   type PricingResult,
-  withConfiguredServiceFee,
   CAFE_INQUIRY_EXTRA_FEE,
   descriptionMentionsWater,
   normalizeRestaurantPeopleCount,
@@ -22,7 +21,6 @@ import {
   normalizePrintingServiceType,
   PRINTING_TASK_TYPE,
   RESTAURANT_MAX_PEOPLE,
-  CAFE_INQUIRY_SERVICE_FEE,
   WATER_TASK_TYPE,
   INDOMIE_TASK_TYPE,
 } from '@/lib/pricing';
@@ -337,7 +335,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    let pricing: PricingResult = calculateOrderPricing({
+    const configuredServiceFee = await getConfiguredServiceFee({ taskType: normalizedTaskType, location })
+    const pricing: PricingResult = calculateOrderPricing({
       amount:
         normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE
           ? 0
@@ -354,9 +353,8 @@ export async function POST(request: NextRequest) {
       numberOfPages: parsedNumberOfPages,
       printingServiceType: normalizedPrintingServiceType,
       printingNeedsEditing: normalizedPrintingNeedsEditing,
+      serviceFee: configuredServiceFee ?? undefined,
     });
-    const configuredServiceFee = await getConfiguredServiceFee({ taskType: normalizedTaskType, location })
-    if (configuredServiceFee !== null) pricing = withConfiguredServiceFee(pricing, configuredServiceFee + (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
 
     const customerLookupConditions = getUserLookupConditions(session.user);
     const customerAccount = customerLookupConditions.length
@@ -587,7 +585,7 @@ export async function POST(request: NextRequest) {
         audience: { roles: ['tasker'], taskerGenderRestriction: order.taskerGenderRestriction || null },
         title: 'New Task Available',
         body: isCafeInquiry
-          ? `Cafe inquiry in ${location} - NGN ${CAFE_INQUIRY_SERVICE_FEE.toLocaleString()} service fee`
+          ? `Cafe inquiry in ${location} - NGN ${pricing.serviceFee.toLocaleString()} service fee`
           : `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${totalAmount.toLocaleString()}`,
         url: '/available-tasks',
         tag: `new-task-${order._id.toString()}`,

@@ -2,16 +2,12 @@ export const WATER_TASK_TYPE = 'water'
 export const WATER_BAG_PRICE = 750
 export const WATER_BAG_FEE = 450
 export const WATER_PLATFORM_FEE_RATE = 0.24
-export const RESTAURANT_PERSON_FEE = 600
 export const CAFE_INQUIRY_EXTRA_FEE = 50
-export const SHOPPING_DISTANCE_FEE = 200
-export const CAFE_INQUIRY_SERVICE_FEE = RESTAURANT_PERSON_FEE + CAFE_INQUIRY_EXTRA_FEE
 export const RESTAURANT_MAX_PEOPLE = 3
 // Packaging is sold as a priced option, not an automatic surcharge.
 export const RESTAURANT_TAKEAWAY_PACK_PRICE = 200
 export const RESTAURANT_TAKEAWAY_FEE = 0
 export const PRINTING_TASK_TYPE = 'printing'
-export const PRINTING_SERVICE_FEE = 500
 export const PRINTING_PRICE_PER_PAGE = 100
 export const PHOTOCOPY_PRICE_PER_PAGE = 50
 export const COPY_NOTES_TASK_TYPE = 'copy_notes'
@@ -22,61 +18,6 @@ export const COPY_NOTES_BIG_PRICE_PER_TWO_PAGES = 450
 
 export const WATER_DESCRIPTION_PATTERN = /\bbag(?:s)?\s+of\s+water\b/i
 
-export const TIERED_SERVICE_FEE_RULES = [
-  {
-    min: 0,
-    max: 4999,
-    fee: 450,
-    label: 'N0 - N4,999',
-  },
-  {
-    min: 5000,
-    max: 6999,
-    fee: 700,
-    label: 'N5,000 - N6,999',
-  },
-  {
-    min: 7000,
-    max: 9999,
-    fee: 1000,
-    label: 'N7,000 - N9,999',
-  },
-  {
-    min: 10000,
-    max: null,
-    fee: 2000,
-    label: 'N10,000 and above',
-  },
-] as const
-
-export const RESTAURANT_SINGLE_ORDER_SERVICE_FEE_RULES = [
-  {
-    min: 0,
-    max: 4999,
-    fee: RESTAURANT_PERSON_FEE,
-  },
-  {
-    min: 5000,
-    max: 6999,
-    fee: 700,
-  },
-  {
-    min: 7000,
-    max: 9999,
-    fee: 1000,
-  },
-  {
-    min: 10000,
-    max: null,
-    fee: 2000,
-  },
-] as const
-
-export const RESTAURANT_SERVICE_FEE_BY_PEOPLE_COUNT: Record<number, number> = {
-  1: RESTAURANT_PERSON_FEE,
-  2: 700,
-  3: 1050,
-}
 
 export type NoteSize = 'small' | 'big'
 export type CopyNotesType = NoteSize
@@ -105,12 +46,6 @@ export interface PricingResult {
   eggCount?: number
 }
 
-/** Applies an authoritative delivery fee without changing item/vendor costs. */
-export function withConfiguredServiceFee(pricing: PricingResult, serviceFee: number): PricingResult {
-  const normalizedFee = roundNaira(Math.max(0, serviceFee))
-  return { ...pricing, serviceFee: normalizedFee, totalAmount: roundNaira(pricing.amount + normalizedFee) }
-}
-
 export interface CopyNotesPricingInput {
   noteSize: string
   numberOfPages: number
@@ -122,26 +57,6 @@ function roundNaira(value: number) {
 
 export function descriptionMentionsWater(description: string) {
   return WATER_DESCRIPTION_PATTERN.test(description)
-}
-
-export function getShoppingDistanceFee(taskType: string, store?: string) {
-  // Keep the existing Mummy V store value compatible with saved orders.
-  const normalizedStore = store?.trim().toLowerCase()
-  return taskType === 'shopping' && ['sarah', 'muuy v', 'mummy v'].includes(normalizedStore || '')
-    ? SHOPPING_DISTANCE_FEE
-    : 0
-}
-
-export function getTieredServiceFee(amount: number) {
-  const matchingRule = TIERED_SERVICE_FEE_RULES.find((rule) => {
-    if (rule.max === null) {
-      return amount >= rule.min
-    }
-
-    return amount >= rule.min && amount <= rule.max
-  })
-
-  return matchingRule?.fee || TIERED_SERVICE_FEE_RULES[0].fee
 }
 
 export function normalizeNoteSize(value?: string): NoteSize | undefined {
@@ -216,8 +131,13 @@ export function calculateOrderPricing(input: {
   cafeInquiry?: boolean
   indomiePacks?: number
   eggCount?: number
+  /** Authoritative fee resolved by the server or public quote endpoint. */
+  serviceFee?: number
 }) {
   const amount = roundNaira(input.amount)
+  const configuredServiceFee = Number.isFinite(input.serviceFee)
+    ? roundNaira(Math.max(0, Number(input.serviceFee)))
+    : 0
 
   if (input.taskType === WATER_TASK_TYPE) {
     const waterBags = Number(input.waterBags || 0)
@@ -248,13 +168,10 @@ export function calculateOrderPricing(input: {
             numberOfPages,
           })
         : 0
-    const serviceFee =
-      printingAmount >= 5000 ? getTieredServiceFee(printingAmount) : PRINTING_SERVICE_FEE
-
     return {
       amount: printingAmount,
-      serviceFee,
-      totalAmount: roundNaira(printingAmount + serviceFee),
+      serviceFee: configuredServiceFee,
+      totalAmount: roundNaira(printingAmount + configuredServiceFee),
       pricingModel: 'tiered' as const,
       waterFee: 0,
       numberOfPages: Number.isFinite(numberOfPages) ? numberOfPages : 0,
@@ -313,7 +230,7 @@ export function calculateOrderPricing(input: {
     )
     const restaurantPackagingFee = 0
 
-    const serviceFee = calculateRestaurantServiceFee(restaurantPeopleCount) + (input.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)
+    const serviceFee = configuredServiceFee + (input.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)
 
     return {
       amount,
@@ -328,26 +245,23 @@ export function calculateOrderPricing(input: {
   }
 
   if (input.taskType === 'shopping') {
-    const serviceFee = getTieredServiceFee(amount) + getShoppingDistanceFee(input.taskType, input.store)
-
     return {
       amount,
-      serviceFee,
-      totalAmount: roundNaira(amount + serviceFee),
+      serviceFee: configuredServiceFee,
+      totalAmount: roundNaira(amount + configuredServiceFee),
       pricingModel: 'tiered' as const,
       waterFee: 0,
     } satisfies PricingResult
   }
 
   if (input.taskType === INDOMIE_TASK_TYPE) {
-    const serviceFee = getTieredServiceFee(amount)
     const indomiePacks = Number(input.indomiePacks || 0)
     const eggCount = Number(input.eggCount || 0)
 
     return {
       amount,
-      serviceFee,
-      totalAmount: roundNaira(amount + serviceFee),
+      serviceFee: configuredServiceFee,
+      totalAmount: roundNaira(amount + configuredServiceFee),
       pricingModel: 'tiered' as const,
       waterFee: 0,
       indomiePacks: Number.isFinite(indomiePacks) ? indomiePacks : 0,
@@ -355,15 +269,10 @@ export function calculateOrderPricing(input: {
     } satisfies PricingResult
   }
 
-  const serviceFee =
-    input.taskType === 'restaurant'
-      ? calculateRestaurantServiceFee(input.restaurantPeopleCount)
-      : getTieredServiceFee(amount)
-
   return {
     amount,
-    serviceFee,
-    totalAmount: roundNaira(amount + serviceFee),
+    serviceFee: configuredServiceFee,
+    totalAmount: roundNaira(amount + configuredServiceFee),
     pricingModel: 'tiered' as const,
     waterFee: 0,
     restaurantPeopleCount:
@@ -397,10 +306,4 @@ export function normalizeRestaurantTakeawayCount(value?: number, peopleCount?: n
 export function calculateRestaurantPackagingFee(takeawayCount?: number, peopleCount?: number) {
   normalizeRestaurantTakeawayCount(takeawayCount, peopleCount)
   return 0
-}
-
-export function calculateRestaurantServiceFee(peopleCount?: number) {
-  const normalizedPeopleCount = normalizeRestaurantPeopleCount(peopleCount)
-
-  return RESTAURANT_SERVICE_FEE_BY_PEOPLE_COUNT[normalizedPeopleCount] || RESTAURANT_PERSON_FEE
 }

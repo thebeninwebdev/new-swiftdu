@@ -3,6 +3,8 @@ import { convertToNaira } from '@/lib/utils'
 
 export type BonusPriceOrder = FirstOrderBonusFields & {
   amount?: number
+  commission?: number
+  serviceFee?: number
   taskerFee?: number
   platformFee?: number
   totalAmount?: number
@@ -10,27 +12,23 @@ export type BonusPriceOrder = FirstOrderBonusFields & {
   serviceFeeDiscountApplied?: boolean
 }
 
-export function FirstOrderBonusNotice({ order, tasker = false }: { order: FirstOrderBonusFields; tasker?: boolean }) {
-  if (!order.firstOrderBonusApplied) return null
-  return <p className="rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-900 dark:bg-violet-950/40 dark:text-violet-200">
-    {tasker ? <>First-order bonus: {convertToNaira(order.firstOrderBonusAmount || 0)} deducted from the platform fee.</> : <>First-order bonus: {convertToNaira(order.firstOrderBonusAmount || 0)} saved on the SwiftDU platform fee.</>}
-  </p>
+/** Kept for existing tasker screens; the customer discount is shown in the fee row. */
+export function FirstOrderBonusNotice(_: { order: FirstOrderBonusFields; tasker?: boolean }) {
+  return null
 }
 
+/** Customer-facing prices intentionally combine tasker and platform shares as one service fee. */
 export function FirstOrderPriceBreakdown({ order, preview = false }: { order: BonusPriceOrder; preview?: boolean }) {
   if (!order.firstOrderBonusApplied) return null
-  const taskerFee = order.taskerFee || 0
-  const items = Math.max(0, (order.amount || 0) - (order.pricingModel === 'water' || order.pricingModel === 'copy_notes' ? taskerFee : 0))
-  const sponsored = order.serviceFeeDiscountApplied ? Math.max(0, items + taskerFee - (order.totalAmount || 0)) : 0
-  return <div className="space-y-3 rounded-2xl border border-violet-200 p-4 text-left text-sm dark:border-violet-900">
-    <FirstOrderBonusNotice order={order} />
-    <dl className="space-y-2 text-slate-700 dark:text-slate-200">
-      <div className="flex justify-between gap-4"><dt>Items/service cost</dt><dd>{convertToNaira(items)}</dd></div>
-      <div className="flex justify-between gap-4"><dt>Tasker fee</dt><dd>{convertToNaira(taskerFee)}</dd></div>
-      <div className="flex justify-between gap-4"><dt>SwiftDU platform fee</dt><dd>{convertToNaira(0)}</dd></div>
-      {sponsored > 0 && <div className="flex justify-between gap-4"><dt>Sponsored service fee discount</dt><dd>−{convertToNaira(sponsored)}</dd></div>}
-      <div className="flex justify-between gap-4 border-t border-slate-200 pt-2 font-bold dark:border-slate-700"><dt>Total</dt><dd>{convertToNaira(order.totalAmount || 0)}</dd></div>
-    </dl>
-    {preview && <p className="text-xs text-slate-500 dark:text-slate-400">Available for one order. Your final price is confirmed when you place the order.</p>}
+  const discountedServiceFee = Math.max(0, Number(order.serviceFee || order.commission || 0))
+  const originalServiceFee = discountedServiceFee + Math.max(0, Number(order.firstOrderBonusAmount || 0))
+
+  return <div className="space-y-2 border-t border-slate-200 pt-3 text-left text-sm dark:border-slate-800">
+    <div className="flex items-center justify-between gap-4">
+      <span className="text-slate-500">Service fee</span>
+      <span className="font-semibold"><s className="mr-2 text-slate-400">{convertToNaira(originalServiceFee)}</s><span>{convertToNaira(discountedServiceFee)}</span></span>
+    </div>
+    <div className="flex justify-between gap-4 border-t border-slate-200 pt-3 font-bold text-slate-900 dark:border-slate-800 dark:text-white"><span>Total</span><span>{convertToNaira(order.totalAmount || 0)}</span></div>
+    {preview && <p className="text-xs text-slate-500 dark:text-slate-400">Your first-order price is applied automatically.</p>}
   </div>
 }

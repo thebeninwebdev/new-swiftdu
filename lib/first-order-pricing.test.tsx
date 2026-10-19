@@ -65,16 +65,15 @@ test('only genuinely unpaid cancelled orders release reservations', () => {
   }
 })
 
-test('breakdowns display the saved total, full tasker fee, and honest waiver copy', () => {
+test('breakdowns show one discounted service fee without exposing settlement shares', () => {
   const normal = calculateOrderPricing({ taskType: 'water', amount: 0, waterBags: 2 })
   const order = { ...normal, ...priceWithOrderDiscounts(normal, { firstOrderBonus: true }) }
   const html = renderToStaticMarkup(<FirstOrderPriceBreakdown order={order} />)
-  assert.match(html, /Items\/service cost/)
-  assert.match(html, /Tasker fee/)
-  assert.match(html, /SwiftDU platform fee/)
-  assert.match(html, /First-order bonus/)
+  assert.match(html, /Service fee/)
+  assert.match(html, /<s/)
+  assert.doesNotMatch(html, /Tasker fee|platform fee/i)
   assert.match(html, /dark:/)
   assert.doesNotMatch(html, /Paystack|reimburse/)
-  assert.match(renderToStaticMarkup(<FirstOrderBonusNotice order={order} tasker />), /no platform fee to remit/)
+  assert.equal(renderToStaticMarkup(<FirstOrderBonusNotice order={order} tasker />), '')
   assert.equal(renderToStaticMarkup(<FirstOrderPriceBreakdown order={{ ...order, firstOrderBonusApplied: false }} />), '')
 })

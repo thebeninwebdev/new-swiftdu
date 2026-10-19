@@ -21,7 +21,6 @@ import { consumeServiceFeeDiscountForCompletedOrder } from '@/lib/service-fee-di
 import {
   calculateOrderPricing,
   type PricingResult,
-  withConfiguredServiceFee,
   CAFE_INQUIRY_EXTRA_FEE,
   descriptionMentionsWater,
   normalizeRestaurantPeopleCount,
@@ -33,7 +32,6 @@ import {
   WATER_TASK_TYPE,
   INDOMIE_TASK_TYPE,
 } from '@/lib/pricing';
-import { getConfiguredServiceFee } from '@/lib/pricing-config';
 import {
   formatPushTaskType,
   sendPushNotification,
@@ -323,9 +321,8 @@ export async function PATCH(
             order.restaurantTakeawayCount,
             parsedRestaurantPeopleCount
           ),
+          serviceFee: Math.max(0, Number(order.serviceFee || 0) - (order.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)),
         });
-        const configuredServiceFee = await getConfiguredServiceFee({ taskType: order.taskType, location: order.location });
-        if (configuredServiceFee !== null) pricing = withConfiguredServiceFee(pricing, configuredServiceFee + (order.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0));
         const baseSettlement = splitServiceFee(pricing.serviceFee);
         const discountStillApplies = Boolean(order.serviceFeeDiscountApplied);
         const settlement = baseSettlement;
@@ -679,9 +676,8 @@ export async function PATCH(
         printingServiceType: nextPrintingServiceType,
         printingNeedsEditing: nextPrintingNeedsEditing,
         cafeInquiry: nextCafeInquiry,
+        serviceFee: Math.max(0, Number(order.serviceFee || 0) - (nextCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)),
       });
-      const configuredServiceFee = await getConfiguredServiceFee({ taskType: nextTaskType, location });
-      if (configuredServiceFee !== null) pricing = withConfiguredServiceFee(pricing, configuredServiceFee + (nextCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0));
       const baseSettlement =
         pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'
           ? {
