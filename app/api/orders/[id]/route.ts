@@ -9,6 +9,7 @@ import { connectDB } from '@/lib/db';
 import { syncTaskerStats } from '@/lib/tasker-stats';
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement';
 import {Order} from "@/models/order"
+import CampusLocation from '@/models/campus-location'
 import { auth } from '@/lib/auth'; 
 import { canCustomerCancelOrder, canTaskerCancelOrder } from '@/lib/order-status';
 import { emitOrderUpdated } from '@/lib/socket';
@@ -1067,6 +1068,10 @@ const session = await auth.api.getSession({
 
     emitOrderUpdated(order);
 
+    if (order.taskerId === session.user.taskerId && order.exactLocationId) {
+      const exact = await CampusLocation.findById(order.exactLocationId).select('name coordinates').lean()
+      return NextResponse.json({ ...order.toObject(), exactLocation: exact ? { name: exact.name, coordinates: exact.coordinates } : undefined });
+    }
     return NextResponse.json(order);
   } catch (error) {
     console.error('[Orders DELETE Error]:', error);

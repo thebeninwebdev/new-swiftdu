@@ -2,6 +2,15 @@ export const CAMPUS_LOCATION_TYPES = ['building', 'hostel', 'lecture_theatre', '
 export type CampusLocationType = (typeof CAMPUS_LOCATION_TYPES)[number]
 
 export interface CampusCoordinates { latitude: number; longitude: number; accuracy?: number; capturedAt: Date }
+export type CampusLocationLike = { _id?: unknown; parentLocationId?: unknown | null; active?: boolean; coordinates: CampusCoordinates }
+
+/** A parent coordinate is the canonical pricing point; a child coordinate is only a delivery target. */
+export function isParentLocation(location: Pick<CampusLocationLike, 'parentLocationId'>) { return !location.parentLocationId }
+export function isExactLocation(location: Pick<CampusLocationLike, 'parentLocationId'>) { return !isParentLocation(location) }
+export function getPricingCoordinates(parent: CampusLocationLike): CampusCoordinates {
+  if (!isParentLocation(parent)) throw new Error('Pricing coordinates must belong to a parent location.')
+  return parent.coordinates
+}
 
 export function normalizeLocationName(value: unknown) {
   if (typeof value !== 'string') throw new Error('Location name is required.')

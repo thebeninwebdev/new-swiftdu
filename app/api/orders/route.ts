@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
 import { Order } from '@/models/order';
+import CampusLocation from '@/models/campus-location';
+import { Types } from 'mongoose';
 import { User } from '@/models/user';
 import { auth } from '@/lib/auth';
 import { Review } from '@/models/review';
@@ -111,7 +113,24 @@ export async function POST(request: NextRequest) {
       cafeInquiry,
       isTestOrder: requestedIsTestOrder,
       expectedIndomieMode,
+      parentLocationId,
+      exactLocationId,
     } = body;
+
+    // New mapped orders always resolve their broad destination on the server.  The
+    // parent is the pricing identity; an exact location is only a delivery target.
+    let parentLocation: { _id: Types.ObjectId; name: string; coordinates: unknown } | null = null;
+    let exactLocation: { _id: unknown; name: string } | null = null;
+    if (parentLocationId !== undefined && parentLocationId !== null && parentLocationId !== '') {
+      if (!Types.ObjectId.isValid(parentLocationId)) return NextResponse.json({ error: 'Choose a valid parent location.' }, { status: 400 });
+      parentLocation = await CampusLocation.findOne({ _id: parentLocationId, parentLocationId: null, active: true }).select('name coordinates').lean();
+      if (!parentLocation) return NextResponse.json({ error: 'Choose an active parent location.' }, { status: 400 });
+      if (exactLocationId) {
+        if (!Types.ObjectId.isValid(exactLocationId)) return NextResponse.json({ error: 'Choose a valid exact location.' }, { status: 400 });
+        exactLocation = await CampusLocation.findOne({ _id: exactLocationId, parentLocationId: parentLocation._id, active: true }).select('name').lean();
+        if (!exactLocation) return NextResponse.json({ error: 'That exact location does not belong to the selected parent.' }, { status: 400 });
+      }
+    }
 
     // Validation
     if (
@@ -124,12 +143,13 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (typeof location !== 'string' || !classifyDeliveryLocation(location)) {
+    const resolvedLocation = parentLocation?.name || location;
+    if (typeof resolvedLocation !== 'string' || (!parentLocation && !classifyDeliveryLocation(resolvedLocation))) {
       return NextResponse.json({ error: 'Choose a recognized delivery destination and include it with your room or landmark details.' }, { status: 400 });
     }
 
     let roomNumber: string | undefined;
-    try { roomNumber = validateDeliveryRoom(location, body.roomNumber); } catch (error) {
+    try { roomNumber = validateDeliveryRoom(resolvedLocation, body.roomNumber); } catch (error) {
       return NextResponse.json({ error: (error as Error).message }, { status: 400 });
     }
     const normalizedDescription = String(description || '').trim();
@@ -335,7 +355,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const configuredServiceFee = await getConfiguredServiceFee({ taskType: normalizedTaskType, location })
+    // Legacy rules remain a safe fallback. A mapped exact location never enters this resolver.
+    const configuredServiceFee = await getConfiguredServiceFee({ taskType: normalizedTaskType, location: resolvedLocation })
     const pricing: PricingResult = calculateOrderPricing({
       amount:
         normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE
@@ -484,8 +505,10 @@ export async function POST(request: NextRequest) {
       discountCommissionAmount,
       pricingModel: pricing.pricingModel,
       totalAmount,
-      location,
+      location: resolvedLocation,
       roomNumber,
+      parentLocationId: parentLocation?._id,
+      exactLocationId: exactLocation?._id,
       store:
         normalizedTaskType === 'copy_notes' ||
         normalizedTaskType === WATER_TASK_TYPE ||

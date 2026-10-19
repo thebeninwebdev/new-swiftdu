@@ -81,6 +81,8 @@ interface ErrandData {
   amount: string
   roomNumber?: string
   location: string
+  parentLocationId?: string
+  exactLocationId?: string
   store?: string
   waterBags?: string
   noteSize?: string
@@ -382,6 +384,8 @@ export default function ErrandWizardPage() {
   const [taskTypeUsageCounts, setTaskTypeUsageCounts] = useState<Record<string, number>>({})
   const [hasExcoDashboardAccess, setHasExcoDashboardAccess] = useState(false)
   const [quotedServiceFee, setQuotedServiceFee] = useState<number | null>(null)
+  const [parentLocations, setParentLocations] = useState<Array<{ _id: string; name: string }>>([])
+  const [exactLocations, setExactLocations] = useState<Array<{ _id: string; name: string }>>([])
   const [isExcoTrainingMode, setIsExcoTrainingMode] = useState(false)
   const socketRef = useRef<Socket | null>(null)
   const activeOrderRef = useRef<ActiveOrder | null>(null)
@@ -411,6 +415,12 @@ export default function ErrandWizardPage() {
     eggCount: '',
   })
   const sessionUserId = session?.user?.id
+
+  useEffect(() => { void fetch('/api/locations').then(response => response.ok ? response.json() : null).then(data => setParentLocations(data?.locations || [])).catch(() => undefined) }, [])
+  useEffect(() => {
+    if (!formData.parentLocationId) { setExactLocations([]); return }
+    void fetch(`/api/locations?parentLocationId=${encodeURIComponent(formData.parentLocationId)}`).then(response => response.ok ? response.json() : null).then(data => setExactLocations(data?.locations || []) ).catch(() => setExactLocations([]))
+  }, [formData.parentLocationId])
 
   const sortedTaskTypes = useMemo(() => {
     const originalIndex = new Map(taskTypes.map((item, index) => [item.value, index]))
@@ -834,7 +844,7 @@ export default function ErrandWizardPage() {
   useEffect(() => {
     if (!['restaurant', 'shopping', 'printing', 'indomie'].includes(taskType) || !formData.location) { setQuotedServiceFee(null); return }
     let cancelled = false
-    void fetch(`/api/pricing/quote?taskType=${encodeURIComponent(taskType)}&location=${encodeURIComponent(formData.location)}`, { cache: 'no-store' })
+    void fetch(`/api/pricing/quote?taskType=${encodeURIComponent(taskType)}&location=${encodeURIComponent(formData.location)}${formData.parentLocationId ? `&parentLocationId=${encodeURIComponent(formData.parentLocationId)}` : ''}`, { cache: 'no-store' })
       .then(async response => response.ok ? response.json() : null)
       .then(payload => { if (!cancelled) setQuotedServiceFee(typeof payload?.serviceFee === 'number' ? payload.serviceFee : null) })
       .catch(() => { if (!cancelled) setQuotedServiceFee(null) })
@@ -1041,7 +1051,7 @@ export default function ErrandWizardPage() {
 
   const handleLocationSelect = (value: string) => {
     pauseRealtime()
-    setFormData((previous) => ({ ...previous, location: value, roomNumber: previous.location === value ? previous.roomNumber : '' }))
+    setFormData((previous) => ({ ...previous, location: value, parentLocationId: '', exactLocationId: '', roomNumber: previous.location === value ? previous.roomNumber : '' }))
     clearError('location')
   }
 
@@ -3357,6 +3367,13 @@ if (stepNumber === detailsStep) {
                   </div>
                   <div>
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><MapPin className="h-4 w-4 text-indigo-500" />Delivery Location</label>
+                    {parentLocations.length > 0 ? <>
+                      <select value={formData.parentLocationId || ''} onChange={event => { const parent = parentLocations.find(item => item._id === event.target.value); setFormData(previous => ({ ...previous, parentLocationId: event.target.value, exactLocationId: '', location: parent?.name || '', roomNumber: '' })); clearError('location') }} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800">
+                        <option value="">Select a mapped parent location</option>{parentLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}
+                      </select>
+                      {formData.parentLocationId ? <select value={formData.exactLocationId || ''} onChange={event => setFormData(previous => ({ ...previous, exactLocationId: event.target.value }))} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800"><option value="">Exact place (optional)</option>{exactLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}</select> : null}
+                      <p className="mb-2 text-xs text-slate-500">Choose an exact place when mapped, or enter a room/detail below. Pricing uses the parent location.</p>
+                    </> : null}
                     <input type="text" name="location" value={formData.location} onChange={handleInputChange} placeholder="Library 2nd Floor, Hall B Room 204..." className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />
                     {errors.location ? <p className="mt-2 text-sm text-red-500">{errors.location}</p> : null}
                     {renderRoomNumber()}

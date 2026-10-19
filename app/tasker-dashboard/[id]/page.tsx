@@ -70,6 +70,9 @@ interface ErrandDetail extends CafeInquiryFields {
   deadlineUnit?: string
   roomNumber?: string
   location: string
+  parentLocationId?: string
+  exactLocationId?: string
+  exactLocation?: { name: string; coordinates: { latitude: number; longitude: number } }
   store?: string
   packaging?: string
   restaurantPeopleCount?: number
@@ -637,7 +640,7 @@ export default function ErrandDetailPage() {
             {/* Quick Info Row */}
             <div className="border-y border-slate-100 py-4 dark:border-slate-800">
               <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Go to</p>
-              <div className="mt-2 flex gap-3"><MapPin className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" /><div><p className="text-lg font-bold text-slate-900 dark:text-white">{getStoreDisplayName(errand.store) || errand.location}</p>{errand.store && <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{errand.location}{errand.roomNumber ? ` - Room ${errand.roomNumber}` : ''}</p>}</div></div>
+              <div className="mt-2 flex gap-3"><MapPin className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" /><div><p className="text-lg font-bold text-slate-900 dark:text-white">{getStoreDisplayName(errand.store) || errand.location}</p><p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{errand.exactLocation?.name || (errand.roomNumber ? `Room ${errand.roomNumber}` : '')}</p>{errand.exactLocation?.coordinates ? <a className="mt-2 inline-block text-sm font-semibold text-indigo-600" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${errand.exactLocation.coordinates.latitude},${errand.exactLocation.coordinates.longitude}`}>Navigate to exact location</a> : null}</div></div>
             </div>
 
             {/* Packaging (for restaurant) */}

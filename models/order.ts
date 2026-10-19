@@ -31,6 +31,9 @@ export interface IOrder extends Document, CafeInquiryFields {
   location: string;
   roomNumber?: string;
   deliveryDestinationKey?: string;
+  /** Parent is the pricing destination; exact is the navigation/delivery target. */
+  parentLocationId?: mongoose.Types.ObjectId;
+  exactLocationId?: mongoose.Types.ObjectId;
   batchId?: string;
   batchWindowStart?: Date;
   batchWindowEnd?: Date;
@@ -235,6 +238,8 @@ const orderSchema = new Schema<IOrder>(
     deliveryLocation: String,
     roomNumber: { type: String, trim: true, maxlength: 40 },
     deliveryDestinationKey: String,
+    parentLocationId: { type: Schema.Types.ObjectId, ref: 'CampusLocation', index: true },
+    exactLocationId: { type: Schema.Types.ObjectId, ref: 'CampusLocation', index: true },
     batchId: { type: String, index: true },
     batchWindowStart: Date,
     batchWindowEnd: Date,
