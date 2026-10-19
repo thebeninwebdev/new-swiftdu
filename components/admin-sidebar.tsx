@@ -14,7 +14,6 @@ import {
   ShoppingBag,
   Store,
   ShieldCheck,
-  Settings2,
   Tags,
   Clock3,
   Star,
@@ -24,8 +23,7 @@ import {
 
 const adminNavigation = [
   { label: 'Pricing', href: '/admin/pricing', icon: Tags, description: 'Set delivery fees' },
-  { label: 'Operating hours', href: '/admin/operations', icon: Clock3, description: 'Set daily opening hours' },
-  { label: 'Indomie batching', href: '/admin/indomie-batching', icon: Settings2, description: 'Set collection windows' },
+  { label: 'Operations', href: '/admin/operations', icon: Clock3, description: 'Hours and Indomie runs' },
   { label: 'Businesses', href: '/admin/businesses', icon: Store, description: 'Review community listings' },
   { label: 'Locations', href: '/admin/locations', icon: MapPin, description: 'Map the campus' },
   {

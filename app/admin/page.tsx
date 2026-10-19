@@ -267,7 +267,7 @@ export default function AdminDashboard() {
                 onClick={() => router.push('/admin/operations')}
               >
                 <Clock3 className="w-4 h-4 mr-2" />
-                Set Operating Hours
+                Manage Operations
               </Button>
 
               <Button
