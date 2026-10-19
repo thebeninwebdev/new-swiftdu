@@ -56,7 +56,6 @@ import { useIdleEffect } from '@/hooks/use-idle-effect'
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 import {
   calculateOrderPricing,
-  getShoppingDistanceFee,
   descriptionMentionsWater,
   PHOTOCOPY_PRICE_PER_PAGE,
   PRINTING_PRICE_PER_PAGE,
@@ -267,6 +266,7 @@ function formatReadyDate(value?: string) {
   return new Intl.DateTimeFormat('en-NG', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    hour12: true,
   }).format(new Date(value))
 }
 
@@ -372,6 +372,7 @@ export default function ErrandWizardPage() {
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [indomieRun, setIndomieRun] = useState<{ scheduledFor: string; bookingClosesAt: string; availableSlots: number; status: string } | null>(null)
+  const [operationsStatus, setOperationsStatus] = useState<{ enabled: boolean; open: boolean; openingTime: string; closingTime: string; nextOpeningAt: string; indomie: { mode: 'normal' | 'batching' | 'closed'; batchingStartsAt: string; batchingEndsAt: string } } | null>(null)
   const [serviceFeeDiscount, setServiceFeeDiscount] = useState<{
     firstOrderBonusAvailable?: boolean
     hasAvailableDiscount: boolean
@@ -380,6 +381,7 @@ export default function ErrandWizardPage() {
   } | null>(null)
   const [taskTypeUsageCounts, setTaskTypeUsageCounts] = useState<Record<string, number>>({})
   const [hasExcoDashboardAccess, setHasExcoDashboardAccess] = useState(false)
+  const [quotedServiceFee, setQuotedServiceFee] = useState<number | null>(null)
   const [isExcoTrainingMode, setIsExcoTrainingMode] = useState(false)
   const socketRef = useRef<Socket | null>(null)
   const activeOrderRef = useRef<ActiveOrder | null>(null)
@@ -431,6 +433,14 @@ export default function ErrandWizardPage() {
   useEffect(() => {
     activeOrderRef.current = activeOrder
   }, [activeOrder])
+
+  useEffect(() => {
+    let cancelled = false
+    const load = () => void fetch('/api/operations/status', { cache: 'no-store' }).then(async (response) => response.ok ? response.json() : null).then((payload) => { if (!cancelled && payload) setOperationsStatus(payload) }).catch(() => undefined)
+    load()
+    const interval = window.setInterval(load, 60_000)
+    return () => { cancelled = true; window.clearInterval(interval) }
+  }, [])
 
   // useEffect(() => {
   //   if(activeOrder) router.replace(`/dashboard/tasks/${activeOrder._id}`)
@@ -803,7 +813,7 @@ export default function ErrandWizardPage() {
         : parseMoneyInput(formData.amount || '')
   const description = effectiveDescription
   const taskType = formData.taskType || 'restaurant'
-  const pricing = calculateOrderPricing({
+  const basePricing = calculateOrderPricing({
     amount: Number.isFinite(amount) ? amount : 0,
     taskType,
     store: formData.store,
@@ -817,8 +827,19 @@ export default function ErrandWizardPage() {
     printingServiceType: formData.printingServiceType,
     printingNeedsEditing: formData.printingNeedsEditing === 'yes',
     cafeInquiry: isCafeInquiry,
+    serviceFee: quotedServiceFee ?? undefined,
   })
-  const shoppingDistanceFee = getShoppingDistanceFee(taskType, formData.store)
+  const pricing = basePricing
+  const shoppingDistanceFee = 0
+  useEffect(() => {
+    if (!['restaurant', 'shopping', 'printing', 'indomie'].includes(taskType) || !formData.location) { setQuotedServiceFee(null); return }
+    let cancelled = false
+    void fetch(`/api/pricing/quote?taskType=${encodeURIComponent(taskType)}&location=${encodeURIComponent(formData.location)}`, { cache: 'no-store' })
+      .then(async response => response.ok ? response.json() : null)
+      .then(payload => { if (!cancelled) setQuotedServiceFee(typeof payload?.serviceFee === 'number' ? payload.serviceFee : null) })
+      .catch(() => { if (!cancelled) setQuotedServiceFee(null) })
+    return () => { cancelled = true }
+  }, [taskType, formData.location])
   const hasAvailableServiceFeeDiscount = Boolean(
     serviceFeeDiscount?.hasAvailableDiscount && pricing.serviceFee > 0
   )
@@ -1271,6 +1292,7 @@ if (stepNumber === detailsStep) {
           eggCount:
             formData.taskType === INDOMIE_TASK_TYPE ? eggCount : undefined,
           indomieMeals: formData.taskType === INDOMIE_TASK_TYPE ? [{ indomiePacks, eggCount, amount: Number(amount), description: description || undefined }] : undefined,
+          expectedIndomieMode: formData.taskType === INDOMIE_TASK_TYPE ? 'normal' : undefined,
         }),
       })
 
@@ -1330,7 +1352,7 @@ if (stepNumber === detailsStep) {
     : null
   const activeStatusDescription = activeOrder
     ? activeOrder.batchingStatus === 'waiting'
-      ? `Your tasker will be dispatched around ${activeOrder.scheduledFor ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(activeOrder.scheduledFor)) : 'the scheduled time'}. You can still place other SwiftDU orders.`
+      ? `Your tasker will be dispatched around ${activeOrder.scheduledFor ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(activeOrder.scheduledFor)) : 'the scheduled time'}. You can still place other SwiftDU orders.`
       : activeOrder.status === 'pending'
       ? 'We are actively notifying taskers for this errand right now. You can still post another task below.'
       : activeOrder.isDeclinedTask
@@ -1690,8 +1712,8 @@ if (stepNumber === detailsStep) {
           {indomieRun ? (
             <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-rose-950 dark:border-rose-900/60 dark:bg-rose-950/30 dark:text-rose-100">
               <p className="text-xs font-bold tracking-wider text-rose-600 dark:text-rose-300">INDOMIE RUN</p>
-              <p className="mt-1 text-lg font-bold">Someone is heading to get Indomie at {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(indomieRun.scheduledFor))}</p>
-              <p className="mt-1 text-sm">{indomieRun.availableSlots} {indomieRun.availableSlots === 1 ? 'spot' : 'spots'} left · Order before {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(indomieRun.bookingClosesAt))}</p>
+              <p className="mt-1 text-lg font-bold">Someone is heading to get Indomie at {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(indomieRun.scheduledFor))}</p>
+              <p className="mt-1 text-sm">{indomieRun.availableSlots} {indomieRun.availableSlots === 1 ? 'spot' : 'spots'} left · Order before {new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(indomieRun.bookingClosesAt))}</p>
             </div>
           ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
@@ -2176,12 +2198,20 @@ if (stepNumber === detailsStep) {
 
   if (!mounted) return null
 
-  // Indomie has its own customer journey; every other service remains on this wizard.
-  if (formData.taskType === INDOMIE_TASK_TYPE) {
+  if (operationsStatus && !operationsStatus.open && step > 1) {
+    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">SwiftDU is closed for today</h1><p className="mt-3 text-slate-600 dark:text-slate-300">We open again at {operationsStatus.openingTime}. Your existing orders will continue normally.</p><div className="mt-8 w-full space-y-3"><Link href="/dashboard/tasks" className="flex min-h-12 items-center justify-center rounded-xl bg-violet-600 px-4 font-bold text-white">View my orders</Link><Button variant="outline" className="min-h-12 w-full" onClick={() => setStep(1)}>Back to dashboard</Button></div></main>
+  }
+
+  // Scheduled Indomie owns the evening flow only; daytime Indomie stays in the generic wizard.
+  if (formData.taskType === INDOMIE_TASK_TYPE && operationsStatus?.indomie.mode === 'batching') {
     return <IndomieFlow initialLocation={formData.location} onClose={() => {
       setFormData(previous => ({ ...previous, taskType: 'restaurant', location: '', roomNumber: '' }))
       setStep(1)
     }} />
+  }
+
+  if (formData.taskType === INDOMIE_TASK_TYPE && operationsStatus?.indomie.mode === 'closed') {
+    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">Indomie is done for tonight 🍜</h1><p className="mt-3 text-slate-600 dark:text-slate-300">Evening Indomie runs have ended. You can order again tomorrow from {operationsStatus.openingTime}.</p><p className="mt-3 text-sm text-slate-500">Other SwiftDU services are still available until {operationsStatus.closingTime}.</p><Button className="mt-8 min-h-12 w-full bg-violet-600" onClick={() => { setFormData(previous => ({ ...previous, taskType: 'restaurant' })); setStep(1) }}>Choose another service</Button></main>
   }
 
   if (isSubmitting) return (
@@ -2200,6 +2230,7 @@ if (stepNumber === detailsStep) {
   return (
     <div className="min-h-screen px-4 py-4 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl space-y-0 lg:space-y-5">
+        {operationsStatus && <div className={operationsStatus.open ? 'mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800' : 'mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800'}><b>{operationsStatus.open ? '● SwiftDU is open' : 'SwiftDU is closed for today'}</b><span className="ml-2">{operationsStatus.open ? `Closes at ${operationsStatus.closingTime}` : `Opens at ${operationsStatus.openingTime}`}</span></div>}
         {renderTopNotices()}
 
         {DesktopErrandWizard()}

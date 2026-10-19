@@ -116,7 +116,7 @@ export function TrackingTasker({ order, tasker, loading, whatsappHref }: {
 
 function getDeadline(order: CustomerTrackingOrder) {
   const date = order.dueDate || order.deadline || order.deadlineDate
-  if (date && Number.isFinite(Date.parse(date))) return new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Africa/Lagos' }).format(new Date(date))
+  if (date && Number.isFinite(Date.parse(date))) return new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short', hour12: true, timeZone: 'Africa/Lagos' }).format(new Date(date))
   return order.deadlineValue && order.deadlineUnit ? `${order.deadlineValue} ${order.deadlineUnit}` : null
 }
 

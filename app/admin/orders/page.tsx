@@ -80,6 +80,7 @@ function formatDeadline(dueDate?: string, deadlineDate?: string, deadlineValue?:
     return new Intl.DateTimeFormat('en-NG', {
       dateStyle: 'medium',
       timeStyle: 'short',
+      hour12: true,
     }).format(new Date(exactDeadline))
   }
 
@@ -101,6 +102,7 @@ const formatDateTime = (value?: string | null) => {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: true,
   })
 }
 

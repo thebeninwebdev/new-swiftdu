@@ -1,7 +1,7 @@
 import { getDeliveryDestination, getOrderRestriction, type TaskerGenderRestriction } from '@/lib/delivery-policy'
 
 export const LAGOS_TIME_ZONE = 'Africa/Lagos'
-export const BATCH_WINDOW_MINUTES = 15
+export const BATCH_WINDOW_MINUTES = 30
 export const BATCH_MAX_ORDERS = 3
 
 type BatchableOrder = { taskType?: string; location?: string | null; store?: string | null; taskerGenderRestriction?: TaskerGenderRestriction | null; isTestOrder?: boolean; createdInMode?: string; status?: string; taskerId?: string | null; batchWindowStart?: Date | string }
@@ -14,16 +14,17 @@ function lagosParts(date: Date) {
 /** Returns a Date that represents the supplied Lagos wall-clock time in UTC. Lagos has no DST. */
 function lagosDate(parts: Record<string, number>, hour: number, minute: number) { return new Date(Date.UTC(parts.year, parts.month - 1, parts.day, hour - 1, minute)) }
 
-export type IndomieBatchSchedule = { startMinute: number; endMinute: number; windowMinutes: number }
+export type IndomieBatchSchedule = { startMinute: number; endMinute: number; windowMinutes?: number; runIntervalMinutes?: number }
+const intervalFor = (schedule: IndomieBatchSchedule) => schedule.runIntervalMinutes || schedule.windowMinutes || BATCH_WINDOW_MINUTES
 export function isIndomieBatchingActive(now = new Date(), schedule: IndomieBatchSchedule = { startMinute: 18 * 60, endMinute: 21 * 60, windowMinutes: BATCH_WINDOW_MINUTES }) {
   const p = lagosParts(now); const minutes = p.hour * 60 + p.minute
   return minutes >= schedule.startMinute && minutes < schedule.endMinute
 }
 export function getIndomieBatchWindow(now = new Date(), schedule: IndomieBatchSchedule = { startMinute: 18 * 60, endMinute: 21 * 60, windowMinutes: BATCH_WINDOW_MINUTES }) {
   if (!isIndomieBatchingActive(now, schedule)) return null
-  const p = lagosParts(now); const minuteOfDay = p.hour * 60 + p.minute; const startOfWindow = schedule.startMinute + Math.floor((minuteOfDay - schedule.startMinute) / schedule.windowMinutes) * schedule.windowMinutes
+  const p = lagosParts(now); const minuteOfDay = p.hour * 60 + p.minute; const interval = intervalFor(schedule); const startOfWindow = schedule.startMinute + Math.floor((minuteOfDay - schedule.startMinute) / interval) * interval
   const start = lagosDate(p, Math.floor(startOfWindow / 60), startOfWindow % 60)
-  return { start, end: new Date(start.getTime() + schedule.windowMinutes * 60_000) }
+  return { start, end: new Date(start.getTime() + interval * 60_000) }
 }
 export function getNextIndomieBatch(now = new Date(), schedule: IndomieBatchSchedule = { startMinute: 18 * 60, endMinute: 21 * 60, windowMinutes: BATCH_WINDOW_MINUTES }) {
   return getIndomieBatchWindow(now, schedule)

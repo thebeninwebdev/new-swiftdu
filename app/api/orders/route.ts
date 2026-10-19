@@ -12,6 +12,7 @@ import { emitOrderUpdated } from '@/lib/socket';
 import { ensureCompletionTimer } from '@/lib/completion-timer';
 import {
   calculateOrderPricing,
+  type PricingResult,
   CAFE_INQUIRY_EXTRA_FEE,
   descriptionMentionsWater,
   normalizeRestaurantPeopleCount,
@@ -20,10 +21,10 @@ import {
   normalizePrintingServiceType,
   PRINTING_TASK_TYPE,
   RESTAURANT_MAX_PEOPLE,
-  CAFE_INQUIRY_SERVICE_FEE,
   WATER_TASK_TYPE,
   INDOMIE_TASK_TYPE,
 } from '@/lib/pricing';
+import { getConfiguredServiceFee } from '@/lib/pricing-config';
 import { splitServiceFee } from '@/lib/order-finance';
 import {
   getCreatedInMode,
@@ -44,6 +45,8 @@ import { batchingMetadata } from '@/lib/indomie-batch-release';
 import { reserveIndomieCapacity } from '@/lib/indomie-capacity';
 import { getNextAvailableIndomieRun, isRunStillBookable } from '@/lib/indomie-runs';
 import { randomUUID } from 'node:crypto';
+import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings';
+import { formatMinute, getIndomieServiceMode, getNextOpeningTime, getOperationsSettings, getOperationsStatus } from '@/lib/operations-settings';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 
@@ -107,6 +110,7 @@ export async function POST(request: NextRequest) {
       deadlineDate,
       cafeInquiry,
       isTestOrder: requestedIsTestOrder,
+      expectedIndomieMode,
     } = body;
 
     // Validation
@@ -331,7 +335,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const pricing = calculateOrderPricing({
+    const configuredServiceFee = await getConfiguredServiceFee({ taskType: normalizedTaskType, location })
+    const pricing: PricingResult = calculateOrderPricing({
       amount:
         normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE
           ? 0
@@ -348,6 +353,7 @@ export async function POST(request: NextRequest) {
       numberOfPages: parsedNumberOfPages,
       printingServiceType: normalizedPrintingServiceType,
       printingNeedsEditing: normalizedPrintingNeedsEditing,
+      serviceFee: configuredServiceFee ?? undefined,
     });
 
     const customerLookupConditions = getUserLookupConditions(session.user);
@@ -368,6 +374,19 @@ export async function POST(request: NextRequest) {
     }
     if (!canCreateOrder(isTestOrder)) {
       return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 });
+    }
+    const now = new Date();
+    const [operationsSettings, indomieSettings] = await Promise.all([getOperationsSettings(), getIndomieBatchSettings()]);
+    const operationsStatus = getOperationsStatus(now, operationsSettings);
+    if (!isTestOrder && !operationsStatus.open) {
+      return NextResponse.json({ error: `SwiftDU is closed for today. We open again at ${formatMinute(operationsSettings.openMinute)}.`, code: 'OUTSIDE_OPERATING_HOURS', nextOpeningAt: operationsStatus.nextOpeningAt }, { status: 409 });
+    }
+    const indomieMode = getIndomieServiceMode({ now, operationsSettings, batchingSettings: indomieSettings });
+    if (normalizedTaskType === INDOMIE_TASK_TYPE && expectedIndomieMode && expectedIndomieMode !== indomieMode) {
+      return NextResponse.json({ error: indomieMode === 'batching' ? 'Evening Indomie runs have started.' : 'Indomie orders are closed for tonight.', code: 'INDOMIE_MODE_CHANGED', mode: indomieMode }, { status: 409 });
+    }
+    if (normalizedTaskType === INDOMIE_TASK_TYPE && indomieMode === 'closed') {
+      return NextResponse.json({ error: 'Indomie orders are closed for tonight.', code: 'INDOMIE_CLOSED', nextAvailableAt: getNextOpeningTime(now, operationsSettings) }, { status: 409 });
     }
 
     let serviceFeeDiscountGrantedByName =
@@ -436,11 +455,12 @@ export async function POST(request: NextRequest) {
       : pricing.totalAmount;
 
     const bookedAt = new Date();
-    const indomieRunAt = normalizedTaskType === INDOMIE_TASK_TYPE ? getNextAvailableIndomieRun(bookedAt) : null
-    if (normalizedTaskType === INDOMIE_TASK_TYPE && (!indomieRunAt || !isRunStillBookable(indomieRunAt, bookedAt))) {
+    const isScheduledIndomie = normalizedTaskType === INDOMIE_TASK_TYPE && indomieMode === 'batching'
+    const indomieRunAt = isScheduledIndomie ? getNextAvailableIndomieRun(bookedAt, indomieSettings) : null
+    if (isScheduledIndomie && (!indomieRunAt || !isRunStillBookable(indomieRunAt, bookedAt, indomieSettings))) {
       return NextResponse.json({ error: 'There is no Indomie run open for booking right now.', code: 'INDOMIE_RUN_CLOSED' }, { status: 409 })
     }
-    const batching = normalizedTaskType === INDOMIE_TASK_TYPE ? {} : await batchingMetadata(normalizedTaskType, bookedAt)
+    const batching = normalizedTaskType === INDOMIE_TASK_TYPE ? { taskerSearchStartedAt: bookedAt } : await batchingMetadata(normalizedTaskType, bookedAt)
 
     const order = new Order({
       userId: session.user.id,
@@ -493,12 +513,12 @@ export async function POST(request: NextRequest) {
       waterFee: pricing.waterFee,
       indomiePacks: normalizedTaskType === INDOMIE_TASK_TYPE ? pricing.indomiePacks : undefined,
       eggCount: normalizedTaskType === INDOMIE_TASK_TYPE ? pricing.eggCount : undefined,
-      indomieMeals: normalizedIndomieMeals,
-      indomieSlotCount: normalizedTaskType === INDOMIE_TASK_TYPE ? (normalizedIndomieMeals?.length || 1) : undefined,
+      indomieMeals: isScheduledIndomie ? normalizedIndomieMeals : undefined,
+      indomieSlotCount: isScheduledIndomie ? (normalizedIndomieMeals?.length || 1) : undefined,
       indomieRunAt: indomieRunAt || undefined,
       scheduledFor: indomieRunAt || undefined,
-      indomieRunStatus: normalizedTaskType === INDOMIE_TASK_TYPE ? 'reserved' : undefined,
-      indomieReservationGroupId: normalizedTaskType === INDOMIE_TASK_TYPE ? randomUUID() : undefined,
+      indomieRunStatus: isScheduledIndomie ? 'reserved' : undefined,
+      indomieReservationGroupId: isScheduledIndomie ? randomUUID() : undefined,
       noteSize: pricing.noteSize,
       numberOfPages: pricing.numberOfPages,
       printingServiceType: pricing.printingServiceType,
@@ -527,7 +547,7 @@ export async function POST(request: NextRequest) {
     });
 
     try {
-      if (normalizedTaskType === INDOMIE_TASK_TYPE) {
+      if (isScheduledIndomie) {
         await reserveIndomieCapacity({
           location,
           isTestOrder,
@@ -560,12 +580,12 @@ export async function POST(request: NextRequest) {
 
     // Orders held for an Indomie collection window are deliberately invisible
     // until the release materializer creates one batch notification.
-    if (shouldSendOrderNotification(order) && order.batchingStatus !== 'waiting' && normalizedTaskType !== INDOMIE_TASK_TYPE) {
+    if (shouldSendOrderNotification(order) && order.batchingStatus !== 'waiting' && !isScheduledIndomie) {
       const taskerPushResult = await sendPushNotification({
         audience: { roles: ['tasker'], taskerGenderRestriction: order.taskerGenderRestriction || null },
         title: 'New Task Available',
         body: isCafeInquiry
-          ? `Cafe inquiry in ${location} - NGN ${CAFE_INQUIRY_SERVICE_FEE.toLocaleString()} service fee`
+          ? `Cafe inquiry in ${location} - NGN ${pricing.serviceFee.toLocaleString()} service fee`
           : `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${totalAmount.toLocaleString()}`,
         url: '/available-tasks',
         tag: `new-task-${order._id.toString()}`,

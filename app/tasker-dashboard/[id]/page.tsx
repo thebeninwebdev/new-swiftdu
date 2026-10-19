@@ -147,7 +147,7 @@ const formatDuration = (milliseconds: number) => {
 
 function formatDeadline(dueDate?: string, deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
   const exactDeadline = dueDate || deadlineDate
-  if (exactDeadline) return new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(exactDeadline))
+  if (exactDeadline) return new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short', hour12: true }).format(new Date(exactDeadline))
   if (deadlineValue && deadlineUnit) return `${deadlineValue} ${deadlineUnit}`
   return null
 }
@@ -480,7 +480,7 @@ export default function ErrandDetailPage() {
   const transferUnderReview = Boolean(errand.isDeclinedTask)
   const canReportTransferIssue = canTaskerReportTransferIssue(errand)
   const taskerCanCancel = canTaskerCancelOrder(errand)
-  const settlementOutstanding = errand.platformFee > 0 && !errand.firstOrderBonusApplied && !errand.platformFeeWaivedForFastCompletion && !errand.isTestOrder && errand.status === 'completed' && !errand.taskerHasPaid && errand.settlementStatus !== 'paid'
+  const settlementOutstanding = errand.platformFee > 0 && !errand.platformFeeWaivedForFastCompletion && !errand.isTestOrder && errand.status === 'completed' && !errand.taskerHasPaid && errand.settlementStatus !== 'paid'
   const whatsappLink = userInfo ? getWhatsappLink(userInfo.phone, errand, userInfo.name) : ''
   const restaurantPeopleCount = Number.isInteger(Number(errand.restaurantPeopleCount || 0)) && Number(errand.restaurantPeopleCount || 0) > 0 ? Number(errand.restaurantPeopleCount) : 1
   const restaurantPackaging = formatRestaurantPackaging(errand)

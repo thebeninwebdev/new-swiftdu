@@ -20,6 +20,7 @@ import { ensureBookedAt } from '@/lib/order-response-time';
 import { consumeServiceFeeDiscountForCompletedOrder } from '@/lib/service-fee-discount';
 import {
   calculateOrderPricing,
+  type PricingResult,
   CAFE_INQUIRY_EXTRA_FEE,
   descriptionMentionsWater,
   normalizeRestaurantPeopleCount,
@@ -311,7 +312,7 @@ export async function PATCH(
           );
         }
 
-        const pricing = calculateOrderPricing({
+        let pricing: PricingResult = calculateOrderPricing({
           amount: Number(order.itemPrice ?? order.amount ?? 0),
           taskType: order.taskType,
           store: order.store,
@@ -320,6 +321,7 @@ export async function PATCH(
             order.restaurantTakeawayCount,
             parsedRestaurantPeopleCount
           ),
+          serviceFee: Math.max(0, Number(order.serviceFee || 0) - (order.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)),
         });
         const baseSettlement = splitServiceFee(pricing.serviceFee);
         const discountStillApplies = Boolean(order.serviceFeeDiscountApplied);
@@ -657,7 +659,7 @@ export async function PATCH(
         }
       }
 
-      const pricing = calculateOrderPricing({
+      let pricing: PricingResult = calculateOrderPricing({
         amount:
           nextCafeInquiry || nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE
             ? 0
@@ -674,6 +676,7 @@ export async function PATCH(
         printingServiceType: nextPrintingServiceType,
         printingNeedsEditing: nextPrintingNeedsEditing,
         cafeInquiry: nextCafeInquiry,
+        serviceFee: Math.max(0, Number(order.serviceFee || 0) - (nextCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)),
       });
       const baseSettlement =
         pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'

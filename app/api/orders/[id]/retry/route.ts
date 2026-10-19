@@ -1,6 +1,7 @@
 import { validateDeliveryRoom } from '@/lib/delivery-policy';
 import { saveNewOrderWithBonus } from '@/lib/first-order-bonus';
-import { calculateOrderPricing } from '@/lib/pricing';
+import { calculateOrderPricing, type PricingResult } from '@/lib/pricing';
+import { getConfiguredServiceFee } from '@/lib/pricing-config';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { auth } from '@/lib/auth';
@@ -25,6 +26,8 @@ import {
 import { Order } from '@/models/order';
 import { User } from '@/models/user';
 import { canCreateOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
+import { formatMinute, getIndomieServiceMode, getNextOpeningTime, getOperationsSettings, getOperationsStatus } from '@/lib/operations-settings';
+import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings';
 
 export async function POST(
   request: NextRequest,
@@ -82,13 +85,22 @@ export async function POST(
     if (!canCreateOrder(isTestOrder)) {
       return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 });
     }
+    const [operationsSettings, batchingSettings] = await Promise.all([getOperationsSettings(), getIndomieBatchSettings()]);
+    const operationsStatus = getOperationsStatus(bookedAt, operationsSettings);
+    if (!isTestOrder && !operationsStatus.open) return NextResponse.json({ error: `SwiftDU is closed for today. We open again at ${formatMinute(operationsSettings.openMinute)}.`, code: 'OUTSIDE_OPERATING_HOURS', nextOpeningAt: operationsStatus.nextOpeningAt }, { status: 409 });
+    if (order.taskType === 'indomie') {
+      const mode = getIndomieServiceMode({ now: bookedAt, operationsSettings, batchingSettings });
+      if (mode !== 'normal') return NextResponse.json({ error: mode === 'batching' ? 'Evening Indomie runs have started. Start a scheduled Indomie order instead.' : 'Indomie orders are closed for tonight.', code: mode === 'batching' ? 'INDOMIE_MODE_CHANGED' : 'INDOMIE_CLOSED', mode, nextAvailableAt: mode === 'closed' ? getNextOpeningTime(bookedAt, operationsSettings) : undefined }, { status: 409 });
+    }
 
     const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(session.user.id);
     // Reposts always start with today's normal price, never a discounted snapshot.
-    const pricing = calculateOrderPricing({
+    const configuredServiceFee = await getConfiguredServiceFee({ taskType: order.taskType, location: order.location });
+    const pricing: PricingResult = calculateOrderPricing({
       ...order.toObject(), amount: order.cafeInquiry ? 0 : Number(order.itemPrice ?? order.amount),
       restaurantPeopleCount: order.cafeInquiry ? 1 : order.restaurantPeopleCount,
       restaurantTakeawayCount: order.cafeInquiry ? 0 : order.restaurantTakeawayCount,
+      serviceFee: configuredServiceFee ?? undefined,
     });
     const fullServiceFee = pricing.serviceFee;
     const serviceFeeDiscountApplied = Boolean(

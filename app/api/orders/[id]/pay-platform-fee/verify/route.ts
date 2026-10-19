@@ -40,7 +40,7 @@ export async function POST(
       )
     }
 
-    if (order.platformFee <= 0 || order.firstOrderBonusApplied || order.platformFeeWaivedForFastCompletion) {
+    if (order.platformFee <= 0 || order.platformFeeWaivedForFastCompletion) {
       return NextResponse.json({ noSettlementRequired: true, order });
     }
 

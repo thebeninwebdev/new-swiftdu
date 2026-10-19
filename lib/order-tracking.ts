@@ -64,7 +64,7 @@ export function getTrackingStage(order: TrackingOrder): TrackingStage {
   const workingLabel = inquiry ? 'Checking the cafe' : shopping ? 'Getting your order' : 'Working on your task'
   const steps = ['Finding a tasker', 'Order accepted', workingLabel, inquiry ? 'Inquiry completed' : 'Delivered']
   if (order.batchingStatus === 'waiting') {
-    const closes = order.batchWindowEnd ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit' }).format(new Date(order.batchWindowEnd)) : 'soon'
+    const closes = order.batchWindowEnd ? new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(order.batchWindowEnd)) : 'soon'
     return { key: 'searching', title: 'Preparing your Indomie batch', label: 'Collecting nearby orders', detail: `We’re grouping nearby Indomie orders for an efficient trip. Your batch closes at ${closes}.`, activeIndex: 0, steps, mood: 'searching' }
   }
   // Terminal status takes precedence over retained assignment/payment/cafe history.
@@ -90,7 +90,7 @@ export function getTrackingEta(order: TrackingOrder, nowMs: number) {
   const dueMs = order.completionDueAt instanceof Date ? order.completionDueAt.getTime() : Date.parse(order.completionDueAt || '')
   if (!Number.isFinite(dueMs)) return null
   if (dueMs <= nowMs) return { label: 'Taking a little longer', time: null, detail: 'Message your tasker for an update. We’re here if you need help.' }
-  return { label: 'Delivery target', time: new Intl.DateTimeFormat('en-NG', { hour: 'numeric', minute: '2-digit', timeZone: 'Africa/Lagos' }).format(dueMs), detail: 'This is an estimate. We’ll keep you updated if anything changes.' }
+  return { label: 'Delivery target', time: new Intl.DateTimeFormat('en-NG', { hour: 'numeric', minute: '2-digit', hour12: true, timeZone: 'Africa/Lagos' }).format(dueMs), detail: 'This is an estimate. We’ll keep you updated if anything changes.' }
 }
 
 export function needsOrderPayment(order: TrackingOrder | null) {

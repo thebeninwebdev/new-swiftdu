@@ -128,7 +128,7 @@ const declinedStatusConfig = {
 
 // ─── Helpers ───
 const formatCurrency = (amount: number) => new Intl.NumberFormat('en-NG', { style: 'currency', currency: 'NGN', maximumFractionDigits: 0 }).format(amount)
-const formatDate = (date: string) => new Date(date).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+const formatDate = (date: string) => new Date(date).toLocaleString('en-NG', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true })
 const getWhatsAppHref = (phone: string) => {
   const digits = phone.replace(/\D/g, '')
   if (!digits) return null
