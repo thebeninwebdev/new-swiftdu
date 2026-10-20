@@ -25,17 +25,32 @@ test('coordinates validate finite ranges, accuracy and freshness', () => {
   for (const bad of [null, [], {}, { ...point, latitude: '5' }, { ...point, latitude: 91 }, { ...point, longitude: -181 }, { ...point, accuracy: -1 }, { ...point, accuracy: Infinity }, { ...point, capturedAt: '2000-01-01' }]) assert.throws(() => validateDeliveryCoordinates(bad))
 })
 
-test('single position request uses fresh high accuracy GPS and errors never fabricate coordinates', async () => {
+test('position capture prefers high accuracy and errors never fabricate coordinates', async () => {
   let calls = 0
   const geo = { getCurrentPosition(success: PositionCallback, _error?: PositionErrorCallback | null, options?: PositionOptions) {
     calls++
-    assert.deepEqual(options, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 })
+    assert.deepEqual(options, { enableHighAccuracy: true, timeout: 20_000, maximumAge: 60_000 })
     success({ coords: { latitude: 5, longitude: 6, accuracy: 12 }, timestamp: Date.now() } as GeolocationPosition)
   } }
   assert.equal((await captureDeliveryPosition(geo)).latitude, 5)
   assert.equal(calls, 1)
   for (const code of [1, 2, 3]) await assert.rejects(captureDeliveryPosition({ getCurrentPosition(_success, error) { error?.({ code } as GeolocationPositionError) } }))
   await assert.rejects(captureDeliveryPosition(undefined))
+})
+
+test('position capture falls back to normal accuracy after a high-accuracy timeout', async () => {
+  const options: PositionOptions[] = []
+  const geo = { getCurrentPosition(success: PositionCallback, error?: PositionErrorCallback | null, requestOptions?: PositionOptions) {
+    options.push(requestOptions!)
+    if (requestOptions?.enableHighAccuracy) error?.({ code: 3 } as GeolocationPositionError)
+    else success({ coords: { latitude: 5, longitude: 6, accuracy: 80 }, timestamp: Date.now() } as GeolocationPosition)
+  } }
+  const position = await captureDeliveryPosition(geo)
+  assert.equal(position.accuracy, 80)
+  assert.deepEqual(options, [
+    { enableHighAccuracy: true, timeout: 20_000, maximumAge: 60_000 },
+    { enableHighAccuracy: false, timeout: 10_000, maximumAge: 60_000 },
+  ])
 })
 
 test('old orders remain valid; new room metadata persists and GPS is excluded from JSON and default queries', async () => {
