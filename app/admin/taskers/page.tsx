@@ -53,7 +53,7 @@ interface Tasker {
 type StatusFilter = 'pending' | 'verified' | 'rejected'
 
 
-export default function AdminTaskersPage() {
+export function AdminTaskersPage() {
   const router = useRouter()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -302,6 +302,12 @@ export default function AdminTaskersPage() {
       </div>
     </main>
   )
+}
+
+export default function LegacyTaskersRedirect() {
+  const router = useRouter()
+  useEffect(() => { router.replace('/admin/people?tab=taskers') }, [router])
+  return null
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {

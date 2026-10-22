@@ -2,7 +2,7 @@
 import { cafeStatusLabels, type CafeInquiryFields } from '@/lib/cafe-inquiry'
 
 import React, { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
 import { Card, CardContent } from '@/components/ui/card'
@@ -141,14 +141,14 @@ const formatResponseSummary = (order: Pick<Order, 'responseOutcome' | 'responseT
   return 'No response timing yet'
 }
 
-export default function AdminOrdersPage() {
+export function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) {
   const router = useRouter()
   const [admin, setAdmin] = useState<AdminUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [orders, setOrders] = useState<Order[]>([])
   const [isFetching, setIsFetching] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState('all')
+  const [statusFilter, setStatusFilter] = useState(initialStatus)
   const [taskTypeFilter, setTaskTypeFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
   const [declinedFilter, setDeclinedFilter] = useState('all')
@@ -679,4 +679,17 @@ export default function AdminOrdersPage() {
       </div>
     </div>
   )
+}
+
+import { AdminWorkspaceTabs } from '@/components/admin-workspace-tabs'
+import { AdminReviewsPage } from '@/app/admin/reviews/page'
+
+const orderTabs = [{ value: 'live', label: 'Live' }, { value: 'all', label: 'All Orders' }, { value: 'batches', label: 'Indomie Batches' }, { value: 'reviews', label: 'Reviews' }]
+function IndomieBatches() {
+  return <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:py-10"><div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-semibold text-violet-700">Orders</p><h2 className="mt-1 text-2xl font-bold">Indomie batches</h2><p className="mt-3 max-w-2xl text-sm text-slate-600">Batch scheduling remains controlled in Operations → Availability. Indomie orders appear in All Orders, where existing order actions and payment handling are preserved.</p><a href="/admin/orders?tab=all" className="mt-5 inline-flex rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white">View Indomie orders</a></div></div>
+}
+export default function OrdersWorkspace() {
+  const tab = useSearchParams().get('tab') || 'live'
+  const content = tab === 'reviews' ? <AdminReviewsPage /> : tab === 'batches' ? <IndomieBatches /> : <AdminOrdersPage initialStatus={tab === 'live' ? 'pending' : 'all'} />
+  return <><div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6 lg:pt-10"><p className="text-sm font-semibold text-violet-700">Orders</p><h1 className="mt-1 text-3xl font-bold">Orders</h1><p className="mt-2 text-sm text-slate-600">Live orders, batches and customer feedback.</p><AdminWorkspaceTabs tabs={orderTabs} /></div>{content}</>
 }

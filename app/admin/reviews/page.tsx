@@ -35,7 +35,7 @@ interface Review {
   updatedAt: string
 }
 
-export default function AdminReviewsPage() {
+export function AdminReviewsPage() {
   const router = useRouter()
   const [admin, setAdmin] = useState<any>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -373,3 +373,5 @@ export default function AdminReviewsPage() {
     </div>
   )
 }
+
+export default function LegacyReviewsRedirect() { const router = useRouter(); useEffect(() => { router.replace('/admin/orders?tab=reviews') }, [router]); return null }

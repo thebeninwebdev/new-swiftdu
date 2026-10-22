@@ -143,7 +143,7 @@ const statsCardVariants = {
   }
 }
 
-export default function AdminUsersPage() {
+export function AdminUsersPage() {
   const router = useRouter()
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [admin, setAdmin] = useState<any>(null)
@@ -976,4 +976,10 @@ export default function AdminUsersPage() {
       </AlertDialog>
     </div>
   )
+}
+
+export default function LegacyUsersRedirect() {
+  const router = useRouter()
+  useEffect(() => { router.replace('/admin/people?tab=customers') }, [router])
+  return null
 }

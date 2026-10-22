@@ -6,26 +6,18 @@ import { useCallback, useState, type ReactNode } from 'react'
 import { authClient } from '@/lib/auth-client'
 import { MobilePushFrame } from '@/components/mobile-push-frame'
 import {
-  DollarSign,
   LayoutDashboard,
   LogOut,
   Menu,
-  MapPin,
   ShoppingBag,
-  Store,
   ShieldCheck,
-  Tags,
-  Clock3,
-  Star,
+  SlidersHorizontal,
+  Store,
   Users,
   X,
 } from 'lucide-react'
 
 const adminNavigation = [
-  { label: 'Pricing', href: '/admin/pricing', icon: Tags, description: 'Set delivery fees' },
-  { label: 'Operations', href: '/admin/operations', icon: Clock3, description: 'Hours and Indomie runs' },
-  { label: 'Businesses', href: '/admin/businesses', icon: Store, description: 'Review community listings' },
-  { label: 'Locations', href: '/admin/locations', icon: MapPin, description: 'Map the campus' },
   {
     label: 'Overview',
     href: '/admin',
@@ -33,34 +25,28 @@ const adminNavigation = [
     description: 'Platform summary',
   },
   {
-    label: 'Taskers',
-    href: '/admin/taskers',
-    icon: Users,
-    description: 'Review taskers',
-  },
-  {
     label: 'Orders',
     href: '/admin/orders',
     icon: ShoppingBag,
-    description: 'Manage errands',
+    description: 'Live orders, batches & issues',
   },
   {
-    label: 'Users',
-    href: '/admin/users',
+    label: 'People',
+    href: '/admin/people',
     icon: Users,
-    description: 'Manage accounts',
+    description: 'Taskers & customers',
   },
   {
-    label: 'Transactions',
-    href: '/admin/transactions',
-    icon: DollarSign,
-    description: 'Track payments',
+    label: 'Marketplace',
+    href: '/admin/marketplace',
+    icon: Store,
+    description: 'Businesses, locations & pricing',
   },
   {
-    label: 'Reviews',
-    href: '/admin/reviews',
-    icon: Star,
-    description: 'Moderate feedback',
+    label: 'Operations',
+    href: '/admin/operations',
+    icon: SlidersHorizontal,
+    description: 'Hours, periods & finances',
   },
 ]
 

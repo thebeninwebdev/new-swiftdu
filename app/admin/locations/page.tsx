@@ -11,7 +11,7 @@ type Location={_id:string;name:string;type:CampusLocationType;parentLocationId?:
 type Mode='parent'|'exact'
 const types:Record<CampusLocationType,string>={building:'Building',hostel:'Hostel',lecture_theatre:'Lecture theatre',room:'Room',entrance:'Entrance',shop:'Shop',cafeteria:'Cafeteria',pickup_point:'Pickup point',landmark:'Landmark',other:'Other'}
 const blank={name:'',type:'building' as CampusLocationType,parentLocationId:''}
-export default function AdminLocationsPage(){
+export function AdminLocationsPage(){
  const [locations,setLocations]=useState<Location[]>([]),[form,setForm]=useState(blank),[mode,setMode]=useState<Mode>('parent'),[coords,setCoords]=useState<Coordinates|null>(null),[editing,setEditing]=useState<Location|null>(null),[saving,setSaving]=useState(false),[capturing,setCapturing]=useState(false),[search,setSearch]=useState('')
  const load=useCallback(async()=>{try{const r=await fetch('/api/admin/locations');const d=await r.json();if(!r.ok)throw new Error(d.error);setLocations(d.locations)}catch(e){toast.error(e instanceof Error?e.message:'Unable to load locations.')}},[])
  useEffect(()=>{void load()},[load])
@@ -222,3 +222,5 @@ export default function AdminLocationsPage(){
    </main>
  );
 }
+
+export default function LegacyLocationsRedirect(){ useEffect(()=>{ window.location.replace('/admin/marketplace?tab=locations') },[]); return null }
