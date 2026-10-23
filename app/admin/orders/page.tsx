@@ -141,7 +141,7 @@ const formatResponseSummary = (order: Pick<Order, 'responseOutcome' | 'responseT
   return 'No response timing yet'
 }
 
-export default function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) {
+function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) {
   const router = useRouter()
   const [admin, setAdmin] = useState<AdminUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
