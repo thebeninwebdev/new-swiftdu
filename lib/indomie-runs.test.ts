@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { getNextAvailableIndomieRun, isIndomieRunPeriod, isRunStillBookable } from './indomie-runs'
+import { getNextAvailableIndomieRun, getNextTrainingIndomieRun, isIndomieRunPeriod, isRunStillBookable } from './indomie-runs'
 
 const settings = { startMinute: 18 * 60, endMinute: 21 * 60, runIntervalMinutes: 30, bookingCutoffMinutes: 10 }
 // Africa/Lagos is UTC+1 and has no daylight-saving transition.
@@ -21,4 +21,10 @@ test('server booking cutoff is enforced at the boundary regardless of browser ti
 test('server schedule has no available run after the final booking cutoff', () => {
   assert.equal(getNextAvailableIndomieRun(lagos(20, 49), settings)?.toISOString(), lagos(21, 0).toISOString())
   assert.equal(getNextAvailableIndomieRun(lagos(20, 50), settings), null)
+})
+
+test('training creates a synthetic run outside the live evening schedule while preserving cutoff and interval', () => {
+  const run = getNextTrainingIndomieRun(lagos(13, 3), settings)
+  assert.ok(run.getTime() >= lagos(13, 13).getTime())
+  assert.equal(run.getTime() % (settings.runIntervalMinutes * 60_000), 0)
 })

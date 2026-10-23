@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
 import { normalizeExcoRole } from '@/lib/exco-constants'
 import Tasker from '@/models/tasker'
+import { Order } from '@/models/order'
 
 type TaskerMode = 'training' | 'live'
 
@@ -40,15 +41,35 @@ export async function PATCH(
     await connectDB()
 
     const { id } = await params
-    const tasker = await Tasker.findByIdAndUpdate(
-      id,
-      { taskerMode: mode },
-      { new: true }
-    )
+    const tasker = await Tasker.findById(id)
 
     if (!tasker) {
       return NextResponse.json({ error: 'Tasker not found.' }, { status: 404 })
     }
+
+    const currentMode: TaskerMode = tasker.taskerMode === 'training' ? 'training' : 'live'
+    if (currentMode !== mode) {
+      const currentModeFilter = currentMode === 'training'
+        ? { isTestOrder: true }
+        : { $or: [{ isTestOrder: false }, { isTestOrder: { $exists: false } }] }
+      const activeOrder = await Order.exists({
+        taskerId: String(tasker._id),
+        $and: [
+          currentModeFilter,
+          { $or: [
+            { status: { $in: ['in_progress', 'paid'] } },
+            { taskType: 'indomie', status: 'pending', indomieRunAt: { $gte: new Date() } },
+          ] },
+        ],
+      })
+      if (activeOrder) {
+        const label = currentMode === 'training' ? 'Training Mode' : 'Live Mode'
+        return NextResponse.json({ error: `Complete or cancel this tasker's active ${label} orders before moving them to ${mode === 'training' ? 'Training' : 'Live'} Mode.` }, { status: 409 })
+      }
+    }
+
+    tasker.taskerMode = mode
+    await tasker.save()
 
     return NextResponse.json({
       message: mode === 'live' ? 'Tasker moved to Live Mode.' : 'Tasker moved to Training Mode.',

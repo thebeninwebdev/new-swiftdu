@@ -55,6 +55,12 @@ import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { useIdleEffect } from '@/hooks/use-idle-effect'
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 import {
+  formatNextOperationalOpening,
+  formatOperationalTime,
+  getCustomerOperationsState,
+  type CustomerOperationsStatus,
+} from '@/lib/operations-display'
+import {
   calculateOrderPricing,
   descriptionMentionsWater,
   PHOTOCOPY_PRICE_PER_PAGE,
@@ -374,7 +380,7 @@ export default function ErrandWizardPage() {
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [indomieRun, setIndomieRun] = useState<{ scheduledFor: string; bookingClosesAt: string; availableSlots: number; status: string } | null>(null)
-  const [operationsStatus, setOperationsStatus] = useState<{ enabled: boolean; open: boolean; openingTime: string; closingTime: string; nextOpeningAt: string; indomie: { mode: 'normal' | 'batching' | 'closed'; batchingStartsAt: string; batchingEndsAt: string } } | null>(null)
+  const [operationsStatus, setOperationsStatus] = useState<(CustomerOperationsStatus & { indomie: { mode: 'normal' | 'batching' | 'closed'; batchingStartsAt: string; batchingEndsAt: string } }) | null>(null)
   const [serviceFeeDiscount, setServiceFeeDiscount] = useState<{
     firstOrderBonusAvailable?: boolean
     hasAvailableDiscount: boolean
@@ -996,7 +1002,7 @@ export default function ErrandWizardPage() {
     }
   }
 
-  const selectTaskType = (value: string) => {
+  const selectTaskType = (value: string, advance = true) => {
     pauseRealtime()
     setSubmissionFailed(false)
     setMascotInteraction('acknowledge')
@@ -1045,7 +1051,7 @@ export default function ErrandWizardPage() {
       'indomiePacks',
       'eggCount',
     ].forEach(clearError)
-    setStep(2)
+    if (advance) setStep(2)
     setErrors({})
   }
 
@@ -1246,6 +1252,10 @@ if (stepNumber === detailsStep) {
   }
 
   const handleNext = () => {
+    if (operationsStatus && getCustomerOperationsState(operationsStatus) !== 'open') {
+      toast.error(!operationsStatus.enabled ? 'New orders are temporarily paused.' : `Orders reopen ${formatNextOperationalOpening(operationsStatus.nextOpeningAt, operationsStatus.openingTime)}.`)
+      return
+    }
     pauseRealtime()
     if (!validateStep(step)) return
     setStep((previous) => {
@@ -1336,6 +1346,10 @@ if (stepNumber === detailsStep) {
   }
 
   const handleSubmit = async () => {
+    if (operationsStatus && getCustomerOperationsState(operationsStatus) !== 'open') {
+      toast.error(!operationsStatus.enabled ? 'New orders are temporarily paused.' : `Orders reopen ${formatNextOperationalOpening(operationsStatus.nextOpeningAt, operationsStatus.openingTime)}.`)
+      return
+    }
     pauseRealtime(REALTIME_PAUSE_MS * 2)
 
     if (!validateStep(detailsStep)) {
@@ -1373,6 +1387,17 @@ if (stepNumber === detailsStep) {
     : null
   const showLowTaskerAvailabilityNotice =
     isLowTaskerAvailabilityWindow(currentTime) && !isTaskerAvailabilityNoticeDismissed
+  const customerOperationsState = operationsStatus ? getCustomerOperationsState(operationsStatus) : null
+  // The server independently authorizes Test Order Mode from the database account.
+  // This only keeps that authorized training experience from being blocked by the
+  // customer-facing live-operations banner.
+  const newOrdersUnavailable = !isExcoTrainingMode && customerOperationsState !== null && customerOperationsState !== 'open'
+  const nextOpeningLabel = operationsStatus
+    ? formatNextOperationalOpening(operationsStatus.nextOpeningAt, operationsStatus.openingTime)
+    : ''
+  const unavailableOrderMessage = customerOperationsState === 'paused'
+    ? 'New orders are temporarily paused.'
+    : `Orders reopen ${nextOpeningLabel}.`
   const shouldShowDiscountCard = hasAvailableAccountDiscount && step === 1
   const dismissTaskerAvailabilityNotice = useCallback(() => {
     setIsTaskerAvailabilityNoticeDismissed(true)
@@ -1431,8 +1456,7 @@ if (stepNumber === detailsStep) {
             type="button"
             aria-pressed={selected}
             onClick={() => {
-              selectTaskType(item.value)
-              if (compact) setStep(2)
+              selectTaskType(item.value, !newOrdersUnavailable)
             }}
             className={`group relative overflow-hidden border text-left transition duration-300 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 ${
               compact
@@ -2032,7 +2056,9 @@ if (stepNumber === detailsStep) {
             <div>
               <p className="font-black">Training Mode is active</p>
               <p className="mt-1 font-semibold">
-                Orders you create here are training orders, not live customer transactions.
+                {newOrdersUnavailable
+                  ? 'Live SwiftDU operations are currently unavailable. Your orders are training orders and are visible only to Training Mode taskers.'
+                  : 'Orders you create here are training orders, not live customer transactions, and are visible only to Training Mode taskers.'}
               </p>
             </div>
           </div>
@@ -2120,8 +2146,9 @@ if (stepNumber === detailsStep) {
             </AnimatePresence>
             <div className="mt-8 flex gap-3 border-t border-slate-100 pt-5 dark:border-slate-800">
               {step > 1 ? <Button variant="outline" onClick={handleBack} className="h-12 rounded-xl px-6"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button> : null}
-              {step < reviewStep ? <Button onClick={handleNext} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{step === detailsStep && formData.taskType === 'restaurant' && !isCafeInquiry ? 'Review order' : 'Continue'}<ChevronRight className="ml-2 h-4 w-4" /></Button> : <Button onClick={handleSubmit} disabled={isSubmitting} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Placing order...</> : <>{isCafeInquiry ? 'Ask a Tasker to check' : 'Place order'} · {formatNaira(displayedTotalAmount)}<ArrowRight className="ml-2 h-4 w-4" /></>}</Button>}
+              {step < reviewStep ? <Button onClick={handleNext} disabled={newOrdersUnavailable} aria-disabled={newOrdersUnavailable} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{step === detailsStep && formData.taskType === 'restaurant' && !isCafeInquiry ? 'Review order' : 'Continue'}<ChevronRight className="ml-2 h-4 w-4" /></Button> : <Button onClick={handleSubmit} disabled={isSubmitting || newOrdersUnavailable} aria-disabled={newOrdersUnavailable} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Placing order...</> : <>{isCafeInquiry ? 'Ask a Tasker to check' : 'Place order'} · {formatNaira(displayedTotalAmount)}<ArrowRight className="ml-2 h-4 w-4" /></>}</Button>}
             </div>
+            {newOrdersUnavailable ? <p className="mt-3 text-center text-sm font-semibold text-amber-800 dark:text-amber-200">{unavailableOrderMessage}</p> : null}
           </div>
         </div>
       </div>
@@ -2185,6 +2212,8 @@ if (stepNumber === detailsStep) {
             <>
             <Button
               onClick={handleNext}
+              disabled={newOrdersUnavailable}
+              aria-disabled={newOrdersUnavailable}
               className="h-12 w-full rounded-xl bg-blue-600 font-black text-white hover:bg-blue-700"
             >
               {step === detailsStep && formData.taskType === 'restaurant' && !isCafeInquiry ? 'Review order' : 'Next'}
@@ -2194,12 +2223,14 @@ if (stepNumber === detailsStep) {
           ) : (
             <Button
               onClick={handleSubmit}
-              disabled={isSubmitting}
+              disabled={isSubmitting || newOrdersUnavailable}
+              aria-disabled={newOrdersUnavailable}
               className="h-12 w-full rounded-xl bg-blue-600 font-black text-white hover:bg-blue-700"
             >
               {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Posting...</> : isCafeInquiry ? `Ask a Tasker to check · ${formatNaira(displayedTotalAmount)}` : 'Place Order'}
             </Button>
           )}
+          {newOrdersUnavailable ? <p className="mt-3 text-center text-sm font-semibold text-amber-800 dark:text-amber-200">{unavailableOrderMessage}</p> : null}
           </div>
         ) : null}
       </div>
@@ -2208,8 +2239,9 @@ if (stepNumber === detailsStep) {
 
   if (!mounted) return null
 
-  if (operationsStatus && !operationsStatus.open && step > 1) {
-    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">SwiftDU is closed for today</h1><p className="mt-3 text-slate-600 dark:text-slate-300">We open again at {operationsStatus.openingTime}. Your existing orders will continue normally.</p><div className="mt-8 w-full space-y-3"><Link href="/dashboard/tasks" className="flex min-h-12 items-center justify-center rounded-xl bg-violet-600 px-4 font-bold text-white">View my orders</Link><Button variant="outline" className="min-h-12 w-full" onClick={() => setStep(1)}>Back to dashboard</Button></div></main>
+  if (newOrdersUnavailable && step > 1 && !activeOrder) {
+    const paused = customerOperationsState === 'paused'
+    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">{paused ? 'SwiftDU is temporarily paused' : 'SwiftDU is closed for today'}</h1><p className="mt-3 text-slate-600 dark:text-slate-300">{paused ? "We're not accepting new orders right now." : `Orders reopen ${nextOpeningLabel}.`} Your existing orders will continue normally.</p><div className="mt-8 w-full space-y-3"><Link href="/dashboard/tasks" className="flex min-h-12 items-center justify-center rounded-xl bg-violet-600 px-4 font-bold text-white">View my orders</Link><Button variant="outline" className="min-h-12 w-full" onClick={() => setStep(1)}>Back to dashboard</Button></div></main>
   }
 
   // Scheduled Indomie owns the evening flow only; daytime Indomie stays in the generic wizard.
@@ -2240,7 +2272,7 @@ if (stepNumber === detailsStep) {
   return (
     <div className="min-h-screen px-4 py-4 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl space-y-0 lg:space-y-5">
-        {operationsStatus && <div className={operationsStatus.open ? 'mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800' : 'mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800'}><b>{operationsStatus.open ? '● SwiftDU is open' : 'SwiftDU is closed for today'}</b><span className="ml-2">{operationsStatus.open ? `Closes at ${operationsStatus.closingTime}` : `Opens at ${operationsStatus.openingTime}`}</span></div>}
+        {operationsStatus && <div role={customerOperationsState === 'paused' ? 'alert' : 'status'} className={customerOperationsState === 'open' ? 'mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800' : 'mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800'}><b>{customerOperationsState === 'open' ? '● SwiftDU is open' : customerOperationsState === 'paused' ? 'SwiftDU operations are currently paused' : 'SwiftDU is closed for today'}</b><span className="ml-2">{customerOperationsState === 'open' ? `Closes at ${formatOperationalTime(operationsStatus.closingTime)}` : customerOperationsState === 'paused' ? "We're temporarily not accepting new orders. Please check back later." : `Orders reopen ${nextOpeningLabel}.`}</span></div>}
         {renderTopNotices()}
 
         {DesktopErrandWizard()}
@@ -3482,16 +3514,17 @@ if (stepNumber === detailsStep) {
               <div className="flex gap-3">
                 {step > 1 ? <Button variant="outline" onClick={handleBack} disabled={isSubmitting} className="h-12 flex-1 rounded-xl border-2 hover:bg-slate-100 dark:hover:bg-slate-800"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button> : null}
                 {step > 1 && step < reviewStep ? (
-                  <Button onClick={handleNext} className="h-12 flex-1 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-cyan-600">
+                  <Button onClick={handleNext} disabled={newOrdersUnavailable} aria-disabled={newOrdersUnavailable} className="h-12 flex-1 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-cyan-600">
                     Continue
                     <ChevronRight className="ml-2 h-4 w-4" />
                   </Button>
                 ) : step === reviewStep ? (
-                  <Button onClick={handleSubmit} disabled={isSubmitting} className="h-12 flex-1 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-cyan-600">
+                  <Button onClick={handleSubmit} disabled={isSubmitting || newOrdersUnavailable} aria-disabled={newOrdersUnavailable} className="h-12 flex-1 rounded-xl bg-linear-to-r from-indigo-600 to-cyan-500 text-white shadow-lg shadow-indigo-500/25 hover:from-indigo-700 hover:to-cyan-600">
                     {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Posting...</> : <>Post Task<ArrowRight className="ml-2 h-4 w-4" /></>}
                   </Button>
                 ) : null}
               </div>
+              {newOrdersUnavailable ? <p className="mt-3 text-center text-sm font-semibold text-amber-800 dark:text-amber-200">{unavailableOrderMessage}</p> : null}
             </div>
           </div>
 

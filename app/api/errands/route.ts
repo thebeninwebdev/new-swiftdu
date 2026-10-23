@@ -312,7 +312,7 @@ export async function POST(request: NextRequest) {
         if (!await TaskerWorkSession.exists({ taskerId: String(tasker._id), open: true })) {
           throw new WorkError('Check in before accepting a new task.', 403)
         }
-        if (await getTaskerRemainingCapacity(String(tasker._id)) < 1) {
+        if (await getTaskerRemainingCapacity(String(tasker._id), order.isTestOrder === true) < 1) {
           throw new WorkError(`You already have the maximum of ${MAX_TASKER_ACTIVE_ORDERS} active orders.`, 409)
         }
         return await Order.findOneAndUpdate(

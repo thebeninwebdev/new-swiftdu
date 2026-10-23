@@ -1,6 +1,6 @@
 import { getOrderRestriction, type TaskerGenderRestriction } from '@/lib/delivery-policy'
 import { getSiteUrl } from '@/lib/site'
-import { getTelegramOrderChatIds, sendTelegramMessage } from '@/lib/telegram'
+import { getTelegramOrderChatIds, getTelegramTrainingOrdersChatId, sendTelegramMessage } from '@/lib/telegram'
 import { shouldSendOrderNotification } from '@/lib/test-orders'
 import { User } from '@/models/user'
 
@@ -235,8 +235,9 @@ async function sendTelegramOrderAlertDirect(input: {
   numberOfPages?: number
   copyNotesType?: string
   copyNotesPages?: number
+  isTestOrder?: boolean
 }): Promise<AlertChannelResult> {
-  const chatIds = getTelegramOrderChatIds(getOrderRestriction(input))
+  const chatIds = input.isTestOrder ? [getTelegramTrainingOrdersChatId()] : getTelegramOrderChatIds(getOrderRestriction(input))
   if (!chatIds.length) {
     console.error('[Telegram Order Alert] Destination is unclassified or order chats are not configured.')
     return createSkippedChannelResult('Destination is unclassified or order chats are not configured.')
@@ -244,7 +245,8 @@ async function sendTelegramOrderAlertDirect(input: {
   const message = input.taskType === 'copy_notes'
     ? formatCopyNotesTelegramMessage(input, input.customerName, input.dashboardUrl)
     : buildTelegramOrderAlertMessage(input)
-  const results = await Promise.allSettled(chatIds.map(chatId => sendTelegramMessage(message, chatId)))
+  const trainingPrefix = input.isTestOrder ? '<b>[TRAINING ORDER]</b>\n' : ''
+  const results = await Promise.allSettled(chatIds.map(chatId => sendTelegramMessage(`${trainingPrefix}${message}`, chatId)))
   const deliveredCount = results.filter(result => result.status === 'fulfilled' && result.value).length
   return {
     recipientCount: chatIds.length,
@@ -275,6 +277,7 @@ async function sendTelegramOrderAlert(input: {
   drawingPages?: number
   copyNotesType?: string
   copyNotesPages?: number
+  isTestOrder?: boolean
 }) {
   if (process.env.TELEGRAM_ALERTS_ENABLED === 'false') {
     return createSkippedChannelResult('Telegram alerts are disabled.')
@@ -291,7 +294,7 @@ export async function notifyAdminsOfOrderEvent(
   const orderId = serializeId(input.order._id)
   const userId = serializeId(input.order.userId)
 
-  if (!shouldSendOrderNotification(input.order)) {
+  if (!shouldSendOrderNotification(input.order) && input.order.isTestOrder !== true) {
     return {
       recipientCount: 0,
       deliveredCount: 0,
@@ -337,6 +340,7 @@ export async function notifyAdminsOfOrderEvent(
       drawingPages: input.order.drawingPages,
       copyNotesType: input.order.copyNotesType,
       copyNotesPages: input.order.copyNotesPages,
+      isTestOrder: input.order.isTestOrder === true,
       customerName: customer?.name,
       customerEmail: customer?.email,
       actorLabel,

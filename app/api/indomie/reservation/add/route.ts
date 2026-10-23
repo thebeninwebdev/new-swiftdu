@@ -18,15 +18,15 @@ export async function POST(request: NextRequest) {
   const settings = await getIndomieBatchSettings()
   const parent = await Order.findOne({ _id: body.orderId, userId: session.user.id, taskType: 'indomie' })
   if (!parent || !parent.taskerId || !parent.indomieRunAt) return NextResponse.json({ error: 'Indomie reservation not found.' }, { status: 404 })
-  if (!isRunStillBookable(parent.indomieRunAt, new Date(), settings)) return NextResponse.json({ error: 'This run has already closed. Choose the next run.' }, { status: 409, headers: { 'X-Indomie-Next-Run': 'true' } })
+  if (!parent.isTestOrder && !isRunStillBookable(parent.indomieRunAt, new Date(), settings)) return NextResponse.json({ error: 'This run has already closed. Choose the next run.' }, { status: 409, headers: { 'X-Indomie-Next-Run': 'true' } })
   const meal = body.meal
   const packs = Number(meal?.indomiePacks); const eggs = Number(meal?.eggCount); const amount = Number(meal?.amount)
   if (!Number.isInteger(packs) || packs < 1 || !Number.isInteger(eggs) || eggs < 0 || !Number.isFinite(amount) || amount <= 0) return NextResponse.json({ error: 'Enter a valid meal.' }, { status: 400 })
   const release = await lockTaskerWork(parent.taskerId)
   try {
     const fresh = await Order.findById(parent._id)
-    if (!fresh || !fresh.taskerId || !fresh.indomieRunAt || !isRunStillBookable(fresh.indomieRunAt, new Date(), settings)) return NextResponse.json({ error: 'This run is no longer available.' }, { status: 409 })
-    if (!await canAssignCapacity(fresh.taskerId, 1)) return NextResponse.json({ error: 'This run no longer has room for another meal. Choose the next run.' }, { status: 409 })
+    if (!fresh || !fresh.taskerId || !fresh.indomieRunAt || (!fresh.isTestOrder && !isRunStillBookable(fresh.indomieRunAt, new Date(), settings))) return NextResponse.json({ error: 'This run is no longer available.' }, { status: 409 })
+    if (!await canAssignCapacity(fresh.taskerId, 1, fresh.isTestOrder === true)) return NextResponse.json({ error: 'This run no longer has room for another meal. Choose the next run.' }, { status: 409 })
     const configuredServiceFee = await getConfiguredServiceFee({ taskType: 'indomie', location: fresh.location })
     const pricing: PricingResult = calculateOrderPricing({ amount, taskType: 'indomie', indomiePacks: packs, eggCount: eggs, serviceFee: configuredServiceFee ?? undefined })
     if (!fresh.hasPaid) {

@@ -1,6 +1,7 @@
 import { connectDB } from '@/lib/db';
 import { syncTaskerStats } from '@/lib/tasker-stats';
 import {Review} from '@/models/review';
+import { Order } from '@/models/order';
 import { NextRequest, NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 
@@ -51,6 +52,13 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const order = await Order.findOne({ _id: orderId, userId: session.user.id })
+      .select('taskerId status isTestOrder')
+      .lean()
+    if (!order || order.status !== 'completed' || !order.taskerId || String(order.taskerId) !== String(taskerId)) {
+      return NextResponse.json({ error: 'You can only review your own completed order.' }, { status: 403 })
+    }
+
     // Check if review already exists for this order
     const existingReview = await Review.findOne({ orderId });
     if (existingReview) {
@@ -66,10 +74,13 @@ export async function POST(req: NextRequest) {
       userId: session.user.id,
       rating,
       comment: reviewComment,
+      isTestOrder: order.isTestOrder === true,
     });
 
     await review.save();
-    await syncTaskerStats(taskerId);
+    // Training feedback is retained for the simulator but never changes public
+    // tasker ratings or review counts.
+    if (!order.isTestOrder) await syncTaskerStats(taskerId);
 
     return NextResponse.json(review, { status: 201 });
   } catch (error) {

@@ -11,11 +11,10 @@ test('all live tasks receive 25 minutes, including legacy orders without a mode 
   }
 })
 
-test('training task windows are unchanged', () => {
-  assert.equal(getCompletionWindowMinutes('Library', 'restaurant', true), 20)
-  assert.equal(getCompletionWindowMinutes('Girls Hostel', 'restaurant', true), 25)
-  assert.equal(getCompletionWindowMinutes('Staff Quarters', 'restaurant', true), 30)
-  assert.equal(getCompletionWindowMinutes('Library', 'indomie', true), 60)
+test('training uses the exact same completion window as live orders', () => {
+  for (const [location, taskType] of [['Library', 'restaurant'], ['Girls Hostel', 'restaurant'], ['Staff Quarters', 'restaurant'], ['Library', 'indomie']] as const) {
+    assert.equal(getCompletionWindowMinutes(location, taskType, true), getCompletionWindowMinutes(location, taskType, false))
+  }
 })
 
 test('live payment starts a 25-minute timer and preserves existing longer deadlines', () => {

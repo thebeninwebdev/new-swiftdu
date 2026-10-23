@@ -45,7 +45,7 @@ import { isProfileComplete } from '@/lib/profile-completion';
 import { canCreateOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
 import { batchingMetadata } from '@/lib/indomie-batch-release';
 import { reserveIndomieCapacity } from '@/lib/indomie-capacity';
-import { getNextAvailableIndomieRun, isRunStillBookable } from '@/lib/indomie-runs';
+import { getNextAvailableIndomieRun, getNextTrainingIndomieRun, isRunStillBookable } from '@/lib/indomie-runs';
 import { randomUUID } from 'node:crypto';
 import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings';
 import { formatMinute, getIndomieServiceMode, getNextOpeningTime, getOperationsSettings, getOperationsStatus } from '@/lib/operations-settings';
@@ -402,11 +402,11 @@ export async function POST(request: NextRequest) {
     if (!isTestOrder && !operationsStatus.open) {
       return NextResponse.json({ error: `SwiftDU is closed for today. We open again at ${formatMinute(operationsSettings.openMinute)}.`, code: 'OUTSIDE_OPERATING_HOURS', nextOpeningAt: operationsStatus.nextOpeningAt }, { status: 409 });
     }
-    const indomieMode = getIndomieServiceMode({ now, operationsSettings, batchingSettings: indomieSettings });
-    if (normalizedTaskType === INDOMIE_TASK_TYPE && expectedIndomieMode && expectedIndomieMode !== indomieMode) {
+    const indomieMode = isTestOrder ? 'batching' : getIndomieServiceMode({ now, operationsSettings, batchingSettings: indomieSettings });
+    if (!isTestOrder && normalizedTaskType === INDOMIE_TASK_TYPE && expectedIndomieMode && expectedIndomieMode !== indomieMode) {
       return NextResponse.json({ error: indomieMode === 'batching' ? 'Evening Indomie runs have started.' : 'Indomie orders are closed for tonight.', code: 'INDOMIE_MODE_CHANGED', mode: indomieMode }, { status: 409 });
     }
-    if (normalizedTaskType === INDOMIE_TASK_TYPE && indomieMode === 'closed') {
+    if (!isTestOrder && normalizedTaskType === INDOMIE_TASK_TYPE && indomieMode === 'closed') {
       return NextResponse.json({ error: 'Indomie orders are closed for tonight.', code: 'INDOMIE_CLOSED', nextAvailableAt: getNextOpeningTime(now, operationsSettings) }, { status: 409 });
     }
 
@@ -477,8 +477,8 @@ export async function POST(request: NextRequest) {
 
     const bookedAt = new Date();
     const isScheduledIndomie = normalizedTaskType === INDOMIE_TASK_TYPE && indomieMode === 'batching'
-    const indomieRunAt = isScheduledIndomie ? getNextAvailableIndomieRun(bookedAt, indomieSettings) : null
-    if (isScheduledIndomie && (!indomieRunAt || !isRunStillBookable(indomieRunAt, bookedAt, indomieSettings))) {
+    const indomieRunAt = isScheduledIndomie ? (isTestOrder ? getNextTrainingIndomieRun(bookedAt, indomieSettings) : getNextAvailableIndomieRun(bookedAt, indomieSettings)) : null
+    if (isScheduledIndomie && (!indomieRunAt || (!isTestOrder && !isRunStillBookable(indomieRunAt, bookedAt, indomieSettings)))) {
       return NextResponse.json({ error: 'There is no Indomie run open for booking right now.', code: 'INDOMIE_RUN_CLOSED' }, { status: 409 })
     }
     const batching = normalizedTaskType === INDOMIE_TASK_TYPE ? { taskerSearchStartedAt: bookedAt } : await batchingMetadata(normalizedTaskType, bookedAt)
@@ -603,10 +603,10 @@ export async function POST(request: NextRequest) {
 
     // Orders held for an Indomie collection window are deliberately invisible
     // until the release materializer creates one batch notification.
-    if (shouldSendOrderNotification(order) && order.batchingStatus !== 'waiting' && !isScheduledIndomie) {
+    if (order.batchingStatus !== 'waiting' && !isScheduledIndomie) {
       const taskerPushResult = await sendPushNotification({
-        audience: { roles: ['tasker'], taskerGenderRestriction: order.taskerGenderRestriction || null },
-        title: 'New Task Available',
+        audience: { roles: ['tasker'], taskerGenderRestriction: order.taskerGenderRestriction || null, taskerMode: order.isTestOrder ? 'training' : 'live' },
+        title: order.isTestOrder ? '[Training] New Task Available' : 'New Task Available',
         body: isCafeInquiry
           ? `Cafe inquiry in ${location} - NGN ${pricing.serviceFee.toLocaleString()} service fee`
           : `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${totalAmount.toLocaleString()}`,
@@ -623,7 +623,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (shouldSendOrderNotification(order)) {
+    if (shouldSendOrderNotification(order) || order.isTestOrder) {
       try {
         const adminAlertResult = await notifyAdminsOfOrderEvent({
           event: 'created',

@@ -27,6 +27,14 @@ export function getNextAvailableIndomieRun(now = new Date(), settings: IndomieBa
   return run && getLagosDateParts(run).minute <= settings.endMinute ? run : null
 }
 
+// Training retains the real interval and booking-cutoff rules but uses a server
+// time anchored run, so it never depends on the live evening-only window.
+export function getNextTrainingIndomieRun(now = new Date(), settings: IndomieBatchSettingsValue = DEFAULT_INDOMIE_BATCH_SETTINGS) {
+  const intervalMs = settings.runIntervalMinutes * 60_000
+  const earliestBookableRun = now.getTime() + settings.bookingCutoffMinutes * 60_000 + 1
+  return new Date(Math.ceil(earliestBookableRun / intervalMs) * intervalMs)
+}
+
 export function formatIndomieRunTime(runAt: Date) {
   return new Intl.DateTimeFormat('en-NG', { timeZone: 'Africa/Lagos', hour: 'numeric', minute: '2-digit', hour12: true }).format(runAt)
 }

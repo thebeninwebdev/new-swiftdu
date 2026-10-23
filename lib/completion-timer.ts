@@ -27,27 +27,11 @@ type CompletionTimerOrder = {
   prematureCompletionReportedAt?: Date
 }
 
-export function getCompletionWindowMinutes(location?: string | null, taskType?: string | null, isTestOrder = false) {
-  if (!isTestOrder) return LIVE_COMPLETION_WINDOW_MINUTES
-
-  if (taskType === 'indomie') {
-    return INDOMIE_COMPLETION_WINDOW_MINUTES
-  }
-
-  const normalizedLocation = String(location || '').toLowerCase()
-
-  if (normalizedLocation.includes('staff quarters')) {
-    return STAFF_QUARTERS_COMPLETION_WINDOW_MINUTES
-  }
-
-  if (
-    normalizedLocation.includes('amnesty') ||
-    normalizedLocation.includes('girls hostel')
-  ) {
-    return HOSTEL_COMPLETION_WINDOW_MINUTES
-  }
-
-  return DEFAULT_COMPLETION_WINDOW_MINUTES
+export function getCompletionWindowMinutes(_location?: string | null, _taskType?: string | null, _isTestOrder = false) {
+  // Completion timing is an operational rule, not an environment rule. Keeping
+  // the legacy arguments preserves callers while ensuring training rehearses the
+  // same window as a live order with identical inputs.
+  return LIVE_COMPLETION_WINDOW_MINUTES
 }
 
 export function ensureCompletionTimer(order: CompletionTimerOrder) {

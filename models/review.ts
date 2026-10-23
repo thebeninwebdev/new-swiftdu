@@ -6,6 +6,7 @@ export interface IReview extends Document {
   userId: mongoose.Types.ObjectId;
   rating: number;
   comment: string;
+  isTestOrder: boolean;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,6 +42,11 @@ const ReviewSchema = new Schema<IReview>(
       default: "",
       trim: true,
       maxlength: 500,
+    },
+    isTestOrder: {
+      type: Boolean,
+      default: false,
+      index: true,
     },
   },
   {

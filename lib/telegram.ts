@@ -9,6 +9,13 @@ export function getTelegramOrderChatIds(restriction?: TaskerGenderRestriction | 
   return [...new Set(targets)] as string[];
 }
 
+// Kept separate from all production order channels. Deployments can override the
+// default without changing code, but training alerts never fall through to live
+// destination-based chats.
+export function getTelegramTrainingOrdersChatId() {
+  return process.env.TELEGRAM_TRAINING_ORDERS_CHAT_ID?.trim() || '-1004495693547'
+}
+
 interface TelegramMessage {
   chat_id: string;
   text: string;

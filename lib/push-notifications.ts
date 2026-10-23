@@ -17,7 +17,7 @@ import { TaskerWorkSession } from '@/models/tasker-work-session'
 
 type PushAudience =
   | { userIds: string[] }
-  | { roles: Array<'user' | 'admin' | 'tasker'>; taskerGenderRestriction?: TaskerGenderRestriction | null }
+  | { roles: Array<'user' | 'admin' | 'tasker'>; taskerGenderRestriction?: TaskerGenderRestriction | null; taskerMode?: 'training' | 'live' }
 
 interface SendPushNotificationInput {
   audience: PushAudience
@@ -168,7 +168,7 @@ function createPushPayload(input: PushPayloadInput) {
   })
 }
 
-async function getApprovedTaskerUserIds() {
+async function getApprovedTaskerUserIds(taskerMode?: 'training' | 'live') {
   const checkedInIds = await TaskerWorkSession.distinct('taskerId', { open: true })
   const taskers = await Tasker.find({
     _id: { $in: checkedInIds },
@@ -176,6 +176,7 @@ async function getApprovedTaskerUserIds() {
     isVerified: true,
     isRejected: { $ne: true },
     userId: { $exists: true, $ne: null },
+    ...(taskerMode ? { taskerMode } : {}),
   })
     .select('userId')
     .lean<Array<{ userId: { toString(): string } }>>()
@@ -187,7 +188,7 @@ async function getSubscriptionsForAudience(audience: PushAudience) {
   let userIds: string[] = []
 
   if (isTaskerAudience(audience)) {
-    userIds = await getApprovedTaskerUserIds()
+    userIds = await getApprovedTaskerUserIds('roles' in audience ? audience.taskerMode : undefined)
     if ('roles' in audience && audience.taskerGenderRestriction !== undefined) {
       if (!audience.taskerGenderRestriction) return []
       if (audience.taskerGenderRestriction !== 'any') {

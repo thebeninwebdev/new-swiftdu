@@ -38,6 +38,7 @@ export async function calculateTaskerStats(taskerId: string): Promise<TaskerStat
           {
             $match: {
               taskerId: new Types.ObjectId(taskerId),
+              isTestOrder: { $ne: true },
             },
           },
           {

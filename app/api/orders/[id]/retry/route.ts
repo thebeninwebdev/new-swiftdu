@@ -191,7 +191,7 @@ export async function POST(
 
     emitOrderUpdated(retriedOrder);
 
-    if (shouldSendOrderNotification(retriedOrder)) {
+    if (shouldSendOrderNotification(retriedOrder) || retriedOrder.isTestOrder) {
       const taskerPushResult = await sendPushNotification({
         audience: { roles: ['tasker'], taskerGenderRestriction: retriedOrder.taskerGenderRestriction || null },
         title: 'New Task Available',

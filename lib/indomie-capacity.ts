@@ -23,7 +23,7 @@ export async function getEligibleIndomieTaskers({ location, isTestOrder = false 
   const users = await User.find({ _id: { $in: live.map(tasker => tasker.userId).filter(Boolean) } }).select('_id gender').lean()
   const genderByUser = new Map(users.map(user => [String(user._id), user.gender]))
   const eligible = live.filter(tasker => canTaskerDeliver({ location }, genderByUser.get(String(tasker.userId))))
-  const remaining = await Promise.all(eligible.map(async tasker => ({ tasker, remainingCapacity: await getTaskerRemainingCapacity(String(tasker._id)) })))
+  const remaining = await Promise.all(eligible.map(async tasker => ({ tasker, remainingCapacity: await getTaskerRemainingCapacity(String(tasker._id), isTestOrder) })))
   return remaining.filter(item => item.remainingCapacity > 0)
 }
 
@@ -52,7 +52,7 @@ export async function reserveIndomieCapacity<T>(input: { location: string; isTes
       if (!await TaskerWorkSession.exists({ taskerId: String(fresh._id), open: true })) continue
       const user = fresh.userId ? await User.findById(fresh.userId).select('gender').lean() : null
       if (!canTaskerDeliver({ location: input.location }, user?.gender)) continue
-      if (!await canAssignCapacity(String(fresh._id), requiredUnits)) continue
+      if (!await canAssignCapacity(String(fresh._id), requiredUnits, input.isTestOrder)) continue
       return await input.save(String(fresh._id))
     } catch (error) {
       // Another reservation may have won this tasker. Try the next eligible one.
