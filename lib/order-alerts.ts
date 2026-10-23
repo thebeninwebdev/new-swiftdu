@@ -246,7 +246,10 @@ async function sendTelegramOrderAlertDirect(input: {
     ? formatCopyNotesTelegramMessage(input, input.customerName, input.dashboardUrl)
     : buildTelegramOrderAlertMessage(input)
   const trainingPrefix = input.isTestOrder ? '<b>[TRAINING ORDER]</b>\n' : ''
-  const results = await Promise.allSettled(chatIds.map(chatId => sendTelegramMessage(`${trainingPrefix}${message}`, chatId)))
+  const safeMessage = input.isTestOrder
+    ? message.split('\n').filter(line => !line.startsWith('<b>Location:</b>')).join('\n')
+    : message
+  const results = await Promise.allSettled(chatIds.map(chatId => sendTelegramMessage(`${trainingPrefix}${safeMessage}`, chatId)))
   const deliveredCount = results.filter(result => result.status === 'fulfilled' && result.value).length
   return {
     recipientCount: chatIds.length,
@@ -279,7 +282,10 @@ async function sendTelegramOrderAlert(input: {
   copyNotesPages?: number
   isTestOrder?: boolean
 }) {
-  if (process.env.TELEGRAM_ALERTS_ENABLED === 'false') {
+  // Training notifications use their isolated channel and must not be coupled to
+  // the production-order alert switch. This keeps training operational while
+  // production Telegram alerts are intentionally paused.
+  if (!input.isTestOrder && process.env.TELEGRAM_ALERTS_ENABLED === 'false') {
     return createSkippedChannelResult('Telegram alerts are disabled.')
   }
 

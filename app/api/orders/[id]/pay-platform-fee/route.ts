@@ -7,6 +7,7 @@ import { getAppBaseUrl, initializePaystackCheckout } from '@/lib/paystack-settle
 import { getSettlementDueAt } from '@/lib/order-finance'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import { isDevelopmentSettlementSimulation } from '@/lib/settlement-mode'
+import { completeTrainingSettlement } from '@/lib/training-settlement'
 import { emitOrderUpdated } from '@/lib/socket'
 import {
   PendingSettlementVerificationError,
@@ -59,17 +60,15 @@ export async function POST(
     }
 
     if (order.isTestOrder) {
-      order.taskerHasPaid = true
-      order.settlementStatus = 'paid'
-      order.settlementPaidAt = order.settlementPaidAt || new Date()
-      order.settlementFailureReason = undefined
+      completeTrainingSettlement(order)
       await order.save()
       emitOrderUpdated(order)
 
       return NextResponse.json({
+        success: true,
         simulated: true,
         order,
-        message: 'Training order - no real payment was made.',
+        message: 'Training settlement completed. No real payment was made.',
       })
     }
 

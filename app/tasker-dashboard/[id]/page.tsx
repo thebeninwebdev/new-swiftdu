@@ -483,7 +483,7 @@ function ErrandDetailPageContent() {
   const transferUnderReview = Boolean(errand.isDeclinedTask)
   const canReportTransferIssue = canTaskerReportTransferIssue(errand)
   const taskerCanCancel = canTaskerCancelOrder(errand)
-  const settlementOutstanding = errand.platformFee > 0 && !errand.platformFeeWaivedForFastCompletion && !errand.isTestOrder && errand.status === 'completed' && !errand.taskerHasPaid && errand.settlementStatus !== 'paid'
+  const settlementOutstanding = errand.platformFee > 0 && !errand.platformFeeWaivedForFastCompletion && errand.status === 'completed' && !errand.taskerHasPaid && errand.settlementStatus !== 'paid'
   const whatsappLink = userInfo ? getWhatsappLink(userInfo.phone, errand, userInfo.name) : ''
   const restaurantPeopleCount = Number.isInteger(Number(errand.restaurantPeopleCount || 0)) && Number(errand.restaurantPeopleCount || 0) > 0 ? Number(errand.restaurantPeopleCount) : 1
   const restaurantPackaging = formatRestaurantPackaging(errand)

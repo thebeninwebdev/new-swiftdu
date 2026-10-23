@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server'
 
 import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
-import { getOutstandingSettlementOrders } from '@/lib/tasker-settlement'
+import { getOutstandingSettlementOrders, getOutstandingTrainingSettlementOrders } from '@/lib/tasker-settlement'
+import Tasker from '@/models/tasker'
 
 export async function GET(req: Request) {
   await connectDB()
@@ -15,7 +16,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ orders: [] })
   }
 
-  const orders = await getOutstandingSettlementOrders(String(session.user.taskerId))
+  const tasker = await Tasker.findById(session.user.taskerId).select('taskerMode').lean()
+  const orders = tasker?.taskerMode === 'training'
+    ? await getOutstandingTrainingSettlementOrders(String(session.user.taskerId))
+    : await getOutstandingSettlementOrders(String(session.user.taskerId))
 
   return NextResponse.json({
     orders: orders.map((order) => ({
@@ -26,6 +30,7 @@ export async function GET(req: Request) {
       settlementStatus: order.settlementStatus,
       settlementDueAt: order.settlementDueAt,
       completedAt: order.completedAt,
+      isTestOrder: order.isTestOrder === true,
     })),
   })
 }

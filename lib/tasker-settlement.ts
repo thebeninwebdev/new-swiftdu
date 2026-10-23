@@ -122,3 +122,19 @@ export async function getOutstandingSettlementOrders(taskerId: string) {
     .sort({ settlementDueAt: 1, completedAt: -1, createdAt: -1 })
     .lean()
 }
+
+/** Training settlements are visible only while training and are never synced
+ * into overdue counts or suspension state. */
+export async function getOutstandingTrainingSettlementOrders(taskerId: string) {
+  return Order.find({
+    taskerId,
+    status: 'completed',
+    isTestOrder: true,
+    platformFee: { $gt: 0 },
+    taskerHasPaid: false,
+    settlementStatus: { $in: [...OUTSTANDING_SETTLEMENT_STATUSES] },
+    $and: [NON_WAIVED_PLATFORM_FEE_MATCH],
+  })
+    .sort({ completedAt: -1, createdAt: -1 })
+    .lean()
+}

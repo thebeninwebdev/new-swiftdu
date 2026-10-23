@@ -129,6 +129,8 @@ export interface IOrder extends Document, CafeInquiryFields {
   settlementPaidAt?: Date;
   settlementDueAt?: Date;
   settlementFailureReason?: string;
+  settlementSimulation?: boolean;
+  settlementSimulationAt?: Date;
   isTestOrder: boolean;
   createdInMode: 'test' | 'live';
   testOrderCreatedBy?: string;
@@ -482,6 +484,8 @@ const orderSchema = new Schema<IOrder>(
     settlementPaidAt: Date,
     settlementDueAt: Date,
     settlementFailureReason: String,
+    settlementSimulation: { type: Boolean, default: false },
+    settlementSimulationAt: Date,
     isTestOrder: {
       type: Boolean,
       default: false,

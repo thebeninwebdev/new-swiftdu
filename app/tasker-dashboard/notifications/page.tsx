@@ -15,6 +15,7 @@ interface UnpaidOrder {
   settlementStatus: 'not_due' | 'pending' | 'initialized' | 'paid' | 'failed' | 'overdue'
   settlementDueAt?: string
   completedAt?: string
+  isTestOrder?: boolean
 }
 
 const formatDate = (date?: string) =>
@@ -29,7 +30,7 @@ const formatDate = (date?: string) =>
       })
     : 'Recently'
 
-const isOverdue = (order: UnpaidOrder) => order.settlementStatus === 'overdue'
+const isOverdue = (order: UnpaidOrder) => !order.isTestOrder && order.settlementStatus === 'overdue'
 
 export default function TaskerNotificationsPage() {
   const [orders, setOrders] = useState<UnpaidOrder[]>([])
@@ -160,7 +161,7 @@ export default function TaskerNotificationsPage() {
                   <div className="border-b border-slate-100 bg-slate-50/50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400">
-                        Platform settlement
+                        {order.isTestOrder ? 'Training settlement required' : 'Platform settlement'}
                       </span>
                       <span
                         className={`rounded-full px-2.5 py-0.5 text-xs font-semibold capitalize ${
@@ -187,13 +188,15 @@ export default function TaskerNotificationsPage() {
 
                     <div className="rounded-xl bg-slate-50 px-4 py-3 dark:bg-slate-950/50">
                       <p className="text-xs font-medium text-slate-500 dark:text-slate-400">
-                        Platform fee due
+                        {order.isTestOrder ? 'Remit to SwiftDU' : 'Platform fee due'}
                       </p>
                       <p className="mt-1 text-2xl font-bold text-slate-900 dark:text-white">
                         {convertToNaira(order.platformFee)}
                       </p>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                        {isOverdue(order)
+                        {order.isTestOrder
+                          ? 'Training simulation · No real transaction will be made.'
+                          : isOverdue(order)
                           ? 'This settlement is overdue and can suspend tasker access.'
                           : `Due ${formatDate(order.settlementDueAt)}`}
                       </p>
@@ -204,7 +207,7 @@ export default function TaskerNotificationsPage() {
                         href={`/tasker-dashboard/payment/${order._id}`}
                         className="inline-flex h-11 items-center justify-center rounded-xl bg-linear-to-r from-amber-500 to-orange-500 px-4 text-sm font-semibold text-white transition active:scale-95 hover:from-amber-600 hover:to-orange-600"
                       >
-                        Pay now
+                        {order.isTestOrder ? 'Make Payment' : 'Pay now'}
                         <ArrowRight className="ml-2 h-4 w-4" />
                       </Link>
 

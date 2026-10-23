@@ -34,6 +34,7 @@ interface SettlementOrder {
   settlementDueAt?: string
   settlementPaidAt?: string
   isTestOrder?: boolean
+  settlementSimulation?: boolean
 }
 
 const MAX_VERIFY_RETRIES = 12
@@ -163,7 +164,7 @@ function TaskerPaymentPageContent() {
       allowRetry?: boolean
       showSuccessToast?: boolean
     }) => {
-      if (!orderId || !order || order.platformFee <= 0 || order.platformFeeWaivedForFastCompletion) {
+      if (!orderId || !order || order.isTestOrder || order.platformFee <= 0 || order.platformFeeWaivedForFastCompletion) {
         return
       }
 
@@ -399,7 +400,7 @@ function TaskerPaymentPageContent() {
       if (payload.simulated && payload.order) {
         setOrder(payload.order)
         clearStoredPendingReference()
-        toast.success('Training order marked as test-paid.')
+        toast.success('Training settlement completed. No real payment was made.')
         return
       }
 
@@ -451,8 +452,8 @@ function TaskerPaymentPageContent() {
 
   const isCompleted = order.status === 'completed'
   const isPaid = Boolean(order.taskerHasPaid || order.settlementStatus === 'paid')
-  const isOverdue = order.settlementStatus === 'overdue'
-  const isAwaitingConfirmation = order.settlementStatus === 'pending'
+  const isOverdue = !order.isTestOrder && order.settlementStatus === 'overdue'
+  const isAwaitingConfirmation = !order.isTestOrder && order.settlementStatus === 'pending'
   const supportMessage = encodeURIComponent(
     `Hello SwiftDU support, I need help with my Paystack platform settlement for task ${order._id}.`
   )
@@ -472,13 +473,13 @@ function TaskerPaymentPageContent() {
 
         <div className="mt-5">
           <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-600 dark:text-amber-300">
-            {order.isTestOrder ? 'Training settlement' : 'Platform settlement'}
+            {order.isTestOrder ? 'Tasker Settlement · Training order' : 'Platform settlement'}
           </p>
           <h1 className="mt-2 text-3xl font-bold text-slate-900 dark:text-white">
             {convertToNaira(order.platformFee)}
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">
-            {order.isTestOrder ? 'Training order - no real payment will be made for ' : 'Pay the platform fee for '}
+            {order.isTestOrder ? 'Make payment to SwiftDU for ' : 'Pay the platform fee for '}
             <span className="font-semibold text-slate-900 dark:text-white">
               {order.description || order.taskType}
             </span>
@@ -518,6 +519,10 @@ function TaskerPaymentPageContent() {
               {convertToNaira(order.taskerFee || 0)}
             </span>
           </div>
+          <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2 text-sm dark:border-slate-800">
+            <span className="font-medium text-slate-700 dark:text-slate-200">Platform settlement amount</span>
+            <span className="font-bold text-slate-900 dark:text-white">{convertToNaira(order.platformFee)}</span>
+          </div>
         </div>
 
         {error ? (
@@ -528,7 +533,7 @@ function TaskerPaymentPageContent() {
 
         {order.isTestOrder ? (
           <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm text-indigo-800 dark:border-indigo-900 dark:bg-indigo-950/30 dark:text-indigo-200">
-            Training order - no real payment will be made.
+          TRAINING ORDER · This is a training simulation. In a live order, this amount would be paid to SwiftDU.
           </div>
         ) : null}
 
@@ -558,7 +563,7 @@ function TaskerPaymentPageContent() {
               <div>
                 <p className="font-semibold">Settlement completed</p>
                 <p className="mt-1">
-                  Paid {formatDate(order.settlementPaidAt)}
+                  {order.isTestOrder ? 'Training payment successful. No real payment was made.' : `Paid ${formatDate(order.settlementPaidAt)}`}
                 </p>
               </div>
             </div>
@@ -569,17 +574,17 @@ function TaskerPaymentPageContent() {
           <Button
             onClick={() => void handleStartPayment()}
             disabled={!isCompleted || isPaid || startingPayment || verifying}
-            className="flex-1 bg-amber-500 text-white hover:bg-amber-600"
+            className={order.isTestOrder ? 'flex-1 bg-violet-600 text-white hover:bg-violet-700' : 'flex-1 bg-amber-500 text-white hover:bg-amber-600'}
           >
             {startingPayment || verifying ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {verifying ? 'Verifying...' : 'Opening Paystack...'}
+                {order.isTestOrder ? 'Completing simulation...' : verifying ? 'Verifying...' : 'Opening Paystack...'}
               </>
             ) : (
               <>
                 <CreditCard className="mr-2 h-4 w-4" />
-                {order.isTestOrder ? 'Mark Test-Paid' : 'Pay with Paystack'}
+                {order.isTestOrder ? 'Simulate Payment' : 'Pay with Paystack'}
               </>
             )}
           </Button>
@@ -588,7 +593,7 @@ function TaskerPaymentPageContent() {
           </Button>
         </div>
 
-        <a
+        {!order.isTestOrder ? <a
           href={supportUrl}
           target="_blank"
           rel="noreferrer"
@@ -596,9 +601,9 @@ function TaskerPaymentPageContent() {
         >
           <MessageCircle className="mr-2 h-4 w-4" />
           Contact support on WhatsApp
-        </a>
+        </a> : null}
 
-        {!isPaid && order.settlementReference ? (
+        {!order.isTestOrder && !isPaid && order.settlementReference ? (
           <Button
             variant="outline"
             onClick={() =>
@@ -614,7 +619,7 @@ function TaskerPaymentPageContent() {
           </Button>
         ) : null}
 
-        {!isPaid ? (
+        {!isPaid && !order.isTestOrder ? (
           <div className="mt-4 flex items-start gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-300">
             <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
             <p>
