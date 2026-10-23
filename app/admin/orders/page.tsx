@@ -141,7 +141,7 @@ const formatResponseSummary = (order: Pick<Order, 'responseOutcome' | 'responseT
   return 'No response timing yet'
 }
 
-export function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) {
+export default function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) {
   const router = useRouter()
   const [admin, setAdmin] = useState<AdminUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -682,7 +682,7 @@ export function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: str
 }
 
 import { AdminWorkspaceTabs } from '@/components/admin-workspace-tabs'
-import { AdminReviewsPage } from '@/app/admin/reviews/page'
+import AdminReviewsPage from '@/app/admin/reviews/page'
 
 const orderTabs = [{ value: 'live', label: 'Live' }, { value: 'all', label: 'All Orders' }, { value: 'batches', label: 'Indomie Batches' }, { value: 'reviews', label: 'Reviews' }]
 function IndomieBatches() {

@@ -4,7 +4,7 @@ import { useSearchParams } from 'next/navigation'
 import { AdminWorkspaceTabs } from '@/components/admin-workspace-tabs'
 import { AdminPeriods } from '@/components/admin-periods'
 import { OperationsAdminPage } from '@/components/admin-operations-settings'
-import { AdminTransactionsPage } from '@/app/admin/transactions/page'
+import AdminTransactionsPage from '@/app/admin/transactions/page'
 
 const tabs = [{ value: 'availability', label: 'Availability' }, { value: 'periods', label: 'Periods' }, { value: 'finance', label: 'Finance' }]
 export default function OperationsWorkspace() {

@@ -2,9 +2,9 @@
 
 import { useSearchParams } from 'next/navigation'
 import { AdminWorkspaceTabs } from '@/components/admin-workspace-tabs'
-import { AdminBusinessesPage } from '@/app/admin/businesses/page'
-import { AdminLocationsPage } from '@/app/admin/locations/page'
-import { PricingPage } from '@/app/admin/pricing/page'
+import AdminBusinessesPage from '@/app/admin/businesses/page'
+import AdminLocationsPage from '@/app/admin/locations/page'
+import PricingPage from '@/app/admin/pricing/page'
 
 const tabs = [{ value: 'businesses', label: 'Businesses' }, { value: 'locations', label: 'Locations' }, { value: 'pricing', label: 'Pricing' }]
 export default function MarketplaceWorkspace() {

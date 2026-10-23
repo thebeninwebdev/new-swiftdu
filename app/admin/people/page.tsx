@@ -2,8 +2,8 @@
 
 import { useSearchParams } from 'next/navigation'
 import { AdminWorkspaceTabs } from '@/components/admin-workspace-tabs'
-import { AdminTaskersPage } from '@/app/admin/taskers/page'
-import { AdminUsersPage } from '@/app/admin/users/page'
+import AdminTaskersPage from '@/app/admin/taskers/page'
+import AdminUsersPage from '@/app/admin/users/page'
 
 const tabs = [{ value: 'taskers', label: 'Taskers' }, { value: 'customers', label: 'Customers' }]
 export default function PeopleWorkspace() {

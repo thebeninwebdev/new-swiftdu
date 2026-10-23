@@ -53,7 +53,7 @@ interface Tasker {
 type StatusFilter = 'pending' | 'verified' | 'rejected'
 
 
-export function AdminTaskersPage() {
+export default function AdminTaskersPage() {
   const router = useRouter()
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -304,11 +304,6 @@ export function AdminTaskersPage() {
   )
 }
 
-export default function LegacyTaskersRedirect() {
-  const router = useRouter()
-  useEffect(() => { router.replace('/admin/people?tab=taskers') }, [router])
-  return null
-}
 
 function DetailRow({ label, value }: { label: string; value: string }) {
   return <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p><p className="mt-1 break-words text-sm font-semibold text-slate-900">{value}</p></div>

@@ -13,7 +13,7 @@ type AdminBusiness = PublicBusiness & {
   isVisible: boolean;
   moderation?: BusinessAIReview;
 };
-export function AdminBusinessesPage() {
+export default function AdminBusinessesPage() {
   const [status, setStatus] = useState("review"),
     [page, setPage] = useState(1),
     [version, setVersion] = useState(0);
@@ -228,9 +228,4 @@ export function AdminBusinessesPage() {
       </nav>
     </main>
   );
-}
-
-export default function LegacyBusinessesRedirect() {
-  useEffect(() => { window.location.replace('/admin/marketplace?tab=businesses') }, [])
-  return null
 }

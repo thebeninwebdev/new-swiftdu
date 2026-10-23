@@ -48,7 +48,7 @@ interface AdminUser {
 }
 interface AcademicSession { _id: string; name: string; isActive: boolean; semesters: Array<{ _id: string; name: string }> }
 
-export function AdminTransactionsPage() {
+export default function AdminTransactionsPage() {
   const router = useRouter()
   const [admin, setAdmin] = useState<AdminUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -405,5 +405,3 @@ export function AdminTransactionsPage() {
     </div>
   )
 }
-
-export default function LegacyTransactionsRedirect() { const router = useRouter(); useEffect(() => { router.replace('/admin/operations?tab=finance') }, [router]); return null }
