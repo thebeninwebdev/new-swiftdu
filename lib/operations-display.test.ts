@@ -1,11 +1,19 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { formatNextOperationalOpening, formatOperationalTime, getCustomerOperationsState } from './operations-display'
+import { formatNextOperationalOpening, formatOperationalTime, getCustomerOperationsState, isCustomerOrderingUnavailable } from './operations-display'
 
 test('customer operations state prioritizes a global pause over schedule status', () => {
   assert.equal(getCustomerOperationsState({ enabled: false, open: false }), 'paused')
   assert.equal(getCustomerOperationsState({ enabled: true, open: false }), 'closed')
   assert.equal(getCustomerOperationsState({ enabled: true, open: true }), 'open')
+})
+
+test('training mode is never blocked by the customer live-operations gate', () => {
+  assert.equal(isCustomerOrderingUnavailable({ enabled: false, open: false }, true), false)
+  assert.equal(isCustomerOrderingUnavailable({ enabled: true, open: false }, true), false)
+  assert.equal(isCustomerOrderingUnavailable({ enabled: false, open: false }, false), true)
+  assert.equal(isCustomerOrderingUnavailable({ enabled: true, open: false }, false), true)
+  assert.equal(isCustomerOrderingUnavailable({ enabled: true, open: true }, false), false)
 })
 
 test('operational times use a friendly 12-hour display', () => {

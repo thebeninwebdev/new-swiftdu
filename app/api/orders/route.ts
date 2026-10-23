@@ -703,6 +703,8 @@ export async function GET(request: NextRequest) {
     }
 
     if (currentOnly) {
+      const account = await User.findById(session.user.id).select('isExco excoRole testOrderMode').lean()
+      query.isTestOrder = shouldCreateTestOrder(account || undefined) ? true : { $ne: true }
       query.status = { $in: [...ACTIVE_ORDER_STATUSES] };
       query.taskType = { $ne: INDOMIE_TASK_TYPE };
     } else if (statusParam) {

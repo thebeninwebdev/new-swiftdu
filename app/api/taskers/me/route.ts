@@ -29,8 +29,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (!tasker) {
-      return NextResponse.json({ error: 'No tasker profile is linked to this account. Complete your onboarding using your approval email, or contact support if you have already done so.' }, { status: 404 })
+      return NextResponse.json({ error: 'Submit a new Tasker application for the current intake.', code: 'TASKER_REAPPLICATION_REQUIRED' }, { status: 404 })
     }
+
+    if (tasker.isRejected) return NextResponse.json({ error: 'Your previous Tasker application was not accepted. You can apply again.', code: 'TASKER_REAPPLICATION_REQUIRED' }, { status: 403 })
 
     return NextResponse.json({ tasker: { ...tasker, taskerMode: getTaskerMode(tasker) } }, {
       headers: { 'Cache-Control': 'no-store' },

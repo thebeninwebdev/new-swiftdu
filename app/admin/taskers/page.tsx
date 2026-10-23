@@ -50,7 +50,7 @@ interface Tasker {
   user: TaskerUser | null
 }
 
-type StatusFilter = 'pending' | 'verified' | 'rejected'
+type StatusFilter = 'pending' | 'verified'
 
 
 export default function AdminTaskersPage() {
@@ -237,7 +237,6 @@ export default function AdminTaskersPage() {
   const FILTERS: { key: StatusFilter; label: string }[] = [
     { key: 'pending', label: 'Pending' },
     { key: 'verified', label: 'Approved' },
-    { key: 'rejected', label: 'Rejected' },
   ]
 
   useEffect(() => {
@@ -247,8 +246,7 @@ export default function AdminTaskersPage() {
 
     if (
       requestedStatus === 'pending' ||
-      requestedStatus === 'verified' ||
-      requestedStatus === 'rejected'
+      requestedStatus === 'verified'
     ) {
       setActiveFilter(requestedStatus)
     }

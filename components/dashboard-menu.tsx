@@ -6,6 +6,7 @@ import { authClient } from '@/lib/auth-client'
 import {ChevronLeft, LogOut, PlusCircle, ListTodo, User, Bell, Star, BriefcaseBusiness, Menu, X} from 'lucide-react'
 import { useIdleEffect } from '@/hooks/use-idle-effect'
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
+import { toast } from 'sonner'
 
 
 const subscribeToHydration = () => () => {}
@@ -306,6 +307,7 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
       const payload = await response.json()
 
       if (!response.ok) {
+        toast.error(payload.error || `Could not ${nextTestOrderMode ? 'enable' : 'disable'} Training Mode. Please try again.`)
         return
       }
 
@@ -319,7 +321,7 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
         })
       )
     } catch {
-      // Keep the existing mode if persistence fails.
+      toast.error(`Could not ${nextTestOrderMode ? 'enable' : 'disable'} Training Mode. Please try again.`)
     } finally {
       setIsUpdatingOrderMode(false)
     }

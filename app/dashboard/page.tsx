@@ -58,6 +58,7 @@ import {
   formatNextOperationalOpening,
   formatOperationalTime,
   getCustomerOperationsState,
+  isCustomerOrderingUnavailable,
   type CustomerOperationsStatus,
 } from '@/lib/operations-display'
 import {
@@ -1252,8 +1253,8 @@ if (stepNumber === detailsStep) {
   }
 
   const handleNext = () => {
-    if (operationsStatus && getCustomerOperationsState(operationsStatus) !== 'open') {
-      toast.error(!operationsStatus.enabled ? 'New orders are temporarily paused.' : `Orders reopen ${formatNextOperationalOpening(operationsStatus.nextOpeningAt, operationsStatus.openingTime)}.`)
+    if (newOrdersUnavailable) {
+      toast.error(unavailableOrderMessage)
       return
     }
     pauseRealtime()
@@ -1346,8 +1347,8 @@ if (stepNumber === detailsStep) {
   }
 
   const handleSubmit = async () => {
-    if (operationsStatus && getCustomerOperationsState(operationsStatus) !== 'open') {
-      toast.error(!operationsStatus.enabled ? 'New orders are temporarily paused.' : `Orders reopen ${formatNextOperationalOpening(operationsStatus.nextOpeningAt, operationsStatus.openingTime)}.`)
+    if (newOrdersUnavailable) {
+      toast.error(unavailableOrderMessage)
       return
     }
     pauseRealtime(REALTIME_PAUSE_MS * 2)
@@ -1391,7 +1392,7 @@ if (stepNumber === detailsStep) {
   // The server independently authorizes Test Order Mode from the database account.
   // This only keeps that authorized training experience from being blocked by the
   // customer-facing live-operations banner.
-  const newOrdersUnavailable = !isExcoTrainingMode && customerOperationsState !== null && customerOperationsState !== 'open'
+  const newOrdersUnavailable = isCustomerOrderingUnavailable(operationsStatus, isExcoTrainingMode)
   const nextOpeningLabel = operationsStatus
     ? formatNextOperationalOpening(operationsStatus.nextOpeningAt, operationsStatus.openingTime)
     : ''
@@ -2056,9 +2057,7 @@ if (stepNumber === detailsStep) {
             <div>
               <p className="font-black">Training Mode is active</p>
               <p className="mt-1 font-semibold">
-                {newOrdersUnavailable
-                  ? 'Live SwiftDU operations are currently unavailable. Your orders are training orders and are visible only to Training Mode taskers.'
-                  : 'Orders you create here are training orders, not live customer transactions, and are visible only to Training Mode taskers.'}
+                Orders you create here are test orders and are visible only to Training Mode taskers. No real customer transaction will occur.
               </p>
             </div>
           </div>
@@ -2245,14 +2244,14 @@ if (stepNumber === detailsStep) {
   }
 
   // Scheduled Indomie owns the evening flow only; daytime Indomie stays in the generic wizard.
-  if (formData.taskType === INDOMIE_TASK_TYPE && operationsStatus?.indomie.mode === 'batching') {
+  if (formData.taskType === INDOMIE_TASK_TYPE && (isExcoTrainingMode || operationsStatus?.indomie.mode === 'batching')) {
     return <IndomieFlow initialLocation={formData.location} onClose={() => {
       setFormData(previous => ({ ...previous, taskType: 'restaurant', location: '', roomNumber: '' }))
       setStep(1)
     }} />
   }
 
-  if (formData.taskType === INDOMIE_TASK_TYPE && operationsStatus?.indomie.mode === 'closed') {
+  if (!isExcoTrainingMode && formData.taskType === INDOMIE_TASK_TYPE && operationsStatus?.indomie.mode === 'closed') {
     return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">Indomie is done for tonight 🍜</h1><p className="mt-3 text-slate-600 dark:text-slate-300">Evening Indomie runs have ended. You can order again tomorrow from {operationsStatus.openingTime}.</p><p className="mt-3 text-sm text-slate-500">Other SwiftDU services are still available until {operationsStatus.closingTime}.</p><Button className="mt-8 min-h-12 w-full bg-violet-600" onClick={() => { setFormData(previous => ({ ...previous, taskType: 'restaurant' })); setStep(1) }}>Choose another service</Button></main>
   }
 
@@ -2272,7 +2271,7 @@ if (stepNumber === detailsStep) {
   return (
     <div className="min-h-screen px-4 py-4 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl space-y-0 lg:space-y-5">
-        {operationsStatus && <div role={customerOperationsState === 'paused' ? 'alert' : 'status'} className={customerOperationsState === 'open' ? 'mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800' : 'mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800'}><b>{customerOperationsState === 'open' ? '● SwiftDU is open' : customerOperationsState === 'paused' ? 'SwiftDU operations are currently paused' : 'SwiftDU is closed for today'}</b><span className="ml-2">{customerOperationsState === 'open' ? `Closes at ${formatOperationalTime(operationsStatus.closingTime)}` : customerOperationsState === 'paused' ? "We're temporarily not accepting new orders. Please check back later." : `Orders reopen ${nextOpeningLabel}.`}</span></div>}
+        {!isExcoTrainingMode && operationsStatus && <div role={customerOperationsState === 'paused' ? 'alert' : 'status'} className={customerOperationsState === 'open' ? 'mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800' : 'mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800'}><b>{customerOperationsState === 'open' ? '● SwiftDU is open' : customerOperationsState === 'paused' ? 'SwiftDU operations are currently paused' : 'SwiftDU is closed for today'}</b><span className="ml-2">{customerOperationsState === 'open' ? `Closes at ${formatOperationalTime(operationsStatus.closingTime)}` : customerOperationsState === 'paused' ? "We're temporarily not accepting new orders. Please check back later." : `Orders reopen ${nextOpeningLabel}.`}</span></div>}
         {renderTopNotices()}
 
         {DesktopErrandWizard()}

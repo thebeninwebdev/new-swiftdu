@@ -16,6 +16,10 @@ export function getCustomerOperationsState(status: Pick<CustomerOperationsStatus
   return 'open'
 }
 
+export function isCustomerOrderingUnavailable(status: Pick<CustomerOperationsStatus, 'enabled' | 'open'> | null, trainingMode: boolean) {
+  return !trainingMode && status !== null && getCustomerOperationsState(status) !== 'open'
+}
+
 export function formatOperationalTime(value: string) {
   const [hours, minutes] = value.split(':').map(Number)
   if (!Number.isInteger(hours) || !Number.isInteger(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return value

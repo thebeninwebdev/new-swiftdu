@@ -4,6 +4,7 @@ import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
 import { normalizeExcoRole } from '@/lib/exco-constants'
 import Tasker from '@/models/tasker'
+import { User } from '@/models/user'
 import { issueTaskerOnboardingLink } from '@/lib/tasker-onboarding'
 
 export async function PATCH(
@@ -97,6 +98,7 @@ export async function PATCH(
     } else if (action === 'reject') {
       tasker.isVerified = false
       tasker.isRejected = true
+      if (tasker.userId) await User.findByIdAndUpdate(tasker.userId, { $unset: { taskerId: 1 } })
     } else if (action === 'suspend') {
       tasker.isSettlementSuspended = true
       tasker.settlementSuspendedAt = new Date()
@@ -132,7 +134,7 @@ export async function PATCH(
           action === 'approve'
             ? 'Tasker approved successfully.'
             : action === 'reject'
-              ? 'Tasker rejected successfully.'
+              ? 'Application rejected. The applicant can submit a new application.'
               : nextBankDetails
                 ? 'Tasker bank details updated successfully.'
                 : 'Tasker status updated successfully.',

@@ -87,16 +87,29 @@ export async function POST(req: NextRequest) {
 
     // ── Duplicate checks ───────────────────────────────────────────────────
 
-    const [existingByUser, existingByPhone, existingByEmail, matchingUser] = await Promise.all([
+    const [existingByUser, existingByPhone, existingByEmail, matchingUser, currentUser] = await Promise.all([
       userId ? Tasker.findOne({ userId }) : null,
       Tasker.findOne({ phone }),
       Tasker.findOne({ email: normalizedEmail }),
       User.findOne({ email: normalizedEmail }).select('_id role taskerId').lean(),
+      userId ? User.findById(userId).select('_id email').lean() : null,
     ])
+
+    const rejectedCandidate = [existingByUser, existingByPhone, existingByEmail].find((tasker) => tasker?.isRejected === true)
+    const ownsRejectedCandidate = Boolean(rejectedCandidate && userId && (
+      String(rejectedCandidate.userId || '') === userId ||
+      (normalizeEmail(String(currentUser?.email || '')) === normalizedEmail && rejectedCandidate.email === normalizedEmail)
+    ))
+    if (rejectedCandidate && ownsRejectedCandidate) {
+      Object.assign(rejectedCandidate, { userId, firstName: normalizedFirstName, lastName: normalizedLastName, fullName: normalizedFullName, email: normalizedEmail, phone, location, studentId, level: String(level).trim(), availability: availability.map((item: unknown) => String(item).trim()).filter(Boolean), motivation: String(motivation).trim(), motivationOther: motivation === 'Other' ? String(motivationOther).trim() : undefined, profileImage: profileImage || undefined, isRejected: false, isVerified: false, taskerMode: 'training', onboardingTokenHash: undefined, onboardingTokenExpiresAt: undefined, onboardingTokenUsedAt: undefined })
+      await rejectedCandidate.save()
+      await User.findByIdAndUpdate(userId, { $set: { role: 'tasker', taskerId: rejectedCandidate._id } })
+      return NextResponse.json({ message: 'Tasker application resubmitted successfully.', tasker: { id: rejectedCandidate._id, isVerified: false } }, { status: 201 })
+    }
 
     if (existingByUser) {
       return NextResponse.json(
-        { error: 'A tasker profile already exists for this account.' },
+        { error: existingByUser.isVerified ? 'Your Tasker account is already active.' : 'Your Tasker application is already awaiting review.' },
         { status: 409 }
       )
     }
@@ -146,6 +159,7 @@ export async function POST(req: NextRequest) {
     // ── Create tasker ──────────────────────────────────────────────────────
 
     const tasker = await Tasker.create({
+      ...(userId ? { userId } : {}),
       firstName: normalizedFirstName,
       lastName: normalizedLastName,
       fullName: normalizedFullName,
@@ -171,6 +185,8 @@ export async function POST(req: NextRequest) {
       rating: 0,
       completedTasks: 0,
     })
+
+    if (userId) await User.findByIdAndUpdate(userId, { $set: { role: 'tasker', taskerId: tasker._id } })
 
     // ── Update user role and assign taskerId ──────────────────────────────
 

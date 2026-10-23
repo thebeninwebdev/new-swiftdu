@@ -32,17 +32,15 @@ export async function GET(req: NextRequest) {
     await connectDB()
 
     const { searchParams } = new URL(req.url)
-    const status = searchParams.get('status') // 'pending' | 'verified' | 'rejected'
+    const status = searchParams.get('status') // 'pending' | 'verified'
 
     // Build filter
-    let filter: Record<string, unknown> = {}
+    let filter: Record<string, unknown> = { isRejected: { $ne: true } }
 
     if (status === 'pending') {
       filter = { isVerified: { $ne: true }, isRejected: { $ne: true } }
     } else if (status === 'verified') {
-      filter = { isVerified: true }
-    } else if (status === 'rejected') {
-      filter = { isRejected: true }
+      filter = { isVerified: true, isRejected: { $ne: true } }
     }
 
     const taskers = await Tasker.find(filter)
