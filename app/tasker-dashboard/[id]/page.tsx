@@ -5,7 +5,7 @@ import { CafeInquiryPanel } from '@/components/cafe-inquiry'
 import type { CafeInquiryFields } from '@/lib/cafe-inquiry'
 
 import { captureDeliveryPosition } from '@/lib/delivery-coordinates'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useTaskerWork, workButton } from '@/components/tasker/WorkProvider'
 import { TaskOutcome } from '@/components/tasker/TaskOutcome'
@@ -220,7 +220,7 @@ function getTaskDetails(errand: ErrandDetail, packaging: string) {
 }
 
 // ─── Main Page ───
-export default function ErrandDetailPage() {
+function ErrandDetailPageContent() {
   const router = useRouter()
   const params = useParams()
   const searchParams = useSearchParams()
@@ -886,4 +886,8 @@ export default function ErrandDetailPage() {
       )}
     </div>
   )
+}
+
+export default function ErrandDetailPage() {
+  return <Suspense fallback={null}><ErrandDetailPageContent /></Suspense>
 }
