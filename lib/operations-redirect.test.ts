@@ -5,7 +5,7 @@ import { unstable_doesMiddlewareMatch } from 'next/experimental/testing/server'
 import { config, proxy } from '../proxy'
 import { isCustomerOperationRoute } from './operations'
 
-test('suspension blocks customer ordering routes while leaving public setup routes available', async (t) => {
+test('suspension blocks public pages while leaving authentication and tasker routes available', async (t) => {
   const original = process.env.OPERATIONS_ENABLED
   t.after(() => {
     if (original === undefined) delete process.env.OPERATIONS_ENABLED
@@ -27,11 +27,23 @@ test('suspension blocks customer ordering routes while leaving public setup rout
     assert.equal(home.headers.get('location'), 'https://swiftdu.test/suspended')
     assert.equal(home.headers.get('cache-control'), 'no-store')
 
-    for (const path of ['/auth', '/tasker-signup', '/tasker-signup/signup', '/suspended', '/offline']) {
+    for (const path of ['/businesses', '/about-us', '/contact-us', '/terms']) {
+      const blocked = await proxy(new NextRequest('https://swiftdu.test' + path))
+      assert.equal(blocked.headers.get('location'), 'https://swiftdu.test/suspended')
+      assert.equal(blocked.headers.get('cache-control'), 'no-store')
+    }
+
+    for (const path of ['/auth', '/login', '/signup', '/password/reset', '/complete-profile', '/tasker-signup', '/tasker-signup/signup', '/suspended', '/offline']) {
       const allowed = await proxy(new NextRequest('https://swiftdu.test' + path))
       assert.equal(allowed.headers.get('location'), null)
       assert.equal(allowed.headers.get('x-middleware-next'), '1')
     }
+
+    const taskerDashboard = await proxy(new NextRequest('https://swiftdu.test/tasker-dashboard'))
+    assert.notEqual(taskerDashboard.headers.get('location'), 'https://swiftdu.test/suspended')
+
+    const customerDashboard = await proxy(new NextRequest('https://swiftdu.test/dashboard'))
+    assert.notEqual(customerDashboard.headers.get('location'), 'https://swiftdu.test/suspended')
   }
 
   for (const path of ['/api/orders', '/api/orders/123/retry', '/api/auth/get-session', '/logo.png', '/favicon.ico', '/manifest.webmanifest', '/_next/static/app.js', '/_next/image?url=/logo.png']) {

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { areOperationsEnabled, isCustomerOperationRoute } from '@/lib/operations';
+import { areOperationsEnabled } from '@/lib/operations';
 import { EXCO_DASHBOARD_PATHS, normalizeExcoRole } from '@/lib/exco-constants';
 
 const PUBLIC_ROUTES = [
@@ -18,6 +18,23 @@ const PUBLIC_ROUTES = [
   '/tasker-signup',
   '/terms',
 ];
+
+const SUSPENSION_EXEMPT_ROUTES = [
+  '/auth',
+  '/login',
+  '/password',
+  '/password/reset',
+  '/reset-password',
+  '/signup',
+  '/complete-profile',
+  '/tasker-signup',
+  '/offline',
+  '/suspended',
+];
+
+function matchesRoute(pathname: string, route: string) {
+  return route === '/' ? pathname === '/' : pathname.startsWith(route);
+}
 
 const EXCO_DASHBOARD_ROUTES = Object.values(EXCO_DASHBOARD_PATHS);
 function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) {
@@ -54,15 +71,16 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
-  const isPublicRoute = PUBLIC_ROUTES.some((route) =>
-    route === '/' ? pathname === '/' : pathname.startsWith(route)
+  const isPublicRoute = PUBLIC_ROUTES.some((route) => matchesRoute(pathname, route));
+  const isSuspensionExemptRoute = SUSPENSION_EXEMPT_ROUTES.some((route) =>
+    matchesRoute(pathname, route)
   );
 
   // Public pages must remain available even when the auth database is down.
   // Importing lib/auth initializes its MongoDB client, so load it only after
   // public routes have been handled.
   if (isPublicRoute) {
-    if (!operationsEnabled && isCustomerOperationRoute(pathname)) {
+    if (!operationsEnabled && !isSuspensionExemptRoute) {
       const response = NextResponse.redirect(new URL('/suspended', request.url));
       response.headers.set('Cache-Control', 'no-store');
       return response;
@@ -108,12 +126,6 @@ export async function proxy(request: NextRequest) {
     role !== 'tasker'
   ) {
     return NextResponse.redirect(new URL(defaultRoute, request.url));
-  }
-
-  if (!operationsEnabled && isCustomerOperationRoute(pathname)) {
-    const response = NextResponse.redirect(new URL('/suspended', request.url));
-    response.headers.set('Cache-Control', 'no-store');
-    return response;
   }
 
   return NextResponse.next();
