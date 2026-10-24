@@ -21,6 +21,7 @@ interface TelegramMessage {
   text: string;
   parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2';
   reply_markup?: TelegramReplyMarkup;
+  link_preview_options?: TelegramLinkPreviewOptions;
 }
 
 export interface TelegramInlineKeyboardButton {
@@ -32,8 +33,17 @@ export interface TelegramReplyMarkup {
   inline_keyboard: TelegramInlineKeyboardButton[][];
 }
 
+export interface TelegramLinkPreviewOptions {
+  is_disabled?: boolean;
+  url?: string;
+  prefer_small_media?: boolean;
+  prefer_large_media?: boolean;
+  show_above_text?: boolean;
+}
+
 export interface TelegramSendOptions {
   replyMarkup?: TelegramReplyMarkup;
+  linkPreviewOptions?: TelegramLinkPreviewOptions;
 }
 
 interface TelegramSendMessageResponse {
@@ -99,6 +109,7 @@ export async function sendTelegramMessage(
       text,
       parse_mode: 'HTML',
       ...(options?.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
+      ...(options?.linkPreviewOptions ? { link_preview_options: options.linkPreviewOptions } : {}),
     };
 
     const response = await fetch(url, {

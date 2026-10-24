@@ -50,7 +50,7 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
   Object.assign(process.env, { TELEGRAM_GIRLS_ORDERS_CHAT_ID: '-1001', TELEGRAM_BOYS_ORDERS_CHAT_ID: '-1002', TELEGRAM_BOT_TOKEN: 'test', SAMMY_API_URL: 'https://relay.invalid', TELEGRAM_ALERTS_ENABLED: 'true' })
   process.env.RESEND_API_KEY = 'configured-but-must-not-be-used'
   const sent: string[] = []
-  const messages: Array<{ chat_id: string; text: string; reply_markup?: { inline_keyboard: Array<Array<{ text: string; url: string }>> } }> = []
+  const messages: Array<{ chat_id: string; text: string; reply_markup?: { inline_keyboard: Array<Array<{ text: string; url: string }>> }; link_preview_options?: Record<string, unknown> }> = []
   let failGirls = false
   t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
     assert.ok(url.startsWith('https://api.telegram.org/'))
@@ -95,8 +95,16 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
   assert.equal(trainingResult.telegram.deliveredCount, 1)
   assert.match(messages[0].text, /SWIFTDU TRAINING ORDER/)
   assert.match(messages[0].text, /₦3,500/)
+  assert.match(messages[0].text, /https:\/\/www\.swiftdu\.org\/tasker-dashboard\/accept-order\/order/)
+  assert.doesNotMatch(messages[0].text, /<a href=/)
   assert.deepEqual(messages[0].reply_markup, {
-    inline_keyboard: [[{ text: '⚡ Accept Order', url: 'https://swiftdu.org/tasker-dashboard/accept-order/order' }]],
+    inline_keyboard: [[{ text: 'Accept Order', url: 'https://www.swiftdu.org/tasker-dashboard/accept-order/order' }]],
+  })
+  assert.deepEqual(messages[0].link_preview_options, {
+    is_disabled: false,
+    url: 'https://www.swiftdu.org/tasker-dashboard/accept-order/order',
+    prefer_large_media: true,
+    show_above_text: false,
   })
 
   sent.length = 0
@@ -104,6 +112,8 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
   await notify('Amnesty Hostel', 'restaurant', true, 'cancelled')
   assert.deepEqual(sent, ['-1003'])
   assert.equal(messages[0].reply_markup, undefined)
+  assert.equal(messages[0].link_preview_options, undefined)
+  assert.doesNotMatch(messages[0].text, /tasker-dashboard\/accept-order/)
 })
 
 test('direct acceptance endpoint rejects opposite and missing gender before assignment', async t => {

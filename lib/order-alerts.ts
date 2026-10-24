@@ -1,5 +1,5 @@
 import { getOrderRestriction, type TaskerGenderRestriction } from '@/lib/delivery-policy'
-import { DEFAULT_SITE_URL, getSiteUrl } from '@/lib/site'
+import { getSiteUrl } from '@/lib/site'
 import { getTelegramOrderChatIds, getTelegramTrainingOrdersChatId, sendTelegramMessage } from '@/lib/telegram'
 import { shouldSendOrderNotification } from '@/lib/test-orders'
 import { User } from '@/models/user'
@@ -113,19 +113,7 @@ function formatOptionalDate(value?: Date | string) {
 }
 
 function getPublicAcceptOrderUrl(orderId: string) {
-  const configuredSiteUrl = getSiteUrl()
-
-  try {
-    const siteUrl = new URL(configuredSiteUrl)
-    const isLocalUrl = ['localhost', '127.0.0.1', '0.0.0.0'].includes(siteUrl.hostname)
-    if (siteUrl.protocol === 'https:' && !isLocalUrl) {
-      return new URL(`/tasker-dashboard/accept-order/${encodeURIComponent(orderId)}`, siteUrl).toString()
-    }
-  } catch {
-    // Fall through to the canonical public URL.
-  }
-
-  return new URL(`/tasker-dashboard/accept-order/${encodeURIComponent(orderId)}`, DEFAULT_SITE_URL).toString()
+  return `https://www.swiftdu.org/tasker-dashboard/accept-order/${encodeURIComponent(orderId)}`
 }
 
 function getActorLabel(
@@ -185,41 +173,86 @@ type TelegramOrderAlertInput = {
 function buildTrainingTelegramOrderAlertMessage(input: TelegramOrderAlertInput) {
   const description = input.description?.trim()
   const store = input.store?.trim()
-  const taskLabel = formatTaskType(input.taskType)
-  const orderReference = `T-${input.orderId.slice(-6).toUpperCase()}`
+  const taskLabel = formatTrainingTaskLabel(input.taskType)
   const dueDate = formatOptionalDate(input.dueDate || input.deadline || input.deadlineDate)
+  const location = escapeHtml(input.location)
+
+  if (input.event === 'cancelled') {
+    return [
+      '🧪 <b>TRAINING ORDER CANCELLED</b>',
+      '',
+      `The ${escapeHtml(taskLabel.toLowerCase())} order to <b>${location}</b> has been cancelled.`,
+    ].join('\n')
+  }
+
   const copyNotesDetails = input.taskType === 'copy_notes'
     ? [
-        '',
-        `📝 <b>Copy Notes</b>`,
-        `Pages: ${Number(input.numberOfPages || input.copyNotesPages || 0).toLocaleString('en-NG')}`,
-        ...(input.noteSize || input.copyNotesType
-          ? [`Note size: ${escapeHtml(input.noteSize || (input.copyNotesType === 'hardback' ? 'big' : input.copyNotesType) || '')}`]
+        ...(input.numberOfPages || input.copyNotesPages
+          ? [`📄 <b>Pages:</b> ${Number(input.numberOfPages || input.copyNotesPages).toLocaleString('en-NG')}`]
           : []),
-        ...(dueDate ? [`Due: ${escapeHtml(dueDate)}`] : []),
+        ...(input.noteSize || input.copyNotesType
+          ? [`📓 <b>Note Size:</b> ${escapeHtml(input.noteSize || (input.copyNotesType === 'hardback' ? 'big' : input.copyNotesType) || '')}`]
+          : []),
+        ...(dueDate ? [`⏰ <b>Due:</b> ${escapeHtml(dueDate)}`] : []),
       ]
     : []
+  const actionLine = getTrainingActionLine(input.taskType, store, location)
   const lines = [
-    input.event === 'cancelled'
-      ? '🧪 <b>SWIFTDU TRAINING ORDER CANCELLED</b>'
-      : '🧪 <b>SWIFTDU TRAINING ORDER</b>',
+    '🧪 <b>SWIFTDU TRAINING ORDER</b>',
     '',
-    `${getTaskIcon(input.taskType)} <b>${escapeHtml(taskLabel.replace(/\b\w/g, character => character.toUpperCase()))}</b>`,
-    `<code>#${escapeHtml(orderReference)}</code>`,
+    `<b>${escapeHtml(taskLabel)}</b> ${getTaskIcon(input.taskType)}`,
     '',
-    `📍 <b>${escapeHtml(input.location)}</b>`,
+    actionLine,
     '',
-    `🧾 ${description ? escapeHtml(description) : escapeHtml(taskLabel)}`,
-    ...(store ? [escapeHtml(store)] : []),
+    ...(description ? [`<b>Order:</b> ${escapeHtml(description)}`, ''] : []),
     ...copyNotesDetails,
-    '',
-    `👤 ${escapeHtml(input.customerName || input.customerEmail || 'Customer')}`,
-    '',
+    ...(copyNotesDetails.length ? [''] : []),
     `💰 <b>Order Value:</b> ${formatNaira(input.totalAmount)}`,
-    `🪙 <b>Your Earnings:</b> ${formatNaira(input.taskerFee || 0)}`,
+    `💵 <b>You Earn:</b> ${formatNaira(input.taskerFee || 0)}`,
+    '',
+    'Accept this order 👇',
+    input.directOrderUrl,
   ]
 
   return lines.join('\n')
+}
+
+function formatTrainingTaskLabel(taskType?: string) {
+  const labels: Record<string, string> = {
+    restaurant: 'FOOD DELIVERY',
+    printing: 'PRINTING',
+    copy_notes: 'COPY NOTES',
+    shopping: 'SHOPPING',
+    dry_cleaning: 'DRY CLEANING',
+    indomie: 'INDOMIE DELIVERY',
+    water: 'WATER DELIVERY',
+    others: 'ERRAND',
+  }
+
+  return labels[taskType || ''] || formatTaskType(taskType).toUpperCase()
+}
+
+function getTrainingActionLine(taskType: string | undefined, store: string | undefined, location: string) {
+  const pickup = store ? ` from <b>${escapeHtml(store)}</b>` : ''
+
+  switch (taskType) {
+    case 'restaurant':
+      return `Pick up an order${pickup} and deliver to <b>${location}</b>.`
+    case 'shopping':
+      return `Pick up a shopping order${pickup} and deliver to <b>${location}</b>.`
+    case 'printing':
+      return `Pick up a printed order${pickup} and deliver to <b>${location}</b>.`
+    case 'copy_notes':
+      return `Write and deliver notes to <b>${location}</b>.`
+    case 'water':
+      return `Deliver a water order to <b>${location}</b>.`
+    case 'indomie':
+      return `Pick up an Indomie order${pickup} and deliver to <b>${location}</b>.`
+    case 'dry_cleaning':
+      return `Handle a dry-cleaning task${pickup} for <b>${location}</b>.`
+    default:
+      return `Complete an errand for <b>${location}</b>.`
+  }
 }
 
 function buildLiveTelegramOrderAlertMessage(input: TelegramOrderAlertInput) {
@@ -277,7 +310,15 @@ async function sendTelegramOrderAlertDirect(input: {
     ? buildTrainingTelegramOrderAlertMessage(input)
     : buildLiveTelegramOrderAlertMessage(input)
   const telegramOptions = input.isTestOrder && input.event !== 'cancelled'
-    ? { replyMarkup: { inline_keyboard: [[{ text: '⚡ Accept Order', url: input.directOrderUrl }]] } }
+    ? {
+        replyMarkup: { inline_keyboard: [[{ text: 'Accept Order', url: input.directOrderUrl }]] },
+        linkPreviewOptions: {
+          is_disabled: false,
+          url: input.directOrderUrl,
+          prefer_large_media: true,
+          show_above_text: false,
+        },
+      }
     : undefined
   const results = await Promise.allSettled(chatIds.map(chatId => sendTelegramMessage(message, chatId, telegramOptions)))
   const deliveredCount = results.filter(result => result.status === 'fulfilled' && result.value).length
