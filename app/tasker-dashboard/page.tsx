@@ -2,7 +2,8 @@
 import { type CafeInquiryFields } from '@/lib/cafe-inquiry'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { toast } from 'sonner'
 import { TaskerHome } from '@/components/tasker/TaskerHome'
 import { useTaskerWork } from '@/components/tasker/WorkProvider'
 import { authClient } from '@/lib/auth-client'
@@ -184,6 +185,7 @@ function toErrand(payload: RealtimeTaskPayload): Errand {
 
 export default function TaskerDashboardPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const work = useTaskerWork()
   const { data: session, isPending: sessionPending } = authClient.useSession()
 
@@ -213,6 +215,22 @@ export default function TaskerDashboardPage() {
 
   const taskerName = session?.user?.name || 'Anonymous'
   const needsBankDetails = Boolean(taskerProfile && !taskerProfile.bankDetails?.accountNumber)
+
+  useEffect(() => {
+    const notice = searchParams.get('notice')
+    if (!notice) return
+
+    const messages: Record<string, string> = {
+      'already-accepted': 'This order has already been accepted.',
+      'not-available': 'This order is no longer available.',
+      'not-eligible': "You aren't eligible to accept this order.",
+      'not-checked-in': 'Check in before accepting an order.',
+      'not-found': 'Order not found.',
+      'operations-unavailable': 'Orders are not available right now.',
+    }
+    toast.error(messages[notice] || 'This order is not available.')
+    router.replace('/tasker-dashboard', { scroll: false })
+  }, [router, searchParams])
 
 
   const triggerNewTaskAlert = useCallback(() => {

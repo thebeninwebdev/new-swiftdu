@@ -20,6 +20,20 @@ interface TelegramMessage {
   chat_id: string;
   text: string;
   parse_mode?: 'HTML' | 'Markdown' | 'MarkdownV2';
+  reply_markup?: TelegramReplyMarkup;
+}
+
+export interface TelegramInlineKeyboardButton {
+  text: string;
+  url: string;
+}
+
+export interface TelegramReplyMarkup {
+  inline_keyboard: TelegramInlineKeyboardButton[][];
+}
+
+export interface TelegramSendOptions {
+  replyMarkup?: TelegramReplyMarkup;
 }
 
 interface TelegramSendMessageResponse {
@@ -61,7 +75,8 @@ export function getTelegramChatIdForTask(taskType?: string) {
 
 export async function sendTelegramMessage(
   text: string,
-  chatId?: string
+  chatId?: string,
+  options?: TelegramSendOptions
 ): Promise<boolean> {
   const botToken = getTelegramBotToken();
   const targetChatId = chatId || getTelegramChatId();
@@ -83,6 +98,7 @@ export async function sendTelegramMessage(
       chat_id: targetChatId,
       text,
       parse_mode: 'HTML',
+      ...(options?.replyMarkup ? { reply_markup: options.replyMarkup } : {}),
     };
 
     const response = await fetch(url, {

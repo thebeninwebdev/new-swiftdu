@@ -44,23 +44,25 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
     stub.exports = exports; stub.loaded = true; require.cache[id] = stub
     t.after(() => { if (previous) require.cache[id] = previous; else delete require.cache[id] })
   }
-  const keys = ['TELEGRAM_GIRLS_ORDERS_CHAT_ID', 'TELEGRAM_BOYS_ORDERS_CHAT_ID', 'TELEGRAM_BOT_TOKEN', 'SAMMY_API_URL', 'TELEGRAM_ALERTS_ENABLED', 'RESEND_API_KEY']
+  const keys = ['TELEGRAM_GIRLS_ORDERS_CHAT_ID', 'TELEGRAM_BOYS_ORDERS_CHAT_ID', 'TELEGRAM_TRAINING_ORDERS_CHAT_ID', 'TELEGRAM_BOT_TOKEN', 'SAMMY_API_URL', 'TELEGRAM_ALERTS_ENABLED', 'RESEND_API_KEY']
   const previous = keys.map(key => process.env[key])
   t.after(() => keys.forEach((key,i) => { if(previous[i] === undefined) delete process.env[key]; else process.env[key] = previous[i] }))
   Object.assign(process.env, { TELEGRAM_GIRLS_ORDERS_CHAT_ID: '-1001', TELEGRAM_BOYS_ORDERS_CHAT_ID: '-1002', TELEGRAM_BOT_TOKEN: 'test', SAMMY_API_URL: 'https://relay.invalid', TELEGRAM_ALERTS_ENABLED: 'true' })
   process.env.RESEND_API_KEY = 'configured-but-must-not-be-used'
   const sent: string[] = []
+  const messages: Array<{ chat_id: string; text: string; reply_markup?: { inline_keyboard: Array<Array<{ text: string; url: string }>> } }> = []
   let failGirls = false
   t.mock.method(globalThis, 'fetch', async (url: string, init: RequestInit) => {
     assert.ok(url.startsWith('https://api.telegram.org/'))
     const message = JSON.parse(String(init.body))
     sent.push(message.chat_id)
+    messages.push(message)
     if (failGirls && message.chat_id === '-1001') throw new Error('simulated network failure')
     return Response.json({ ok: true })
   })
   const { notifyAdminsOfOrderEvent } = require('./order-alerts')
-  const notify = (location: string, taskType = 'restaurant') => notifyAdminsOfOrderEvent({
-    event: 'created', order: { _id: 'order', userId: 'customer', location, taskType, amount: 100 },
+  const notify = (location: string, taskType = 'restaurant', isTestOrder = false, event: 'created' | 'cancelled' = 'created') => notifyAdminsOfOrderEvent({
+    event, order: { _id: 'order', userId: 'customer', location, taskType, amount: 100, totalAmount: 3500, taskerFee: 500, isTestOrder },
   })
   for (const [location, expected] of [
     ['Girls Hostel', ['-1001']], ['Amnesty Hostel', ['-1002']], ['Library', ['-1001', '-1002']], ['New campus building', ['-1001', '-1002']],
@@ -84,6 +86,24 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
   sent.length = 0
   assert.equal((await notify('Girls Hostel')).telegram.skipped, true)
   assert.deepEqual(sent, [])
+
+  process.env.TELEGRAM_TRAINING_ORDERS_CHAT_ID = '-1003'
+  sent.length = 0
+  messages.length = 0
+  const trainingResult = await notify('Amnesty Hostel', 'restaurant', true)
+  assert.deepEqual(sent, ['-1003'])
+  assert.equal(trainingResult.telegram.deliveredCount, 1)
+  assert.match(messages[0].text, /SWIFTDU TRAINING ORDER/)
+  assert.match(messages[0].text, /₦3,500/)
+  assert.deepEqual(messages[0].reply_markup, {
+    inline_keyboard: [[{ text: '⚡ Accept Order', url: 'https://swiftdu.org/accept-order/order' }]],
+  })
+
+  sent.length = 0
+  messages.length = 0
+  await notify('Amnesty Hostel', 'restaurant', true, 'cancelled')
+  assert.deepEqual(sent, ['-1003'])
+  assert.equal(messages[0].reply_markup, undefined)
 })
 
 test('direct acceptance endpoint rejects opposite and missing gender before assignment', async t => {

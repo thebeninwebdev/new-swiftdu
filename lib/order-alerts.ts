@@ -1,5 +1,5 @@
 import { getOrderRestriction, type TaskerGenderRestriction } from '@/lib/delivery-policy'
-import { getSiteUrl } from '@/lib/site'
+import { DEFAULT_SITE_URL, getSiteUrl } from '@/lib/site'
 import { getTelegramOrderChatIds, getTelegramTrainingOrdersChatId, sendTelegramMessage } from '@/lib/telegram'
 import { shouldSendOrderNotification } from '@/lib/test-orders'
 import { User } from '@/models/user'
@@ -14,6 +14,7 @@ type OrderLike = {
   taskerFee?: number
   taskerGenderRestriction?: TaskerGenderRestriction
   location?: string
+  store?: string
   noteSize?: 'small' | 'big'
   numberOfPages?: number
   drawingPages?: number
@@ -100,6 +101,33 @@ function formatCurrency(value: number) {
   return `NGN ${value.toLocaleString('en-NG')}`
 }
 
+function formatNaira(value: number) {
+  return `₦${Number(value || 0).toLocaleString('en-NG')}`
+}
+
+function formatOptionalDate(value?: Date | string) {
+  if (!value) return undefined
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return undefined
+  return new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short', hour12: true }).format(date)
+}
+
+function getPublicAcceptOrderUrl(orderId: string) {
+  const configuredSiteUrl = getSiteUrl()
+
+  try {
+    const siteUrl = new URL(configuredSiteUrl)
+    const isLocalUrl = ['localhost', '127.0.0.1', '0.0.0.0'].includes(siteUrl.hostname)
+    if (siteUrl.protocol === 'https:' && !isLocalUrl) {
+      return new URL(`/accept-order/${encodeURIComponent(orderId)}`, siteUrl).toString()
+    }
+  } catch {
+    // Fall through to the canonical public URL.
+  }
+
+  return new URL(`/accept-order/${encodeURIComponent(orderId)}`, DEFAULT_SITE_URL).toString()
+}
+
 function getActorLabel(
   actorRole: OrderAlertActorRole | undefined,
   actorName?: string | null,
@@ -129,7 +157,7 @@ function createSkippedChannelResult(reason: string): AlertChannelResult {
   }
 }
 
-function buildTelegramOrderAlertMessage(input: {
+type TelegramOrderAlertInput = {
   event: OrderAlertEvent
   orderId: string
   taskType?: string
@@ -142,6 +170,8 @@ function buildTelegramOrderAlertMessage(input: {
   customerName?: string | null
   customerEmail?: string | null
   dashboardUrl: string
+  directOrderUrl: string
+  store?: string
   dueDate?: Date | string
   deadline?: Date | string
   deadlineDate?: Date | string
@@ -150,41 +180,60 @@ function buildTelegramOrderAlertMessage(input: {
   copyNotesType?: string
   copyNotesPages?: number
   isTestOrder?: boolean
-}) {
-  const isTraining = input.isTestOrder === true
-  const isCancelled = input.event === 'cancelled'
+}
+
+function buildTrainingTelegramOrderAlertMessage(input: TelegramOrderAlertInput) {
   const description = input.description?.trim()
+  const store = input.store?.trim()
   const taskLabel = formatTaskType(input.taskType)
-  const orderReference = `${isTraining ? 'T-' : ''}${input.orderId.slice(-6).toUpperCase()}`
+  const orderReference = `T-${input.orderId.slice(-6).toUpperCase()}`
+  const dueDate = formatOptionalDate(input.dueDate || input.deadline || input.deadlineDate)
   const copyNotesDetails = input.taskType === 'copy_notes'
     ? [
-        `<b>Pages:</b> ${Number(input.numberOfPages || input.copyNotesPages || 0).toLocaleString('en-NG')}`,
-        `<b>Note size:</b> ${escapeHtml(input.noteSize || (input.copyNotesType === 'hardback' ? 'big' : input.copyNotesType) || 'Not provided')}`,
+        '',
+        `📝 <b>Copy Notes</b>`,
+        `Pages: ${Number(input.numberOfPages || input.copyNotesPages || 0).toLocaleString('en-NG')}`,
+        ...(input.noteSize || input.copyNotesType
+          ? [`Note size: ${escapeHtml(input.noteSize || (input.copyNotesType === 'hardback' ? 'big' : input.copyNotesType) || '')}`]
+          : []),
+        ...(dueDate ? [`Due: ${escapeHtml(dueDate)}`] : []),
       ]
     : []
   const lines = [
-    isTraining
-      ? '🧪 <b>SWIFTDU TRAINING ORDER</b>'
-      : isCancelled ? '⚠️ <b>SWIFTDU ORDER CANCELLED</b>' : '🚀 <b>SWIFTDU NEW ORDER</b>',
-    isTraining ? '<i>PRACTICE ONLY · No real payment</i>' : '<i>New task available</i>',
-    '━━━━━━━━━━━━━━━━━━',
-    `${getTaskIcon(input.taskType)} <b>${escapeHtml(taskLabel.replace(/\b\w/g, character => character.toUpperCase()))}</b>  <code>#${escapeHtml(orderReference)}</code>`,
-    isTraining ? '<i>Campus task · Training</i>' : '<i>Campus task</i>',
+    input.event === 'cancelled'
+      ? '🧪 <b>SWIFTDU TRAINING ORDER CANCELLED</b>'
+      : '🧪 <b>SWIFTDU TRAINING ORDER</b>',
     '',
-    '👤 <b>Customer</b>',
-    escapeHtml(input.customerName || input.customerEmail || 'Unknown'),
+    `${getTaskIcon(input.taskType)} <b>${escapeHtml(taskLabel.replace(/\b\w/g, character => character.toUpperCase()))}</b>`,
+    `<code>#${escapeHtml(orderReference)}</code>`,
     '',
-    '📍 <b>Delivery Location</b>',
-    escapeHtml(input.location),
+    `📍 <b>${escapeHtml(input.location)}</b>`,
     '',
-    '🧾 <b>Order Details</b>',
-    description ? escapeHtml(description) : `${getTaskIcon(input.taskType)} ${escapeHtml(taskLabel)}`,
+    `🧾 ${description ? escapeHtml(description) : escapeHtml(taskLabel)}`,
+    ...(store ? [escapeHtml(store)] : []),
     ...copyNotesDetails,
-    '━━━━━━━━━━━━━━━━━━',
-    `💰 <b>Order Value</b>  ${formatCurrency(input.totalAmount)}`,
-    `<b>🪙 Your Earnings</b>  ${formatCurrency(input.taskerFee || 0)}`,
     '',
-    `<a href="${escapeHtml(input.dashboardUrl)}">🚀 View / Accept Order →</a>`,
+    `👤 ${escapeHtml(input.customerName || input.customerEmail || 'Customer')}`,
+    '',
+    `💰 <b>Order Value:</b> ${formatNaira(input.totalAmount)}`,
+    `🪙 <b>Your Earnings:</b> ${formatNaira(input.taskerFee || 0)}`,
+  ]
+
+  return lines.join('\n')
+}
+
+function buildLiveTelegramOrderAlertMessage(input: TelegramOrderAlertInput) {
+  const heading = input.event === 'cancelled' ? 'Booking cancelled' : 'New booking received'
+  const description = input.description?.trim()
+  const lines = [
+    `<b>${escapeHtml(heading)}</b>`,
+    `<b>Task:</b> ${escapeHtml(formatTaskType(input.taskType))}`,
+    `<b>Location:</b> ${escapeHtml(input.location)}`,
+    ...(description ? [`<b>Description:</b> ${escapeHtml(description)}`] : []),
+    `<b>Amount:</b> ${formatCurrency(input.amount)}`,
+    `<b>Total:</b> ${formatCurrency(input.totalAmount)}`,
+    `<b>Customer:</b> ${escapeHtml(input.customerName || input.customerEmail || 'Unknown')}`,
+    `<a href="${escapeHtml(input.dashboardUrl)}">View dashboard</a>`,
   ]
 
   return lines.join('\n')
@@ -203,6 +252,8 @@ async function sendTelegramOrderAlertDirect(input: {
   customerName?: string | null
   customerEmail?: string | null
   dashboardUrl: string
+  directOrderUrl: string
+  store?: string
   dueDate?: Date | string
   deadline?: Date | string
   deadlineDate?: Date | string
@@ -222,8 +273,13 @@ async function sendTelegramOrderAlertDirect(input: {
     console.error(`[Telegram Order Alert] ${reason}`)
     return createSkippedChannelResult(reason)
   }
-  const message = buildTelegramOrderAlertMessage(input)
-  const results = await Promise.allSettled(chatIds.map(chatId => sendTelegramMessage(message, chatId)))
+  const message = input.isTestOrder
+    ? buildTrainingTelegramOrderAlertMessage(input)
+    : buildLiveTelegramOrderAlertMessage(input)
+  const telegramOptions = input.isTestOrder && input.event !== 'cancelled'
+    ? { replyMarkup: { inline_keyboard: [[{ text: '⚡ Accept Order', url: input.directOrderUrl }]] } }
+    : undefined
+  const results = await Promise.allSettled(chatIds.map(chatId => sendTelegramMessage(message, chatId, telegramOptions)))
   const deliveredCount = results.filter(result => result.status === 'fulfilled' && result.value).length
   return {
     recipientCount: chatIds.length,
@@ -247,6 +303,8 @@ async function sendTelegramOrderAlert(input: {
   customerEmail?: string | null
   actorLabel: string
   dashboardUrl: string
+  directOrderUrl: string
+  store?: string
   dueDate?: Date | string
   deadline?: Date | string
   deadlineDate?: Date | string
@@ -299,6 +357,7 @@ export async function notifyAdminsOfOrderEvent(
 
   const customer = await User.findById(userId).select('name email').lean()
   const dashboardUrl = `${getSiteUrl()}/tasker-dashboard`
+  const directOrderUrl = getPublicAcceptOrderUrl(orderId)
   const actorLabel = getActorLabel(input.actorRole, input.actorName, input.actorEmail)
   const amount = Number(input.order.amount || 0)
   const totalAmount = Number(input.order.totalAmount || input.order.amount || 0)
@@ -327,6 +386,8 @@ export async function notifyAdminsOfOrderEvent(
       customerEmail: customer?.email,
       actorLabel,
       dashboardUrl,
+      directOrderUrl,
+      store: input.order.store,
     }),
   ])
 

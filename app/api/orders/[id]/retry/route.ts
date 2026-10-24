@@ -81,7 +81,16 @@ export async function POST(
           )
           .lean()
       : null;
-    const isTestOrder = shouldCreateTestOrder(customerAccount || undefined);
+    // A retry is a repost of the same workflow; it must not silently cross
+    // from Training to Live (or from Live to Training) because the customer
+    // changed modes after creating the original order.
+    const isTestOrder = order.isTestOrder === true;
+    if (isTestOrder && !shouldCreateTestOrder(customerAccount || undefined)) {
+      return NextResponse.json(
+        { error: 'Switch to Training Mode before retrying this training order.' },
+        { status: 409 }
+      );
+    }
     if (!canCreateOrder(isTestOrder)) {
       return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 });
     }
@@ -193,8 +202,12 @@ export async function POST(
 
     if (shouldSendOrderNotification(retriedOrder) || retriedOrder.isTestOrder) {
       const taskerPushResult = await sendPushNotification({
-        audience: { roles: ['tasker'], taskerGenderRestriction: retriedOrder.taskerGenderRestriction || null },
-        title: 'New Task Available',
+        audience: {
+          roles: ['tasker'],
+          taskerGenderRestriction: retriedOrder.taskerGenderRestriction || null,
+          taskerMode: retriedOrder.isTestOrder ? 'training' : 'live',
+        },
+        title: retriedOrder.isTestOrder ? '[Training] New Task Available' : 'New Task Available',
         body: `${formatPushTaskType(retriedOrder.taskType)} in ${retriedOrder.location} - NGN ${Number(
           retriedOrder.totalAmount || 0
         ).toLocaleString()}`,
