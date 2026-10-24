@@ -22,10 +22,7 @@ export async function PATCH(
 
     if (
       !session?.user ||
-      (session.user.role !== 'admin' &&
-        excoRole !== 'COO' &&
-        excoRole !== 'CFO' &&
-        excoRole !== 'CTO')
+      (session.user.role !== 'admin' && !excoRole)
     ) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
@@ -42,11 +39,7 @@ export async function PATCH(
       )
     }
 
-    if (
-      action !== undefined &&
-      session.user.role !== 'admin' &&
-      excoRole !== 'COO'
-    ) {
+    if (['suspend', 'activate'].includes(action) && session.user.role !== 'admin' && excoRole !== 'COO') {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 

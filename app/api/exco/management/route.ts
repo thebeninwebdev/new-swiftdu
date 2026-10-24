@@ -560,8 +560,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: "Invalid tasker action" }, { status: 400 });
     }
 
-    if (action && access.excoRole !== "COO") {
-      return NextResponse.json({ error: "Only COO can change tasker approval status" }, { status: 403 });
+    if (["suspend", "activate"].includes(action || "") && access.excoRole !== "COO") {
+      return NextResponse.json({ error: "Only COO can manage tasker settlement suspension" }, { status: 403 });
     }
 
     const tasker = await Tasker.findById(id).select(

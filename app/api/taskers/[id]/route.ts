@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import Tasker from '@/models/tasker'
 import { auth } from '@/lib/auth'
+import { normalizeExcoRole } from '@/lib/exco-constants'
 
 // ─── GET /api/taskers/[id] ────────────────────────────────────────────────────
 // Retrieves basic tasker information including bank details by their Tasker document _id.
@@ -58,7 +59,10 @@ export async function PATCH(
 
     const user = session?.user
 
-    if (!user || user.role !== 'admin') {
+    const excoRole = normalizeExcoRole(
+      (user as { excoRole?: string | null } | undefined)?.excoRole
+    )
+    if (!user || (user.role !== 'admin' && !excoRole)) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 

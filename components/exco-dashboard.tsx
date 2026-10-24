@@ -652,7 +652,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
     return (
       <div className="space-y-4">
         <AssignedTasksPanel canCancel />
-        <TaskerManagementPanel canModerate />
+        <TaskerManagementPanel canApproveReject canManageSettlement />
         <UserManagementPanel title="User Management" allowSuspension={false} />
         <ReviewsPanel />
       </div>
@@ -663,7 +663,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
     return (
       <div className="space-y-4">
         <UserManagementPanel title="Customer Discounts" allowSuspension={false} />
-        <TaskerManagementPanel canModerate={false} />
+        <TaskerManagementPanel canApproveReject />
       </div>
     );
   }
@@ -673,7 +673,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
       <div className="space-y-4">
         <FailedSettlementsPanel />
         <AssignedTasksPanel canCancel={false} />
-        <TaskerManagementPanel canModerate={false} />
+        <TaskerManagementPanel canApproveReject />
         <UserManagementPanel title="User Management" allowSuspension />
         <SupportTicketsPanel />
       </div>
@@ -683,7 +683,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
   if (role === "CMO") {
     return (
       <div className="space-y-4">
-        <TaskerManagementPanel canModerate={false} />
+        <TaskerManagementPanel canApproveReject />
         <UserManagementPanel title="Audience Birthdays & Ages" allowSuspension={false} />
       </div>
     );
@@ -692,7 +692,7 @@ function ExcoManagementPanels({ role }: { role: ExcoRole }) {
   return null;
 }
 
-function TaskerManagementPanel({ canModerate }: { canModerate: boolean }) {
+function TaskerManagementPanel({ canApproveReject, canManageSettlement = false }: { canApproveReject: boolean; canManageSettlement?: boolean }) {
   const { items, isLoading, error, reload } = useManagementResource<ExcoTasker>("taskers", true);
   const paged = usePagedItems(items);
   const [actionId, setActionId] = useState<string | null>(null);
@@ -743,9 +743,9 @@ function TaskerManagementPanel({ canModerate }: { canModerate: boolean }) {
     <ManagementShell
       title="Tasker Management"
       description={
-        canModerate
+        canManageSettlement
           ? "Approve, reject, suspend, restore, update tasker mode, or update tasker bank details."
-          : "Review taskers, update tasker mode, and update their bank details."
+          : "Approve, reject, update tasker mode, or update tasker bank details."
       }
       isLoading={isLoading}
       error={error}
@@ -842,17 +842,17 @@ function TaskerManagementPanel({ canModerate }: { canModerate: boolean }) {
                       ? "Move to Live"
                       : "Move to Test"}
                 </Button>
-                {canModerate && !tasker.isVerified ? (
+                {canApproveReject && !tasker.isVerified ? (
                   <Button size="sm" onClick={() => runAction(tasker.id, "approve")} disabled={Boolean(actionId)}>
                     Approve
                   </Button>
                 ) : null}
-                {canModerate && !tasker.isRejected ? (
+                {canApproveReject && !tasker.isRejected ? (
                   <Button size="sm" variant="outline" onClick={() => runAction(tasker.id, "reject")} disabled={Boolean(actionId)}>
                     Reject
                   </Button>
                 ) : null}
-                {canModerate && tasker.isVerified ? (
+                {canManageSettlement && tasker.isVerified ? (
                   <Button
                     size="sm"
                     variant="outline"
