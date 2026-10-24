@@ -70,6 +70,7 @@ function TaskerPaymentPageContent() {
   const processedReferenceRef = useRef<string | null>(null)
   const processedRedirectRef = useRef<string | null>(null)
   const autoVerifyingReferenceRef = useRef<string | null>(null)
+  const trainingSimulationStartedRef = useRef<string | null>(null)
   const retryTimeoutRef = useRef<number | null>(null)
 
   const clearRetryTimeout = useCallback(() => {
@@ -367,7 +368,7 @@ function TaskerPaymentPageContent() {
     })
   }, [getStoredPendingReference, order, orderId, verifySettlement, verifying])
 
-  const handleStartPayment = async () => {
+  const handleStartPayment = useCallback(async (redirectAfterTrainingSimulation = false) => {
     if (!order || order.platformFee <= 0 || order.platformFeeWaivedForFastCompletion) {
       return
     }
@@ -401,6 +402,9 @@ function TaskerPaymentPageContent() {
         setOrder(payload.order)
         clearStoredPendingReference()
         toast.success('Training settlement completed. No real payment was made.')
+        if (redirectAfterTrainingSimulation) {
+          router.replace('/tasker-dashboard')
+        }
         return
       }
 
@@ -419,7 +423,26 @@ function TaskerPaymentPageContent() {
     } finally {
       setStartingPayment(false)
     }
-  }
+  }, [clearStoredPendingReference, order, router, storePendingReference])
+
+  useEffect(() => {
+    const trainingOrderId = order?._id
+    const isOutstandingTrainingSettlement = Boolean(
+      order?.isTestOrder &&
+      order.status === 'completed' &&
+      order.platformFee > 0 &&
+      !order.platformFeeWaivedForFastCompletion &&
+      !order.taskerHasPaid &&
+      order.settlementStatus !== 'paid'
+    )
+
+    if (!trainingOrderId || !isOutstandingTrainingSettlement || startingPayment || trainingSimulationStartedRef.current === trainingOrderId) {
+      return
+    }
+
+    trainingSimulationStartedRef.current = trainingOrderId
+    void handleStartPayment(true)
+  }, [handleStartPayment, order, startingPayment])
 
   if (loading) {
     return (
@@ -571,23 +594,28 @@ function TaskerPaymentPageContent() {
         ) : null}
 
         <div className="mt-6 flex gap-3">
-          <Button
+          {order.isTestOrder && !isPaid ? (
+            <div className="flex flex-1 items-center justify-center rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Completing training payment simulation...
+            </div>
+          ) : !order.isTestOrder ? <Button
             onClick={() => void handleStartPayment()}
             disabled={!isCompleted || isPaid || startingPayment || verifying}
-            className={order.isTestOrder ? 'flex-1 bg-violet-600 text-white hover:bg-violet-700' : 'flex-1 bg-amber-500 text-white hover:bg-amber-600'}
+            className="flex-1 bg-amber-500 text-white hover:bg-amber-600"
           >
             {startingPayment || verifying ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {order.isTestOrder ? 'Completing simulation...' : verifying ? 'Verifying...' : 'Opening Paystack...'}
+                {verifying ? 'Verifying...' : 'Opening Paystack...'}
               </>
             ) : (
               <>
                 <CreditCard className="mr-2 h-4 w-4" />
-                {order.isTestOrder ? 'Simulate Payment' : 'Pay with Paystack'}
+                Pay with Paystack
               </>
             )}
-          </Button>
+          </Button> : null}
           <Button variant="outline" onClick={() => router.push(`/tasker-dashboard/${order._id}`)} className="flex-1">
             View task
           </Button>

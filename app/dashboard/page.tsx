@@ -4,6 +4,7 @@ import { getRoomDestination, validateDeliveryRoom } from '@/lib/delivery-policy'
 import { FirstOrderPriceBreakdown } from '@/components/first-order-bonus'
 import { priceWithOrderDiscounts } from '@/lib/first-order-pricing'
 import { mergeOrderUpdate } from '@/lib/order-sync'
+import { needsOrderPayment } from '@/lib/order-tracking'
 import { formatRestaurantCost, getRestaurantEstimate } from '@/lib/restaurant-estimate'
 import taskFoodImage from '@/public/dashboard/tasks/task-food.png'
 import taskStoreShoppingImage from '@/public/dashboard/tasks/task-store-shopping.png'
@@ -683,6 +684,18 @@ export default function ErrandWizardPage() {
     if (!mounted) return
     void fetchCurrentOrder()
   }, [fetchCurrentOrder, mounted])
+
+  // Socket updates are immediate when a connection is available. This visible
+  // fallback keeps the customer payment step reachable if a deployment or
+  // browser temporarily cannot maintain that connection.
+  useVisibleInterval(
+    () => {
+      if (!isRealtimePausedRef.current && activeOrderRef.current?._id) {
+        void fetchCurrentOrder()
+      }
+    },
+    mounted && activeOrder?._id ? 5_000 : null
+  )
 
   useEffect(() => {
     if (!mounted) return
@@ -1386,6 +1399,9 @@ if (stepNumber === detailsStep) {
           ? 'Your payment has been confirmed and the task is moving. You can still book another errand below.'
           : 'This order is waiting for payment confirmation. You can open the tracker anytime and still post another task now.'
     : null
+  const activeOrderPaymentDue = needsOrderPayment(
+    activeOrder ? { ...activeOrder, taskerId: activeOrder.taskerId || undefined } : null
+  )
   const showLowTaskerAvailabilityNotice =
     isLowTaskerAvailabilityWindow(currentTime) && !isTaskerAvailabilityNoticeDismissed
   const customerOperationsState = operationsStatus ? getCustomerOperationsState(operationsStatus) : null
@@ -2099,8 +2115,8 @@ if (stepNumber === detailsStep) {
               <p className="text-xs font-bold uppercase text-blue-600">Active order</p>
               <p className="text-sm font-bold text-slate-900 dark:text-white">{activeStatusLabel}</p>
             </div>
-            <Button variant="outline" onClick={() => router.push(`/dashboard/tasks/${activeOrder._id}`)} className="h-9 rounded-lg">
-              Track
+            <Button variant={activeOrderPaymentDue ? 'default' : 'outline'} onClick={() => router.push(`/dashboard/tasks/${activeOrder._id}`)} className={activeOrderPaymentDue ? 'h-9 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700' : 'h-9 rounded-lg'}>
+              {activeOrderPaymentDue ? 'Pay tasker' : 'Track'}
             </Button>
           </div>
         </div>
