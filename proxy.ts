@@ -37,6 +37,11 @@ function matchesRoute(pathname: string, route: string) {
 }
 
 const EXCO_DASHBOARD_ROUTES = Object.values(EXCO_DASHBOARD_PATHS);
+export function getTaskerDashboardRouteForRole(role?: string | null, excoRole?: string | null) {
+  if (role === 'tasker') return null;
+  if (role === 'admin' || normalizeExcoRole(excoRole)) return '/admin';
+  return '/tasker-signup';
+}
 function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) {
   if (normalizeExcoRole(excoRole)) return '/admin';
 
@@ -113,7 +118,21 @@ export async function proxy(request: NextRequest) {
   }
 
   if (pathname.startsWith('/tasker-dashboard') && role !== 'tasker') {
-    return NextResponse.redirect(new URL(defaultRoute, request.url));
+    // Never bounce a prospective or stale tasker through the customer home page:
+    // when operations are paused that page redirects to /suspended and hides the
+    // actual account/onboarding problem. Admins retain their existing workspace.
+    if (role !== 'admin' && !normalizedExcoRole && user.id) {
+      try {
+        const { reconcileTaskerIdentityForUser } = await import('@/lib/tasker-onboarding');
+        const repaired = await reconcileTaskerIdentityForUser(user.id);
+        if (repaired) return NextResponse.next();
+      } catch {
+        // A conflicting or otherwise ambiguous record must go through the
+        // existing onboarding/reapplication path rather than be overwritten.
+      }
+    }
+    const taskerRoute = getTaskerDashboardRouteForRole(role, excoRole)!;
+    return NextResponse.redirect(new URL(taskerRoute, request.url));
   }
 
   if (isExcoDashboardRoute) {

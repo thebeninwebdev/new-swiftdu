@@ -5,6 +5,7 @@ import { connectDB } from '@/lib/db'
 import { User } from '@/models/user'
 import Tasker from '@/models/tasker'
 import { getTaskerMode } from '@/lib/test-orders'
+import { reconcileTaskerIdentityForUser } from '@/lib/tasker-onboarding'
 
 export async function GET(request: NextRequest) {
   try {
@@ -14,9 +15,18 @@ export async function GET(request: NextRequest) {
     }
 
     await connectDB()
-    const user = await User.findById(session.user.id).select('role taskerId').lean()
+    let user = await User.findById(session.user.id).select('role taskerId email').lean()
+    if (!user) return NextResponse.json({ error: 'Complete your approved tasker onboarding before accessing this dashboard.', code: 'TASKER_REAPPLICATION_REQUIRED' }, { status: 403 })
+
+    try {
+      await reconcileTaskerIdentityForUser(session.user.id)
+      user = await User.findById(session.user.id).select('role taskerId email').lean()
+    } catch (error) {
+      return NextResponse.json({ error: 'Your tasker account link needs review.', code: error instanceof Error ? error.message : 'TASKER_ACCOUNT_MISMATCH' }, { status: 409 })
+    }
+
     if (!user || user.role !== 'tasker') {
-      return NextResponse.json({ error: 'Complete your approved tasker onboarding before accessing this dashboard.' }, { status: 403 })
+      return NextResponse.json({ error: 'Complete your approved tasker onboarding before accessing this dashboard.', code: 'TASKER_ACCOUNT_NOT_LINKED' }, { status: 403 })
     }
 
     // Read the persisted links rather than depending on cached session metadata.

@@ -5,7 +5,7 @@ import { connectDB } from '@/lib/db'
 import { normalizeExcoRole } from '@/lib/exco-constants'
 import Tasker from '@/models/tasker'
 import { User } from '@/models/user'
-import { issueTaskerOnboardingLink } from '@/lib/tasker-onboarding'
+import { issueTaskerOnboardingLink, synchronizeTaskerAccountLink } from '@/lib/tasker-onboarding'
 
 export async function PATCH(
   req: NextRequest,
@@ -116,7 +116,16 @@ export async function PATCH(
     let onboardingEmailSent = false
     let onboardingEmailError = false
     let onboardingEmailReason: string | undefined
+    let accountLinkError: string | undefined
     if (action === 'approve') {
+        try {
+          // This is independent of email delivery. A safely identifiable
+          // existing account is promoted immediately, including stale links.
+          await synchronizeTaskerAccountLink(tasker)
+        } catch (linkError) {
+          accountLinkError = linkError instanceof Error ? linkError.message : 'TASKER_ACCOUNT_NOT_LINKED'
+          console.error('[PATCH /api/admin/taskers/[id]] account synchronization failed', linkError)
+        }
         try {
           const delivery = await issueTaskerOnboardingLink(tasker)
           onboardingEmailSent = delivery.sent
@@ -149,6 +158,7 @@ export async function PATCH(
         onboardingEmailSent,
         onboardingEmailError,
         onboardingEmailReason,
+        accountLinkError,
       },
       { status: 200 }
     )

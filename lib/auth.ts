@@ -8,6 +8,7 @@ import { passkey } from "@better-auth/passkey";
 import { magicLink } from "better-auth/plugins";
 import { AuthEmailRateLimit } from "@/models/auth-email-rate-limit";
 import { getAuthBaseUrl, getTrustedOrigins } from "@/lib/site";
+import { reconcileTaskerIdentityForUser } from "@/lib/tasker-onboarding";
 
 const client = await clientPromise;
 const db = client.db();
@@ -264,6 +265,19 @@ export const auth = betterAuth({
     },
   },
   databaseHooks: {
+    user: {
+      create: {
+        after: async (user) => {
+          // A logged-out Tasker applicant can create their SwiftDU account
+          // later. Link only a safely identifiable existing application.
+          try {
+            await reconcileTaskerIdentityForUser(user.id);
+          } catch (error) {
+            console.warn('[auth] tasker identity reconciliation requires review', error);
+          }
+        },
+      },
+    },
     session: {
       create: {
         before: async (session) => {
@@ -279,6 +293,14 @@ export const auth = betterAuth({
               message:
                 "Your account has been suspended. Please contact support.",
             });
+          }
+        },
+        after: async (session) => {
+          // Covers existing accounts signing in after an application was made.
+          try {
+            await reconcileTaskerIdentityForUser(session.userId);
+          } catch (error) {
+            console.warn('[auth] tasker identity reconciliation requires review', error);
           }
         },
       },

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { NextRequest } from 'next/server'
 import { unstable_doesMiddlewareMatch } from 'next/experimental/testing/server'
-import { config, proxy } from '../proxy'
+import { config, getTaskerDashboardRouteForRole, proxy } from '../proxy'
 import { isCustomerOperationRoute } from './operations'
 
 test('suspension blocks public pages while leaving authentication and tasker routes available', async (t) => {
@@ -55,4 +55,12 @@ test('suspension blocks public pages while leaving authentication and tasker rou
   assert.equal(home.headers.get('x-middleware-next'), '1')
   const resumed = await proxy(new NextRequest('https://swiftdu.test/suspended'))
   assert.equal(resumed.headers.get('location'), 'https://swiftdu.test/')
+})
+
+test('tasker dashboard redirects non-taskers directly to onboarding, never through customer routes', () => {
+  assert.equal(getTaskerDashboardRouteForRole('tasker'), null)
+  assert.equal(getTaskerDashboardRouteForRole('user'), '/tasker-signup')
+  assert.equal(getTaskerDashboardRouteForRole(undefined), '/tasker-signup')
+  assert.equal(getTaskerDashboardRouteForRole('admin'), '/admin')
+  assert.equal(getTaskerDashboardRouteForRole('user', 'COO'), '/admin')
 })
