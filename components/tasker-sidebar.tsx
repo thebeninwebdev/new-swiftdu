@@ -56,6 +56,10 @@ interface TaskerProfileType {
   isSettlementSuspended?: boolean
 }
 
+interface ExcoAccess {
+  excoRole?: string | null
+}
+
 const TASKER_NOTIFICATION_TOAST_ID = 'tasker-dashboard-notification'
 const TASKER_SUPPORT_WHATSAPP_URL = 'https://wa.me/2349053479802'
 
@@ -119,6 +123,7 @@ export default function TaskerSidebar() {
   const [user, setUser] = useState<UserType | undefined>()
   const [taskerProfile, setTaskerProfile] =
     useState<TaskerProfileType | undefined>()
+  const [hasExcoAccess, setHasExcoAccess] = useState(false)
 
   const [taskerStats, setTaskerStats] = useState({
     completedTasks: 0,
@@ -229,6 +234,21 @@ export default function TaskerSidebar() {
 
     void fetchTaskerProfileAndStats()
   }, [fetchTaskerStats, fetchUnpaidOrders])
+
+  useIdleEffect(() => {
+    let cancelled = false
+
+    void fetch('/api/exco/me', { cache: 'no-store' })
+      .then(async (response) => response.ok ? (await response.json()) as ExcoAccess : null)
+      .then((access) => {
+        if (!cancelled) setHasExcoAccess(Boolean(access?.excoRole))
+      })
+      .catch(() => {
+        if (!cancelled) setHasExcoAccess(false)
+      })
+
+    return () => { cancelled = true }
+  }, [])
 
   /*
    * ---------------------------------------------------------
@@ -623,6 +643,19 @@ export default function TaskerSidebar() {
                 item={item}
               />
             ))}
+            {hasExcoAccess ? (
+              <button
+                type="button"
+                onClick={() => handleNavigation('/admin')}
+                className="group flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-slate-600 transition-all duration-300 hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              >
+                <LayoutDashboard className="h-5 w-5 transition-transform group-hover:scale-110" />
+                <div>
+                  <p className="text-sm font-medium">Open Admin Dashboard</p>
+                  <p className="text-xs text-slate-400">Platform administration</p>
+                </div>
+              </button>
+            ) : null}
           </div>
         </nav>
 

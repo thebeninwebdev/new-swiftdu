@@ -22,7 +22,14 @@ export function getProfileCompletion(user?: AuthProfileUser | null) {
   const missingFields = fields.filter(({ field }) => missingNames.has(field));
   return { completedFields: fields.length - missingFields.length, totalFields: fields.length, percentage: Math.round(((fields.length - missingFields.length) / fields.length) * 100), missingFields };
 }
-export function getSignedInDestination(user?: AuthProfileUser | null) { if (normalizeExcoRole(user?.excoRole)) return "/admin"; if (user?.role === "admin") return "/admin"; if (user?.role === "tasker") return "/tasker-dashboard"; return "/"; }
+export function getSignedInDestination(user?: AuthProfileUser | null) {
+  // EXCO members should arrive in the workspace they use day-to-day. Their
+  // admin access remains available from the dashboard menu.
+  if (user?.role === "tasker") return "/tasker-dashboard";
+  if (normalizeExcoRole(user?.excoRole)) return "/dashboard";
+  if (user?.role === "admin") return "/admin";
+  return "/";
+}
 export function getSafeNextPath(nextPath?: string | null) {
   if (!nextPath?.startsWith("/") || nextPath.startsWith("//") || nextPath.includes("\\")) return null;
   try {

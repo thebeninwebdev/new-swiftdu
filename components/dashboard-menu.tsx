@@ -411,6 +411,24 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
                 {pathname === excoDashboard.dashboardPath && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white" />}
               </button>
 
+              <button
+                onClick={() => handleNavigation('/admin')}
+                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
+                  pathname === '/admin'
+                    ? 'bg-linear-to-r from-indigo-600 to-purple-600 text-white shadow-lg shadow-indigo-500/25'
+                    : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                }`}
+              >
+                <BriefcaseBusiness className="w-5 h-5 transition-transform group-hover:scale-110" />
+                <div className="text-left">
+                  <p className="font-medium text-sm">Open Admin Dashboard</p>
+                  <p className={`text-xs ${pathname === '/admin' ? 'text-indigo-100' : 'text-slate-400'}`}>
+                    Platform administration
+                  </p>
+                </div>
+                {pathname === '/admin' && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-white" />}
+              </button>
+
               <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -554,6 +572,18 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
                       >
                         <BriefcaseBusiness className="w-5 h-5" />
                         <span>{excoDashboard.excoRole} Dashboard</span>
+                      </button>
+
+                      <button
+                        onClick={() => handleNavigation('/admin')}
+                        className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+                          pathname === '/admin'
+                            ? 'bg-linear-to-r from-indigo-600 to-purple-600 text-white'
+                            : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'
+                        }`}
+                      >
+                        <BriefcaseBusiness className="w-5 h-5" />
+                        <span>Open Admin Dashboard</span>
                       </button>
 
                       <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/40">

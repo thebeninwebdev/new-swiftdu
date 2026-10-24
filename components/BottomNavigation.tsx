@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion'
-import { Bell, CircleUserRound, Clock3, Headphones, Home, ListTodo, LogOut, Menu, Power, UserRound, X, type LucideIcon } from 'lucide-react'
+import { Bell, CircleUserRound, Clock3, Headphones, Home, LayoutDashboard, ListTodo, LogOut, Menu, Power, UserRound, X, type LucideIcon } from 'lucide-react'
 import { useTaskerWork } from '@/components/tasker/WorkProvider'
 import { authClient } from '@/lib/auth-client'
 
@@ -42,17 +42,28 @@ export default function TaskerBottomNav() {
   const reduceMotion = useReducedMotion()
   const work = useTaskerWork()
   const [moreOpen, setMoreOpen] = useState(false)
+  const [hasExcoAccess, setHasExcoAccess] = useState(false)
   const checkedIn = work.data?.checkedIn === true
   const accepted = searchParams.get('accepted') === 'true'
   const routeActive = (pathname.startsWith('/tasker-dashboard/history') ? 'history' : pathname.startsWith('/tasker-dashboard/profile') || pathname.startsWith('/tasker-dashboard/notifications') || pathname.startsWith('/tasker-dashboard/support') ? 'more' : pathname === '/tasker-dashboard' && accepted ? 'tasks' : 'home') as NavId
   const active: NavId = moreOpen ? 'more' : routeActive
   const index = navigation.findIndex(item => item.id === active)
   const transition = reduceMotion ? { duration: 0 } : spring
+  useEffect(() => {
+    let cancelled = false
+
+    void fetch('/api/exco/me', { cache: 'no-store' })
+      .then(async response => response.ok ? await response.json() as { excoRole?: string | null } : null)
+      .then(access => { if (!cancelled) setHasExcoAccess(Boolean(access?.excoRole)) })
+      .catch(() => { if (!cancelled) setHasExcoAccess(false) })
+
+    return () => { cancelled = true }
+  }, [])
   if (/^\/tasker-dashboard\/[a-f\d]{24}$/i.test(pathname)) return null
   const checkIn = () => { if (work.loading || work.saving) return; setMoreOpen(false); if (checkedIn || work.data?.status === 'busy') work.requestCheckout(); else void work.checkIn() }
   const logout = async () => { await authClient.signOut(); setMoreOpen(false); router.push('/auth') }
   return <>
-    <AnimatePresence>{moreOpen && <><motion.button aria-label="Close menu" onClick={() => setMoreOpen(false)} className="fixed inset-0 z-[60] bg-slate-950/25 lg:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} /><motion.div className="fixed inset-x-3 bottom-[calc(86px+env(safe-area-inset-bottom))] z-[70] mx-auto max-w-md rounded-3xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-slate-800 dark:bg-slate-950 lg:hidden" initial={{ opacity: 0, y: 18, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .98 }} transition={transition}><div className="flex items-center justify-between px-3 py-2"><div><p className="font-semibold">More</p><p className="text-xs text-slate-500">Your Tasker account</p></div><button type="button" onClick={() => setMoreOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"><X className="h-4 w-4" /></button></div><div className="mt-2 grid grid-cols-2 gap-2">{moreNavigation.map(item => { const Icon = item.icon; return <Link key={item.href} href={item.href} onClick={() => setMoreOpen(false)} className="flex min-h-14 items-center gap-3 rounded-2xl bg-slate-50 px-4 text-sm font-medium dark:bg-slate-900"><Icon className="h-5 w-5" />{item.label}</Link> })}</div><button type="button" onClick={logout} className="mt-2 flex h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-medium text-red-600"><LogOut className="h-5 w-5" />Sign out</button></motion.div></>}</AnimatePresence>
+    <AnimatePresence>{moreOpen && <><motion.button aria-label="Close menu" onClick={() => setMoreOpen(false)} className="fixed inset-0 z-[60] bg-slate-950/25 lg:hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} /><motion.div className="fixed inset-x-3 bottom-[calc(86px+env(safe-area-inset-bottom))] z-[70] mx-auto max-w-md rounded-3xl border border-slate-200 bg-white p-3 shadow-2xl dark:border-slate-800 dark:bg-slate-950 lg:hidden" initial={{ opacity: 0, y: 18, scale: .97 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .98 }} transition={transition}><div className="flex items-center justify-between px-3 py-2"><div><p className="font-semibold">More</p><p className="text-xs text-slate-500">Your Tasker account</p></div><button type="button" onClick={() => setMoreOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800"><X className="h-4 w-4" /></button></div><div className="mt-2 grid grid-cols-2 gap-2">{moreNavigation.map(item => { const Icon = item.icon; return <Link key={item.href} href={item.href} onClick={() => setMoreOpen(false)} className="flex min-h-14 items-center gap-3 rounded-2xl bg-slate-50 px-4 text-sm font-medium dark:bg-slate-900"><Icon className="h-5 w-5" />{item.label}</Link> })}{hasExcoAccess ? <Link href="/admin" onClick={() => setMoreOpen(false)} className="flex min-h-14 items-center gap-3 rounded-2xl bg-slate-50 px-4 text-sm font-medium dark:bg-slate-900"><LayoutDashboard className="h-5 w-5" />Open Admin Dashboard</Link> : null}</div><button type="button" onClick={logout} className="mt-2 flex h-12 w-full items-center gap-3 rounded-2xl px-4 text-sm font-medium text-red-600"><LogOut className="h-5 w-5" />Sign out</button></motion.div></>}</AnimatePresence>
     <div className="pointer-events-none fixed inset-x-0 bottom-0 z-50 lg:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}><div className="relative mx-auto h-[96px] w-full max-w-[500px] px-2"><svg viewBox="0 0 500 86" preserveAspectRatio="none" aria-hidden="true" className="pointer-events-none absolute inset-x-2 bottom-1 h-[86px] w-[calc(100%-16px)] drop-shadow-[0_8px_18px_rgba(15,23,42,0.16)]"><motion.path initial={false} animate={{ d: notchPath(index) }} transition={transition} fill="currentColor" className="text-white dark:text-slate-950" /></svg><nav aria-label="Tasker navigation" className="pointer-events-auto absolute inset-x-2 bottom-1 grid h-[86px] grid-cols-5"><motion.span aria-hidden="true" className={`pointer-events-none absolute top-[-17px] h-[58px] w-[58px] rounded-full bg-gradient-to-br shadow-[0_8px_22px_rgba(124,58,237,0.32)] ${active === 'work' && checkedIn ? 'from-emerald-500 to-emerald-600 shadow-emerald-500/30' : 'from-indigo-600 to-purple-600'}`} animate={{ left: `calc(${(index * 20) + 10}% - 29px)` }} transition={transition} />{navigation.map(item => item.id === 'work' ? <NavButton key={item.id} item={{ ...item, label: work.data?.status === 'busy' ? 'Working' : checkedIn ? 'Check out' : 'Check In' }} active={active === item.id} checkedIn={checkedIn} disabled={work.loading || work.saving || !work.data} onClick={checkIn} /> : item.id === 'more' ? <NavButton key={item.id} item={item} active={active === item.id} onClick={() => setMoreOpen(value => !value)} /> : <NavLink key={item.id} item={item} active={active === item.id} onClick={() => setMoreOpen(false)} />)}</nav></div></div>
   </>
 }
