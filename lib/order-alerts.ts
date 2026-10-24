@@ -11,6 +11,7 @@ type OrderLike = {
   description?: string
   amount?: number
   totalAmount?: number
+  taskerFee?: number
   taskerGenderRestriction?: TaskerGenderRestriction
   location?: string
   noteSize?: 'small' | 'big'
@@ -80,6 +81,14 @@ function formatTaskType(taskType?: string) {
   return labels[taskType || ''] || taskType || 'errand'
 }
 
+function getTaskIcon(taskType?: string) {
+  const icons: Record<string, string> = {
+    restaurant: '🍽️', printing: '🖨️', copy_notes: '📝', shopping: '🛍️',
+    dry_cleaning: '🧺', indomie: '🍜', water: '💧', others: '📦',
+  }
+  return icons[taskType || ''] || '📦'
+}
+
 function escapeHtml(value?: string | null) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -89,24 +98,6 @@ function escapeHtml(value?: string | null) {
 
 function formatCurrency(value: number) {
   return `NGN ${value.toLocaleString('en-NG')}`
-}
-
-function formatDateTime(value?: Date | string) {
-  if (!value) {
-    return 'Not provided'
-  }
-
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) {
-    return 'Not provided'
-  }
-
-  return new Intl.DateTimeFormat('en-NG', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-    hour12: true,
-  }).format(date)
 }
 
 function getActorLabel(
@@ -140,78 +131,61 @@ function createSkippedChannelResult(reason: string): AlertChannelResult {
 
 function buildTelegramOrderAlertMessage(input: {
   event: OrderAlertEvent
+  orderId: string
   taskType?: string
   description?: string
   amount: number
   totalAmount: number
+  taskerFee?: number
   taskerGenderRestriction?: TaskerGenderRestriction
   location: string
   customerName?: string | null
   customerEmail?: string | null
   dashboardUrl: string
+  dueDate?: Date | string
+  deadline?: Date | string
+  deadlineDate?: Date | string
+  noteSize?: 'small' | 'big'
+  numberOfPages?: number
+  copyNotesType?: string
+  copyNotesPages?: number
+  isTestOrder?: boolean
 }) {
-  const heading = input.event === 'cancelled' ? 'Booking cancelled' : 'New booking received'
+  const isTraining = input.isTestOrder === true
+  const isCancelled = input.event === 'cancelled'
   const description = input.description?.trim()
+  const taskLabel = formatTaskType(input.taskType)
+  const orderReference = `${isTraining ? 'T-' : ''}${input.orderId.slice(-6).toUpperCase()}`
+  const copyNotesDetails = input.taskType === 'copy_notes'
+    ? [
+        `<b>Pages:</b> ${Number(input.numberOfPages || input.copyNotesPages || 0).toLocaleString('en-NG')}`,
+        `<b>Note size:</b> ${escapeHtml(input.noteSize || (input.copyNotesType === 'hardback' ? 'big' : input.copyNotesType) || 'Not provided')}`,
+      ]
+    : []
   const lines = [
-    `<b>${escapeHtml(heading)}</b>`,
-    `<b>Task:</b> ${escapeHtml(formatTaskType(input.taskType))}`,
-    `<b>Location:</b> ${escapeHtml(input.location)}`,
-    ...(description ? [`<b>Description:</b> ${escapeHtml(description)}`] : []),
-    `<b>Amount:</b> ${formatCurrency(input.amount)}`,
-    `<b>Total:</b> ${formatCurrency(input.totalAmount)}`,
-    `<b>Customer:</b> ${escapeHtml(input.customerName || input.customerEmail || 'Unknown')}`,
-    `<a href="${escapeHtml(input.dashboardUrl)}">View dashboard</a>`,
+    isTraining
+      ? '🧪 <b>SWIFTDU TRAINING ORDER</b>'
+      : isCancelled ? '⚠️ <b>SWIFTDU ORDER CANCELLED</b>' : '🚀 <b>SWIFTDU NEW ORDER</b>',
+    isTraining ? '<i>PRACTICE ONLY · No real payment</i>' : '<i>New task available</i>',
+    '━━━━━━━━━━━━━━━━━━',
+    `${getTaskIcon(input.taskType)} <b>${escapeHtml(taskLabel.replace(/\b\w/g, character => character.toUpperCase()))}</b>  <code>#${escapeHtml(orderReference)}</code>`,
+    isTraining ? '<i>Campus task · Training</i>' : '<i>Campus task</i>',
+    '',
+    '👤 <b>Customer</b>',
+    escapeHtml(input.customerName || input.customerEmail || 'Unknown'),
+    '',
+    '📍 <b>Delivery Location</b>',
+    escapeHtml(input.location),
+    '',
+    '🧾 <b>Order Details</b>',
+    description ? escapeHtml(description) : `${getTaskIcon(input.taskType)} ${escapeHtml(taskLabel)}`,
+    ...copyNotesDetails,
+    '━━━━━━━━━━━━━━━━━━',
+    `💰 <b>Order Value</b>  ${formatCurrency(input.totalAmount)}`,
+    `<b>🪙 Your Earnings</b>  ${formatCurrency(input.taskerFee || 0)}`,
+    '',
+    `<a href="${escapeHtml(input.dashboardUrl)}">🚀 View / Accept Order →</a>`,
   ]
-
-  return lines.join('\n')
-}
-
-function formatCopyNotesTelegramMessage(
-  order: {
-    orderId?: string
-    description?: string
-    totalAmount?: number
-    amount?: number
-    location?: string
-    noteSize?: 'small' | 'big'
-    numberOfPages?: number
-    copyNotesType?: string
-    copyNotesPages?: number
-    deadline?: Date | string
-    dueDate?: Date | string
-    deadlineDate?: Date | string
-  },
-  customerName?: string | null,
-  dashboardUrl?: string
-) {
-  const dueDate = order.dueDate || order.deadline || order.deadlineDate
-  const lines = [
-    '<b>New Copy Notes task</b>',
-    '<b>Task type:</b> Copy Notes',
-    `<b>Customer:</b> ${escapeHtml(customerName || 'Unknown')}`,
-    `<b>Location:</b> ${escapeHtml(order.location || 'Location not provided')}`,
-    `<b>Pages:</b> ${Number(order.numberOfPages || order.copyNotesPages || 0).toLocaleString('en-NG')}`,
-    `<b>Note size:</b> ${escapeHtml(
-      order.noteSize ||
-        (order.copyNotesType === 'hardback' ? 'big' : order.copyNotesType) ||
-        'Not provided'
-    )}`,
-    `<b>Due date:</b> ${escapeHtml(formatDateTime(dueDate))}`,
-    `<b>Calculated amount:</b> ${formatCurrency(Number(order.totalAmount || order.amount || 0))}`,
-  ]
-
-  const description = order.description?.trim()
-  if (description) {
-    lines.push(`<b>Description:</b> ${escapeHtml(description)}`)
-  }
-
-  if (dashboardUrl) {
-    lines.push(`<a href="${escapeHtml(dashboardUrl)}">View/accept task</a>`)
-  }
-
-  if (order.orderId) {
-    lines.push(`<b>Order ID:</b> ${escapeHtml(order.orderId)}`)
-  }
 
   return lines.join('\n')
 }
@@ -223,6 +197,7 @@ async function sendTelegramOrderAlertDirect(input: {
   description?: string
   amount: number
   totalAmount: number
+  taskerFee?: number
   taskerGenderRestriction?: TaskerGenderRestriction
   location: string
   customerName?: string | null
@@ -237,19 +212,18 @@ async function sendTelegramOrderAlertDirect(input: {
   copyNotesPages?: number
   isTestOrder?: boolean
 }): Promise<AlertChannelResult> {
-  const chatIds = input.isTestOrder ? [getTelegramTrainingOrdersChatId()] : getTelegramOrderChatIds(getOrderRestriction(input))
+  const chatIds = input.isTestOrder
+    ? [getTelegramTrainingOrdersChatId()].filter((chatId): chatId is string => Boolean(chatId))
+    : getTelegramOrderChatIds(getOrderRestriction(input))
   if (!chatIds.length) {
-    console.error('[Telegram Order Alert] Destination is unclassified or order chats are not configured.')
-    return createSkippedChannelResult('Destination is unclassified or order chats are not configured.')
+    const reason = input.isTestOrder
+      ? 'TELEGRAM_TRAINING_ORDERS_CHAT_ID is not configured.'
+      : 'Destination is unclassified or order chats are not configured.'
+    console.error(`[Telegram Order Alert] ${reason}`)
+    return createSkippedChannelResult(reason)
   }
-  const message = input.taskType === 'copy_notes'
-    ? formatCopyNotesTelegramMessage(input, input.customerName, input.dashboardUrl)
-    : buildTelegramOrderAlertMessage(input)
-  const trainingPrefix = input.isTestOrder ? '<b>[TRAINING ORDER]</b>\n' : ''
-  const safeMessage = input.isTestOrder
-    ? message.split('\n').filter(line => !line.startsWith('<b>Location:</b>')).join('\n')
-    : message
-  const results = await Promise.allSettled(chatIds.map(chatId => sendTelegramMessage(`${trainingPrefix}${safeMessage}`, chatId)))
+  const message = buildTelegramOrderAlertMessage(input)
+  const results = await Promise.allSettled(chatIds.map(chatId => sendTelegramMessage(message, chatId)))
   const deliveredCount = results.filter(result => result.status === 'fulfilled' && result.value).length
   return {
     recipientCount: chatIds.length,
@@ -266,6 +240,7 @@ async function sendTelegramOrderAlert(input: {
   description?: string
   amount: number
   totalAmount: number
+  taskerFee?: number
   taskerGenderRestriction?: TaskerGenderRestriction
   location: string
   customerName?: string | null
@@ -337,6 +312,7 @@ export async function notifyAdminsOfOrderEvent(
       description: input.order.description,
       amount,
       totalAmount,
+      taskerFee: input.order.taskerFee,
       location,
       dueDate: input.order.dueDate,
       deadline: input.order.deadline,

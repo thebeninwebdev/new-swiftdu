@@ -211,7 +211,9 @@ export async function POST(
       }
     }
 
-    if (shouldSendOrderNotification(retriedOrder)) {
+    // Training retries use their isolated Telegram channel too. Unlike live
+    // orders, shouldSendOrderNotification intentionally returns false for them.
+    if (shouldSendOrderNotification(retriedOrder) || retriedOrder.isTestOrder) {
       try {
         const adminAlertResult = await notifyAdminsOfOrderEvent({
           event: 'created',

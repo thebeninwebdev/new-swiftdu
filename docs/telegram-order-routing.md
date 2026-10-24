@@ -20,8 +20,9 @@ Server-only settings (added to .env and .env.example):
 
 TELEGRAM_GIRLS_ORDERS_CHAT_ID=-1004410762658
 TELEGRAM_BOYS_ORDERS_CHAT_ID=-1004415332662
+TELEGRAM_TRAINING_ORDERS_CHAT_ID=-1004495693547
 
-Continue using TELEGRAM_BOT_TOKEN (or existing TELEGRAM_BOT_API_TOKEN alias). TELEGRAM_ALERTS_ENABLED=false still disables alerts. Test orders still suppress notifications.
+Continue using TELEGRAM_BOT_TOKEN (or existing TELEGRAM_BOT_API_TOKEN alias). TELEGRAM_ALERTS_ENABLED=false still disables live alerts; training alerts use the isolated training chat. The training chat ID has no fallback, so it must be configured in the deployed environment.
 
 A read-only getChat check confirmed -1004415332662 is SwiftDU Orders Boys. Both positive supplied IDs failed. The negative girls ID also returned chat not found: it is provisional until the bot is added to that chat and its ID verified. No live notification was sent during verification.
 
