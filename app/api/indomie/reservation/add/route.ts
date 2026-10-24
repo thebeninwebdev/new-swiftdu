@@ -6,6 +6,7 @@ import { lockTaskerWork } from '@/lib/tasker-work-server'
 import { canAssignCapacity } from '@/lib/tasker-capacity'
 import { isRunStillBookable } from '@/lib/indomie-runs'
 import { calculateOrderPricing, type PricingResult } from '@/lib/pricing'
+import { splitServiceFee } from '@/lib/order-finance'
 import { getConfiguredServiceFee } from '@/lib/pricing-config'
 import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings'
 
@@ -29,6 +30,7 @@ export async function POST(request: NextRequest) {
     if (!await canAssignCapacity(fresh.taskerId, 1, fresh.isTestOrder === true)) return NextResponse.json({ error: 'This run no longer has room for another meal. Choose the next run.' }, { status: 409 })
     const configuredServiceFee = await getConfiguredServiceFee({ taskType: 'indomie', location: fresh.location })
     const pricing: PricingResult = calculateOrderPricing({ amount, taskType: 'indomie', indomiePacks: packs, eggCount: eggs, serviceFee: configuredServiceFee ?? undefined })
+    const settlement = splitServiceFee(pricing.serviceFee)
     if (!fresh.hasPaid) {
       const meals = [...(fresh.indomieMeals || [{ indomiePacks: fresh.indomiePacks || 1, eggCount: fresh.eggCount || 0, amount: fresh.amount, description: fresh.description }]), { indomiePacks: packs, eggCount: eggs, amount, description: typeof meal.description === 'string' ? meal.description : undefined }]
       if (meals.length > 3) return NextResponse.json({ error: 'This run already has 3 meals in your order.' }, { status: 409 })
@@ -37,13 +39,14 @@ export async function POST(request: NextRequest) {
       fresh.indomiePacks = meals.reduce((sum, item) => sum + item.indomiePacks, 0)
       fresh.eggCount = meals.reduce((sum, item) => sum + item.eggCount, 0)
       fresh.amount += pricing.amount; fresh.itemPrice = (fresh.itemPrice || 0) + pricing.amount
-      fresh.totalAmount += pricing.totalAmount; fresh.serviceFee += pricing.serviceFee; fresh.commission += pricing.serviceFee
+      fresh.totalAmount += pricing.totalAmount; fresh.serviceFee += settlement.serviceFee; fresh.commission += settlement.serviceFee
+      fresh.platformFee += settlement.platformFee; fresh.taskerFee += settlement.taskerFee
       await fresh.save()
       return NextResponse.json({ order: fresh, addon: false })
     }
     const addon = new Order({
       userId: fresh.userId, taskType: 'indomie', description: typeof meal.description === 'string' ? meal.description : undefined,
-      amount: pricing.amount, itemPrice: pricing.amount, commission: pricing.serviceFee, platformFee: pricing.platformFee, taskerFee: pricing.taskerFee, serviceFee: pricing.serviceFee, pricingModel: pricing.pricingModel, totalAmount: pricing.totalAmount,
+      amount: pricing.amount, itemPrice: pricing.amount, commission: settlement.serviceFee, platformFee: settlement.platformFee, taskerFee: settlement.taskerFee, serviceFee: settlement.serviceFee, pricingModel: pricing.pricingModel, totalAmount: pricing.totalAmount,
       location: fresh.location, roomNumber: fresh.roomNumber, indomiePacks: packs, eggCount: eggs, indomieMeals: [{ indomiePacks: packs, eggCount: eggs, amount, description: typeof meal.description === 'string' ? meal.description : undefined }], indomieSlotCount: 1,
       indomieRunAt: fresh.indomieRunAt, scheduledFor: fresh.indomieRunAt, indomieRunStatus: 'reserved', indomieReservationGroupId: fresh.indomieReservationGroupId || String(fresh._id), indomieParentOrderId: String(fresh._id), isIndomieAddon: true,
       status: 'in_progress', taskerId: fresh.taskerId, taskerName: fresh.taskerName, acceptedBy: fresh.acceptedBy, paymentProvider: 'manual_transfer', paymentStatus: 'unpaid', settlementStatus: 'not_due', isTestOrder: fresh.isTestOrder, createdInMode: fresh.createdInMode,

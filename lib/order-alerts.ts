@@ -119,13 +119,13 @@ function getPublicAcceptOrderUrl(orderId: string) {
     const siteUrl = new URL(configuredSiteUrl)
     const isLocalUrl = ['localhost', '127.0.0.1', '0.0.0.0'].includes(siteUrl.hostname)
     if (siteUrl.protocol === 'https:' && !isLocalUrl) {
-      return new URL(`/accept-order/${encodeURIComponent(orderId)}`, siteUrl).toString()
+      return new URL(`/tasker-dashboard/accept-order/${encodeURIComponent(orderId)}`, siteUrl).toString()
     }
   } catch {
     // Fall through to the canonical public URL.
   }
 
-  return new URL(`/accept-order/${encodeURIComponent(orderId)}`, DEFAULT_SITE_URL).toString()
+  return new URL(`/tasker-dashboard/accept-order/${encodeURIComponent(orderId)}`, DEFAULT_SITE_URL).toString()
 }
 
 function getActorLabel(

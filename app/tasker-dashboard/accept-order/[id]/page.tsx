@@ -19,7 +19,7 @@ export default function AcceptOrderPage() {
   useEffect(() => {
     if (isPending || attempted.current) return
 
-    const acceptPath = `/accept-order/${encodeURIComponent(orderId)}`
+    const acceptPath = `/tasker-dashboard/accept-order/${encodeURIComponent(orderId)}`
     if (!session?.user?.id) {
       attempted.current = true
       router.replace(`/auth?next=${encodeURIComponent(acceptPath)}`)

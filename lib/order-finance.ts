@@ -1,4 +1,6 @@
-export const PLATFORM_SETTLEMENT_SHARE = 0.24
+// A ₦600 service fee is split into ₦500 for the tasker and ₦100 for SwiftDU.
+// Keep the ratio exact so every service fee is derived by the same policy.
+export const PLATFORM_SETTLEMENT_SHARE = 1 / 6
 export const SETTLEMENT_WINDOW_HOURS = 24
 export const PAYSTACK_SETTLEMENT_FEE_RATE = 0.015
 export const CANCELLED_ORDER_STATUS = 'cancelled'

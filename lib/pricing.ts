@@ -1,7 +1,9 @@
 export const WATER_TASK_TYPE = 'water'
 export const WATER_BAG_PRICE = 750
 export const WATER_BAG_FEE = 450
-export const WATER_PLATFORM_FEE_RATE = 0.24
+import { PLATFORM_SETTLEMENT_SHARE } from './order-finance'
+
+export const WATER_PLATFORM_FEE_RATE = PLATFORM_SETTLEMENT_SHARE
 export const CAFE_INQUIRY_EXTRA_FEE = 50
 export const RESTAURANT_MAX_PEOPLE = 3
 // Packaging is sold as a priced option, not an automatic surcharge.

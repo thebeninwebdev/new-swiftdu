@@ -96,7 +96,7 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
   assert.match(messages[0].text, /SWIFTDU TRAINING ORDER/)
   assert.match(messages[0].text, /₦3,500/)
   assert.deepEqual(messages[0].reply_markup, {
-    inline_keyboard: [[{ text: '⚡ Accept Order', url: 'https://swiftdu.org/accept-order/order' }]],
+    inline_keyboard: [[{ text: '⚡ Accept Order', url: 'https://swiftdu.org/tasker-dashboard/accept-order/order' }]],
   })
 
   sent.length = 0
