@@ -10,8 +10,8 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params
   const url = `${PUBLIC_SITE_URL}/tasker-dashboard/accept-order/${encodeURIComponent(id)}`
-  const title = 'SwiftDU Training Order'
-  const description = 'A SwiftDU training task is available. Tap to accept this order.'
+  const title = 'SwiftDU Order'
+  const description = 'A SwiftDU task is available. Tap to accept this order.'
 
   return {
     title,

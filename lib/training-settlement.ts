@@ -1,6 +1,18 @@
 import type { IOrder } from '@/models/order'
 
 /**
+ * Training orders deliberately keep their platform-fee step after completion
+ * so taskers can practise the settlement flow. Live orders retain the normal
+ * fast-completion waiver.
+ */
+export function shouldWaivePlatformFeeForFastCompletion(order: {
+  isTestOrder?: boolean | null
+  platformFee?: number | null
+}, completedBeforeTimer: boolean) {
+  return order.isTestOrder !== true && completedBeforeTimer && Number(order.platformFee || 0) > 0
+}
+
+/**
  * Completes a settlement without a provider, but only for persisted training
  * orders. Keeping this separate from the Paystack verifier makes the bypass
  * impossible to accidentally apply to a live order.

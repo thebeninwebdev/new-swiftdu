@@ -1,7 +1,14 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { completeTrainingSettlement } from './training-settlement'
+import { completeTrainingSettlement, shouldWaivePlatformFeeForFastCompletion } from './training-settlement'
+
+test('only live orders receive the fast-completion platform-fee waiver', () => {
+  assert.equal(shouldWaivePlatformFeeForFastCompletion({ isTestOrder: false, platformFee: 100 }, true), true)
+  assert.equal(shouldWaivePlatformFeeForFastCompletion({ isTestOrder: true, platformFee: 100 }, true), false)
+  assert.equal(shouldWaivePlatformFeeForFastCompletion({ isTestOrder: false, platformFee: 100 }, false), false)
+  assert.equal(shouldWaivePlatformFeeForFastCompletion({ isTestOrder: false, platformFee: 0 }, true), false)
+})
 
 function order(overrides: Record<string, unknown> = {}) {
   return {

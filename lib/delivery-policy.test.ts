@@ -61,19 +61,40 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
     return Response.json({ ok: true })
   })
   const { notifyAdminsOfOrderEvent } = require('./order-alerts')
-  const notify = (location: string, taskType = 'restaurant', isTestOrder = false, event: 'created' | 'cancelled' = 'created') => notifyAdminsOfOrderEvent({
-    event, order: { _id: 'order', userId: 'customer', location, taskType, amount: 100, totalAmount: 3500, taskerFee: 500, isTestOrder },
+  const notify = (
+    location: string,
+    taskType = 'restaurant',
+    isTestOrder = false,
+    event: 'created' | 'cancelled' = 'created',
+    orderOverrides: Record<string, unknown> = {}
+  ) => notifyAdminsOfOrderEvent({
+    event, order: { _id: 'order', userId: 'customer', location, taskType, amount: 100, totalAmount: 3500, taskerFee: 500, isTestOrder, ...orderOverrides },
   })
   for (const [location, expected] of [
     ['Girls Hostel', ['-1001']], ['Amnesty Hostel', ['-1002']], ['Library', ['-1001', '-1002']], ['New campus building', ['-1001', '-1002']],
   ] as const) {
     sent.length = 0
+    messages.length = 0
     const result = await notify(location)
     assert.deepEqual(sent, expected)
     assert.equal(result.telegram.deliveredCount, expected.length)
     assert.equal(result.email.skipped, true)
     assert.equal(result.recipientCount, expected.length)
   }
+  assert.match(messages[0].text, /SWIFTDU NEW ORDER/)
+  assert.match(messages[0].text, /<blockquote>Pick up the order and deliver to <b>New campus building<\/b>\.<\/blockquote>/)
+  assert.match(messages[0].text, /₦3,500/)
+  assert.doesNotMatch(messages[0].text, /<a href=/)
+  assert.doesNotMatch(messages[0].text, /Customer/)
+  assert.deepEqual(messages[0].reply_markup, {
+    inline_keyboard: [[{ text: 'Accept Order', url: 'https://www.swiftdu.org/tasker-dashboard/accept-order/order' }]],
+  })
+  assert.deepEqual(messages[0].link_preview_options, {
+    is_disabled: false,
+    url: 'https://www.swiftdu.org/tasker-dashboard/accept-order/order',
+    prefer_large_media: true,
+    show_above_text: false,
+  })
   sent.length = 0
   await notify('Girls Hostel', 'copy_notes')
   assert.deepEqual(sent, ['-1001'])
@@ -87,6 +108,17 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
   assert.equal((await notify('Girls Hostel')).telegram.skipped, true)
   assert.deepEqual(sent, [])
 
+  process.env.TELEGRAM_GIRLS_ORDERS_CHAT_ID = '-1001'
+  failGirls = false
+  sent.length = 0
+  messages.length = 0
+  await notify('Girls Hostel', 'restaurant', false, 'cancelled')
+  assert.deepEqual(sent, ['-1001'])
+  assert.match(messages[0].text, /ORDER CANCELLED/)
+  assert.equal(messages[0].reply_markup, undefined)
+  assert.equal(messages[0].link_preview_options, undefined)
+  assert.doesNotMatch(messages[0].text, /tasker-dashboard\/accept-order/)
+
   process.env.TELEGRAM_TRAINING_ORDERS_CHAT_ID = '-1003'
   sent.length = 0
   messages.length = 0
@@ -94,6 +126,7 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
   assert.deepEqual(sent, ['-1003'])
   assert.equal(trainingResult.telegram.deliveredCount, 1)
   assert.match(messages[0].text, /SWIFTDU TRAINING ORDER/)
+  assert.match(messages[0].text, /<blockquote>Pick up the order and deliver to <b>Amnesty Hostel<\/b>\.<\/blockquote>/)
   assert.match(messages[0].text, /₦3,500/)
   assert.match(messages[0].text, /https:\/\/www\.swiftdu\.org\/tasker-dashboard\/accept-order\/order/)
   assert.doesNotMatch(messages[0].text, /<a href=/)
@@ -106,6 +139,24 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
     prefer_large_media: true,
     show_above_text: false,
   })
+
+  sent.length = 0
+  messages.length = 0
+  await notify('Amnesty <Hostel>', 'restaurant', true, 'created', {
+    store: 'Akpan & Sons <Main>',
+    description: 'Rice & <chicken>',
+  })
+  assert.deepEqual(sent, ['-1003'])
+  assert.match(messages[0].text, /Pick up from <b>Akpan &amp; Sons &lt;Main&gt;<\/b>/)
+  assert.match(messages[0].text, /deliver to <b>Amnesty &lt;Hostel&gt;<\/b>/)
+  assert.match(messages[0].text, /<b>Order:<\/b> Rice &amp; &lt;chicken&gt;/)
+
+  sent.length = 0
+  messages.length = 0
+  await notify('Amnesty Hostel', 'copy_notes', true)
+  assert.deepEqual(sent, ['-1003'])
+  assert.match(messages[0].text, /<blockquote>Write and deliver the notes to <b>Amnesty Hostel<\/b>\.<\/blockquote>/)
+  assert.doesNotMatch(messages[0].text, /Pages:|Note Size:|Due:/)
 
   sent.length = 0
   messages.length = 0

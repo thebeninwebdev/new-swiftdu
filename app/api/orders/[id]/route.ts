@@ -19,6 +19,7 @@ import { ensureCompletionTimer } from '@/lib/completion-timer';
 import { getSettlementDueAt, splitServiceFee } from '@/lib/order-finance';
 import { ensureBookedAt } from '@/lib/order-response-time';
 import { consumeServiceFeeDiscountForCompletedOrder } from '@/lib/service-fee-discount';
+import { shouldWaivePlatformFeeForFastCompletion } from '@/lib/training-settlement';
 import {
   calculateOrderPricing,
   type PricingResult,
@@ -912,8 +913,10 @@ export async function PATCH(
           : false;
 
         order.completedBeforeTimer = completedBeforeTimer;
-        order.platformFeeWaivedForFastCompletion =
-          completedBeforeTimer && Number(order.platformFee || 0) > 0;
+        order.platformFeeWaivedForFastCompletion = shouldWaivePlatformFeeForFastCompletion(
+          order,
+          completedBeforeTimer
+        );
         order.customerReceiptConfirmed = undefined;
         order.customerReceiptRespondedAt = undefined;
         order.prematureCompletionReported = false;

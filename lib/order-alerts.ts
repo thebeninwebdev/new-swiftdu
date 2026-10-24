@@ -97,10 +97,6 @@ function escapeHtml(value?: string | null) {
     .replace(/>/g, '&gt;')
 }
 
-function formatCurrency(value: number) {
-  return `NGN ${value.toLocaleString('en-NG')}`
-}
-
 function formatNaira(value: number) {
   return `₦${Number(value || 0).toLocaleString('en-NG')}`
 }
@@ -170,16 +166,16 @@ type TelegramOrderAlertInput = {
   isTestOrder?: boolean
 }
 
-function buildTrainingTelegramOrderAlertMessage(input: TelegramOrderAlertInput) {
+function buildTelegramOrderAlertMessage(input: TelegramOrderAlertInput) {
   const description = input.description?.trim()
   const store = input.store?.trim()
-  const taskLabel = formatTrainingTaskLabel(input.taskType)
+  const taskLabel = formatTelegramTaskLabel(input.taskType)
   const dueDate = formatOptionalDate(input.dueDate || input.deadline || input.deadlineDate)
   const location = escapeHtml(input.location)
 
   if (input.event === 'cancelled') {
     return [
-      '🧪 <b>TRAINING ORDER CANCELLED</b>',
+      input.isTestOrder ? '🧪 <b>TRAINING ORDER CANCELLED</b>' : '🔴 <b>ORDER CANCELLED</b>',
       '',
       `The ${escapeHtml(taskLabel.toLowerCase())} order to <b>${location}</b> has been cancelled.`,
     ].join('\n')
@@ -196,13 +192,13 @@ function buildTrainingTelegramOrderAlertMessage(input: TelegramOrderAlertInput) 
         ...(dueDate ? [`⏰ <b>Due:</b> ${escapeHtml(dueDate)}`] : []),
       ]
     : []
-  const actionLine = getTrainingActionLine(input.taskType, store, location)
+  const actionLine = getTelegramActionLine(input.taskType, store, location)
   const lines = [
-    '🧪 <b>SWIFTDU TRAINING ORDER</b>',
+    input.isTestOrder ? '🧪 <b>SWIFTDU TRAINING ORDER</b>' : '🟢 <b>SWIFTDU NEW ORDER</b>',
     '',
     `<b>${escapeHtml(taskLabel)}</b> ${getTaskIcon(input.taskType)}`,
     '',
-    actionLine,
+    `<blockquote>${actionLine}</blockquote>`,
     '',
     ...(description ? [`<b>Order:</b> ${escapeHtml(description)}`, ''] : []),
     ...copyNotesDetails,
@@ -217,7 +213,7 @@ function buildTrainingTelegramOrderAlertMessage(input: TelegramOrderAlertInput) 
   return lines.join('\n')
 }
 
-function formatTrainingTaskLabel(taskType?: string) {
+function formatTelegramTaskLabel(taskType?: string) {
   const labels: Record<string, string> = {
     restaurant: 'FOOD DELIVERY',
     printing: 'PRINTING',
@@ -232,18 +228,20 @@ function formatTrainingTaskLabel(taskType?: string) {
   return labels[taskType || ''] || formatTaskType(taskType).toUpperCase()
 }
 
-function getTrainingActionLine(taskType: string | undefined, store: string | undefined, location: string) {
+function getTelegramActionLine(taskType: string | undefined, store: string | undefined, location: string) {
   const pickup = store ? ` from <b>${escapeHtml(store)}</b>` : ''
 
   switch (taskType) {
     case 'restaurant':
-      return `Pick up an order${pickup} and deliver to <b>${location}</b>.`
+      return store
+        ? `Pick up from <b>${escapeHtml(store)}</b> and deliver to <b>${location}</b>.`
+        : `Pick up the order and deliver to <b>${location}</b>.`
     case 'shopping':
       return `Pick up a shopping order${pickup} and deliver to <b>${location}</b>.`
     case 'printing':
-      return `Pick up a printed order${pickup} and deliver to <b>${location}</b>.`
+      return `Pick up the print job${pickup} and deliver to <b>${location}</b>.`
     case 'copy_notes':
-      return `Write and deliver notes to <b>${location}</b>.`
+      return `Write and deliver the notes to <b>${location}</b>.`
     case 'water':
       return `Deliver a water order to <b>${location}</b>.`
     case 'indomie':
@@ -253,23 +251,6 @@ function getTrainingActionLine(taskType: string | undefined, store: string | und
     default:
       return `Complete an errand for <b>${location}</b>.`
   }
-}
-
-function buildLiveTelegramOrderAlertMessage(input: TelegramOrderAlertInput) {
-  const heading = input.event === 'cancelled' ? 'Booking cancelled' : 'New booking received'
-  const description = input.description?.trim()
-  const lines = [
-    `<b>${escapeHtml(heading)}</b>`,
-    `<b>Task:</b> ${escapeHtml(formatTaskType(input.taskType))}`,
-    `<b>Location:</b> ${escapeHtml(input.location)}`,
-    ...(description ? [`<b>Description:</b> ${escapeHtml(description)}`] : []),
-    `<b>Amount:</b> ${formatCurrency(input.amount)}`,
-    `<b>Total:</b> ${formatCurrency(input.totalAmount)}`,
-    `<b>Customer:</b> ${escapeHtml(input.customerName || input.customerEmail || 'Unknown')}`,
-    `<a href="${escapeHtml(input.dashboardUrl)}">View dashboard</a>`,
-  ]
-
-  return lines.join('\n')
 }
 
 async function sendTelegramOrderAlertDirect(input: {
@@ -306,10 +287,8 @@ async function sendTelegramOrderAlertDirect(input: {
     console.error(`[Telegram Order Alert] ${reason}`)
     return createSkippedChannelResult(reason)
   }
-  const message = input.isTestOrder
-    ? buildTrainingTelegramOrderAlertMessage(input)
-    : buildLiveTelegramOrderAlertMessage(input)
-  const telegramOptions = input.isTestOrder && input.event !== 'cancelled'
+  const message = buildTelegramOrderAlertMessage(input)
+  const telegramOptions = input.event !== 'cancelled'
     ? {
         replyMarkup: { inline_keyboard: [[{ text: 'Accept Order', url: input.directOrderUrl }]] },
         linkPreviewOptions: {
