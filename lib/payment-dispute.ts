@@ -21,15 +21,26 @@ export async function resolvePaymentDispute(order: IOrder, taskerId: string) {
         paymentEventuallyReceivedAt: receivedAt,
         paymentDisputeResolvedAt: receivedAt,
         paymentDisputeResolution: 'tasker_confirmed_received',
-        completionTimerStartedAt: receivedAt,
-        completionWindowMinutes: windowMinutes,
-        completionExtensionMinutes: 0,
-        completionDueAt: new Date(receivedAt.getTime() + windowMinutes * 60_000),
+        ...(!order.cafeInquiry ? {
+          completionTimerStartedAt: receivedAt,
+          completionWindowMinutes: windowMinutes,
+          completionExtensionMinutes: 0,
+          completionDueAt: new Date(receivedAt.getTime() + windowMinutes * 60_000),
+        } : {}),
         completedBeforeTimer: false,
         platformFeeWaivedForFastCompletion: false,
       },
       // Keep declinedAt, declinedByTaskerAt, reason, message and transfer timestamp as history.
-      $unset: { paymentFailureReason: 1, completionExtendedAt: 1 },
+      $unset: {
+        paymentFailureReason: 1,
+        completionExtendedAt: 1,
+        ...(order.cafeInquiry ? {
+          completionTimerStartedAt: 1,
+          completionWindowMinutes: 1,
+          completionExtensionMinutes: 1,
+          completionDueAt: 1,
+        } : {}),
+      },
     },
     { new: true, runValidators: true },
   )

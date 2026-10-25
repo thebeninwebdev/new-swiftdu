@@ -123,15 +123,17 @@ export async function POST(
     order.paymentVerifiedAt = new Date()
     order.customerTransferredAt = new Date()
     order.paidAt = new Date()
-    // A scheduled run cannot expire before its tasker is meant to leave.
-    order.completionTimerStartedAt = order.taskType === 'indomie' && order.indomieRunAt && order.indomieRunAt > order.paidAt
-      ? order.indomieRunAt
-      : order.paidAt
-    order.completionWindowMinutes = getCompletionWindowMinutes(order.location, order.taskType, order.isTestOrder)
-    order.completionExtensionMinutes = 0
-    order.completionDueAt = new Date(
-      order.completionTimerStartedAt.getTime() + order.completionWindowMinutes * 60000
-    )
+    if (!order.cafeInquiry) {
+      // A scheduled run cannot expire before its tasker is meant to leave.
+      order.completionTimerStartedAt = order.taskType === 'indomie' && order.indomieRunAt && order.indomieRunAt > order.paidAt
+        ? order.indomieRunAt
+        : order.paidAt
+      order.completionWindowMinutes = getCompletionWindowMinutes(order.location, order.taskType, order.isTestOrder)
+      order.completionExtensionMinutes = 0
+      order.completionDueAt = new Date(
+        order.completionTimerStartedAt.getTime() + order.completionWindowMinutes * 60000
+      )
+    }
     order.completedBeforeTimer = false
     order.platformFeeWaivedForFastCompletion = false
     order.customerReceiptConfirmed = undefined

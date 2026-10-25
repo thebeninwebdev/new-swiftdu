@@ -5,6 +5,7 @@ export const STAFF_QUARTERS_COMPLETION_WINDOW_MINUTES = 30
 export const INDOMIE_COMPLETION_WINDOW_MINUTES = 60
 
 type CompletionTimerOrder = {
+  cafeInquiry?: boolean
   isTestOrder?: boolean
   status?: string
   taskType?: string | null
@@ -36,6 +37,19 @@ export function getCompletionWindowMinutes(_location?: string | null, _taskType?
 
 export function ensureCompletionTimer(order: CompletionTimerOrder) {
   const isPaid = Boolean(order.hasPaid) || order.paymentStatus === 'paid'
+
+  if (order.cafeInquiry) {
+    const hasTimer = Boolean(
+      order.completionTimerStartedAt || order.completionDueAt || order.completionWindowMinutes || order.completionExtensionMinutes
+    )
+    if (hasTimer) {
+      order.completionTimerStartedAt = undefined
+      order.completionDueAt = undefined
+      order.completionWindowMinutes = undefined
+      order.completionExtensionMinutes = undefined
+    }
+    return hasTimer
+  }
 
   if (
     !isPaid ||

@@ -168,7 +168,7 @@ export async function PATCH(
         );
       }
 
-      if (!order.hasPaid || !order.completionDueAt || order.status === 'completed' || order.status === 'cancelled') {
+      if (order.cafeInquiry || !order.hasPaid || !order.completionDueAt || order.status === 'completed' || order.status === 'cancelled') {
         return NextResponse.json(
           { error: 'This task cannot be extended right now.' },
           { status: 400 }

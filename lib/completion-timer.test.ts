@@ -40,3 +40,16 @@ test('shorter live timers are extended to 25 minutes with granted extensions ret
   assert.equal(ensureCompletionTimer(order), true)
   assert.equal(order.completionDueAt.getTime(), started.getTime() + 35 * 60000)
 })
+
+test('cafe inquiries never receive a completion timer and clear a legacy one', () => {
+  const order: Parameters<typeof ensureCompletionTimer>[0] = {
+    cafeInquiry: true, hasPaid: true, status: 'in_progress', paidAt: new Date('2026-10-01T12:00:00Z'),
+    completionTimerStartedAt: new Date('2026-10-01T12:00:00Z'), completionWindowMinutes: 25,
+    completionExtensionMinutes: 10, completionDueAt: new Date('2026-10-01T12:35:00Z'),
+  }
+  assert.equal(ensureCompletionTimer(order), true)
+  assert.equal(order.completionTimerStartedAt, undefined)
+  assert.equal(order.completionWindowMinutes, undefined)
+  assert.equal(order.completionDueAt, undefined)
+  assert.equal(ensureCompletionTimer(order), false)
+})
