@@ -90,6 +90,7 @@ interface ErrandData {
   location: string
   parentLocationId?: string
   exactLocationId?: string
+  vendorId?: string
   store?: string
   waterBags?: string
   noteSize?: string
@@ -382,6 +383,8 @@ export default function ErrandWizardPage() {
   const [hasExcoDashboardAccess, setHasExcoDashboardAccess] = useState(false)
   const [quotedServiceFee, setQuotedServiceFee] = useState<number | null>(null)
   const [parentLocations, setParentLocations] = useState<Array<{ _id: string; name: string }>>([])
+  const [vendors, setVendors] = useState<Array<{ id: string; name: string }>>([])
+  const [vendorDestinations, setVendorDestinations] = useState<Array<{ parentLocationId: string; name: string }>>([])
   const [exactLocations, setExactLocations] = useState<Array<{ _id: string; name: string }>>([])
   const [isExcoTrainingMode, setIsExcoTrainingMode] = useState(false)
   const socketRef = useRef<Socket | null>(null)
@@ -397,6 +400,7 @@ export default function ErrandWizardPage() {
     amount: '',
     location: '',
     store: '',
+    vendorId: '',
     waterBags: '',
     noteSize: '',
     numberOfPages: '',
@@ -418,6 +422,9 @@ export default function ErrandWizardPage() {
     if (!formData.parentLocationId) { setExactLocations([]); return }
     void fetch(`/api/locations?parentLocationId=${encodeURIComponent(formData.parentLocationId)}`).then(response => response.ok ? response.json() : null).then(data => setExactLocations(data?.locations || []) ).catch(() => setExactLocations([]))
   }, [formData.parentLocationId])
+  const vendorBackedTask = ['shopping', 'restaurant', 'printing'].includes(formData.taskType)
+  useEffect(() => { if (!vendorBackedTask) { setVendors([]); setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors?serviceType=${formData.taskType}`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendors(data?.vendors || []) }); return () => { cancelled = true } }, [formData.taskType, vendorBackedTask])
+  useEffect(() => { if (!formData.vendorId) { setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors/${formData.vendorId}/delivery-options`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendorDestinations(data?.destinations || []) }); return () => { cancelled = true } }, [formData.vendorId])
 
   const sortedTaskTypes = useMemo(() => {
     const originalIndex = new Map(taskTypes.map((item, index) => [item.value, index]))
@@ -851,14 +858,15 @@ export default function ErrandWizardPage() {
   const pricing = basePricing
   const shoppingDistanceFee = 0
   useEffect(() => {
-    if (!['restaurant', 'shopping', 'printing', 'indomie'].includes(taskType) || !formData.location) { setQuotedServiceFee(null); return }
+    if (!['restaurant', 'shopping', 'printing', 'indomie'].includes(taskType) || !formData.location || (vendorBackedTask && (!formData.vendorId || !formData.parentLocationId))) { setQuotedServiceFee(null); return }
     let cancelled = false
-    void fetch(`/api/pricing/quote?taskType=${encodeURIComponent(taskType)}&location=${encodeURIComponent(formData.location)}${formData.parentLocationId ? `&parentLocationId=${encodeURIComponent(formData.parentLocationId)}` : ''}`, { cache: 'no-store' })
+    const quoteUrl = vendorBackedTask ? `/api/pricing/quote?taskType=${encodeURIComponent(taskType)}&vendorId=${encodeURIComponent(formData.vendorId || '')}&dropoffParentLocationId=${encodeURIComponent(formData.parentLocationId || '')}` : `/api/pricing/quote?taskType=${encodeURIComponent(taskType)}&location=${encodeURIComponent(formData.location)}${formData.parentLocationId ? `&parentLocationId=${encodeURIComponent(formData.parentLocationId)}` : ''}`
+    void fetch(quoteUrl, { cache: 'no-store' })
       .then(async response => response.ok ? response.json() : null)
       .then(payload => { if (!cancelled) setQuotedServiceFee(typeof payload?.serviceFee === 'number' ? payload.serviceFee : null) })
       .catch(() => { if (!cancelled) setQuotedServiceFee(null) })
     return () => { cancelled = true }
-  }, [taskType, formData.location])
+  }, [taskType, formData.location, formData.vendorId, formData.parentLocationId, vendorBackedTask])
   const hasAvailableServiceFeeDiscount = Boolean(
     serviceFeeDiscount?.hasAvailableDiscount && pricing.serviceFee > 0
   )
@@ -1013,6 +1021,7 @@ export default function ErrandWizardPage() {
       ...previous,
       taskType: value,
       store: value === 'restaurant' ? 'tasker_choose' : '',
+      vendorId: '',
       description: '',
       location: '',
       roomNumber: '',
@@ -3404,8 +3413,9 @@ if (stepNumber === detailsStep) {
                   <div>
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><MapPin className="h-4 w-4 text-indigo-500" />Delivery Location</label>
                     {parentLocations.length > 0 ? <>
-                      <select value={formData.parentLocationId || ''} onChange={event => { const parent = parentLocations.find(item => item._id === event.target.value); setFormData(previous => ({ ...previous, parentLocationId: event.target.value, exactLocationId: '', location: parent?.name || '', roomNumber: '' })); clearError('location') }} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Select a mapped parent location</option>{parentLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}
+                      {vendorBackedTask ? <select value={formData.vendorId || ''} onChange={event => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || '', parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setQuotedServiceFee(null) }} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3"><option value="">Select a vendor</option>{vendors.map(vendor => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select> : null}
+                      <select disabled={vendorBackedTask && !formData.vendorId} value={formData.parentLocationId || ''} onChange={event => { const parent = vendorBackedTask ? vendorDestinations.find(item => item.parentLocationId === event.target.value) : parentLocations.find(item => item._id === event.target.value); const id = vendorBackedTask ? event.target.value : event.target.value; setFormData(previous => ({ ...previous, parentLocationId: id, exactLocationId: '', location: parent?.name || '', roomNumber: '' })); clearError('location') }} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800">
+                        <option value="">Select a mapped parent location</option>{(vendorBackedTask ? vendorDestinations.map(location => ({ _id: location.parentLocationId, name: location.name })) : parentLocations).map(location => <option key={location._id} value={location._id}>{location.name}</option>)}
                       </select>
                       {formData.parentLocationId ? <select value={formData.exactLocationId || ''} onChange={event => setFormData(previous => ({ ...previous, exactLocationId: event.target.value }))} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800"><option value="">Exact place (optional)</option>{exactLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}</select> : null}
                       <p className="mb-2 text-xs text-slate-500">Choose an exact place when mapped, or enter a room/detail below. Pricing uses the parent location.</p>

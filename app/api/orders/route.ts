@@ -27,6 +27,7 @@ import {
   INDOMIE_TASK_TYPE,
 } from '@/lib/pricing';
 import { getConfiguredServiceFee } from '@/lib/pricing-config';
+import { resolveVendorDeliveryPricing, VendorPricingError } from '@/lib/vendors';
 import { splitServiceFee } from '@/lib/order-finance';
 import {
   getCreatedInMode,
@@ -115,6 +116,7 @@ export async function POST(request: NextRequest) {
       expectedIndomieMode,
       parentLocationId,
       exactLocationId,
+      vendorId,
     } = body;
 
     // New mapped orders always resolve their broad destination on the server.  The
@@ -355,8 +357,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Exact locations inherit the selected parent's fee; unmapped legacy orders use task defaults.
-    const configuredServiceFee = await getConfiguredServiceFee({ taskType: normalizedTaskType, parentLocationId: parentLocation?._id })
+    const vendorBacked = normalizedTaskType === 'shopping' || normalizedTaskType === 'restaurant' || normalizedTaskType === PRINTING_TASK_TYPE
+    let vendorPricing: Awaited<ReturnType<typeof resolveVendorDeliveryPricing>> | null = null
+    if (vendorBacked) { if (typeof vendorId !== 'string' || !parentLocation) return NextResponse.json({ error: 'Choose a vendor and delivery location.', code: 'VENDOR_NOT_FOUND' }, { status: 400 }); try { vendorPricing = await resolveVendorDeliveryPricing({ vendorId, dropoffParentLocationId: String(parentLocation._id), expectedServiceType: normalizedTaskType }) } catch (error) { const e = error as VendorPricingError; return NextResponse.json({ error: e.message, code: e.code }, { status: 400 }) } }
+    const configuredServiceFee = vendorPricing ? vendorPricing.serviceFee : await getConfiguredServiceFee({ taskType: normalizedTaskType, parentLocationId: parentLocation?._id })
     const pricing: PricingResult = calculateOrderPricing({
       amount:
         normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE
@@ -509,6 +513,13 @@ export async function POST(request: NextRequest) {
       roomNumber,
       parentLocationId: parentLocation?._id,
       exactLocationId: exactLocation?._id,
+      vendorId: vendorPricing?.vendor.id,
+      vendorName: vendorPricing?.vendor.name,
+      pickupParentLocationId: vendorPricing?.pickup.parentLocationId,
+      pickupExactLocationId: vendorPricing?.pickup.exactLocationId,
+      dropoffParentLocationId: vendorPricing?.dropoff.parentLocationId,
+      pickupParentLocationName: vendorPricing?.pickup.parentLocationName,
+      dropoffParentLocationName: vendorPricing?.dropoff.parentLocationName,
       store:
         normalizedTaskType === 'copy_notes' ||
         normalizedTaskType === WATER_TASK_TYPE ||
