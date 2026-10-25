@@ -42,7 +42,6 @@ import { io, type Socket } from 'socket.io-client'
 import { toast } from 'sonner'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
-import { CAFE_OPTIONS } from '@/lib/cafe-inquiry'
 import { CafeInquirySelector, CafeInquiryReview } from '@/components/cafe-inquiry'
 import { OrderFlowProgress, OrderMascot } from '@/components/order-mascot'
 import { SERVICE_MESSAGES } from '@/components/swifty/swifty-messages'
@@ -207,21 +206,6 @@ const taskArtwork: Record<string, StaticImageData> = {
   '/dashboard/tasks/task-printing.png': taskPrintingImage,
   '/dashboard/tasks/task-water.png': taskWaterImage,
 }
-const storeOptions: Record<string, Array<{ value: string; label: string }>> = {
-  printing: [
-    { value: '', label: 'Select a store...' },
-    { value: 'teddy', label: 'Teddy Store' },
-    { value: 'faith', label: 'Faith Store' },
-  ],
-  shopping: [
-    { value: '', label: 'Select a store...' },
-    { value: 'rita', label: 'Rita Store' },
-    { value: 'sarah', label: 'Sarah Store' },
-    { value: 'muuy V', label: 'Mummy V' },
-  ],
-  restaurant: CAFE_OPTIONS,
-}
-
 const restaurantQuickOrders = [
   'Fried rice and chicken',
   'Jollof rice and chicken',
@@ -2177,7 +2161,7 @@ if (stepNumber === detailsStep) {
                 {step === 1 ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Choose a service</h1><p className="mt-2 text-slate-500">Select the errand you need help with.</p><div className="mt-6">{renderCategoryCards(false)}</div></> : null}
                 {step === orderTypeStep ? renderRestaurantOrderType() : null}
                 {step === detailsStep ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Order details</h1><div className="mt-6">{renderDetailsFields(false)}</div></> : null}
-                {step === deliveryStep ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">{formData.taskType === 'restaurant' && !isCafeInquiry ? 'Review your order' : 'Delivery location'}</h1><p className="mt-2 text-slate-500">Pick a familiar campus location or enter a precise one.</p><div className="mt-6">{renderQuickDetails()}</div></> : null}
+                {step === deliveryStep ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Delivery location</h1><p className="mt-2 text-slate-500">Choose where this vendor can deliver your order.</p><div className="mt-6">{renderQuickDetails()}</div></> : null}
                 {step === reviewStep ? <><h1 className="text-2xl font-black text-slate-950 dark:text-white">Order summary</h1><p className="mt-2 text-slate-500">Check your items, location and total.</p><div className="mt-6">{renderOrderSummary()}</div></> : null}
               </motion.div>
             </AnimatePresence>
@@ -2225,7 +2209,7 @@ if (stepNumber === detailsStep) {
 
           {step === deliveryStep ? (
             <div>
-              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white">{formData.taskType === 'restaurant' && !isCafeInquiry ? 'Review your order' : 'Delivery location'}</h1>
+              <h1 className="text-2xl font-black leading-tight text-slate-950 dark:text-white">Delivery location</h1>
               <div className="mt-5">{renderQuickDetails()}</div>
             </div>
           ) : null}
