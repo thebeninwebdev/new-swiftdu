@@ -8,14 +8,14 @@ import { Vendor } from '@/models/vendor'
 import CampusLocation from '@/models/campus-location'
 import { normalizeVendorName } from '@/lib/vendors'
 
-const candidates = [
+const candidates: Array<{ name: string; serviceType: 'shopping' | 'restaurant'; knownPickup?: string }> = [
   { name: 'Rita Store', serviceType: 'shopping', knownPickup: 'Cafeteria' },
   { name: 'Sarah Store', serviceType: 'shopping' },
   { name: 'Mummy V', serviceType: 'shopping' },
   { name: 'Akpan Store', serviceType: 'restaurant' },
   { name: "Mama's Kitchen", serviceType: 'restaurant' },
   { name: 'Golley Shop', serviceType: 'restaurant' },
-] as const
+]
 
 async function main() {
   await connectDB()
