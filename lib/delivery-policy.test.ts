@@ -21,6 +21,8 @@ test('destination classification is independent of customer gender and persists 
   for (const gender of ['male', 'female', 'other', undefined]) {
     assert.equal(canTaskerDeliver({ location: 'New campus building', taskerGenderRestriction: 'female' }, gender), true)
   }
+  assert.equal(canTaskerDeliver({ location: 'Library', parentLocationId: 'mapped-parent', taskerGenderRestriction: 'female' }, 'male'), false)
+  assert.equal(canTaskerDeliver({ location: 'Library', parentLocationId: 'mapped-parent', taskerGenderRestriction: 'female' }, 'female'), true)
   assert.equal(canTaskerDeliver({ location: 'Girls Hostel / Boys Hostel', taskerGenderRestriction: 'any' }, 'male'), false)
   const order = new Order({ userId: 'customer', taskType: 'restaurant', location: 'Girls Hostel', amount: 1, commission: 1, totalAmount: 2, taskerGenderRestriction: 'any' })
   await order.validate()

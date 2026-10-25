@@ -29,13 +29,17 @@ export function classifyDeliveryLocation(location?: string | null): TaskerGender
   return restricted.size === 1 ? [...restricted][0] : 'any'
 }
 
-export function getOrderRestriction(order: { location?: string | null; taskerGenderRestriction?: TaskerGenderRestriction | null }) {
-  // The delivery destination alone determines eligibility, including other locations.
-  // Stale stored restrictions must neither exclude taskers nor weaken hostel rules.
+export function getOrderRestriction(order: { location?: string | null; parentLocationId?: unknown; taskerGenderRestriction?: TaskerGenderRestriction | null }) {
+  // Mapped parent locations are the source of truth. Their access rule is snapshotted
+  // on the order so later edits to a location cannot change an order already in flight.
+  if (order.parentLocationId && (order.taskerGenderRestriction === 'male' || order.taskerGenderRestriction === 'female' || order.taskerGenderRestriction === 'any')) {
+    return order.taskerGenderRestriction
+  }
+  // Keep the legacy name-based restriction for orders created before parent locations.
   return classifyDeliveryLocation(order.location)
 }
 
-export function canTaskerDeliver(order: { location?: string | null; taskerGenderRestriction?: TaskerGenderRestriction | null }, gender?: string | null) {
+export function canTaskerDeliver(order: { location?: string | null; parentLocationId?: unknown; taskerGenderRestriction?: TaskerGenderRestriction | null }, gender?: string | null) {
   const restriction = getOrderRestriction(order)
   return restriction === 'any' || ((restriction === 'male' || restriction === 'female') && restriction === gender)
 }
