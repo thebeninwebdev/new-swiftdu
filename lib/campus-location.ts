@@ -1,5 +1,6 @@
 export const CAMPUS_LOCATION_TYPES = ['building', 'hostel', 'lecture_theatre', 'room', 'entrance', 'shop', 'cafeteria', 'pickup_point', 'landmark', 'other'] as const
 export type CampusLocationType = (typeof CAMPUS_LOCATION_TYPES)[number]
+export type TaskerGenderRestriction = 'male' | 'female' | 'any'
 
 export interface CampusCoordinates { latitude: number; longitude: number; accuracy?: number; capturedAt: Date }
 export type CampusLocationLike = { _id?: unknown; parentLocationId?: unknown | null; active?: boolean; coordinates: CampusCoordinates }
@@ -41,4 +42,10 @@ export function validateCampusLocationInput(value: unknown, now = new Date()) {
   const type = data.type
   if (typeof type !== 'string' || !CAMPUS_LOCATION_TYPES.includes(type as CampusLocationType)) throw new Error('Invalid location type.')
   return { name, normalizedName: normalizeLocationKey(name), type: type as CampusLocationType, coordinates: validateCampusCoordinates(data.coordinates, now) }
+}
+
+export function validateTaskerGenderRestriction(value: unknown): TaskerGenderRestriction {
+  if (value === undefined || value === null || value === '') return 'any'
+  if (value === 'male' || value === 'female' || value === 'any') return value
+  throw new Error('Choose who can deliver to this parent location.')
 }

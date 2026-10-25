@@ -7,10 +7,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Navigation, Plus, RotateCcw, Search, X } from 'lucide-react'
 type Coordinates={latitude:number;longitude:number;accuracy:number;capturedAt:string}
-type Location={_id:string;name:string;type:CampusLocationType;parentLocationId?:string|null;active:boolean;coordinates:Coordinates;childCount:number}
+type GenderRestriction='male'|'female'|'any'
+type Location={_id:string;name:string;type:CampusLocationType;parentLocationId?:string|null;active:boolean;coordinates:Coordinates;childCount:number;deliveryPolicy?:{taskerGenderRestriction?:GenderRestriction}}
 type Mode='parent'|'exact'
 const types:Record<CampusLocationType,string>={building:'Building',hostel:'Hostel',lecture_theatre:'Lecture theatre',room:'Room',entrance:'Entrance',shop:'Shop',cafeteria:'Cafeteria',pickup_point:'Pickup point',landmark:'Landmark',other:'Other'}
-const blank={name:'',type:'building' as CampusLocationType,parentLocationId:''}
+const blank={name:'',type:'building' as CampusLocationType,parentLocationId:'',taskerGenderRestriction:'any' as GenderRestriction}
 export default function AdminLocationsPage(){
  const [locations,setLocations]=useState<Location[]>([]),[form,setForm]=useState(blank),[mode,setMode]=useState<Mode>('parent'),[coords,setCoords]=useState<Coordinates|null>(null),[editing,setEditing]=useState<Location|null>(null),[saving,setSaving]=useState(false),[capturing,setCapturing]=useState(false),[search,setSearch]=useState('')
  const load=useCallback(async()=>{try{const r=await fetch('/api/admin/locations');const d=await r.json();if(!r.ok)throw new Error(d.error);setLocations(d.locations)}catch(e){toast.error(e instanceof Error?e.message:'Unable to load locations.')}},[])
@@ -20,7 +21,7 @@ export default function AdminLocationsPage(){
  const cancel=()=>start('parent')
  const capture=async()=>{setCapturing(true);try{setCoords(await captureDeliveryPosition())}catch(e){toast.error(e instanceof Error?e.message:'Unable to capture location.')}finally{setCapturing(false)}}
  const save=async(e:React.FormEvent)=>{e.preventDefault();if(saving)return;if(!coords)return toast.error('Confirm your current location before saving.');if(mode==='exact'&&!form.parentLocationId)return toast.error('Select a parent location.');setSaving(true);try{const r=await fetch(editing?`/api/admin/locations/${editing._id}`:'/api/admin/locations',{method:editing?'PATCH':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...form,parentLocationId:mode==='parent'?null:form.parentLocationId,coordinates:coords})});const d=await r.json();if(!r.ok)throw new Error(d.error);toast.success('Location saved.');cancel();await load()}catch(e){console.error('[admin locations] Failed to save location.',e);toast.error(e instanceof Error?e.message:'Unable to save location.')}finally{setSaving(false)}}
- const edit=(x:Location)=>{setEditing(x);setMode(x.parentLocationId?'exact':'parent');setForm({name:x.name,type:x.type,parentLocationId:x.parentLocationId||''});setCoords(x.coordinates);window.scrollTo({top:0,behavior:'smooth'})}
+ const edit=(x:Location)=>{setEditing(x);setMode(x.parentLocationId?'exact':'parent');setForm({name:x.name,type:x.type,parentLocationId:x.parentLocationId||'',taskerGenderRestriction:x.deliveryPolicy?.taskerGenderRestriction||'any'});setCoords(x.coordinates);window.scrollTo({top:0,behavior:'smooth'})}
  const toggle=async(x:Location)=>{const r=await fetch(`/api/admin/locations/${x._id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({active:!x.active})});const d=await r.json();if(!r.ok)return toast.error(d.error);await load()}
  const filtered=locations.filter(x=>x.name.toLowerCase().includes(search.toLowerCase())), parentName=(id:string)=>parents.find(x=>x._id===id)?.name
  return (
@@ -114,6 +115,21 @@ export default function AdminLocationsPage(){
              ))}
            </select>
          </label>
+         {mode === "parent" && (
+           <label className="text-sm font-semibold">
+             Delivery access *
+             <select
+               value={form.taskerGenderRestriction}
+               onChange={(e) => setForm({ ...form, taskerGenderRestriction: e.target.value as GenderRestriction })}
+               className="mt-1 h-11 w-full rounded-xl border px-3"
+             >
+               <option value="any">Everyone</option>
+               <option value="male">Boys only</option>
+               <option value="female">Girls only</option>
+             </select>
+             <span className="mt-1 block text-xs font-normal text-slate-500">Only matching taskers can accept orders to this parent location.</span>
+           </label>
+         )}
        </div>
        {mode === "exact" && form.parentLocationId && (
          <p className="mt-3 rounded-xl bg-violet-50 p-3 text-sm text-violet-800">
