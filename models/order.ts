@@ -519,7 +519,7 @@ const orderSchema = new Schema<IOrder>(
 );
 
 orderSchema.pre('validate', function () {
-  if (this.isNew || this.isModified('location')) {
+  if ((this.isNew || this.isModified('location')) && !this.taskerGenderRestriction) {
     this.taskerGenderRestriction = classifyDeliveryLocation(this.location);
     this.deliveryDestinationKey = getRoomDestination(this.location)?.id;
   }

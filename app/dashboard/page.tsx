@@ -384,7 +384,7 @@ export default function ErrandWizardPage() {
   const [quotedServiceFee, setQuotedServiceFee] = useState<number | null>(null)
   const [parentLocations, setParentLocations] = useState<Array<{ _id: string; name: string }>>([])
   const [vendors, setVendors] = useState<Array<{ id: string; name: string }>>([])
-  const [vendorDestinations, setVendorDestinations] = useState<Array<{ parentLocationId: string; name: string }>>([])
+  const [vendorDestinations, setVendorDestinations] = useState<Array<{ parentLocationId: string; name: string; requiresRoomNumber?: boolean }>>([])
   const [exactLocations, setExactLocations] = useState<Array<{ _id: string; name: string }>>([])
   const [isExcoTrainingMode, setIsExcoTrainingMode] = useState(false)
   const socketRef = useRef<Socket | null>(null)
@@ -423,6 +423,7 @@ export default function ErrandWizardPage() {
     void fetch(`/api/locations?parentLocationId=${encodeURIComponent(formData.parentLocationId)}`).then(response => response.ok ? response.json() : null).then(data => setExactLocations(data?.locations || []) ).catch(() => setExactLocations([]))
   }, [formData.parentLocationId])
   const vendorBackedTask = ['shopping', 'restaurant', 'printing'].includes(formData.taskType)
+  const selectedVendorDestination = vendorDestinations.find(destination => destination.parentLocationId === formData.parentLocationId)
   useEffect(() => { if (!vendorBackedTask) { setVendors([]); setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors?serviceType=${formData.taskType}`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendors(data?.vendors || []) }); return () => { cancelled = true } }, [formData.taskType, vendorBackedTask])
   useEffect(() => { if (!formData.vendorId) { setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors/${formData.vendorId}/delivery-options`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendorDestinations(data?.destinations || []) }); return () => { cancelled = true } }, [formData.vendorId])
 
@@ -903,8 +904,8 @@ export default function ErrandWizardPage() {
     pricing.pricingModel === 'tiered' &&
     ((formData.taskType === PRINTING_TASK_TYPE && pricing.amount > 0) ||
       (Number.isFinite(amount) && amount > 0))
-  const selectedStores = storeOptions[formData.taskType] || []
-  const selectedStoreLabel = selectedStores.find((item) => item.value === formData.store)?.label || ''
+  const selectedVendor = vendors.find((vendor) => vendor.id === formData.vendorId)
+  const selectedVendorName = selectedVendor?.name || formData.store || ''
   const waterWarning =
     description.length > 0 &&
     descriptionMentionsWater(description) &&
@@ -1253,9 +1254,13 @@ if (stepNumber === detailsStep) {
 }
 
  if (stepNumber === deliveryStep) {
-  try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { nextErrors.roomNumber = (error as Error).message }
-  if (!formData.location.trim()) {
-    nextErrors.location = 'Enter the delivery location.'
+  if (vendorBackedTask) {
+    if (!formData.vendorId) nextErrors.vendorId = 'Choose a vendor first.'
+    if (!formData.parentLocationId || !formData.location.trim()) nextErrors.location = 'Choose where to deliver.'
+    if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) nextErrors.roomNumber = 'Enter the room number.'
+  } else {
+    try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { nextErrors.roomNumber = (error as Error).message }
+    if (!formData.location.trim()) nextErrors.location = 'Enter the delivery location.'
   }
 }
 
@@ -1292,7 +1297,12 @@ if (stepNumber === detailsStep) {
     // Keep one key across retries of this logical submission.
     const idempotencyKey = orderIdempotencyKeyRef.current || crypto.randomUUID()
     orderIdempotencyKeyRef.current = idempotencyKey
-    try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { toast.error((error as Error).message); return }
+    if (vendorBackedTask) {
+      if (!formData.vendorId || !formData.parentLocationId) { toast.error('Choose a vendor and delivery location.'); return }
+      if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) { toast.error('Enter the room number.'); return }
+    } else {
+      try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { toast.error((error as Error).message); return }
+    }
     pauseRealtime(REALTIME_PAUSE_MS * 2)
 
     setSubmissionFailed(false)
@@ -1305,7 +1315,7 @@ if (stepNumber === detailsStep) {
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
           ...formData,
-          roomNumber: getRoomDestination(formData.location)?.requiresRoomNumber ? formData.roomNumber : undefined,
+          roomNumber: vendorBackedTask ? (selectedVendorDestination?.requiresRoomNumber ? formData.roomNumber : undefined) : getRoomDestination(formData.location)?.requiresRoomNumber ? formData.roomNumber : undefined,
           description: formData.taskType === WATER_TASK_TYPE ? '' : description,
           amount: String(amount),
           cafeInquiry: isCafeInquiry,
@@ -1497,28 +1507,24 @@ if (stepNumber === detailsStep) {
   ) : null
 
   const renderStoreSelect = () =>
-    formData.taskType &&
-    formData.taskType !== 'copy_notes' &&
-    true &&
-    formData.taskType !== INDOMIE_TASK_TYPE &&
-    formData.taskType !== WATER_TASK_TYPE ? (
+    vendorBackedTask ? (
       <div>
         <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">
-          {formData.taskType === 'restaurant' ? 'Store/Restaurant' : 'Store'}
+          {formData.taskType === 'restaurant' ? 'Select Restaurant' : formData.taskType === PRINTING_TASK_TYPE ? 'Select Print Shop' : 'Select Store'}
         </label>
         <select
-          name="store"
-          value={formData.store}
-          onChange={handleInputChange}
+          value={formData.vendorId || ''}
+          onChange={(event) => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || '', parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setVendorDestinations([]); setQuotedServiceFee(null) }}
           className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 mb-4"
         >
-          {selectedStores.map((item) => (
-            <option key={item.value} value={item.value}>
-              {item.label}
+          <option value="">{vendors.length ? 'Choose a vendor…' : `No ${formData.taskType === 'restaurant' ? 'restaurants' : formData.taskType === 'printing' ? 'print shops' : 'stores'} are currently available.`}</option>
+          {vendors.map((vendor) => (
+            <option key={vendor.id} value={vendor.id}>
+              {vendor.name}
             </option>
           ))}
         </select>
-        {errors.store ? <p className="mt-2 text-sm text-red-500">{errors.store}</p> : null}
+        {errors.vendorId ? <p className="mt-2 text-sm text-red-500">{errors.vendorId}</p> : null}
         {renderShoppingDistanceNotice()}
       </div>
     ) : null
@@ -1561,7 +1567,7 @@ if (stepNumber === detailsStep) {
     </div>
   )
 
-  const renderCafeReview = () => bonusPreview.firstOrderBonusApplied ? <div className="space-y-3"><p className="font-bold">{selectedStoreLabel || formData.store} &middot; {formData.location}</p><FirstOrderPriceBreakdown order={previewOrder} preview /></div> : <CafeInquiryReview cafe={selectedStoreLabel || formData.store || ''} location={formData.location} serviceFee={pricing.serviceFee} discounted={hasAvailableServiceFeeDiscount} />
+  const renderCafeReview = () => bonusPreview.firstOrderBonusApplied ? <div className="space-y-3"><p className="font-bold">{selectedVendorName} &middot; {formData.location}</p><FirstOrderPriceBreakdown order={previewOrder} preview /></div> : <CafeInquiryReview cafe={selectedVendorName} location={formData.location} serviceFee={pricing.serviceFee} discounted={hasAvailableServiceFeeDiscount} />
 
   const renderRestaurantEstimate = () => (
     <div className="flex flex-wrap items-center justify-between gap-2 text-sm"><span>Subtotal</span><span className="font-bold tabular-nums">{formatNaira(restaurantEstimate.amount)}</span></div>
@@ -1962,7 +1968,7 @@ if (stepNumber === detailsStep) {
     </div>
   )
 
-  const renderRoomNumber = () => getRoomDestination(formData.location)?.requiresRoomNumber ? (
+  const renderRoomNumber = () => (vendorBackedTask ? selectedVendorDestination?.requiresRoomNumber : getRoomDestination(formData.location)?.requiresRoomNumber) ? (
     <div>
       <label htmlFor="delivery-room" className="mb-2 block text-sm font-bold">Room number <span className="text-red-500">*</span></label>
       <input id="delivery-room" name="roomNumber" value={formData.roomNumber || ''} onChange={handleInputChange} required maxLength={40} placeholder="e.g. A12" aria-invalid={Boolean(errors.roomNumber)} aria-describedby={errors.roomNumber ? 'delivery-room-error' : undefined} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm dark:border-slate-800 dark:bg-slate-900" />
@@ -1970,7 +1976,25 @@ if (stepNumber === detailsStep) {
     </div>
   ) : null
 
-  const renderQuickDetails = () => (
+  const renderQuickDetails = () => vendorBackedTask ? (
+    <div className="space-y-4">
+      <div>
+        <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Deliver to</label>
+        {!formData.vendorId ? <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Choose a vendor before selecting a delivery location.</p> : (
+          <>
+            <select value={formData.parentLocationId || ''} onChange={(event) => { const destination = vendorDestinations.find(item => item.parentLocationId === event.target.value); setFormData(previous => ({ ...previous, parentLocationId: event.target.value, exactLocationId: '', location: destination?.name || '', roomNumber: '' })); clearError('location') }} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900">
+              <option value="">Select where to deliver</option>
+              {vendorDestinations.map((destination) => <option key={destination.parentLocationId} value={destination.parentLocationId}>{destination.name}</option>)}
+            </select>
+            {vendorDestinations.length === 0 ? <p className="mt-2 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
+            {formData.parentLocationId ? <select value={formData.exactLocationId || ''} onChange={(event) => setFormData(previous => ({ ...previous, exactLocationId: event.target.value }))} className="mt-3 h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900"><option value="">Exact place (optional)</option>{exactLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}</select> : null}
+          </>
+        )}
+        {errors.location ? <p className="mt-2 text-sm text-red-500">{errors.location}</p> : null}
+      </div>
+      {renderRoomNumber()}
+    </div>
+  ) : (
     <div className="space-y-4">
       {formData.taskType === 'restaurant' && !isCafeInquiry ? renderRestaurantReview() : null}
 
@@ -2006,10 +2030,10 @@ if (stepNumber === detailsStep) {
           {description || selectedTask.label}
         </span>
       </div>
-      {selectedStoreLabel ? (
+      {selectedVendorName ? (
         <div className="flex justify-between gap-4">
           <span className="text-slate-500">Store</span>
-          <span className="font-semibold">{selectedStoreLabel}</span>
+          <span className="font-semibold">{selectedVendorName}</span>
         </div>
       ) : null}
       <div className="flex justify-between gap-4">
@@ -2483,11 +2507,12 @@ if (stepNumber === detailsStep) {
                   formData.taskType !== INDOMIE_TASK_TYPE &&
                   formData.taskType !== WATER_TASK_TYPE ? (
                     <div>
-                      <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Store className="h-4 w-4 text-indigo-500" />Select Store</label>
-                      <select name="store" value={formData.store} onChange={handleInputChange} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
-                        {selectedStores.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+                      <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Store className="h-4 w-4 text-indigo-500" />{formData.taskType === 'restaurant' ? 'Select Restaurant' : formData.taskType === PRINTING_TASK_TYPE ? 'Select Print Shop' : 'Select Store'}</label>
+                      <select value={formData.vendorId || ''} onChange={event => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || '', parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setQuotedServiceFee(null) }} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
+                        <option value="">Choose a vendor…</option>
+                        {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
                       </select>
-                      {errors.store ? <p className="mt-2 text-sm text-red-500">{errors.store}</p> : null}
+                      {errors.vendorId ? <p className="mt-2 text-sm text-red-500">{errors.vendorId}</p> : null}
                       {renderShoppingDistanceNotice()}
                     </div>
                   ) : null}
@@ -3412,25 +3437,25 @@ if (stepNumber === detailsStep) {
                   </div>
                   <div>
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><MapPin className="h-4 w-4 text-indigo-500" />Delivery Location</label>
-                    {parentLocations.length > 0 ? <>
-                      {vendorBackedTask ? <select value={formData.vendorId || ''} onChange={event => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || '', parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setQuotedServiceFee(null) }} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3"><option value="">Select a vendor</option>{vendors.map(vendor => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}</select> : null}
+                    {(vendorBackedTask || parentLocations.length > 0) ? <>
                       <select disabled={vendorBackedTask && !formData.vendorId} value={formData.parentLocationId || ''} onChange={event => { const parent = vendorBackedTask ? vendorDestinations.find(item => item.parentLocationId === event.target.value) : parentLocations.find(item => item._id === event.target.value); const id = vendorBackedTask ? event.target.value : event.target.value; setFormData(previous => ({ ...previous, parentLocationId: id, exactLocationId: '', location: parent?.name || '', roomNumber: '' })); clearError('location') }} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Select a mapped parent location</option>{(vendorBackedTask ? vendorDestinations.map(location => ({ _id: location.parentLocationId, name: location.name })) : parentLocations).map(location => <option key={location._id} value={location._id}>{location.name}</option>)}
+                        <option value="">{vendorBackedTask ? 'Select where to deliver' : 'Select a mapped parent location'}</option>{(vendorBackedTask ? vendorDestinations.map(location => ({ _id: location.parentLocationId, name: location.name })) : parentLocations).map(location => <option key={location._id} value={location._id}>{location.name}</option>)}
                       </select>
+                      {vendorBackedTask && formData.vendorId && vendorDestinations.length === 0 ? <p className="mb-3 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
                       {formData.parentLocationId ? <select value={formData.exactLocationId || ''} onChange={event => setFormData(previous => ({ ...previous, exactLocationId: event.target.value }))} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800"><option value="">Exact place (optional)</option>{exactLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}</select> : null}
                       <p className="mb-2 text-xs text-slate-500">Choose an exact place when mapped, or enter a room/detail below. Pricing uses the parent location.</p>
                     </> : null}
-                    <input type="text" name="location" value={formData.location} onChange={handleInputChange} placeholder="Library 2nd Floor, Hall B Room 204..." className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />
+                    {!vendorBackedTask && <input type="text" name="location" value={formData.location} onChange={handleInputChange} placeholder="Library 2nd Floor, Hall B Room 204..." className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />}
                     {errors.location ? <p className="mt-2 text-sm text-red-500">{errors.location}</p> : null}
                     {renderRoomNumber()}
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  {!vendorBackedTask && <div className="flex flex-wrap gap-2">
                     {['Amnesty Hostel', 'Girls Hostel', 'Staff Quarters', 'PLT', 'Lecturers Block', 'Bursary', 'NDDC Auditorium', 'Library'].map((location) => (
                       <button key={location} type="button" onClick={() => handleLocationSelect(location)} className="rounded-full bg-slate-100 px-3 py-1.5 text-sm text-slate-600 transition-colors hover:bg-indigo-100 hover:text-indigo-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-indigo-900/30 dark:hover:text-indigo-400">
                         {location}
                       </button>
                     ))}
-                  </div>
+                  </div>}
                 </div>
               ) : null}
 
@@ -3444,7 +3469,7 @@ if (stepNumber === detailsStep) {
                     <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-4 dark:border-slate-700">
                       <div>
                         <p className="font-semibold text-slate-900 dark:text-white">{taskTypes.find((item) => item.value === formData.taskType)?.label}</p>
-                        {selectedStoreLabel ? <p className="text-sm text-slate-500 dark:text-slate-400">{selectedStoreLabel}</p> : null}
+                        {selectedVendorName ? <p className="text-sm text-slate-500 dark:text-slate-400">{selectedVendorName}</p> : null}
                       </div>
                       <button type="button" onClick={() => handleEditStep(1)} className="text-sm font-medium text-indigo-500 hover:text-indigo-600">Edit</button>
                     </div>

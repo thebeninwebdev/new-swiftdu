@@ -121,11 +121,11 @@ export async function POST(request: NextRequest) {
 
     // New mapped orders always resolve their broad destination on the server.  The
     // parent is the pricing identity; an exact location is only a delivery target.
-    let parentLocation: { _id: Types.ObjectId; name: string; coordinates: unknown } | null = null;
+    let parentLocation: { _id: Types.ObjectId; name: string; coordinates: unknown; deliveryPolicy?: { requiresRoomNumber?: boolean; taskerGenderRestriction?: 'male' | 'female' | 'any' } } | null = null;
     let exactLocation: { _id: unknown; name: string } | null = null;
     if (parentLocationId !== undefined && parentLocationId !== null && parentLocationId !== '') {
       if (!Types.ObjectId.isValid(parentLocationId)) return NextResponse.json({ error: 'Choose a valid parent location.' }, { status: 400 });
-      parentLocation = await CampusLocation.findOne({ _id: parentLocationId, parentLocationId: null, active: true }).select('name coordinates').lean();
+      parentLocation = await CampusLocation.findOne({ _id: parentLocationId, parentLocationId: null, active: true }).select('name coordinates deliveryPolicy').lean();
       if (!parentLocation) return NextResponse.json({ error: 'Choose an active parent location.' }, { status: 400 });
       if (exactLocationId) {
         if (!Types.ObjectId.isValid(exactLocationId)) return NextResponse.json({ error: 'Choose a valid exact location.' }, { status: 400 });
@@ -151,7 +151,14 @@ export async function POST(request: NextRequest) {
     }
 
     let roomNumber: string | undefined;
-    try { roomNumber = validateDeliveryRoom(resolvedLocation, body.roomNumber); } catch (error) {
+    try {
+      if (parentLocation) {
+        roomNumber = typeof body.roomNumber === 'string' ? body.roomNumber.trim() || undefined : undefined;
+        if (parentLocation.deliveryPolicy?.requiresRoomNumber && !roomNumber) throw new Error('Enter the room number for this delivery location.');
+      } else {
+        roomNumber = validateDeliveryRoom(resolvedLocation, body.roomNumber);
+      }
+    } catch (error) {
       return NextResponse.json({ error: (error as Error).message }, { status: 400 });
     }
     const normalizedDescription = String(description || '').trim();
@@ -510,6 +517,7 @@ export async function POST(request: NextRequest) {
       pricingModel: pricing.pricingModel,
       totalAmount,
       location: resolvedLocation,
+      taskerGenderRestriction: parentLocation?.deliveryPolicy?.taskerGenderRestriction,
       roomNumber,
       parentLocationId: parentLocation?._id,
       exactLocationId: exactLocation?._id,
