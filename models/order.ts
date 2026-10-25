@@ -34,6 +34,14 @@ export interface IOrder extends Document, CafeInquiryFields {
   /** Parent is the pricing destination; exact is the navigation/delivery target. */
   parentLocationId?: mongoose.Types.ObjectId;
   exactLocationId?: mongoose.Types.ObjectId;
+  /** Optional Phase-1 snapshots for future vendor-backed orders. */
+  vendorId?: mongoose.Types.ObjectId;
+  vendorName?: string;
+  pickupParentLocationId?: mongoose.Types.ObjectId;
+  pickupExactLocationId?: mongoose.Types.ObjectId;
+  dropoffParentLocationId?: mongoose.Types.ObjectId;
+  pickupParentLocationName?: string;
+  dropoffParentLocationName?: string;
   batchId?: string;
   batchWindowStart?: Date;
   batchWindowEnd?: Date;
@@ -242,6 +250,13 @@ const orderSchema = new Schema<IOrder>(
     deliveryDestinationKey: String,
     parentLocationId: { type: Schema.Types.ObjectId, ref: 'CampusLocation', index: true },
     exactLocationId: { type: Schema.Types.ObjectId, ref: 'CampusLocation', index: true },
+    vendorId: { type: Schema.Types.ObjectId, ref: 'Vendor', index: true },
+    vendorName: String,
+    pickupParentLocationId: { type: Schema.Types.ObjectId, ref: 'CampusLocation', index: true },
+    pickupExactLocationId: { type: Schema.Types.ObjectId, ref: 'CampusLocation' },
+    dropoffParentLocationId: { type: Schema.Types.ObjectId, ref: 'CampusLocation', index: true },
+    pickupParentLocationName: String,
+    dropoffParentLocationName: String,
     batchId: { type: String, index: true },
     batchWindowStart: Date,
     batchWindowEnd: Date,

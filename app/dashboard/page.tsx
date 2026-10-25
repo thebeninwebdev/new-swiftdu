@@ -8,7 +8,6 @@ import { needsOrderPayment } from '@/lib/order-tracking'
 import { formatRestaurantCost, getRestaurantEstimate } from '@/lib/restaurant-estimate'
 import taskFoodImage from '@/public/dashboard/tasks/task-food.png'
 import taskStoreShoppingImage from '@/public/dashboard/tasks/task-store-shopping.png'
-import taskIndomieImage from '@/public/dashboard/tasks/task-indomie.png'
 import taskPrintingImage from '@/public/dashboard/tasks/task-printing.png'
 import taskWaterImage from '@/public/dashboard/tasks/task-water.png'
 
@@ -174,15 +173,6 @@ const taskTypes: TaskTypeConfig[] = [
     image: '/dashboard/tasks/task-store-shopping.png',
   },
   {
-    value: INDOMIE_TASK_TYPE,
-    label: 'Buy Indomie',
-    description: 'Indomie orders with pack and egg counts.',
-    mobileDescription: 'Noodles & eggs',
-    icon: ShoppingBag,
-    accent: 'from-rose-500 to-amber-500',
-    image: '/dashboard/tasks/task-indomie.png',
-  },
-  {
     value: 'printing',
     label: 'Printing Services',
     description: 'Notes, assignments, and document printing.',
@@ -213,7 +203,6 @@ const taskTypes: TaskTypeConfig[] = [
 const taskArtwork: Record<string, StaticImageData> = {
   '/dashboard/tasks/task-food.png': taskFoodImage,
   '/dashboard/tasks/task-store-shopping.png': taskStoreShoppingImage,
-  '/dashboard/tasks/task-indomie.png': taskIndomieImage,
   '/dashboard/tasks/task-printing.png': taskPrintingImage,
   '/dashboard/tasks/task-water.png': taskWaterImage,
 }
@@ -1460,7 +1449,7 @@ if (stepNumber === detailsStep) {
   const quickLocations = ['Amnesty Hostel', 'Girls Hostel', 'PLT', 'Library', 'NDDC Auditorium']
 
   const renderCategoryCards = (compact = false) => (
-    <div className={compact ? 'grid grid-cols-2 gap-3' : 'grid gap-3 sm:grid-cols-2 lg:grid-cols-3'}>
+    <div className={compact ? 'grid grid-cols-2 gap-3' : 'grid grid-cols-2 gap-3'}>
       {sortedTaskTypes.map((item) => {
         const Icon = item.icon
         const selected = formData.taskType === item.value
@@ -1477,7 +1466,7 @@ if (stepNumber === detailsStep) {
             }}
             className={`group relative overflow-hidden border text-left transition duration-300 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500 focus-visible:ring-offset-2 ${
               compact
-                ? `${isWater ? 'col-span-2 min-h-[136px]' : 'min-h-[160px]'} w-full rounded-[22px] p-4 shadow-[0_8px_28px_rgba(15,23,42,0.06)] ${selected ? 'border-violet-500 bg-violet-50/50 dark:bg-violet-950/40' : 'border-slate-200/80 bg-white hover:border-violet-200 dark:border-slate-700 dark:bg-slate-900'}`
+                ? `min-h-[160px] w-full rounded-[22px] p-4 shadow-[0_8px_28px_rgba(15,23,42,0.06)] ${selected ? 'border-violet-500 bg-violet-50/50 dark:bg-violet-950/40' : 'border-slate-200/80 bg-white hover:border-violet-200 dark:border-slate-700 dark:bg-slate-900'}`
                 : `flex min-h-[124px] items-center gap-4 rounded-2xl p-4 pr-[32%] shadow-sm ${selected ? 'border-violet-500 bg-violet-50/50 dark:bg-violet-950/40' : 'border-slate-200 bg-white hover:border-violet-200 dark:border-slate-700 dark:bg-slate-900'}`
             }`}
           >

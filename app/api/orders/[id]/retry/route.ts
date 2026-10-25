@@ -104,7 +104,7 @@ export async function POST(
 
     const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(session.user.id);
     // Reposts always start with today's normal price, never a discounted snapshot.
-    const configuredServiceFee = await getConfiguredServiceFee({ taskType: order.taskType, location: order.location });
+    const configuredServiceFee = await getConfiguredServiceFee({ taskType: order.taskType, parentLocationId: order.parentLocationId });
     const pricing: PricingResult = calculateOrderPricing({
       ...order.toObject(), amount: order.cafeInquiry ? 0 : Number(order.itemPrice ?? order.amount),
       restaurantPeopleCount: order.cafeInquiry ? 1 : order.restaurantPeopleCount,

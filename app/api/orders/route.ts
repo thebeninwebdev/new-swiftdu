@@ -355,8 +355,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Legacy rules remain a safe fallback. A mapped exact location never enters this resolver.
-    const configuredServiceFee = await getConfiguredServiceFee({ taskType: normalizedTaskType, location: resolvedLocation })
+    // Exact locations inherit the selected parent's fee; unmapped legacy orders use task defaults.
+    const configuredServiceFee = await getConfiguredServiceFee({ taskType: normalizedTaskType, parentLocationId: parentLocation?._id })
     const pricing: PricingResult = calculateOrderPricing({
       amount:
         normalizedTaskType === 'copy_notes' || normalizedTaskType === WATER_TASK_TYPE

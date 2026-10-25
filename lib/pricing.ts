@@ -6,6 +6,7 @@ import { PLATFORM_SETTLEMENT_SHARE } from './order-finance'
 export const WATER_PLATFORM_FEE_RATE = PLATFORM_SETTLEMENT_SHARE
 export const CAFE_INQUIRY_EXTRA_FEE = 50
 export const RESTAURANT_MAX_PEOPLE = 3
+export const RESTAURANT_ADDITIONAL_PERSON_FEE = 200
 // Packaging is sold as a priced option, not an automatic surcharge.
 export const RESTAURANT_TAKEAWAY_PACK_PRICE = 200
 export const RESTAURANT_TAKEAWAY_FEE = 0
@@ -232,7 +233,8 @@ export function calculateOrderPricing(input: {
     )
     const restaurantPackagingFee = 0
 
-    const serviceFee = configuredServiceFee + (input.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)
+    const additionalPeopleFee = Math.max(0, restaurantPeopleCount - 1) * RESTAURANT_ADDITIONAL_PERSON_FEE
+    const serviceFee = configuredServiceFee + additionalPeopleFee + (input.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)
 
     return {
       amount,

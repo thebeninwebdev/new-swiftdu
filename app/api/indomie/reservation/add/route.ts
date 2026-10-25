@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const fresh = await Order.findById(parent._id)
     if (!fresh || !fresh.taskerId || !fresh.indomieRunAt || (!fresh.isTestOrder && !isRunStillBookable(fresh.indomieRunAt, new Date(), settings))) return NextResponse.json({ error: 'This run is no longer available.' }, { status: 409 })
     if (!await canAssignCapacity(fresh.taskerId, 1, fresh.isTestOrder === true)) return NextResponse.json({ error: 'This run no longer has room for another meal. Choose the next run.' }, { status: 409 })
-    const configuredServiceFee = await getConfiguredServiceFee({ taskType: 'indomie', location: fresh.location })
+    const configuredServiceFee = await getConfiguredServiceFee({ taskType: 'indomie', parentLocationId: fresh.parentLocationId })
     const pricing: PricingResult = calculateOrderPricing({ amount, taskType: 'indomie', indomiePacks: packs, eggCount: eggs, serviceFee: configuredServiceFee ?? undefined })
     const settlement = splitServiceFee(pricing.serviceFee)
     if (!fresh.hasPaid) {
