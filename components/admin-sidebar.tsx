@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Store,
+  Truck,
   Users,
   X,
 } from 'lucide-react'
@@ -41,6 +42,12 @@ const adminNavigation = [
     href: '/admin/marketplace',
     icon: Store,
     description: 'Businesses, locations & pricing',
+  },
+  {
+    label: 'Vendors',
+    href: '/admin/vendors',
+    icon: Truck,
+    description: 'Pickup & delivery coverage',
   },
   {
     label: 'Operations',
