@@ -451,14 +451,14 @@ export default function AdminUsersPage() {
                 <div className="relative group">
                   <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500 group-focus-within:text-violet-600 transition-colors" />
                   <Input
-                    placeholder="Search users..."
+                    placeholder="Search name, phone, birthday, email, location..."
                     value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+                    onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
                     className="pl-9 transition-all duration-300 focus:ring-2 focus:ring-violet-200"
                   />
                 </div>
 
-                <Select value={roleFilter} onValueChange={(value) => setRoleFilter(value ?? 'all')}>
+                <Select value={roleFilter} onValueChange={(value) => { setRoleFilter(value ?? 'all'); setCurrentPage(1) }}>
                   <SelectTrigger className="transition-all duration-300 hover:border-violet-50">
                     <SelectValue placeholder="Filter by role" />
                   </SelectTrigger>
@@ -470,7 +470,7 @@ export default function AdminUsersPage() {
                   </SelectContent>
                 </Select>
 
-                <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value || 'all')}>
+                <Select value={statusFilter} onValueChange={(value) => { setStatusFilter(value || 'all'); setCurrentPage(1) }}>
                   <SelectTrigger className="transition-all duration-300 hover:border-violet-50">
                     <SelectValue placeholder="Filter by status" />
                   </SelectTrigger>

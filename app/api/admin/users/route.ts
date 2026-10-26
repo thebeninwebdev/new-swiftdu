@@ -3,6 +3,7 @@ import { Types } from 'mongoose'
 import { connectDB } from '@/lib/db'
 import {User} from '@/models/user'
 import { Order } from '@/models/order'
+import { buildAdminUserSearch } from '@/lib/admin-user-search'
 
 function getUserLookupConditions(userId?: string | null) {
   const conditions: Record<string, unknown>[] = []
@@ -42,12 +43,8 @@ export async function GET(req: NextRequest) {
     const filters: Record<string, unknown> = {}
 
     const search = searchParams.get('search')
-    if (search) {
-      filters.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } }
-      ]
-    }
+    const searchFilter = buildAdminUserSearch(search)
+    if (searchFilter) Object.assign(filters, searchFilter)
 
     const role = searchParams.get('role')
     if (role && role !== 'all') {
