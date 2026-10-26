@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
 import { User } from '@/models/user'
 import Tasker from '@/models/tasker'
-import { BankDetailsError, parseBankAccount, resolvePaystackBankAccount } from '@/lib/paystack'
+import { BankDetailsError, getCachedVerifiedBankAccount, parseBankAccount, resolvePaystackBankAccount } from '@/lib/paystack'
 
 export async function PATCH(request: NextRequest) {
   try {
@@ -13,7 +13,8 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Sign in to update your bank details.' }, { status: 401 })
     }
 
-    const input = parseBankAccount(await request.json().catch(() => null))
+    const body: unknown = await request.json().catch(() => null)
+    const input = parseBankAccount(body)
 
     await connectDB()
     const user = await User.findById(session.user.id).select('role taskerId').lean()
@@ -29,7 +30,10 @@ export async function PATCH(request: NextRequest) {
       return NextResponse.json({ error: 'Tasker profile not found.' }, { status: 404 })
     }
 
-    tasker.bankDetails = await resolvePaystackBankAccount(input)
+    // The browser can only reuse a short-lived, user-bound verification token.
+    // If it is missing, expired, or belongs to different details, resolve again.
+    tasker.bankDetails = getCachedVerifiedBankAccount(session.user.id, (body as { verificationId?: unknown })?.verificationId, input)
+      || await resolvePaystackBankAccount(input)
     await tasker.save()
     return NextResponse.json({ bankDetails: tasker.bankDetails })
   } catch (error) {

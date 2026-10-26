@@ -4,7 +4,7 @@ export const ACCOUNT_VERIFICATION_ERROR = "We couldn't verify this account. Chec
 export function scheduleBankVerification(
   bankCode: string,
   accountNumber: string,
-  onSuccess: (accountName: string) => void,
+  onSuccess: (details: { accountName: string; verificationId?: string }) => void,
   onError: () => void,
 ) {
   if (!/^\d{3,12}$/.test(bankCode) || !/^\d{10}$/.test(accountNumber)) return () => {}
@@ -17,9 +17,9 @@ export function scheduleBankVerification(
         body: JSON.stringify({ bankCode, accountNumber }),
         signal: controller.signal,
       })
-      const payload: { success?: boolean; accountName?: string } = await response.json()
+      const payload: { success?: boolean; accountName?: string; verificationId?: string } = await response.json()
       if (!response.ok || !payload.success || !payload.accountName?.trim()) throw new Error('Verification failed')
-      if (!controller.signal.aborted) onSuccess(payload.accountName.trim())
+      if (!controller.signal.aborted) onSuccess({ accountName: payload.accountName.trim(), verificationId: payload.verificationId })
     } catch {
       if (!controller.signal.aborted) onError()
     }

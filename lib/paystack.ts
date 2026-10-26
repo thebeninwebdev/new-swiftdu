@@ -1,4 +1,7 @@
+import { randomUUID } from 'crypto'
+
 const PAYSTACK_API_BASE_URL = 'https://api.paystack.co'
+const ACCOUNT_VERIFICATION_TTL_MS = 5 * 60 * 1000
 
 function getPaystackSecretKey() {
   const secretKey =
@@ -38,6 +41,13 @@ export interface PaystackBank {
   code: string
 }
 
+export interface ResolvedBankAccount {
+  bankName: string
+  bankCode: string
+  accountNumber: string
+  accountName: string
+}
+
 export class BankDetailsError extends Error {
   constructor(message: string, public readonly status: number) {
     super(message)
@@ -56,6 +66,26 @@ export function parseBankAccount(input: unknown) {
 
 let bankCache: { banks: PaystackBank[]; expires: number } | undefined
 let bankRequest: Promise<PaystackBank[]> | undefined
+const verifiedAccountCache = new Map<string, { userId: string; details: ResolvedBankAccount; expires: number }>()
+
+export function cacheVerifiedBankAccount(userId: string, details: ResolvedBankAccount) {
+  const verificationId = randomUUID()
+  const now = Date.now()
+  for (const [id, entry] of verifiedAccountCache) if (entry.expires <= now) verifiedAccountCache.delete(id)
+  verifiedAccountCache.set(verificationId, { userId, details, expires: now + ACCOUNT_VERIFICATION_TTL_MS })
+  return verificationId
+}
+
+export function getCachedVerifiedBankAccount(userId: string, verificationId: unknown, input: { bankCode: string; accountNumber: string }) {
+  if (typeof verificationId !== 'string') return null
+  const entry = verifiedAccountCache.get(verificationId)
+  if (!entry || entry.expires <= Date.now()) {
+    verifiedAccountCache.delete(verificationId)
+    return null
+  }
+  if (entry.userId !== userId || entry.details.bankCode !== input.bankCode || entry.details.accountNumber !== input.accountNumber) return null
+  return entry.details
+}
 
 export async function listPaystackBanks(): Promise<PaystackBank[]> {
   if (bankCache && bankCache.expires > Date.now()) return bankCache.banks
@@ -95,7 +125,7 @@ export async function listPaystackBanks(): Promise<PaystackBank[]> {
   }
 }
 
-export async function resolvePaystackBankAccount(input: unknown) {
+export async function resolvePaystackBankAccount(input: unknown): Promise<ResolvedBankAccount> {
   const { bankCode, accountNumber } = parseBankAccount(input)
   const bank = (await listPaystackBanks()).find((item) => item.code === bankCode)
   if (!bank) throw new BankDetailsError('Select a supported Nigerian bank.', 400)

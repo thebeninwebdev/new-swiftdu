@@ -62,13 +62,17 @@ test('bank APIs require sign-in and save only server-resolved names for the curr
   role = 'user'
   assert.equal((await PATCH(request(input))).status, 403)
   role = 'tasker'
-  assert.deepEqual(await (await POST(request(input))).json(), { success: true, accountName: 'PAYSTACK NAME' })
-  const response = await PATCH(request(input))
+  const verification = await (await POST(request(input))).json() as { success?: boolean; accountName?: string; verificationId?: string }
+  assert.equal(verification.success, true)
+  assert.equal(verification.accountName, 'PAYSTACK NAME')
+  assert.ok(verification.verificationId)
+  const response = await PATCH(request({ ...input, verificationId: verification.verificationId }))
   assert.equal(response.status, 200)
   assert.deepEqual((await response.json()).bankDetails, {
     bankName: 'Test Bank', bankCode: '999', accountNumber: '0123456789', accountName: 'PAYSTACK NAME',
   })
   assert.equal(saveCount, 1)
+  assert.equal(fetchMock.mock.callCount(), 2, 'saving a freshly verified account reuses the short-lived verification')
   shouldFail = true
   const failure = await PATCH(request(input))
   assert.equal(failure.status, 502)

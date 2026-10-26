@@ -31,7 +31,7 @@ export function BankDetailsForm({ initialDetails, onSaved, onCancel, submitLabel
   const [bankError, setBankError] = useState(false)
   const [bankAttempt, setBankAttempt] = useState(0)
   const [verificationAttempt, setVerificationAttempt] = useState(0)
-  const [verified, setVerified] = useState<{ bankCode: string; accountNumber: string; accountName: string } | null>(null)
+  const [verified, setVerified] = useState<{ bankCode: string; accountNumber: string; accountName: string; verificationId?: string } | null>(null)
   const [verificationError, setVerificationError] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -68,7 +68,7 @@ export function BankDetailsForm({ initialDetails, onSaved, onCancel, submitLabel
   useEffect(() => {
     if (!ready) return
     const cancel = scheduleBankVerification(bankCode, accountNumber,
-      (accountName) => setVerified({ bankCode, accountNumber, accountName }),
+      ({ accountName, verificationId }) => setVerified({ bankCode, accountNumber, accountName, verificationId }),
       () => setVerificationError(true))
     cancelVerification.current = cancel
     return cancel
@@ -91,7 +91,7 @@ export function BankDetailsForm({ initialDetails, onSaved, onCancel, submitLabel
       const response = await fetch(endpoint, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(extraPayload ? { ...extraPayload, bankCode, accountNumber } : { bankCode, accountNumber }),
+        body: JSON.stringify(extraPayload ? { ...extraPayload, bankCode, accountNumber, verificationId: currentVerification.verificationId } : { bankCode, accountNumber, verificationId: currentVerification.verificationId }),
       })
       const payload: { bankDetails?: VerifiedBankDetails; error?: string } = await response.json()
       if (!response.ok || !payload.bankDetails) {

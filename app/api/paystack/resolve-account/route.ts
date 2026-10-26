@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { BankDetailsError, resolvePaystackBankAccount } from '@/lib/paystack'
+import { BankDetailsError, cacheVerifiedBankAccount, resolvePaystackBankAccount } from '@/lib/paystack'
 
 export async function POST(request: NextRequest) {
   try {
@@ -8,7 +8,7 @@ export async function POST(request: NextRequest) {
     if (!session?.user?.id) return NextResponse.json({ error: 'Please sign in.' }, { status: 401 })
     const body: unknown = await request.json().catch(() => null)
     const details = await resolvePaystackBankAccount(body)
-    return NextResponse.json({ success: true, accountName: details.accountName }, {
+    return NextResponse.json({ success: true, accountName: details.accountName, verificationId: cacheVerifiedBankAccount(session.user.id, details) }, {
       headers: { 'Cache-Control': 'private, no-store' },
     })
   } catch (error) {
