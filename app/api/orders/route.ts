@@ -116,16 +116,17 @@ export async function POST(request: NextRequest) {
       expectedIndomieMode,
       parentLocationId,
       exactLocationId,
+      deliveryLocation,
       vendorId,
     } = body;
 
     // New mapped orders always resolve their broad destination on the server.  The
     // parent is the pricing identity; an exact location is only a delivery target.
-    let parentLocation: { _id: Types.ObjectId; name: string; coordinates: unknown; deliveryPolicy?: { requiresRoomNumber?: boolean; taskerGenderRestriction?: 'male' | 'female' | 'any' } } | null = null;
+    let parentLocation: { _id: Types.ObjectId; name: string; type: string; coordinates: unknown; deliveryPolicy?: { requiresRoomNumber?: boolean; taskerGenderRestriction?: 'male' | 'female' | 'any' } } | null = null;
     let exactLocation: { _id: unknown; name: string } | null = null;
     if (parentLocationId !== undefined && parentLocationId !== null && parentLocationId !== '') {
       if (!Types.ObjectId.isValid(parentLocationId)) return NextResponse.json({ error: 'Choose a valid parent location.' }, { status: 400 });
-      parentLocation = await CampusLocation.findOne({ _id: parentLocationId, parentLocationId: null, active: true }).select('name coordinates deliveryPolicy').lean();
+      parentLocation = await CampusLocation.findOne({ _id: parentLocationId, parentLocationId: null, active: true }).select('name type coordinates deliveryPolicy').lean();
       if (!parentLocation) return NextResponse.json({ error: 'Choose an active parent location.' }, { status: 400 });
       if (exactLocationId) {
         if (!Types.ObjectId.isValid(exactLocationId)) return NextResponse.json({ error: 'Choose a valid exact location.' }, { status: 400 });
@@ -154,13 +155,16 @@ export async function POST(request: NextRequest) {
     try {
       if (parentLocation) {
         roomNumber = typeof body.roomNumber === 'string' ? body.roomNumber.trim() || undefined : undefined;
-        if (parentLocation.deliveryPolicy?.requiresRoomNumber && !roomNumber) throw new Error('Enter the room number for this delivery location.');
+        if ((parentLocation.type === 'hostel' || parentLocation.deliveryPolicy?.requiresRoomNumber) && !roomNumber) throw new Error('Enter the room number for this delivery location.');
       } else {
         roomNumber = validateDeliveryRoom(resolvedLocation, body.roomNumber);
       }
     } catch (error) {
       return NextResponse.json({ error: (error as Error).message }, { status: 400 });
     }
+    const normalizedDeliveryLocation = typeof deliveryLocation === 'string' ? deliveryLocation.trim().replace(/\s+/g, ' ') || undefined : undefined;
+    if (normalizedDeliveryLocation && normalizedDeliveryLocation.length > 120) return NextResponse.json({ error: 'Exact delivery location must be at most 120 characters.' }, { status: 400 });
+    if (parentLocation && (parentLocation.type === 'building' || parentLocation.type === 'lecture_theatre') && !exactLocation && !normalizedDeliveryLocation) return NextResponse.json({ error: 'Enter the exact delivery location for this building.' }, { status: 400 });
     const normalizedDescription = String(description || '').trim();
     const normalizedTaskType = String(taskType || '').trim();
     const isCafeInquiry = normalizedTaskType === 'restaurant' && cafeInquiry === true;
@@ -519,6 +523,7 @@ export async function POST(request: NextRequest) {
       location: resolvedLocation,
       taskerGenderRestriction: parentLocation?.deliveryPolicy?.taskerGenderRestriction,
       roomNumber,
+      deliveryLocation: normalizedDeliveryLocation || exactLocation?.name,
       parentLocationId: parentLocation?._id,
       exactLocationId: exactLocation?._id,
       vendorId: vendorPricing?.vendor.id,
