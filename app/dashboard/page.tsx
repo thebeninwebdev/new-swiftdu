@@ -385,7 +385,7 @@ export default function ErrandWizardPage() {
     description: '',
     amount: '',
     location: '',
-    store: '',
+    store: 'Buy from anywhere',
     vendorId: '',
     waterBags: '',
     noteSize: '',
@@ -414,7 +414,9 @@ export default function ErrandWizardPage() {
   const requiresExactDeliveryLocation = selectedVendorDestination?.type === 'building' || selectedVendorDestination?.type === 'lecture_theatre'
   const exactDeliveryPlaceholder = selectedVendorDestination?.type === 'lecture_theatre' ? 'e.g. LT1' : 'e.g. Front door'
   useEffect(() => { if (!vendorBackedTask) { setVendors([]); setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors?serviceType=${formData.taskType}`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendors(data?.vendors || []) }); return () => { cancelled = true } }, [formData.taskType, vendorBackedTask])
-  useEffect(() => { if (!formData.vendorId) { setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors/${formData.vendorId}/delivery-options`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendorDestinations(data?.destinations || []) }); return () => { cancelled = true } }, [formData.vendorId])
+  const fallbackRestaurantVendor = vendors.find(vendor => /\bakpan\b/i.test(vendor.name))
+  const deliveryVendorId = formData.vendorId || (formData.taskType === 'restaurant' ? fallbackRestaurantVendor?.id || '' : '')
+  useEffect(() => { if (!deliveryVendorId) { setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors/${deliveryVendorId}/delivery-options`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendorDestinations(data?.destinations || []) }); return () => { cancelled = true } }, [deliveryVendorId])
 
   const sortedTaskTypes = useMemo(() => {
     const originalIndex = new Map(taskTypes.map((item, index) => [item.value, index]))
@@ -848,15 +850,15 @@ export default function ErrandWizardPage() {
   const pricing = basePricing
   const shoppingDistanceFee = 0
   useEffect(() => {
-    if (!['restaurant', 'shopping', 'printing', 'indomie'].includes(taskType) || !formData.location || (vendorBackedTask && (!formData.vendorId || !formData.parentLocationId))) { setQuotedServiceFee(null); return }
+    if (!['restaurant', 'shopping', 'printing', 'indomie'].includes(taskType) || !formData.location || (vendorBackedTask && (!deliveryVendorId || !formData.parentLocationId))) { setQuotedServiceFee(null); return }
     let cancelled = false
-    const quoteUrl = vendorBackedTask ? `/api/pricing/quote?taskType=${encodeURIComponent(taskType)}&vendorId=${encodeURIComponent(formData.vendorId || '')}&dropoffParentLocationId=${encodeURIComponent(formData.parentLocationId || '')}` : `/api/pricing/quote?taskType=${encodeURIComponent(taskType)}&location=${encodeURIComponent(formData.location)}${formData.parentLocationId ? `&parentLocationId=${encodeURIComponent(formData.parentLocationId)}` : ''}`
+    const quoteUrl = vendorBackedTask ? `/api/pricing/quote?taskType=${encodeURIComponent(taskType)}&vendorId=${encodeURIComponent(deliveryVendorId)}&dropoffParentLocationId=${encodeURIComponent(formData.parentLocationId || '')}` : `/api/pricing/quote?taskType=${encodeURIComponent(taskType)}&location=${encodeURIComponent(formData.location)}${formData.parentLocationId ? `&parentLocationId=${encodeURIComponent(formData.parentLocationId)}` : ''}`
     void fetch(quoteUrl, { cache: 'no-store' })
       .then(async response => response.ok ? response.json() : null)
       .then(payload => { if (!cancelled) setQuotedServiceFee(typeof payload?.serviceFee === 'number' ? payload.serviceFee : null) })
       .catch(() => { if (!cancelled) setQuotedServiceFee(null) })
     return () => { cancelled = true }
-  }, [taskType, formData.location, formData.vendorId, formData.parentLocationId, vendorBackedTask])
+  }, [taskType, formData.location, deliveryVendorId, formData.parentLocationId, vendorBackedTask])
   const hasAvailableServiceFeeDiscount = Boolean(
     serviceFeeDiscount?.hasAvailableDiscount && pricing.serviceFee > 0
   )
@@ -893,8 +895,8 @@ export default function ErrandWizardPage() {
     pricing.pricingModel === 'tiered' &&
     ((formData.taskType === PRINTING_TASK_TYPE && pricing.amount > 0) ||
       (Number.isFinite(amount) && amount > 0))
-  const selectedVendor = vendors.find((vendor) => vendor.id === formData.vendorId)
-  const selectedVendorName = selectedVendor?.name || formData.store || ''
+  const selectedVendor = vendors.find((vendor) => vendor.id === deliveryVendorId)
+  const selectedVendorName = formData.vendorId ? selectedVendor?.name || formData.store || '' : formData.store || ''
   const waterWarning =
     description.length > 0 &&
     descriptionMentionsWater(description) &&
@@ -1010,7 +1012,7 @@ export default function ErrandWizardPage() {
     setFormData((previous) => ({
       ...previous,
       taskType: value,
-      store: value === 'restaurant' ? 'tasker_choose' : '',
+      store: value === 'restaurant' ? 'Buy from anywhere' : '',
       vendorId: '',
       description: '',
       location: '',
@@ -1244,7 +1246,7 @@ if (stepNumber === detailsStep) {
 
  if (stepNumber === deliveryStep) {
   if (vendorBackedTask) {
-    if (!formData.vendorId) nextErrors.vendorId = 'Choose a vendor first.'
+    if (!deliveryVendorId) nextErrors.vendorId = 'Restaurant delivery coverage is not available yet.'
     if (!formData.parentLocationId || !formData.location.trim()) nextErrors.location = 'Choose where to deliver.'
     if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) nextErrors.roomNumber = 'Enter the exact location.'
     if (requiresExactDeliveryLocation && !formData.exactLocationId && !(formData.deliveryLocation || '').trim()) nextErrors.deliveryLocation = 'Enter the exact delivery location.'
@@ -1288,7 +1290,7 @@ if (stepNumber === detailsStep) {
     const idempotencyKey = orderIdempotencyKeyRef.current || crypto.randomUUID()
     orderIdempotencyKeyRef.current = idempotencyKey
     if (vendorBackedTask) {
-      if (!formData.vendorId || !formData.parentLocationId) { toast.error('Choose a vendor and delivery location.'); return }
+      if (!deliveryVendorId || !formData.parentLocationId) { toast.error('Choose a delivery location.'); return }
       if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) { toast.error('Enter the exact location.'); return }
       if (requiresExactDeliveryLocation && !formData.exactLocationId && !(formData.deliveryLocation || '').trim()) { toast.error('Enter the exact delivery location.'); return }
     } else {
@@ -1306,6 +1308,7 @@ if (stepNumber === detailsStep) {
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
           ...formData,
+          vendorId: deliveryVendorId,
           roomNumber: vendorBackedTask ? (selectedVendorDestination?.requiresRoomNumber ? formData.roomNumber : undefined) : getRoomDestination(formData.location)?.requiresRoomNumber ? formData.roomNumber : undefined,
           description: formData.taskType === WATER_TASK_TYPE ? '' : description,
           amount: String(amount),
@@ -1501,14 +1504,14 @@ if (stepNumber === detailsStep) {
     vendorBackedTask ? (
       <div>
         <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">
-          {formData.taskType === 'restaurant' ? 'Select Restaurant' : formData.taskType === PRINTING_TASK_TYPE ? 'Select Print Shop' : 'Select Store'}
+          {formData.taskType === 'restaurant' ? 'Restaurant (optional)' : formData.taskType === PRINTING_TASK_TYPE ? 'Select Print Shop' : 'Select Store'}
         </label>
         <select
           value={formData.vendorId || ''}
-          onChange={(event) => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || '', parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setVendorDestinations([]); setQuotedServiceFee(null) }}
+          onChange={(event) => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setVendorDestinations([]); setQuotedServiceFee(null) }}
           className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 mb-4"
         >
-          <option value="">{vendors.length ? 'Choose a vendor…' : `No ${formData.taskType === 'restaurant' ? 'restaurants' : formData.taskType === 'printing' ? 'print shops' : 'stores'} are currently available.`}</option>
+          <option value="">{formData.taskType === 'restaurant' ? 'Buy from anywhere' : vendors.length ? 'Choose a vendor…' : `No ${formData.taskType === 'printing' ? 'print shops' : 'stores'} are currently available.`}</option>
           {vendors.map((vendor) => (
             <option key={vendor.id} value={vendor.id}>
               {vendor.name}
@@ -1998,7 +2001,7 @@ if (stepNumber === detailsStep) {
     <div className="space-y-4">
       <div>
         <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Deliver to</label>
-        {!formData.vendorId ? <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Choose a vendor before selecting a delivery location.</p> : (
+        {!deliveryVendorId ? <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Restaurant delivery coverage is not available yet.</p> : (
           <>
             {renderVendorDestinationPicker()}
             {vendorDestinations.length === 0 ? <p className="mt-2 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
@@ -2523,9 +2526,9 @@ if (stepNumber === detailsStep) {
                   formData.taskType !== INDOMIE_TASK_TYPE &&
                   formData.taskType !== WATER_TASK_TYPE ? (
                     <div>
-                      <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Store className="h-4 w-4 text-indigo-500" />{formData.taskType === 'restaurant' ? 'Select Restaurant' : formData.taskType === PRINTING_TASK_TYPE ? 'Select Print Shop' : 'Select Store'}</label>
-                      <select value={formData.vendorId || ''} onChange={event => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || '', parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setQuotedServiceFee(null) }} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">Choose a vendor…</option>
+                      <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Store className="h-4 w-4 text-indigo-500" />{formData.taskType === 'restaurant' ? 'Restaurant (optional)' : formData.taskType === PRINTING_TASK_TYPE ? 'Select Print Shop' : 'Select Store'}</label>
+                      <select value={formData.vendorId || ''} onChange={event => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setQuotedServiceFee(null) }} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
+                        <option value="">{formData.taskType === 'restaurant' ? 'Buy from anywhere' : 'Choose a vendor…'}</option>
                         {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
                       </select>
                       {errors.vendorId ? <p className="mt-2 text-sm text-red-500">{errors.vendorId}</p> : null}
