@@ -9,10 +9,10 @@ lib/delivery-policy.ts is the shared destination catalogue. The current booking 
 - Girls Hostel / Female Hostel: female.
 - Amnesty / Amnesty Hostel / Boys Hostel / Male Hostel: male.
 - Every other non-empty destination: any (open to all taskers).
-- Empty or conflicting hostel destinations: unclassified; no Telegram broadcast or acceptance. Creation/location edits reject these ambiguous destinations.
+- Empty or conflicting hostel destinations: unclassified; no Telegram broadcast. Creation/location edits reject these ambiguous destinations.
 - Other free-text destinations, including legacy Law Hall orders, are open to all taskers.
 
-models/order.ts derives taskerGenderRestriction on validation of new orders and location changes, covering creation and retry. Legacy orders use the same catalogue at read/accept time, so a bulk database migration is not required for recognized destinations. Stored restrictions never override the delivery destination; non-hostel destinations remain open to all taskers.
+models/order.ts derives taskerGenderRestriction on validation of new orders and location changes, covering creation and retry. Legacy orders use the same catalogue for routing and visibility, so a bulk database migration is not required for recognized destinations. Stored restrictions never override the delivery destination; non-hostel destinations route to all taskers.
 
 ## Telegram configuration
 
@@ -32,17 +32,17 @@ Order alerts now reuse the existing direct sender rather than Sammy: the relay's
 
 ## Acceptance and visibility
 
-POST /api/errands loads the authenticated tasker's linked User.gender from the database and checks canTaskerDeliver before assignment. Missing/other/undisclosed gender cannot accept a restricted order. Request-supplied gender/restriction fields are ignored. Atomic assignment matches the inspected location and updatedAt to reject a concurrent location edit.
+Gender restriction is routing and distribution metadata, not an acceptance authorization boundary. Any otherwise eligible authenticated tasker who receives a direct Accept Order link may accept the order regardless of gender, including missing, other, or undisclosed gender. The same rule applies to direct Indomie batch acceptance. Request-supplied gender/restriction fields remain ignored. Atomic assignment still matches the inspected location and updatedAt to reject a concurrent location edit.
 
-Both available-order endpoints filter with the same policy; existing assigned work remains visible to its tasker in the errands feed. New/retried order web-push notifications also filter approved taskers by linked user gender. Existing mode, verification, settlement and check-in rules still apply.
+Both available-order endpoints continue to filter with the routing policy; existing assigned work remains visible to its tasker in the errands feed. Telegram and new/retried order web-push distribution also remain gender-routed. These visibility choices do not control direct-link acceptance. Existing authentication, tasker-profile, mode, verification, rejection, settlement, check-in, capacity, freshness, batching, and first-accept-wins rules still apply.
 
-Pending-order edits recalculate eligibility but do not retract previously delivered Telegram messages. The backend always checks the current order. External producers that write directly to MongoDB must provide correct destination data; unresolved destinations will remain unavailable.
+Pending-order edits recalculate routing metadata but do not retract previously delivered Telegram messages. Direct acceptance still checks the current order's status, mode, freshness, batching state, and atomic version, but not its gender metadata. External producers that write directly to MongoDB must provide correct destination data for routing.
 
 ## Verification
 
 Run: npx.cmd tsx --test lib/delivery-policy.test.ts
 
-Tests cover persisted classification, legacy location fallback, all three routing cases, copy notes, relay bypass, missing configuration, partial Telegram failure, and actual acceptance endpoint calls with both mismatches, missing gender and matching/unrestricted success.
+Tests cover persisted classification, legacy location fallback, all three routing cases, copy notes, relay bypass, missing configuration, partial Telegram failure, cross-gender and missing-gender direct acceptance, retained non-gender protections, and Indomie batch acceptance.
 
 
 ## Files changed

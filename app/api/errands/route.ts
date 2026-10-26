@@ -275,11 +275,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const taskerAccount = await User.findById(session.user.id).select('gender').lean()
-    if (!canTaskerDeliver(order, taskerAccount?.gender)) {
-      return NextResponse.json({ error: 'You are not eligible to deliver to this destination.' }, { status: 403 })
-    }
-
     if (!canWorkOnOrder(order.isTestOrder === true)) {
       return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 })
     }

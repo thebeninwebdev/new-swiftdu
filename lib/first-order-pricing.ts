@@ -35,17 +35,18 @@ export function priceWithOrderDiscounts(pricing: PricingResult, options: {
     : normal
   const firstOrder = Boolean(options.firstOrderBonus)
 
-  // A customer's first order does not create a platform remittance. The
-  // customer still pays the quoted amount; the tasker receives the whole
-  // applicable service fee instead of the normal 16.67% platform split.
+  // On a customer's first live order SwiftDU waives its platform share. The
+  // customer pays the normal tasker share only, and the tasker still earns
+  // that normal tasker share.
+  const firstOrderBonusAmount = firstOrder ? Math.max(0, effectiveFees.platformFee) : 0
   return {
-    commission: effectiveFees.serviceFee,
-    serviceFee: effectiveFees.serviceFee,
-    taskerFee: firstOrder ? effectiveFees.taskerFee + effectiveFees.platformFee : effectiveFees.taskerFee,
+    commission: Math.max(0, effectiveFees.serviceFee - firstOrderBonusAmount),
+    serviceFee: Math.max(0, effectiveFees.serviceFee - firstOrderBonusAmount),
+    taskerFee: effectiveFees.taskerFee,
     platformFee: firstOrder ? 0 : effectiveFees.platformFee,
-    totalAmount: totalBeforeBonus,
+    totalAmount: Math.max(0, totalBeforeBonus - firstOrderBonusAmount),
     firstOrderBonusApplied: firstOrder,
     platformFeeBeforeFirstOrderBonus: firstOrder ? effectiveFees.platformFee : undefined,
-    firstOrderBonusAmount: firstOrder ? effectiveFees.platformFee : undefined,
+    firstOrderBonusAmount: firstOrder ? firstOrderBonusAmount : undefined,
   }
 }

@@ -24,10 +24,11 @@ test('destination classification is independent of customer gender and persists 
   assert.equal(canTaskerDeliver({ location: 'Library', parentLocationId: 'mapped-parent', taskerGenderRestriction: 'female' }, 'male'), false)
   assert.equal(canTaskerDeliver({ location: 'Library', parentLocationId: 'mapped-parent', taskerGenderRestriction: 'female' }, 'female'), true)
   assert.equal(canTaskerDeliver({ location: 'Girls Hostel / Boys Hostel', taskerGenderRestriction: 'any' }, 'male'), false)
-  const order = new Order({ userId: 'customer', taskType: 'restaurant', location: 'Girls Hostel', amount: 1, commission: 1, totalAmount: 2, taskerGenderRestriction: 'any' })
+  const order = new Order({ userId: 'customer', taskType: 'restaurant', location: 'Girls Hostel', amount: 1, commission: 1, totalAmount: 2 })
   await order.validate()
   assert.equal(order.taskerGenderRestriction, 'female')
   order.location = 'New campus building'
+  order.taskerGenderRestriction = undefined
   await order.validate()
   assert.equal(order.taskerGenderRestriction, 'any')
 })
@@ -169,24 +170,41 @@ test('actual alert pipeline routes all three destinations, ignores legacy relay 
   assert.doesNotMatch(messages[0].text, /tasker-dashboard\/accept-order/)
 })
 
-test('direct acceptance endpoint rejects opposite and missing gender before assignment', async t => {
+test('direct acceptance ignores gender while preserving every non-gender guard', async t => {
   const require = createRequire(import.meta.url)
   let gender: string | undefined = 'male'
   let location = 'Girls Hostel'
   let assignments = 0
-  const order = () => ({ _id: 'order', userId: 'customer', location, status: 'pending', updatedAt: new Date(), isTestOrder: false })
+  let taskerExists = true
+  let verified = true
+  let rejected = false
+  let taskerSuspended = false
+  let settlementSuspended = false
+  let checkedIn = true
+  let taskerMode: 'training' | 'live' = 'live'
+  let testOrder = false
+  let remainingCapacity = 1
+  let orderStatus = 'pending'
+  let atomicAssignmentWins = true
+  const order = () => ({ _id: 'order', userId: 'customer', location, status: orderStatus, updatedAt: new Date(), isTestOrder: testOrder })
+  class StubWorkError extends Error { constructor(message: string, public status = 409) { super(message) } }
   const stubs: Record<string, unknown> = {
     './db': { connectDB: async () => {} },
     './auth': { auth: { api: { getSession: async () => ({ user: { id: 'tasker-user', name: 'Tasker' } }) } } },
-    '../models/user': { User: { findById: () => ({ select: () => ({ lean: async () => ({ gender }) }) }) } },
-    '../models/tasker': { __esModule: true, default: { findOne: async () => ({ _id: 'tasker', isVerified: true, taskerMode: 'live' }) } },
+    '../models/user': { User: { findById: () => { throw new Error(`POST must not load gender (${gender})`) } } },
+    '../models/tasker': { __esModule: true, default: { findOne: async () => taskerExists ? ({ _id: 'tasker', isVerified: verified, isRejected: rejected, isSettlementSuspended: taskerSuspended, taskerMode }) : null } },
     '../models/order': { Order: {
       findById: async () => order(),
-      findOneAndUpdate: async (filter: Record<string, unknown>) => { assignments++; assert.equal(filter.location, location); assert.ok(filter.updatedAt); return { ...order(), _id: 'order', status: 'in_progress' } },
+      findOneAndUpdate: async (filter: Record<string, unknown>) => {
+        assignments++; assert.equal(filter.location, location); assert.ok(filter.updatedAt)
+        assert.ok(Array.isArray(filter.$or), 'freshness must remain in the atomic assignment query')
+        return atomicAssignmentWins ? { ...order(), _id: 'order', status: 'in_progress' } : null
+      },
     } },
-    './tasker-settlement': { syncTaskerSettlementStatus: async () => ({ isSettlementSuspended: false }) },
-    './tasker-work-server': { lockTaskerWork: async () => async () => {}, WorkError: class extends Error {} },
-    '../models/tasker-work-session': { TaskerWorkSession: { exists: async () => true } },
+    './tasker-settlement': { syncTaskerSettlementStatus: async () => ({ isSettlementSuspended: settlementSuspended }) },
+    './tasker-work-server': { lockTaskerWork: async () => async () => {}, WorkError: StubWorkError },
+    '../models/tasker-work-session': { TaskerWorkSession: { exists: async () => checkedIn } },
+    './indomie-capacity': { getTaskerRemainingCapacity: async () => remainingCapacity, MAX_TASKER_ACTIVE_ORDERS: 3 },
     './socket': { emitOrderUpdated: () => {} },
     './push-notifications': { formatPushTaskType: () => 'food', sendPushNotification: async () => ({ recipientCount: 0, deliveredCount: 0 }) },
     './whatsapp/send-message': { sendWhatsAppText: async () => {} },
@@ -201,23 +219,67 @@ test('direct acceptance endpoint rejects opposite and missing gender before assi
   t.after(() => { if(previous === undefined) delete process.env.OPERATIONS_ENABLED; else process.env.OPERATIONS_ENABLED = previous })
   const { POST } = require('../app/api/errands/route')
   const accept = () => POST(new NextRequest('http://localhost/api/errands', { method: 'POST', body: JSON.stringify({ orderId: 'order', gender: 'female', taskerGenderRestriction: 'any' }) }))
-  assert.equal((await accept()).status, 403)
+  assert.equal((await accept()).status, 200)
   location = 'Boys Hostel'; gender = 'female'
-  assert.equal((await accept()).status, 403)
-  gender = undefined
-  assert.equal((await accept()).status, 403)
-  assert.equal(assignments, 0)
-  location = 'Girls Hostel'; gender = 'female'
   assert.equal((await accept()).status, 200)
-  location = 'Boys Hostel'; gender = 'male'
-  assert.equal((await accept()).status, 200)
-  location = 'Library'
-  assert.equal((await accept()).status, 200)
-  gender = 'female'
-  assert.equal((await accept()).status, 200)
-  location = 'New campus building'
   gender = undefined
   assert.equal((await accept()).status, 200)
+  gender = 'other'
+  assert.equal((await accept()).status, 200)
+  assert.equal(assignments, 4)
+
+  const expectBlockedBeforeAssignment = async (status: number) => {
+    const before = assignments
+    assert.equal((await accept()).status, status)
+    assert.equal(assignments, before)
+  }
+  taskerExists = false; await expectBlockedBeforeAssignment(404); taskerExists = true
+  verified = false; await expectBlockedBeforeAssignment(403); verified = true
+  rejected = true; await expectBlockedBeforeAssignment(403); rejected = false
+  settlementSuspended = true; await expectBlockedBeforeAssignment(403); settlementSuspended = false
+  taskerSuspended = true; await expectBlockedBeforeAssignment(403); taskerSuspended = false
+  checkedIn = false; await expectBlockedBeforeAssignment(403); checkedIn = true
+  taskerMode = 'training'; await expectBlockedBeforeAssignment(403); taskerMode = 'live'
+  testOrder = true; await expectBlockedBeforeAssignment(403); testOrder = false
+  remainingCapacity = 0; await expectBlockedBeforeAssignment(409); remainingCapacity = 1
+  orderStatus = 'in_progress'; await expectBlockedBeforeAssignment(409); orderStatus = 'pending'
+  atomicAssignmentWins = false
+  assert.equal((await accept()).status, 409)
   assert.equal(assignments, 5)
+})
+
+test('direct Indomie batch acceptance does not treat routing gender as authorization', async t => {
+  const require = createRequire(import.meta.url)
+  let accepted = 0
+  const batch = { _id: 'batch', status: 'available', destinationLabel: 'Girls Hostel', taskerGenderRestriction: 'female', isTestBatch: false, orderIds: ['order'], orderCount: 1 }
+  class StubWorkError extends Error { constructor(message: string, public status = 409) { super(message) } }
+  const stubs: Record<string, unknown> = {
+    './db': { connectDB: async () => {} },
+    './auth': { auth: { api: { getSession: async () => ({ user: { id: 'tasker-user', name: 'Tasker' } }) } } },
+    '../models/indomie-batch': { IndomieBatch: {
+      findById: async () => batch,
+      findOneAndUpdate: async () => { accepted++; return batch },
+      updateOne: async () => ({}),
+    } },
+    '../models/order': { Order: {
+      updateMany: async () => ({ modifiedCount: 1 }),
+      find: async () => [],
+    } },
+    './tasker-work-server': { currentTasker: async () => ({ _id: 'tasker', taskerMode: 'live' }), lockTaskerWork: async () => async () => {}, WorkError: StubWorkError },
+    '../models/tasker-work-session': { TaskerWorkSession: { exists: async () => true } },
+    './socket': { emitOrderUpdated: () => {} },
+  }
+  for (const [path, exports] of Object.entries(stubs)) {
+    const id = require.resolve(path), previous = require.cache[id], stub = new Module(id)
+    stub.exports = exports; stub.loaded = true; require.cache[id] = stub
+    t.after(() => { if(previous) require.cache[id] = previous; else delete require.cache[id] })
+  }
+  const previous = process.env.OPERATIONS_ENABLED
+  process.env.OPERATIONS_ENABLED = 'true'
+  t.after(() => { if(previous === undefined) delete process.env.OPERATIONS_ENABLED; else process.env.OPERATIONS_ENABLED = previous })
+  const { POST } = require('../app/api/indomie-batches/[id]/accept/route')
+  const response = await POST(new NextRequest('http://localhost/api/indomie-batches/batch/accept', { method: 'POST' }), { params: Promise.resolve({ id: 'batch' }) })
+  assert.equal(response.status, 200)
+  assert.equal(accepted, 1)
 })
 

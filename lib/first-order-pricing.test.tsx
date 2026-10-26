@@ -22,13 +22,13 @@ test('first orders remit none of the applicable service fee to the platform', ()
     const normal = calculateOrderPricing(input)
     const fees = priceWithOrderDiscounts(normal)
     const bonus = priceWithOrderDiscounts(normal, { firstOrderBonus: true, cafeInquiry: input.cafeInquiry })
-    assert.equal(bonus.taskerFee, fees.taskerFee + fees.platformFee)
-    assert.equal(taskerEarnings(bonus), taskerEarnings(fees) + fees.platformFee)
+    assert.equal(bonus.taskerFee, fees.taskerFee)
+    assert.equal(taskerEarnings(bonus), fees.taskerFee)
     assert.equal(bonus.platformFee, 0)
-    assert.equal(bonus.totalAmount, fees.totalAmount)
-    assert.equal(bonus.serviceFee, fees.serviceFee)
+    assert.equal(bonus.totalAmount, fees.totalAmount - fees.platformFee)
+    assert.equal(bonus.serviceFee, fees.serviceFee - fees.platformFee)
     assert.equal(bonus.commission, bonus.serviceFee)
-    assert.equal(normal.amount + bonus.commission, bonus.totalAmount)
+    assert.equal(bonus.totalAmount, Math.max(0, fees.totalAmount - fees.platformFee))
     assert.equal(bonus.firstOrderBonusAmount, fees.platformFee)
     assert.equal(bonus.platformFeeBeforeFirstOrderBonus, fees.platformFee)
   }
@@ -39,7 +39,7 @@ test('repricing from normal pricing never subtracts twice', () => {
   const normal = calculateOrderPricing({ taskType: 'restaurant', amount: 2500, restaurantPeopleCount: 4, restaurantTakeawayCount: 3 })
   for (let i = 0; i < 5; i++) {
     order = { ...order, ...normal, ...priceWithOrderDiscounts(normal, { firstOrderBonus: true }) }
-    assert.equal(order.totalAmount, normal.totalAmount)
+    assert.equal(order.totalAmount, normal.totalAmount - priceWithOrderDiscounts(normal).platformFee)
   }
 })
 
@@ -48,13 +48,37 @@ test('broader discount is applied first and retained cafe charge is not waived w
     const normal = calculateOrderPricing({ taskType: 'restaurant', amount: cafeInquiry ? 0 : 2000, cafeInquiry })
     const broader = priceWithOrderDiscounts(normal, { serviceFeeDiscount: true, cafeInquiry })
     const both = priceWithOrderDiscounts(normal, { firstOrderBonus: true, serviceFeeDiscount: true, cafeInquiry })
-    assert.equal(both.taskerFee, broader.taskerFee + broader.platformFee)
+    assert.equal(both.taskerFee, broader.taskerFee)
     assert.equal(both.platformFee, 0)
-    assert.equal(both.totalAmount, broader.totalAmount)
+    assert.equal(both.totalAmount, broader.totalAmount - broader.platformFee)
     assert.ok(both.totalAmount >= 0)
     if (!cafeInquiry) assert.equal(both.firstOrderBonusAmount, 0)
     else { assert.ok(both.totalAmount > 0); assert.equal(both.firstOrderBonusAmount, broader.platformFee) }
   }
+})
+
+test('a ₦600 fee gives the customer a ₦100 first-order discount without changing tasker earnings', () => {
+  const normal = { amount: 2000, serviceFee: 600, totalAmount: 2600, pricingModel: 'tiered' as const, waterFee: 0 }
+  const fees = priceWithOrderDiscounts(normal)
+  const bonus = priceWithOrderDiscounts(normal, { firstOrderBonus: true })
+  assert.deepEqual(fees, { commission: 600, serviceFee: 600, taskerFee: 500, platformFee: 100, totalAmount: 2600, firstOrderBonusApplied: false, platformFeeBeforeFirstOrderBonus: undefined, firstOrderBonusAmount: undefined })
+  assert.equal(bonus.serviceFee, 500)
+  assert.equal(bonus.taskerFee, 500)
+  assert.equal(bonus.platformFee, 0)
+  assert.equal(bonus.firstOrderBonusAmount, 100)
+  assert.equal(bonus.platformFeeBeforeFirstOrderBonus, 100)
+  assert.equal(bonus.totalAmount, 2500)
+  assert.equal(taskerEarnings(bonus), 500)
+})
+
+test('vendor-specific tiered fees waive the actual platform share, not a fixed amount', () => {
+  const pricing = { amount: 2000, serviceFee: 900, totalAmount: 2900, pricingModel: 'tiered' as const, waterFee: 0 }
+  const bonus = priceWithOrderDiscounts(pricing, { firstOrderBonus: true })
+  assert.equal(bonus.serviceFee, 750)
+  assert.equal(bonus.taskerFee, 750)
+  assert.equal(bonus.platformFee, 0)
+  assert.equal(bonus.firstOrderBonusAmount, 150)
+  assert.equal(bonus.totalAmount, 2750)
 })
 
 test('only genuinely unpaid cancelled orders release reservations', () => {

@@ -3,7 +3,10 @@
 New live orders reserve one bonus on the existing customer account. Normal pricing
 is calculated first. The order stores `firstOrderBonusApplied`,
 `platformFeeBeforeFirstOrderBonus`, and `firstOrderBonusAmount`. Only SwiftDU's
-platform share is removed; the item budget and normal tasker fee are retained.
+platform share is removed from the customer's payable service fee; the item
+budget and normal tasker fee are retained. For example, a ₦600 fee split as
+₦500 tasker / ₦100 platform becomes a ₦500 customer fee, ₦500 tasker fee and
+₦0 platform fee. The total falls by ₦100.
 Water and copy-notes use their dedicated pricing definitions rather than the
 tiered service-fee split.
 

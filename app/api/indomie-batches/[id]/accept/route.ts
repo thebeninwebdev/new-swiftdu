@@ -3,8 +3,6 @@ import { connectDB } from '@/lib/db'
 import { auth } from '@/lib/auth'
 import { IndomieBatch } from '@/models/indomie-batch'
 import { Order } from '@/models/order'
-import { User } from '@/models/user'
-import { canTaskerDeliver } from '@/lib/delivery-policy'
 import { currentTasker, lockTaskerWork, WorkError } from '@/lib/tasker-work-server'
 import { TaskerWorkSession } from '@/models/tasker-work-session'
 import { getTaskerMode } from '@/lib/test-orders'
@@ -16,8 +14,6 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     await connectDB(); const session = await auth.api.getSession({ headers: request.headers }); if (!session?.user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     const tasker = await currentTasker(request.headers); const { id } = await context.params; const batch = await IndomieBatch.findById(id)
     if (!batch || batch.status !== 'available') return NextResponse.json({ error: 'This batch has already been accepted.' }, { status: 409 })
-    const account = await User.findById(session.user.id).select('gender').lean()
-    if (!canTaskerDeliver({ location: batch.destinationLabel, taskerGenderRestriction: batch.taskerGenderRestriction }, account?.gender)) return NextResponse.json({ error: 'You are not eligible to deliver to this destination.' }, { status: 403 })
     if (!canWorkOnOrder(batch.isTestBatch)) return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 })
     if ((getTaskerMode(tasker) === 'training') !== batch.isTestBatch) return NextResponse.json({ error: 'This batch is not available in your current tasker mode.' }, { status: 403 })
     const release = await lockTaskerWork(String(tasker._id)); const now = new Date()
