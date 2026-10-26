@@ -30,6 +30,7 @@ import {
   normalizeNoteSize,
   normalizePrintingServiceType,
   PRINTING_TASK_TYPE,
+  RESTAURANT_ADDITIONAL_PERSON_FEE,
   RESTAURANT_MAX_PEOPLE,
   WATER_TASK_TYPE,
   INDOMIE_TASK_TYPE,
@@ -43,6 +44,30 @@ import { canWorkOnOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 const COMPLETION_EXTENSION_MINUTES = 10;
+
+function getRestaurantBaseServiceFee(order: {
+  serviceFee?: number;
+  serviceFeeBeforeDiscount?: number;
+  serviceFeeDiscountApplied?: boolean;
+  firstOrderBonusApplied?: boolean;
+  firstOrderBonusAmount?: number;
+  restaurantPeopleCount?: number;
+  cafeInquiry?: boolean;
+}) {
+  const undiscountedServiceFee =
+    order.serviceFeeDiscountApplied && Number.isFinite(Number(order.serviceFeeBeforeDiscount))
+      ? Number(order.serviceFeeBeforeDiscount)
+      : Number(order.serviceFee || 0) +
+        (order.firstOrderBonusApplied ? Number(order.firstOrderBonusAmount || 0) : 0);
+  const existingPeopleFee =
+    Math.max(0, normalizeRestaurantPeopleCount(order.restaurantPeopleCount) - 1) *
+    RESTAURANT_ADDITIONAL_PERSON_FEE;
+
+  return Math.max(
+    0,
+    undiscountedServiceFee - existingPeopleFee - (order.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)
+  );
+}
 
 export async function PATCH(
   request: NextRequest,
@@ -323,7 +348,7 @@ export async function PATCH(
             order.restaurantTakeawayCount,
             parsedRestaurantPeopleCount
           ),
-          serviceFee: Math.max(0, Number(order.serviceFee || 0) - (order.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)),
+          serviceFee: getRestaurantBaseServiceFee(order),
         });
         const baseSettlement = splitServiceFee(pricing.serviceFee);
         const discountStillApplies = Boolean(order.serviceFeeDiscountApplied);
@@ -678,7 +703,10 @@ export async function PATCH(
         printingServiceType: nextPrintingServiceType,
         printingNeedsEditing: nextPrintingNeedsEditing,
         cafeInquiry: nextCafeInquiry,
-        serviceFee: Math.max(0, Number(order.serviceFee || 0) - (nextCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)),
+        serviceFee:
+          nextTaskType === 'restaurant'
+            ? getRestaurantBaseServiceFee(order)
+            : Math.max(0, Number(order.serviceFee || 0) - (nextCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0)),
       });
       const baseSettlement =
         pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'
