@@ -155,7 +155,7 @@ export async function POST(request: NextRequest) {
     try {
       if (parentLocation) {
         roomNumber = typeof body.roomNumber === 'string' ? body.roomNumber.trim() || undefined : undefined;
-        if ((parentLocation.type === 'hostel' || parentLocation.deliveryPolicy?.requiresRoomNumber) && !roomNumber) throw new Error('Enter the room number for this delivery location.');
+        if ((parentLocation.type === 'hostel' || parentLocation.deliveryPolicy?.requiresRoomNumber) && !roomNumber) throw new Error('Enter the exact location for this delivery.');
       } else {
         roomNumber = validateDeliveryRoom(resolvedLocation, body.roomNumber);
       }

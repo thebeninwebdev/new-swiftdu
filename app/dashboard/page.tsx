@@ -1245,7 +1245,7 @@ if (stepNumber === detailsStep) {
   if (vendorBackedTask) {
     if (!formData.vendorId) nextErrors.vendorId = 'Choose a vendor first.'
     if (!formData.parentLocationId || !formData.location.trim()) nextErrors.location = 'Choose where to deliver.'
-    if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) nextErrors.roomNumber = 'Enter the room number.'
+    if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) nextErrors.roomNumber = 'Enter the exact location.'
     if (requiresExactDeliveryLocation && !formData.exactLocationId && !(formData.deliveryLocation || '').trim()) nextErrors.deliveryLocation = 'Enter the exact delivery location.'
   } else {
     try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { nextErrors.roomNumber = (error as Error).message }
@@ -1288,7 +1288,7 @@ if (stepNumber === detailsStep) {
     orderIdempotencyKeyRef.current = idempotencyKey
     if (vendorBackedTask) {
       if (!formData.vendorId || !formData.parentLocationId) { toast.error('Choose a vendor and delivery location.'); return }
-      if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) { toast.error('Enter the room number.'); return }
+      if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) { toast.error('Enter the exact location.'); return }
       if (requiresExactDeliveryLocation && !formData.exactLocationId && !(formData.deliveryLocation || '').trim()) { toast.error('Enter the exact delivery location.'); return }
     } else {
       try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { toast.error((error as Error).message); return }
@@ -1960,7 +1960,8 @@ if (stepNumber === detailsStep) {
 
   const renderRoomNumber = () => (vendorBackedTask ? selectedVendorDestination?.requiresRoomNumber : getRoomDestination(formData.location)?.requiresRoomNumber) ? (
     <div>
-      <label htmlFor="delivery-room" className="mb-2 block text-sm font-bold">Room number <span className="text-red-500">*</span></label>
+      <label htmlFor="delivery-room" className="mb-1 block text-sm font-bold">Exact location <span className="text-red-500">*</span></label>
+      <p className="mb-2 text-xs text-slate-500">Enter the room number, for example A04.</p>
       <input id="delivery-room" name="roomNumber" value={formData.roomNumber || ''} onChange={handleInputChange} required maxLength={40} placeholder="e.g. A04" aria-invalid={Boolean(errors.roomNumber)} aria-describedby={errors.roomNumber ? 'delivery-room-error' : undefined} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm dark:border-slate-800 dark:bg-slate-900" />
       {errors.roomNumber && <p id="delivery-room-error" className="mt-2 text-sm text-red-500">{errors.roomNumber}</p>}
     </div>
@@ -2029,7 +2030,7 @@ if (stepNumber === detailsStep) {
       ) : null}
       <div className="flex justify-between gap-4">
         <span className="text-slate-500">Location</span>
-        <span className="text-right font-semibold">{formData.location || 'Not set'}{formData.roomNumber ? ' - Room ' + formData.roomNumber : ''}</span>
+        <span className="text-right font-semibold">{formData.location || 'Not set'}{formData.roomNumber ? ' - ' + formData.roomNumber : ''}{formData.deliveryLocation ? ' - ' + formData.deliveryLocation : ''}</span>
       </div>
       {formData.taskType === 'restaurant' ? (
         <>
