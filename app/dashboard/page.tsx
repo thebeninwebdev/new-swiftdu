@@ -410,7 +410,6 @@ export default function ErrandWizardPage() {
   const vendorBackedTask = ['shopping', 'restaurant', 'printing'].includes(formData.taskType)
   const selectedVendorDestination = vendorDestinations.find(destination => destination.parentLocationId === formData.parentLocationId)
   const sortedVendorDestinations = useMemo(() => [...vendorDestinations].sort((left, right) => (left.type === 'hostel' ? 0 : 1) - (right.type === 'hostel' ? 0 : 1) || left.name.localeCompare(right.name)), [vendorDestinations])
-  const requiresExactDeliveryLocation = selectedVendorDestination?.type === 'building' || selectedVendorDestination?.type === 'lecture_theatre'
   const exactDeliveryPlaceholder = selectedVendorDestination?.type === 'lecture_theatre' ? 'e.g. LT1' : 'e.g. Front door'
   useEffect(() => { if (!vendorBackedTask) { setVendors([]); setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors?serviceType=${formData.taskType}`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendors(data?.vendors || []) }); return () => { cancelled = true } }, [formData.taskType, vendorBackedTask])
   const fallbackRestaurantVendor = vendors.find(vendor => /\bakpan\b/i.test(vendor.name))
@@ -1099,7 +1098,17 @@ export default function ErrandWizardPage() {
 
 if (stepNumber === detailsStep) {
   if (
+    (formData.taskType === 'shopping' || formData.taskType === PRINTING_TASK_TYPE) &&
+    !formData.vendorId
+  ) {
+    nextErrors.vendorId = formData.taskType === 'shopping'
+      ? 'Choose a store to continue.'
+      : 'Choose a print shop to continue.'
+  }
+
+  if (
     formData.taskType &&
+    !vendorBackedTask &&
     formData.taskType !== 'others' &&
     formData.taskType !== 'copy_notes' &&
     true &&
@@ -1269,8 +1278,7 @@ if (stepNumber === detailsStep) {
   if (vendorBackedTask) {
     if (!deliveryVendorId) nextErrors.vendorId = 'Restaurant delivery coverage is not available yet.'
     if (!formData.parentLocationId || !formData.location.trim()) nextErrors.location = 'Choose where to deliver.'
-    if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) nextErrors.roomNumber = 'Enter the exact location.'
-    if (requiresExactDeliveryLocation && !(formData.deliveryLocation || '').trim()) nextErrors.deliveryLocation = 'Enter the exact delivery location.'
+    if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) nextErrors.roomNumber = 'Enter your room number for this hostel.'
   } else {
     try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { nextErrors.roomNumber = (error as Error).message }
     if (!formData.location.trim()) nextErrors.location = 'Enter the delivery location.'
@@ -1312,8 +1320,7 @@ if (stepNumber === detailsStep) {
     orderIdempotencyKeyRef.current = idempotencyKey
     if (vendorBackedTask) {
       if (!deliveryVendorId || !formData.parentLocationId) { toast.error('Choose a delivery location.'); return }
-      if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) { toast.error('Enter the exact location.'); return }
-      if (requiresExactDeliveryLocation && !(formData.deliveryLocation || '').trim()) { toast.error('Enter the exact delivery location.'); return }
+      if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) { toast.error('Enter your room number for this hostel.'); return }
     } else {
       try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { toast.error((error as Error).message); return }
     }
@@ -1526,7 +1533,7 @@ if (stepNumber === detailsStep) {
         </label>
         <select
           value={formData.vendorId || ''}
-          onChange={(event) => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setVendorDestinations([]); setVendorDestinationsLoading(Boolean(event.target.value)); setQuotedServiceFee(null) }}
+          onChange={(event) => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); clearError('vendorId'); setVendorDestinations([]); setVendorDestinationsLoading(Boolean(event.target.value)); setQuotedServiceFee(null) }}
           className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 mb-4"
         >
           <option value="">{formData.taskType === 'restaurant' ? 'Buy from anywhere' : vendors.length ? 'Choose a vendor…' : `No ${formData.taskType === 'printing' ? 'print shops' : 'stores'} are currently available.`}</option>
@@ -1986,7 +1993,7 @@ if (stepNumber === detailsStep) {
 
   const renderRoomNumber = () => (vendorBackedTask ? selectedVendorDestination?.requiresRoomNumber : getRoomDestination(formData.location)?.requiresRoomNumber) ? (
     <div>
-      <label htmlFor="delivery-room" className="mb-1 block text-sm font-bold">Exact location <span className="text-red-500">*</span></label>
+      <label htmlFor="delivery-room" className="mb-1 block text-sm font-bold">Room number <span className="text-red-500">*</span></label>
       <p className="mb-2 text-xs text-slate-500">Enter the room number, for example A04.</p>
       <input id="delivery-room" name="roomNumber" value={formData.roomNumber || ''} onChange={handleInputChange} required maxLength={40} placeholder="e.g. A04" aria-invalid={Boolean(errors.roomNumber)} aria-describedby={errors.roomNumber ? 'delivery-room-error' : undefined} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm dark:border-slate-800 dark:bg-slate-900" />
       {errors.roomNumber && <p id="delivery-room-error" className="mt-2 text-sm text-red-500">{errors.roomNumber}</p>}
@@ -2023,7 +2030,7 @@ if (stepNumber === detailsStep) {
           <>
             {renderVendorDestinationPicker()}
             {vendorDestinationsLoading ? <p className="mt-2 text-sm text-slate-500">Loading delivery locations…</p> : vendorDestinations.length === 0 ? <p className="mt-2 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
-            {formData.parentLocationId && selectedVendorDestination?.type !== 'hostel' ? <><label className="mt-3 mb-2 block text-sm font-bold">Exact location {requiresExactDeliveryLocation ? <span className="text-red-500">*</span> : <span className="text-slate-400">(optional)</span>}</label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900" />{errors.deliveryLocation ? <p className="mt-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
+            {formData.parentLocationId && selectedVendorDestination?.type !== 'hostel' ? <><label className="mt-3 mb-2 block text-sm font-bold">Exact location <span className="text-slate-400">(optional)</span></label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900" />{errors.deliveryLocation ? <p className="mt-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
           </>
         )}
         {errors.location ? <p className="mt-2 text-sm text-red-500">{errors.location}</p> : null}
@@ -2541,7 +2548,7 @@ if (stepNumber === detailsStep) {
                   formData.taskType !== WATER_TASK_TYPE ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Store className="h-4 w-4 text-indigo-500" />{formData.taskType === 'restaurant' ? 'Restaurant (optional)' : formData.taskType === PRINTING_TASK_TYPE ? 'Select Print Shop' : 'Select Store'}</label>
-                      <select value={formData.vendorId || ''} onChange={event => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setVendorDestinations([]); setVendorDestinationsLoading(Boolean(event.target.value)); setQuotedServiceFee(null) }} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
+                      <select value={formData.vendorId || ''} onChange={event => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); clearError('vendorId'); setVendorDestinations([]); setVendorDestinationsLoading(Boolean(event.target.value)); setQuotedServiceFee(null) }} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
                         <option value="">{formData.taskType === 'restaurant' ? 'Buy from anywhere' : 'Choose a vendor…'}</option>
                         {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
                       </select>
@@ -3473,7 +3480,7 @@ if (stepNumber === detailsStep) {
                     {(vendorBackedTask || parentLocations.length > 0) ? <>
                       {vendorBackedTask ? renderVendorDestinationPicker() : <select value={formData.parentLocationId || ''} onChange={event => { const parent = parentLocations.find(item => item._id === event.target.value); setFormData(previous => ({ ...previous, parentLocationId: event.target.value, exactLocationId: '', location: parent?.name || '', roomNumber: '' })); clearError('location') }} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800"><option value="">Select a mapped parent location</option>{parentLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}</select>}
                       {vendorBackedTask && formData.vendorId && vendorDestinationsLoading ? <p className="mb-3 text-sm text-slate-500">Loading delivery locations…</p> : vendorBackedTask && formData.vendorId && vendorDestinations.length === 0 ? <p className="mb-3 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
-                      {formData.parentLocationId && selectedVendorDestination?.type !== 'hostel' ? <><label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">Exact location {requiresExactDeliveryLocation ? <span className="text-red-500">*</span> : <span className="text-slate-400">(optional)</span>}</label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800" />{errors.deliveryLocation ? <p className="mb-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
+                      {formData.parentLocationId && selectedVendorDestination?.type !== 'hostel' ? <><label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">Exact location <span className="text-slate-400">(optional)</span></label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800" />{errors.deliveryLocation ? <p className="mb-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
                       <p className="mb-2 text-xs text-slate-500">Choose an exact place when mapped, or enter a room/detail below. Pricing uses the parent location.</p>
                     </> : null}
                     {!vendorBackedTask && <input type="text" name="location" value={formData.location} onChange={handleInputChange} placeholder="Library 2nd Floor, Hall B Room 204..." className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />}

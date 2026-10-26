@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
     try {
       if (parentLocation) {
         roomNumber = typeof body.roomNumber === 'string' ? body.roomNumber.trim() || undefined : undefined;
-        if ((parentLocation.type === 'hostel' || parentLocation.deliveryPolicy?.requiresRoomNumber) && !roomNumber) throw new Error('Enter the exact location for this delivery.');
+        if (parentLocation.type === 'hostel' && !roomNumber) throw new Error('Enter your room number for this hostel.');
       } else {
         roomNumber = validateDeliveryRoom(resolvedLocation, body.roomNumber);
       }
@@ -157,7 +157,6 @@ export async function POST(request: NextRequest) {
     }
     const normalizedDeliveryLocation = typeof deliveryLocation === 'string' ? deliveryLocation.trim().replace(/\s+/g, ' ') || undefined : undefined;
     if (normalizedDeliveryLocation && normalizedDeliveryLocation.length > 120) return NextResponse.json({ error: 'Exact delivery location must be at most 120 characters.' }, { status: 400 });
-    if (parentLocation && (parentLocation.type === 'building' || parentLocation.type === 'lecture_theatre') && !normalizedDeliveryLocation) return NextResponse.json({ error: 'Enter the exact delivery location for this building.' }, { status: 400 });
     const normalizedDescription = String(description || '').trim();
     const normalizedTaskType = String(taskType || '').trim();
     const isCafeInquiry = normalizedTaskType === 'restaurant' && cafeInquiry === true;
