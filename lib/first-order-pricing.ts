@@ -6,8 +6,6 @@ export type FirstOrderBonusFields = {
   platformFeeBeforeFirstOrderBonus?: number
   firstOrderBonusAmount?: number
 }
-export const FIRST_ORDER_BONUS_AMOUNT = 100
-
 export function canReleaseFirstOrderReservation(order: {
   status: string; isTestOrder?: boolean; hasPaid?: boolean; paymentStatus?: string
   cafeInquiryFeePaid?: boolean; customerTransferredAt?: Date | string; paidAt?: Date | string
@@ -30,21 +28,24 @@ export function priceWithOrderDiscounts(pricing: PricingResult, options: {
   const totalBeforeBonus = broaderDiscount
     ? Math.max(0, pricing.totalAmount - pricing.serviceFee + retainedInquiryFee)
     : pricing.totalAmount
-  // Sponsored orders already waive the service fee. Only the platform share of
-  // the retained cafe charge can still be discounted; never discount it twice.
-  const remainingPlatformFee = broaderDiscount
-    ? Math.min(normal.platformFee, splitServiceFee(retainedInquiryFee).platformFee)
-    : normal.platformFee
-  const saving = options.firstOrderBonus ? Math.min(FIRST_ORDER_BONUS_AMOUNT, totalBeforeBonus, remainingPlatformFee) : 0
-  const platformReduction = saving
+  const effectiveFees = broaderDiscount
+    ? pricing.pricingModel === 'tiered'
+      ? splitServiceFee(retainedInquiryFee)
+      : { serviceFee: retainedInquiryFee, platformFee: 0, taskerFee: retainedInquiryFee }
+    : normal
+  const firstOrder = Boolean(options.firstOrderBonus)
+
+  // A customer's first order does not create a platform remittance. The
+  // customer still pays the quoted amount; the tasker receives the whole
+  // applicable service fee instead of the normal 16.67% platform split.
   return {
-    commission: normal.serviceFee - platformReduction,
-    serviceFee: normal.serviceFee - platformReduction,
-    taskerFee: normal.taskerFee,
-    platformFee: normal.platformFee - platformReduction,
-    totalAmount: totalBeforeBonus - saving,
-    firstOrderBonusApplied: Boolean(options.firstOrderBonus),
-    platformFeeBeforeFirstOrderBonus: options.firstOrderBonus ? normal.platformFee : undefined,
-    firstOrderBonusAmount: options.firstOrderBonus ? saving : undefined,
+    commission: effectiveFees.serviceFee,
+    serviceFee: effectiveFees.serviceFee,
+    taskerFee: firstOrder ? effectiveFees.taskerFee + effectiveFees.platformFee : effectiveFees.taskerFee,
+    platformFee: firstOrder ? 0 : effectiveFees.platformFee,
+    totalAmount: totalBeforeBonus,
+    firstOrderBonusApplied: firstOrder,
+    platformFeeBeforeFirstOrderBonus: firstOrder ? effectiveFees.platformFee : undefined,
+    firstOrderBonusAmount: firstOrder ? effectiveFees.platformFee : undefined,
   }
 }

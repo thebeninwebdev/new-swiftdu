@@ -2,12 +2,12 @@ import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { calculateOrderPricing, CAFE_INQUIRY_EXTRA_FEE } from './pricing'
-import { canReleaseFirstOrderReservation, FIRST_ORDER_BONUS_AMOUNT, priceWithOrderDiscounts } from './first-order-pricing'
+import { calculateOrderPricing } from './pricing'
+import { canReleaseFirstOrderReservation, priceWithOrderDiscounts } from './first-order-pricing'
 import { taskerEarnings } from './tasker-work'
 import { FirstOrderBonusNotice, FirstOrderPriceBreakdown } from '../components/first-order-bonus'
 
-test('bonus deducts at most ₦100 from the platform share across every pricing model', () => {
+test('first orders remit none of the applicable service fee to the platform', () => {
   const inputs = [
     { taskType: 'restaurant', amount: 2000, restaurantPeopleCount: 3 },
     { taskType: 'restaurant', amount: 0, cafeInquiry: true },
@@ -22,15 +22,14 @@ test('bonus deducts at most ₦100 from the platform share across every pricing 
     const normal = calculateOrderPricing(input)
     const fees = priceWithOrderDiscounts(normal)
     const bonus = priceWithOrderDiscounts(normal, { firstOrderBonus: true, cafeInquiry: input.cafeInquiry })
-    assert.equal(bonus.taskerFee, fees.taskerFee)
-    assert.equal(taskerEarnings(bonus), taskerEarnings(fees))
-    const saving = Math.min(FIRST_ORDER_BONUS_AMOUNT, fees.platformFee)
-    assert.equal(bonus.platformFee, fees.platformFee - saving)
-    assert.equal(bonus.totalAmount, fees.totalAmount - saving)
-    assert.equal(bonus.serviceFee, fees.serviceFee - saving)
+    assert.equal(bonus.taskerFee, fees.taskerFee + fees.platformFee)
+    assert.equal(taskerEarnings(bonus), taskerEarnings(fees) + fees.platformFee)
+    assert.equal(bonus.platformFee, 0)
+    assert.equal(bonus.totalAmount, fees.totalAmount)
+    assert.equal(bonus.serviceFee, fees.serviceFee)
     assert.equal(bonus.commission, bonus.serviceFee)
     assert.equal(normal.amount + bonus.commission, bonus.totalAmount)
-    assert.equal(bonus.firstOrderBonusAmount, saving)
+    assert.equal(bonus.firstOrderBonusAmount, fees.platformFee)
     assert.equal(bonus.platformFeeBeforeFirstOrderBonus, fees.platformFee)
   }
 })
@@ -40,7 +39,7 @@ test('repricing from normal pricing never subtracts twice', () => {
   const normal = calculateOrderPricing({ taskType: 'restaurant', amount: 2500, restaurantPeopleCount: 4, restaurantTakeawayCount: 3 })
   for (let i = 0; i < 5; i++) {
     order = { ...order, ...normal, ...priceWithOrderDiscounts(normal, { firstOrderBonus: true }) }
-    assert.equal(order.totalAmount, normal.totalAmount - Math.min(FIRST_ORDER_BONUS_AMOUNT, priceWithOrderDiscounts(normal).platformFee))
+    assert.equal(order.totalAmount, normal.totalAmount)
   }
 })
 
@@ -49,12 +48,12 @@ test('broader discount is applied first and retained cafe charge is not waived w
     const normal = calculateOrderPricing({ taskType: 'restaurant', amount: cafeInquiry ? 0 : 2000, cafeInquiry })
     const broader = priceWithOrderDiscounts(normal, { serviceFeeDiscount: true, cafeInquiry })
     const both = priceWithOrderDiscounts(normal, { firstOrderBonus: true, serviceFeeDiscount: true, cafeInquiry })
-    assert.equal(both.taskerFee, broader.taskerFee)
-    assert.equal(both.platformFee, Math.max(0, broader.platformFee - FIRST_ORDER_BONUS_AMOUNT))
-    assert.equal(both.totalAmount, broader.totalAmount - (both.firstOrderBonusAmount || 0))
+    assert.equal(both.taskerFee, broader.taskerFee + broader.platformFee)
+    assert.equal(both.platformFee, 0)
+    assert.equal(both.totalAmount, broader.totalAmount)
     assert.ok(both.totalAmount >= 0)
     if (!cafeInquiry) assert.equal(both.firstOrderBonusAmount, 0)
-    else { assert.ok(both.totalAmount > 0); assert.ok(both.firstOrderBonusAmount! < CAFE_INQUIRY_EXTRA_FEE) }
+    else { assert.ok(both.totalAmount > 0); assert.equal(both.firstOrderBonusAmount, broader.platformFee) }
   }
 })
 
@@ -65,12 +64,12 @@ test('only genuinely unpaid cancelled orders release reservations', () => {
   }
 })
 
-test('breakdowns show one discounted service fee without exposing settlement shares', () => {
+test('breakdowns show one service fee without exposing settlement shares', () => {
   const normal = calculateOrderPricing({ taskType: 'water', amount: 0, waterBags: 2 })
   const order = { ...normal, ...priceWithOrderDiscounts(normal, { firstOrderBonus: true }) }
   const html = renderToStaticMarkup(<FirstOrderPriceBreakdown order={order} />)
   assert.match(html, /Service fee/)
-  assert.match(html, /<s/)
+  assert.doesNotMatch(html, /<s>/)
   assert.doesNotMatch(html, /Tasker fee|platform fee/i)
   assert.match(html, /dark:/)
   assert.doesNotMatch(html, /Paystack|reimburse/)
