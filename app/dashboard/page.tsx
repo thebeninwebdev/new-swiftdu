@@ -55,8 +55,6 @@ import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { useIdleEffect } from '@/hooks/use-idle-effect'
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 import {
-  formatNextOperationalOpening,
-  formatOperationalTime,
   getCustomerOperationsState,
   isCustomerOrderingUnavailable,
   type CustomerOperationsStatus,
@@ -1411,12 +1409,9 @@ if (stepNumber === detailsStep) {
   // This only keeps that authorized training experience from being blocked by the
   // customer-facing live-operations banner.
   const newOrdersUnavailable = isCustomerOrderingUnavailable(operationsStatus, isExcoTrainingMode)
-  const nextOpeningLabel = operationsStatus
-    ? formatNextOperationalOpening(operationsStatus.nextOpeningAt, operationsStatus.openingTime)
-    : ''
   const unavailableOrderMessage = customerOperationsState === 'paused'
     ? 'New orders are temporarily paused.'
-    : `Orders reopen ${nextOpeningLabel}.`
+    : 'New orders are not available right now.'
   const shouldShowDiscountCard = hasAvailableAccountDiscount && step === 1
   const dismissTaskerAvailabilityNotice = useCallback(() => {
     setIsTaskerAvailabilityNoticeDismissed(true)
@@ -2203,7 +2198,6 @@ if (stepNumber === detailsStep) {
               {step > 1 ? <Button variant="outline" onClick={handleBack} className="h-12 rounded-xl px-6"><ChevronLeft className="mr-2 h-4 w-4" />Back</Button> : null}
               {step < reviewStep ? <Button onClick={handleNext} disabled={newOrdersUnavailable} aria-disabled={newOrdersUnavailable} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{step === detailsStep && formData.taskType === 'restaurant' && !isCafeInquiry ? 'Review order' : 'Continue'}<ChevronRight className="ml-2 h-4 w-4" /></Button> : <Button onClick={handleSubmit} disabled={isSubmitting || newOrdersUnavailable} aria-disabled={newOrdersUnavailable} className="h-12 flex-1 rounded-xl bg-[#5b3df5] font-black text-white hover:bg-[#4b2ee5]">{isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Placing order...</> : <>{isCafeInquiry ? 'Ask a Tasker to check' : 'Place order'} · {formatNaira(displayedTotalAmount)}<ArrowRight className="ml-2 h-4 w-4" /></>}</Button>}
             </div>
-            {newOrdersUnavailable ? <p className="mt-3 text-center text-sm font-semibold text-amber-800 dark:text-amber-200">{unavailableOrderMessage}</p> : null}
           </div>
         </div>
       </div>
@@ -2285,7 +2279,6 @@ if (stepNumber === detailsStep) {
               {isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Posting...</> : isCafeInquiry ? `Ask a Tasker to check · ${formatNaira(displayedTotalAmount)}` : 'Place Order'}
             </Button>
           )}
-          {newOrdersUnavailable ? <p className="mt-3 text-center text-sm font-semibold text-amber-800 dark:text-amber-200">{unavailableOrderMessage}</p> : null}
           </div>
         ) : null}
       </div>
@@ -2296,7 +2289,7 @@ if (stepNumber === detailsStep) {
 
   if (newOrdersUnavailable && step > 1 && !activeOrder) {
     const paused = customerOperationsState === 'paused'
-    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">{paused ? 'SwiftDU is temporarily paused' : 'SwiftDU is closed for today'}</h1><p className="mt-3 text-slate-600 dark:text-slate-300">{paused ? "We're not accepting new orders right now." : `Orders reopen ${nextOpeningLabel}.`} Your existing orders will continue normally.</p><div className="mt-8 w-full space-y-3"><Link href="/dashboard/tasks" className="flex min-h-12 items-center justify-center rounded-xl bg-violet-600 px-4 font-bold text-white">View my orders</Link><Button variant="outline" className="min-h-12 w-full" onClick={() => setStep(1)}>Back to dashboard</Button></div></main>
+    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">{paused ? 'SwiftDU is temporarily paused' : 'New orders are unavailable'}</h1><p className="mt-3 text-slate-600 dark:text-slate-300">Your existing orders will continue normally.</p><div className="mt-8 w-full space-y-3"><Link href="/dashboard/tasks" className="flex min-h-12 items-center justify-center rounded-xl bg-violet-600 px-4 font-bold text-white">View my orders</Link><Button variant="outline" className="min-h-12 w-full" onClick={() => setStep(1)}>Back to dashboard</Button></div></main>
   }
 
   // Scheduled Indomie owns the evening flow only; daytime Indomie stays in the generic wizard.
@@ -2308,7 +2301,7 @@ if (stepNumber === detailsStep) {
   }
 
   if (!isExcoTrainingMode && formData.taskType === INDOMIE_TASK_TYPE && operationsStatus?.indomie.mode === 'closed') {
-    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">Indomie is done for tonight 🍜</h1><p className="mt-3 text-slate-600 dark:text-slate-300">Evening Indomie runs have ended. You can order again tomorrow from {operationsStatus.openingTime}.</p><p className="mt-3 text-sm text-slate-500">Other SwiftDU services are still available until {operationsStatus.closingTime}.</p><Button className="mt-8 min-h-12 w-full bg-violet-600" onClick={() => { setFormData(previous => ({ ...previous, taskType: 'restaurant' })); setStep(1) }}>Choose another service</Button></main>
+    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">Indomie is unavailable 🍜</h1><p className="mt-3 text-slate-600 dark:text-slate-300">Please choose another service.</p><Button className="mt-8 min-h-12 w-full bg-violet-600" onClick={() => { setFormData(previous => ({ ...previous, taskType: 'restaurant' })); setStep(1) }}>Choose another service</Button></main>
   }
 
   if (isSubmitting) return (
@@ -2327,7 +2320,6 @@ if (stepNumber === detailsStep) {
   return (
     <div className="min-h-screen px-4 py-4 md:px-8 md:py-8">
       <div className="mx-auto max-w-7xl space-y-0 lg:space-y-5">
-        {!isExcoTrainingMode && operationsStatus && <div role={customerOperationsState === 'paused' ? 'alert' : 'status'} className={customerOperationsState === 'open' ? 'mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800' : 'mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800'}><b>{customerOperationsState === 'open' ? '● SwiftDU is open' : customerOperationsState === 'paused' ? 'SwiftDU operations are currently paused' : 'SwiftDU is closed for today'}</b><span className="ml-2">{customerOperationsState === 'open' ? `Closes at ${formatOperationalTime(operationsStatus.closingTime)}` : customerOperationsState === 'paused' ? "We're temporarily not accepting new orders. Please check back later." : `Orders reopen ${nextOpeningLabel}.`}</span></div>}
         {renderTopNotices()}
 
         {DesktopErrandWizard()}
@@ -3579,7 +3571,6 @@ if (stepNumber === detailsStep) {
                   </Button>
                 ) : null}
               </div>
-              {newOrdersUnavailable ? <p className="mt-3 text-center text-sm font-semibold text-amber-800 dark:text-amber-200">{unavailableOrderMessage}</p> : null}
             </div>
           </div>
 
