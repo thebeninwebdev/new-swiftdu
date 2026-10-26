@@ -39,6 +39,8 @@ export interface IOrder extends Document, CafeInquiryFields {
   exactLocationId?: mongoose.Types.ObjectId;
   /** Optional Phase-1 snapshots for future vendor-backed orders. */
   vendorId?: mongoose.Types.ObjectId;
+  /** Vendor whose delivery rule priced the order; may differ from vendorId for "from anywhere" restaurant orders. */
+  deliveryPricingVendorId?: mongoose.Types.ObjectId;
   vendorName?: string;
   pickupParentLocationId?: mongoose.Types.ObjectId;
   pickupExactLocationId?: mongoose.Types.ObjectId;
@@ -257,6 +259,7 @@ const orderSchema = new Schema<IOrder>(
     parentLocationId: { type: Schema.Types.ObjectId, ref: 'CampusLocation', index: true },
     exactLocationId: { type: Schema.Types.ObjectId, ref: 'CampusLocation', index: true },
     vendorId: { type: Schema.Types.ObjectId, ref: 'Vendor', index: true },
+    deliveryPricingVendorId: { type: Schema.Types.ObjectId, ref: 'Vendor', index: true },
     vendorName: String,
     pickupParentLocationId: { type: Schema.Types.ObjectId, ref: 'CampusLocation', index: true },
     pickupExactLocationId: { type: Schema.Types.ObjectId, ref: 'CampusLocation' },

@@ -117,6 +117,7 @@ export async function POST(request: NextRequest) {
       parentLocationId,
       deliveryLocation,
       vendorId,
+      deliveryPricingVendorId,
     } = body;
 
     // New mapped orders always resolve their broad destination on the server.  The
@@ -361,8 +362,26 @@ export async function POST(request: NextRequest) {
     }
 
     const vendorBacked = normalizedTaskType === 'shopping' || normalizedTaskType === 'restaurant' || normalizedTaskType === PRINTING_TASK_TYPE
+    const selectedVendorId = typeof vendorId === 'string' && vendorId ? vendorId : ''
+    // A restaurant bought "from anywhere" has no actual vendor. The client may
+    // supply Akpan's ID solely for delivery coverage/pricing; a selected vendor
+    // always takes precedence and cannot be replaced by that fallback.
+    const isChooseFromAnywhere = normalizedTaskType === 'restaurant' && (store === 'Choose from anywhere' || store === 'Buy from anywhere')
+    const pricingVendorId = selectedVendorId || (isChooseFromAnywhere && typeof deliveryPricingVendorId === 'string' ? deliveryPricingVendorId : '')
     let vendorPricing: Awaited<ReturnType<typeof resolveVendorDeliveryPricing>> | null = null
-    if (vendorBacked) { if (typeof vendorId !== 'string' || !parentLocation) return NextResponse.json({ error: 'Choose a vendor and delivery location.', code: 'VENDOR_NOT_FOUND' }, { status: 400 }); try { vendorPricing = await resolveVendorDeliveryPricing({ vendorId, dropoffParentLocationId: String(parentLocation._id), expectedServiceType: normalizedTaskType }) } catch (error) { const e = error as VendorPricingError; return NextResponse.json({ error: e.message, code: e.code }, { status: 400 }) } }
+    if (vendorBacked) {
+      if (!pricingVendorId || !parentLocation) return NextResponse.json({ error: 'Choose a vendor and delivery location.', code: 'VENDOR_NOT_FOUND' }, { status: 400 })
+      try {
+        vendorPricing = await resolveVendorDeliveryPricing({ vendorId: pricingVendorId, dropoffParentLocationId: String(parentLocation._id), expectedServiceType: normalizedTaskType })
+      } catch (error) {
+        const e = error as VendorPricingError
+        return NextResponse.json({ error: e.message, code: e.code }, { status: 400 })
+      }
+      if (isChooseFromAnywhere && !selectedVendorId && !/\bakpan\b/i.test(vendorPricing.vendor.name)) {
+        return NextResponse.json({ error: 'Choose-from-anywhere delivery coverage is unavailable.', code: 'VENDOR_NOT_FOUND' }, { status: 400 })
+      }
+    }
+    const selectedVendorPricing = selectedVendorId ? vendorPricing : null
     const configuredServiceFee = vendorPricing ? vendorPricing.serviceFee : await getConfiguredServiceFee({ taskType: normalizedTaskType, parentLocationId: parentLocation?._id })
     const pricing: PricingResult = calculateOrderPricing({
       amount:
@@ -518,13 +537,14 @@ export async function POST(request: NextRequest) {
       deliveryLocation: normalizedDeliveryLocation || roomNumber,
       parentLocationId: parentLocation?._id,
       exactLocationId: undefined,
-      vendorId: vendorPricing?.vendor.id,
-      vendorName: vendorPricing?.vendor.name,
-      pickupParentLocationId: vendorPricing?.pickup.parentLocationId,
-      pickupExactLocationId: vendorPricing?.pickup.exactLocationId,
-      dropoffParentLocationId: vendorPricing?.dropoff.parentLocationId,
-      pickupParentLocationName: vendorPricing?.pickup.parentLocationName,
-      dropoffParentLocationName: vendorPricing?.dropoff.parentLocationName,
+      vendorId: selectedVendorPricing?.vendor.id,
+      deliveryPricingVendorId: vendorPricing?.vendor.id,
+      vendorName: selectedVendorPricing?.vendor.name,
+      pickupParentLocationId: selectedVendorPricing?.pickup.parentLocationId,
+      pickupExactLocationId: selectedVendorPricing?.pickup.exactLocationId,
+      dropoffParentLocationId: selectedVendorPricing?.dropoff.parentLocationId,
+      pickupParentLocationName: selectedVendorPricing?.pickup.parentLocationName,
+      dropoffParentLocationName: selectedVendorPricing?.dropoff.parentLocationName,
       store:
         normalizedTaskType === 'copy_notes' ||
         normalizedTaskType === WATER_TASK_TYPE ||

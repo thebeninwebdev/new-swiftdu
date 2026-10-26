@@ -384,7 +384,7 @@ export default function ErrandWizardPage() {
     description: '',
     amount: '',
     location: '',
-    store: 'Buy from anywhere',
+    store: 'Choose from anywhere',
     vendorId: '',
     waterBags: '',
     noteSize: '',
@@ -413,7 +413,10 @@ export default function ErrandWizardPage() {
   const exactDeliveryPlaceholder = selectedVendorDestination?.type === 'lecture_theatre' ? 'e.g. LT1' : 'e.g. Front door'
   useEffect(() => { if (!vendorBackedTask) { setVendors([]); setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors?serviceType=${formData.taskType}`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendors(data?.vendors || []) }); return () => { cancelled = true } }, [formData.taskType, vendorBackedTask])
   const fallbackRestaurantVendor = vendors.find(vendor => /\bakpan\b/i.test(vendor.name))
-  const deliveryVendorId = formData.vendorId || (formData.taskType === 'restaurant' ? fallbackRestaurantVendor?.id || '' : '')
+  const isChooseFromAnywhere = formData.taskType === 'restaurant' && formData.store === 'Choose from anywhere'
+  // This ID is only used to obtain delivery coverage and a price quote. It does
+  // not change the restaurant selected by the customer.
+  const deliveryVendorId = formData.vendorId || (isChooseFromAnywhere ? fallbackRestaurantVendor?.id || '' : '')
   useEffect(() => {
     if (!deliveryVendorId) {
       setVendorDestinations([])
@@ -1032,7 +1035,7 @@ export default function ErrandWizardPage() {
     setFormData((previous) => ({
       ...previous,
       taskType: value,
-      store: value === 'restaurant' ? 'Buy from anywhere' : '',
+      store: value === 'restaurant' ? 'Choose from anywhere' : '',
       vendorId: '',
       description: '',
       location: '',
@@ -1336,7 +1339,9 @@ if (stepNumber === detailsStep) {
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
         body: JSON.stringify({
           ...formData,
-          vendorId: deliveryVendorId,
+          // Preserve the customer's selection. For "Choose from anywhere" this
+          // remains empty while the server uses deliveryPricingVendorId for rules.
+          deliveryPricingVendorId: deliveryVendorId,
           roomNumber: vendorBackedTask ? (selectedVendorDestination?.requiresRoomNumber ? formData.roomNumber : undefined) : getRoomDestination(formData.location)?.requiresRoomNumber ? formData.roomNumber : undefined,
           description: formData.taskType === WATER_TASK_TYPE ? '' : description,
           amount: String(amount),
@@ -1533,10 +1538,10 @@ if (stepNumber === detailsStep) {
         </label>
         <select
           value={formData.vendorId || ''}
-          onChange={(event) => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); clearError('vendorId'); setVendorDestinations([]); setVendorDestinationsLoading(Boolean(event.target.value)); setQuotedServiceFee(null) }}
+          onChange={(event) => { const vendor = vendors.find(item => item.id === event.target.value); const isAnywhere = formData.taskType === 'restaurant' && !vendor; setFormData(previous => ({ ...previous, vendorId: vendor?.id || '', store: vendor?.name || (isAnywhere ? 'Choose from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); clearError('vendorId'); setVendorDestinations([]); setVendorDestinationsLoading(Boolean(vendor || (isAnywhere && fallbackRestaurantVendor))); setQuotedServiceFee(null) }}
           className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 mb-4"
         >
-          <option value="">{formData.taskType === 'restaurant' ? 'Buy from anywhere' : vendors.length ? 'Choose a vendor…' : `No ${formData.taskType === 'printing' ? 'print shops' : 'stores'} are currently available.`}</option>
+          <option value="">{formData.taskType === 'restaurant' ? 'Choose from anywhere' : vendors.length ? 'Choose a vendor…' : `No ${formData.taskType === 'printing' ? 'print shops' : 'stores'} are currently available.`}</option>
           {vendors.map((vendor) => (
             <option key={vendor.id} value={vendor.id}>
               {vendor.name}
@@ -2548,8 +2553,8 @@ if (stepNumber === detailsStep) {
                   formData.taskType !== WATER_TASK_TYPE ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Store className="h-4 w-4 text-indigo-500" />{formData.taskType === 'restaurant' ? 'Restaurant (optional)' : formData.taskType === PRINTING_TASK_TYPE ? 'Select Print Shop' : 'Select Store'}</label>
-                      <select value={formData.vendorId || ''} onChange={event => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); clearError('vendorId'); setVendorDestinations([]); setVendorDestinationsLoading(Boolean(event.target.value)); setQuotedServiceFee(null) }} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">{formData.taskType === 'restaurant' ? 'Buy from anywhere' : 'Choose a vendor…'}</option>
+                      <select value={formData.vendorId || ''} onChange={event => { const vendor = vendors.find(item => item.id === event.target.value); const isAnywhere = formData.taskType === 'restaurant' && !vendor; setFormData(previous => ({ ...previous, vendorId: vendor?.id || '', store: vendor?.name || (isAnywhere ? 'Choose from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); clearError('vendorId'); setVendorDestinations([]); setVendorDestinationsLoading(Boolean(vendor || (isAnywhere && fallbackRestaurantVendor))); setQuotedServiceFee(null) }} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
+                        <option value="">{formData.taskType === 'restaurant' ? 'Choose from anywhere' : 'Choose a vendor…'}</option>
                         {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
                       </select>
                       {errors.vendorId ? <p className="mt-2 text-sm text-red-500">{errors.vendorId}</p> : null}
