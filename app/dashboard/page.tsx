@@ -410,6 +410,7 @@ export default function ErrandWizardPage() {
   }, [formData.parentLocationId])
   const vendorBackedTask = ['shopping', 'restaurant', 'printing'].includes(formData.taskType)
   const selectedVendorDestination = vendorDestinations.find(destination => destination.parentLocationId === formData.parentLocationId)
+  const sortedVendorDestinations = useMemo(() => [...vendorDestinations].sort((left, right) => (left.type === 'hostel' ? 0 : 1) - (right.type === 'hostel' ? 0 : 1) || left.name.localeCompare(right.name)), [vendorDestinations])
   const requiresExactDeliveryLocation = selectedVendorDestination?.type === 'building' || selectedVendorDestination?.type === 'lecture_theatre'
   const exactDeliveryPlaceholder = selectedVendorDestination?.type === 'lecture_theatre' ? 'e.g. LT1' : 'e.g. Front door'
   useEffect(() => { if (!vendorBackedTask) { setVendors([]); setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors?serviceType=${formData.taskType}`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendors(data?.vendors || []) }); return () => { cancelled = true } }, [formData.taskType, vendorBackedTask])
@@ -1967,16 +1968,35 @@ if (stepNumber === detailsStep) {
     </div>
   ) : null
 
+  const chooseVendorDestination = (parentLocationId: string) => {
+    const destination = vendorDestinations.find(item => item.parentLocationId === parentLocationId)
+    setFormData(previous => ({ ...previous, parentLocationId, exactLocationId: '', deliveryLocation: '', location: destination?.name || '', roomNumber: '' }))
+    clearError('location')
+    clearError('deliveryLocation')
+  }
+
+  const renderVendorDestinationPicker = () => (
+    <div className="space-y-2" role="radiogroup" aria-label="Delivery location">
+      <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Where should we deliver?</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {sortedVendorDestinations.map((destination) => {
+          const selected = destination.parentLocationId === formData.parentLocationId
+          return <button key={destination.parentLocationId} type="button" role="radio" aria-checked={selected} onClick={() => chooseVendorDestination(destination.parentLocationId)} className={`flex min-h-16 items-center justify-between rounded-2xl border-2 px-4 py-3 text-left transition ${selected ? 'border-indigo-600 bg-indigo-50 text-indigo-950 shadow-sm dark:bg-indigo-950/40 dark:text-indigo-100' : 'border-slate-200 bg-white text-slate-800 hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-indigo-700'}`}>
+            <span className="font-bold">{destination.name}</span>
+            {destination.type === 'hostel' ? <span className="ml-3 shrink-0 rounded-full bg-violet-100 px-2.5 py-1 text-xs font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-200">Hostel</span> : null}
+          </button>
+        })}
+      </div>
+    </div>
+  )
+
   const renderQuickDetails = () => vendorBackedTask ? (
     <div className="space-y-4">
       <div>
         <label className="mb-2 block text-sm font-bold text-slate-900 dark:text-slate-100">Deliver to</label>
         {!formData.vendorId ? <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Choose a vendor before selecting a delivery location.</p> : (
           <>
-            <select value={formData.parentLocationId || ''} onChange={(event) => { const destination = vendorDestinations.find(item => item.parentLocationId === event.target.value); setFormData(previous => ({ ...previous, parentLocationId: event.target.value, exactLocationId: '', deliveryLocation: '', location: destination?.name || '', roomNumber: '' })); clearError('location'); clearError('deliveryLocation') }} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900">
-              <option value="">Select where to deliver</option>
-              {vendorDestinations.map((destination) => <option key={destination.parentLocationId} value={destination.parentLocationId}>{destination.name}</option>)}
-            </select>
+            {renderVendorDestinationPicker()}
             {vendorDestinations.length === 0 ? <p className="mt-2 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
             {formData.parentLocationId && selectedVendorDestination?.type !== 'hostel' && selectedVendorDestination?.type !== 'lecture_theatre' ? <select value={formData.exactLocationId || ''} onChange={(event) => setFormData(previous => ({ ...previous, exactLocationId: event.target.value }))} className="mt-3 h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900"><option value="">{requiresExactDeliveryLocation ? 'Choose a saved exact location' : 'Exact place (optional)'}</option>{exactLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}</select> : null}
             {requiresExactDeliveryLocation && !formData.exactLocationId ? <><label className="mt-3 mb-2 block text-sm font-bold">Exact location <span className="text-red-500">*</span></label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900" />{errors.deliveryLocation ? <p className="mt-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
@@ -3430,9 +3450,7 @@ if (stepNumber === detailsStep) {
                   <div>
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><MapPin className="h-4 w-4 text-indigo-500" />Delivery Location</label>
                     {(vendorBackedTask || parentLocations.length > 0) ? <>
-                      <select disabled={vendorBackedTask && !formData.vendorId} value={formData.parentLocationId || ''} onChange={event => { const parent = vendorBackedTask ? vendorDestinations.find(item => item.parentLocationId === event.target.value) : parentLocations.find(item => item._id === event.target.value); const id = vendorBackedTask ? event.target.value : event.target.value; setFormData(previous => ({ ...previous, parentLocationId: id, exactLocationId: '', location: parent?.name || '', roomNumber: '' })); clearError('location') }} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800">
-                        <option value="">{vendorBackedTask ? 'Select where to deliver' : 'Select a mapped parent location'}</option>{(vendorBackedTask ? vendorDestinations.map(location => ({ _id: location.parentLocationId, name: location.name })) : parentLocations).map(location => <option key={location._id} value={location._id}>{location.name}</option>)}
-                      </select>
+                      {vendorBackedTask ? renderVendorDestinationPicker() : <select value={formData.parentLocationId || ''} onChange={event => { const parent = parentLocations.find(item => item._id === event.target.value); setFormData(previous => ({ ...previous, parentLocationId: event.target.value, exactLocationId: '', location: parent?.name || '', roomNumber: '' })); clearError('location') }} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800"><option value="">Select a mapped parent location</option>{parentLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}</select>}
                       {vendorBackedTask && formData.vendorId && vendorDestinations.length === 0 ? <p className="mb-3 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
                       {formData.parentLocationId && selectedVendorDestination?.type !== 'hostel' && selectedVendorDestination?.type !== 'lecture_theatre' ? <select value={formData.exactLocationId || ''} onChange={event => setFormData(previous => ({ ...previous, exactLocationId: event.target.value }))} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800"><option value="">Exact place (optional)</option>{exactLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}</select> : null}
                       {requiresExactDeliveryLocation && !formData.exactLocationId ? <><label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">Exact location <span className="text-red-500">*</span></label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800" />{errors.deliveryLocation ? <p className="mb-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
