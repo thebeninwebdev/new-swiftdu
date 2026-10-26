@@ -5,8 +5,10 @@ import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import { Order } from '../models/order'
 import { User } from '../models/user'
 import { WhatsAppRegistration } from '../models/whatsapp-registration'
+import { AcademicSession } from '../models/academic-session'
+import { FirstOrderBonusClaim } from '../models/first-order-bonus-claim'
 import { calculateOrderPricing } from './pricing'
-import { clearZeroFeeSettlement, firstOrderBonusAvailable, OrderChangedError, releaseCancelledBonus, saveNewOrderWithBonus, saveOrderLifecycle } from './first-order-bonus'
+import { clearZeroFeeSettlement, firstOrderBonusAvailable, NoActiveAcademicSessionError, OrderChangedError, releaseCancelledBonus, saveNewOrderWithBonus, saveOrderLifecycle } from './first-order-bonus'
 import { verifyAndMarkOrderSettlementPaid } from './settlement-payment'
 import { getOutstandingSettlementOrders, syncTaskerSettlementStatus } from './tasker-settlement'
 
@@ -14,10 +16,10 @@ let database: MongoMemoryReplSet
 before(async () => {
   database = await MongoMemoryReplSet.create({ replSet: { count: 1 } })
   await mongoose.connect(database.getUri(), { dbName: 'first-order-bonus-tests' })
-  await Promise.all([Order.init(), User.init(), WhatsAppRegistration.init()])
+  await Promise.all([Order.init(), User.init(), WhatsAppRegistration.init(), AcademicSession.init(), FirstOrderBonusClaim.init()])
 })
 after(async () => { await mongoose.disconnect(); await database?.stop() })
-beforeEach(async () => { await Promise.all([Order.deleteMany({}), User.deleteMany({}), WhatsAppRegistration.deleteMany({})]) })
+beforeEach(async () => { await Promise.all([Order.deleteMany({}), User.deleteMany({}), WhatsAppRegistration.deleteMany({}), AcademicSession.deleteMany({}), FirstOrderBonusClaim.deleteMany({})]); await AcademicSession.create({ name: '2026/2027', startDate: new Date('2026-01-01'), endDate: new Date('2026-12-31'), isActive: true }) })
 const pricing = calculateOrderPricing({ taskType: 'restaurant', amount: 2000 })
 async function customer() { return User.create({ email: 'test@example.invalid' }) }
 function draft(userId: string, isTestOrder = false) {
@@ -33,19 +35,32 @@ test('simultaneous creations reserve exactly one bonus; transaction failure roll
   const orders = Array.from({ length: 6 }, () => draft(String(user._id)))
   await Promise.all(orders.map(order => saveNewOrderWithBonus(order, pricing)))
   assert.equal(await Order.countDocuments({ firstOrderBonusApplied: true }), 1)
-  const reserved = await User.findById(user._id)
-  assert.equal(orders.find(order => order.firstOrderBonusApplied)!._id.toString(), reserved.firstOrderBonusOrderId)
+  const reserved = await FirstOrderBonusClaim.findOne({ userId: String(user._id) }).orFail()
+  assert.equal(orders.find(order => order.firstOrderBonusApplied)!._id.toString(), reserved.orderId)
   assert.equal(await firstOrderBonusAvailable(String(user._id)), false)
 })
 
-test('legacy completed live history excludes customers, while training history does not', async () => {
+test('historical live orders do not exclude customers from a new session', async () => {
   const user = await customer()
   const training = draft(String(user._id), true); training.status = 'completed'; await training.save()
   assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
   const live = draft(String(user._id)); live.status = 'completed'; await live.save()
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), false)
+  assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
   const next = draft(String(user._id)); await saveNewOrderWithBonus(next, pricing)
-  assert.equal(next.firstOrderBonusApplied, false)
+  assert.equal(next.firstOrderBonusApplied, true)
+})
+
+test('a different active session makes the same customer eligible again', async () => {
+  const user = await customer(); const first = draft(String(user._id)); await saveNewOrderWithBonus(first, pricing)
+  assert.equal(await firstOrderBonusAvailable(String(user._id)), false)
+  await AcademicSession.updateMany({}, { $set: { isActive: false } })
+  await AcademicSession.create({ name: '2027/2028', startDate: new Date('2027-01-01'), endDate: new Date('2027-12-31'), isActive: true })
+  assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
+})
+
+test('a live order fails safely when there is no active session', async () => {
+  const user = await customer(); await AcademicSession.updateMany({}, { $set: { isActive: false } })
+  await assert.rejects(saveNewOrderWithBonus(draft(String(user._id)), pricing), NoActiveAcademicSessionError)
 })
 
 test('completion consumes once and concurrent retries cannot overwrite its timestamp', async () => {
@@ -65,7 +80,7 @@ test('completion consumes once and concurrent retries cannot overwrite its times
   assert.equal(saved.settlementStatus, 'not_due')
   assert.equal(saved.settlementReference, undefined)
   assert.equal(saved.settlementPaidAt, undefined)
-  assert.ok((await User.findById(user._id)).firstOrderBonusConsumedAt)
+  assert.ok(await FirstOrderBonusClaim.findOne({ orderId: String(order._id), consumedAt: { $exists: true } }))
   assert.equal(await firstOrderBonusAvailable(String(user._id)), false)
   await assert.rejects(saveOrderLifecycle(saved), OrderChangedError)
 })
@@ -76,25 +91,23 @@ test('unpaid cancellation and expiry release only their own reservation; paid/fa
   assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
   const next = draft(String(user._id)); await saveNewOrderWithBonus(next, pricing)
   await releaseCancelledBonus(first)
-  assert.equal((await User.findById(user._id)).firstOrderBonusOrderId, String(next._id))
+  assert.equal((await FirstOrderBonusClaim.findOne({ userId: String(user._id) }))!.orderId, String(next._id))
   // Same atomic terminal update used by expiry, followed by exact-ID release.
   next.status = 'cancelled'; next.paymentStatus = 'cancelled'; await next.save(); await releaseCancelledBonus(next)
   assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
   const paid = draft(String(user._id)); await saveNewOrderWithBonus(paid, pricing)
   paid.customerTransferredAt = new Date(); paid.paymentStatus = 'failed'; paid.status = 'cancelled'
   await saveOrderLifecycle(paid)
-  assert.equal((await User.findById(user._id)).firstOrderBonusOrderId, String(paid._id))
+  assert.equal((await FirstOrderBonusClaim.findOne({ userId: String(user._id) }))!.orderId, String(paid._id))
 })
 
-test('test orders neither claim nor consume and verified WhatsApp history shares the website entitlement', async () => {
+test('test orders neither claim nor consume', async () => {
   const user = await customer(); const training = draft(String(user._id), true)
   await saveNewOrderWithBonus(training, pricing)
   training.status = 'completed'; training.completedAt = new Date(); await saveOrderLifecycle(training)
   assert.equal(training.firstOrderBonusApplied, false)
   assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
-  await WhatsAppRegistration.create({ userId: String(user._id), phone: '2348012345678', status: 'linked', token: 'test-token' })
-  const legacy = draft('external-whatsapp-id'); legacy.source = 'whatsapp'; legacy.customerPhone = '+2348012345678'; legacy.status = 'completed'; await legacy.save()
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), false)
+  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 0)
 })
 
 test('zero-fee settlement cannot charge, become overdue, or reappear after a receipt report', async () => {

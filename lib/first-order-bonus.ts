@@ -1,47 +1,41 @@
 import mongoose, { type ClientSession } from 'mongoose'
 import { Order, type IOrder } from '@/models/order'
 import { User } from '@/models/user'
-import { WhatsAppRegistration } from '@/models/whatsapp-registration'
-import { getUserLookupConditions } from './service-fee-discount'
+import { AcademicSession } from '@/models/academic-session'
+import { FirstOrderBonusClaim } from '@/models/first-order-bonus-claim'
 import { canReleaseFirstOrderReservation, priceWithOrderDiscounts } from './first-order-pricing'
 import type { PricingResult } from './pricing'
 
-export class OrderChangedError extends Error {
-  constructor() { super('Order changed. Refresh and try again.') }
+export class OrderChangedError extends Error { constructor() { super('Order changed. Refresh and try again.') } }
+export class NoActiveAcademicSessionError extends Error { constructor() { super('No active SwiftDU session is configured. Please contact an administrator.') } }
+
+async function activeSession(session?: ClientSession) {
+  const current = await AcademicSession.findOne({ isActive: true }).session(session || null).lean()
+  if (!current) throw new NoActiveAcademicSessionError()
+  return current
 }
 
-async function customerIdentity(userId: string, session?: ClientSession) {
-  const user = await User.findOne({ $or: getUserLookupConditions({ id: userId }) }).session(session || null)
-  if (!user) return null // Never mint another entitlement from an unverified phone.
-  const ids = [...new Set([userId, String(user._id), ...(user.id ? [String(user.id)] : [])])]
-  const links = await WhatsAppRegistration.find({ userId: { $in: ids }, status: 'linked' }).session(session || null).lean()
-  const phones = links.flatMap(link => {
-    const phone = String(link.phone).replace(/\D/g, '')
-    return [phone, `+${phone}`, ...(phone.startsWith('234') ? [`0${phone.slice(3)}`] : [])]
-  })
-  return { user, history: { $or: [{ userId: { $in: ids } }, ...(phones.length ? [{ source: 'whatsapp', customerPhone: { $in: phones } }] : [])] } }
+async function canonicalUserId(userId: string, session?: ClientSession) {
+  const user = await User.findById(userId).session(session || null)
+  return user ? String(user._id) : userId
 }
 
-async function hasLiveHistory(history: Record<string, unknown>, session?: ClientSession) {
-  return Boolean(await Order.exists({ isTestOrder: { $ne: true },
-    $and: [history, { $or: [{ status: 'completed' }, { firstOrderBonusConsumedAt: { $exists: true } }] }],
-  }).session(session || null))
+export async function firstOrderBonusEligibility(userId: string) {
+  const current = await activeSession()
+  const customerId = await canonicalUserId(userId)
+  const claim = await FirstOrderBonusClaim.exists({ userId: customerId, sessionId: current._id })
+  return { eligible: !claim, sessionId: String(current._id), sessionName: current.name }
 }
 
 export async function firstOrderBonusAvailable(userId: string) {
-  const identity = await customerIdentity(userId)
-  if (!identity || identity.user.firstOrderBonusConsumedAt || identity.user.firstOrderBonusOrderId) return false
-  return !await hasLiveHistory(identity.history)
+  return (await firstOrderBonusEligibility(userId)).eligible
 }
 
-// Creation, completion and cancellation serialize on the same customer document.
-// MongoDB transactions ensure a crash cannot leave a reservation without its order.
 async function lockCustomer(userId: string, session: ClientSession) {
-  const identity = await customerIdentity(userId, session)
-  if (!identity) return null
-  identity.user = await User.findOneAndUpdate({ _id: identity.user._id },
-    { $inc: { firstOrderBonusVersion: 1 } }, { new: true, session })
-  return identity
+  // Preserve the existing serialization mechanism as a second line of defence
+  // around the unique session claim.
+  const user = await User.findByIdAndUpdate(userId, { $inc: { firstOrderBonusVersion: 1 } }, { new: true, session })
+  return user ? String(user._id) : userId
 }
 
 export async function saveNewOrderWithBonus(order: IOrder, pricing: PricingResult) {
@@ -50,75 +44,49 @@ export async function saveNewOrderWithBonus(order: IOrder, pricing: PricingResul
     await order.save(); return
   }
   await mongoose.connection.transaction(async session => {
-    const identity = await lockCustomer(order.userId, session)
+    const current = await activeSession(session)
+    const customerId = await lockCustomer(order.userId, session)
+    order.sessionId = current._id
+    order.sessionName = current.name
     let eligible = false
-    if (identity && !identity.user.firstOrderBonusConsumedAt) {
-      const reservedId = identity.user.firstOrderBonusOrderId
-      // Repair a reservation left by an older cancellation flow, but never a
-      // paid or missing order: those require an explicit administrative review.
-      if (reservedId) {
-        const reserved = await Order.findById(reservedId).session(session)
-        if (reserved && canReleaseFirstOrderReservation(reserved)) {
-          identity.user.firstOrderBonusOrderId = undefined
-        }
-      }
-      eligible = !identity.user.firstOrderBonusOrderId && !await hasLiveHistory(identity.history, session)
-      if (eligible) {
-        identity.user.firstOrderBonusOrderId = String(order._id)
-        await identity.user.save({ session })
-      }
+    try {
+      await FirstOrderBonusClaim.create([{ userId: customerId, sessionId: current._id, orderId: String(order._id), claimedAt: new Date() }], { session })
+      eligible = true
+    } catch (error) {
+      // A duplicate key is the expected concurrent/not-first path. Other errors
+      // still abort the transaction instead of silently pricing an order wrongly.
+      if ((error as { code?: number }).code !== 11000) throw error
     }
-    Object.assign(order, priceWithOrderDiscounts(pricing, {
-      firstOrderBonus: eligible, serviceFeeDiscount: order.serviceFeeDiscountApplied, cafeInquiry: order.cafeInquiry,
-    }))
+    if (eligible) order.firstOrderBonusSessionId = current._id
+    Object.assign(order, priceWithOrderDiscounts(pricing, { firstOrderBonus: eligible, serviceFeeDiscount: order.serviceFeeDiscountApplied, cafeInquiry: order.cafeInquiry }))
     await order.save({ session })
   })
   order.$session(null)
 }
 
-export function clearZeroFeeSettlement(order: IOrder) {
-  if (order.platformFee > 0) return
-  order.settlementStatus = 'not_due'
-  order.settlementDueAt = undefined
-  order.settlementFailureReason = undefined
-  // No Paystack reference, payment timestamp or successful payment is fabricated.
-}
+export function clearZeroFeeSettlement(order: IOrder) { if (order.platformFee > 0) return; order.settlementStatus = 'not_due'; order.settlementDueAt = undefined; order.settlementFailureReason = undefined }
 
 export async function saveOrderLifecycle(order: IOrder) {
-  if (order.status !== 'completed' && order.status !== 'cancelled') {
-    order.$where = { updatedAt: order.updatedAt, status: { $nin: ['completed', 'cancelled'] } }
-    await order.save(); return
-  }
-  const expectedUpdatedAt = order.updatedAt
-  const changes = order.getChanges()
+  if (order.status !== 'completed' && order.status !== 'cancelled') { order.$where = { updatedAt: order.updatedAt, status: { $nin: ['completed', 'cancelled'] } }; await order.save(); return }
+  const expectedUpdatedAt = order.updatedAt, changes = order.getChanges()
   const saved = await mongoose.connection.transaction(async session => {
-    const identity = order.isTestOrder ? null : await lockCustomer(order.userId, session)
-    const updated = await Order.findOneAndUpdate(
-      { _id: order._id, updatedAt: expectedUpdatedAt, status: { $ne: order.status } }, changes, { new: true, runValidators: true, session },
-    )
+    const updated = await Order.findOneAndUpdate({ _id: order._id, updatedAt: expectedUpdatedAt, status: { $ne: order.status } }, changes, { new: true, runValidators: true, session })
     if (!updated) throw new OrderChangedError()
-    if (identity) {
+    if (!updated.isTestOrder && updated.firstOrderBonusApplied && updated.firstOrderBonusSessionId) {
       if (updated.status === 'completed') {
-        identity.user.firstOrderBonusConsumedAt ||= updated.completedAt || new Date()
-        // Keep a different paid reservation intact if orders finish out of order.
-        if (identity.user.firstOrderBonusOrderId === String(updated._id)) identity.user.firstOrderBonusOrderId = undefined
-        if (updated.firstOrderBonusApplied) {
-          updated.firstOrderBonusConsumedAt ||= identity.user.firstOrderBonusConsumedAt
-          await updated.save({ session })
-        }
-      } else if (canReleaseFirstOrderReservation(updated) && identity.user.firstOrderBonusOrderId === String(updated._id)) {
-        identity.user.firstOrderBonusOrderId = undefined
+        updated.firstOrderBonusConsumedAt ||= updated.completedAt || new Date()
+        await FirstOrderBonusClaim.updateOne({ orderId: String(updated._id), sessionId: updated.firstOrderBonusSessionId }, { $set: { consumedAt: updated.firstOrderBonusConsumedAt } }, { session })
+        await updated.save({ session })
+      } else if (canReleaseFirstOrderReservation(updated)) {
+        await FirstOrderBonusClaim.deleteOne({ orderId: String(updated._id), sessionId: updated.firstOrderBonusSessionId, consumedAt: { $exists: false } }, { session })
       }
-      await identity.user.save({ session })
     }
     return updated
   })
   order.set(saved.toObject())
 }
 
-// Expiry already uses an atomic unpaid cancellation. Release only its exact claim.
 export async function releaseCancelledBonus(order: IOrder) {
-  if (!canReleaseFirstOrderReservation(order)) return
-  await User.updateOne({ $or: getUserLookupConditions({ id: order.userId }), firstOrderBonusOrderId: String(order._id) },
-    { $unset: { firstOrderBonusOrderId: 1 } })
+  if (!canReleaseFirstOrderReservation(order) || !order.firstOrderBonusSessionId) return
+  await FirstOrderBonusClaim.deleteOne({ orderId: String(order._id), sessionId: order.firstOrderBonusSessionId, consumedAt: { $exists: false } })
 }

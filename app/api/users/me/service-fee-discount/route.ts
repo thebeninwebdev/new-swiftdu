@@ -1,4 +1,4 @@
-import { firstOrderBonusAvailable } from '@/lib/first-order-bonus'
+import { firstOrderBonusEligibility, NoActiveAcademicSessionError } from '@/lib/first-order-bonus'
 import { NextRequest, NextResponse } from 'next/server'
 
 import { auth } from '@/lib/auth'
@@ -38,14 +38,19 @@ export async function GET(request: NextRequest) {
       ? await hasActiveServiceFeeDiscountReservation(session.user.id)
       : false
 
+    const firstOrder = await firstOrderBonusEligibility(session.user.id)
     return NextResponse.json({
-      firstOrderBonusAvailable: await firstOrderBonusAvailable(session.user.id),
+      firstOrderBonusAvailable: firstOrder.eligible,
+      firstOrderEligible: firstOrder.eligible,
+      sessionId: firstOrder.sessionId,
+      sessionName: firstOrder.sessionName,
       hasCurrentDiscount,
       hasAvailableDiscount: hasCurrentDiscount && !hasActiveReservation,
       hasActiveReservation,
       remainingOrders,
     })
   } catch (error) {
+    if (error instanceof NoActiveAcademicSessionError) return NextResponse.json({ error: error.message, code: 'NO_ACTIVE_SESSION' }, { status: 409 })
     console.error('[GET /api/users/me/service-fee-discount]', error)
     return NextResponse.json(
       { error: 'Failed to check service fee discount.' },

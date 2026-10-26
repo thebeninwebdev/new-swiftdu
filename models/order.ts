@@ -21,6 +21,9 @@ export interface IOrder extends Document, CafeInquiryFields {
   platformFeeBeforeFirstOrderBonus?: number;
   firstOrderBonusAmount?: number;
   firstOrderBonusConsumedAt?: Date;
+  firstOrderBonusSessionId?: mongoose.Types.ObjectId;
+  sessionId?: mongoose.Types.ObjectId;
+  sessionName?: string;
   serviceFeeBeforeDiscount?: number;
   serviceFeeDiscountApplied?: boolean;
   serviceFeeDiscountGrantedByName?: string;
@@ -213,6 +216,9 @@ const orderSchema = new Schema<IOrder>(
     platformFeeBeforeFirstOrderBonus: { type: Number, min: 0 },
     firstOrderBonusAmount: { type: Number, min: 0 },
     firstOrderBonusConsumedAt: Date,
+    firstOrderBonusSessionId: { type: Schema.Types.ObjectId, ref: 'AcademicSession', index: true },
+    sessionId: { type: Schema.Types.ObjectId, ref: 'AcademicSession', index: true },
+    sessionName: String,
     serviceFeeBeforeDiscount: {
       type: Number,
       min: 0,
@@ -530,6 +536,7 @@ orderSchema.index({ deliveryDestinationKey: 1, roomNumber: 1, status: 1 });
 orderSchema.index({ userId: 1, idempotencyKey: 1 }, { unique: true, sparse: true });
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ userId: 1, isTestOrder: 1, status: 1 });
+orderSchema.index({ userId: 1, sessionId: 1, isTestOrder: 1 });
 orderSchema.index({ taskerId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ taskType: 1, status: 1, createdAt: -1 });
 orderSchema.index({ isTestOrder: 1, status: 1, createdAt: -1 });
@@ -550,7 +557,7 @@ const existingTaskTypePath = existingOrderModel?.schema.path('taskType') as
 if (
   existingOrderModel &&
   existingTaskTypePath?.enumValues &&
-  (!existingTaskTypePath.enumValues.includes('indomie') || !existingOrderModel.schema.path('cafeInquiryStatus') || !existingOrderModel.schema.path('firstOrderBonusApplied') || !existingOrderModel.schema.path('taskerGenderRestriction') || !existingOrderModel.schema.path('roomNumber'))
+  (!existingTaskTypePath.enumValues.includes('indomie') || !existingOrderModel.schema.path('cafeInquiryStatus') || !existingOrderModel.schema.path('firstOrderBonusApplied') || !existingOrderModel.schema.path('firstOrderBonusSessionId') || !existingOrderModel.schema.path('sessionId') || !existingOrderModel.schema.path('taskerGenderRestriction') || !existingOrderModel.schema.path('roomNumber'))
 ) {
   const mutableModels = mongoose.models as unknown as Record<string, Model<IOrder> | undefined>;
   const mutableConnectionModels = mongoose.connection.models as unknown as Record<

@@ -1,5 +1,5 @@
 import { validateDeliveryRoom } from '@/lib/delivery-policy';
-import { saveNewOrderWithBonus } from '@/lib/first-order-bonus';
+import { NoActiveAcademicSessionError, saveNewOrderWithBonus } from '@/lib/first-order-bonus';
 import { calculateOrderPricing, type PricingResult } from '@/lib/pricing';
 import { getConfiguredServiceFee } from '@/lib/pricing-config';
 import { resolveVendorDeliveryPricing, VendorPricingError } from '@/lib/vendors';
@@ -253,6 +253,7 @@ export async function POST(
 
     return NextResponse.json(retriedOrder, { status: 201 });
   } catch (error) {
+    if (error instanceof NoActiveAcademicSessionError) return NextResponse.json({ error: error.message, code: 'NO_ACTIVE_SESSION' }, { status: 409 })
     console.error('[Orders Retry Error]:', error);
     return NextResponse.json(
       { error: 'Failed to retry task' },

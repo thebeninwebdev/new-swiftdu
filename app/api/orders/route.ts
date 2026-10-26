@@ -1,5 +1,5 @@
 import { classifyDeliveryLocation, validateDeliveryRoom } from '@/lib/delivery-policy';
-import { saveNewOrderWithBonus } from '@/lib/first-order-bonus';
+import { NoActiveAcademicSessionError, saveNewOrderWithBonus } from '@/lib/first-order-bonus';
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
@@ -662,6 +662,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(order, { status: 201 });
   } catch (error) {
+    if (error instanceof NoActiveAcademicSessionError) return NextResponse.json({ error: error.message, code: 'NO_ACTIVE_SESSION' }, { status: 409 })
     // The unique sparse index closes the race between two simultaneous retries.
     if (idempotencyKey && (error as { code?: number }).code === 11000) {
       const session = await auth.api.getSession({ headers: request.headers })
