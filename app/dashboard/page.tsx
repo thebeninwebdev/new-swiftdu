@@ -1542,12 +1542,16 @@ if (stepNumber === detailsStep) {
       </Button>
     ) : null
 
-  const renderCafeSelector = () => <CafeInquirySelector value={isCafeInquiry} onChange={(value) => {
-    if (value === isCafeInquiry) return
+  const chooseRestaurantOrderType = (value: boolean) => {
     pauseRealtime()
     setFormData(previous => ({ ...previous, cafeInquiry: value, description: '', restaurantItemPrice: '', packaging: '', restaurantPeople: '1', restaurantTakeawayCount: '0' }))
     clearError('description'); clearError('restaurantItemPrice')
-  }} />
+    setMascotInteraction('consider')
+    setStep(detailsStep)
+    setErrors({})
+  }
+
+  const renderCafeSelector = () => <CafeInquirySelector value={isCafeInquiry} onChange={chooseRestaurantOrderType} />
   const renderRestaurantOrderType = () => (
     <div className="space-y-5">
       <div>
