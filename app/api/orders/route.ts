@@ -523,7 +523,7 @@ export async function POST(request: NextRequest) {
       location: resolvedLocation,
       taskerGenderRestriction: parentLocation?.deliveryPolicy?.taskerGenderRestriction,
       roomNumber,
-      deliveryLocation: normalizedDeliveryLocation || exactLocation?.name,
+      deliveryLocation: normalizedDeliveryLocation || exactLocation?.name || roomNumber,
       parentLocationId: parentLocation?._id,
       exactLocationId: exactLocation?._id,
       vendorId: vendorPricing?.vendor.id,
