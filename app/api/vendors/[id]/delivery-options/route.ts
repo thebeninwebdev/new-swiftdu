@@ -5,6 +5,8 @@ import { Vendor } from '@/models/vendor'
 import { VendorDeliveryRule } from '@/models/vendor-delivery-rule'
 import CampusLocation from '@/models/campus-location'
 
+export const dynamic = 'force-dynamic'
+
 export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   if (!Types.ObjectId.isValid(id)) return NextResponse.json({ error: 'Invalid vendor.' }, { status: 400 })
@@ -26,5 +28,5 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       serviceFee: fees.get(String(parent._id)),
       requiresRoomNumber: parent.type === 'hostel' || parent.deliveryPolicy?.requiresRoomNumber === true,
     })),
-  })
+  }, { headers: { 'Cache-Control': 'no-store' } })
 }

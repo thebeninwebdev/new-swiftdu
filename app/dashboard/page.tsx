@@ -369,6 +369,7 @@ export default function ErrandWizardPage() {
   const [parentLocations, setParentLocations] = useState<Array<{ _id: string; name: string }>>([])
   const [vendors, setVendors] = useState<Array<{ id: string; name: string }>>([])
   const [vendorDestinations, setVendorDestinations] = useState<Array<{ parentLocationId: string; name: string; type?: CampusLocationType; requiresRoomNumber?: boolean }>>([])
+  const [vendorDestinationsLoading, setVendorDestinationsLoading] = useState(false)
   const [exactLocations, setExactLocations] = useState<Array<{ _id: string; name: string }>>([])
   const [isExcoTrainingMode, setIsExcoTrainingMode] = useState(false)
   const socketRef = useRef<Socket | null>(null)
@@ -414,7 +415,29 @@ export default function ErrandWizardPage() {
   useEffect(() => { if (!vendorBackedTask) { setVendors([]); setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors?serviceType=${formData.taskType}`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendors(data?.vendors || []) }); return () => { cancelled = true } }, [formData.taskType, vendorBackedTask])
   const fallbackRestaurantVendor = vendors.find(vendor => /\bakpan\b/i.test(vendor.name))
   const deliveryVendorId = formData.vendorId || (formData.taskType === 'restaurant' ? fallbackRestaurantVendor?.id || '' : '')
-  useEffect(() => { if (!deliveryVendorId) { setVendorDestinations([]); return } let cancelled = false; void fetch(`/api/vendors/${deliveryVendorId}/delivery-options`).then(r => r.ok ? r.json() : null).then(data => { if (!cancelled) setVendorDestinations(data?.destinations || []) }); return () => { cancelled = true } }, [deliveryVendorId])
+  useEffect(() => {
+    if (!deliveryVendorId) {
+      setVendorDestinations([])
+      setVendorDestinationsLoading(false)
+      return
+    }
+
+    let cancelled = false
+    setVendorDestinationsLoading(true)
+    void fetch(`/api/vendors/${deliveryVendorId}/delivery-options`, { cache: 'no-store' })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => {
+        if (!cancelled) setVendorDestinations(data?.destinations || [])
+      })
+      .catch(() => {
+        if (!cancelled) setVendorDestinations([])
+      })
+      .finally(() => {
+        if (!cancelled) setVendorDestinationsLoading(false)
+      })
+
+    return () => { cancelled = true }
+  }, [deliveryVendorId])
 
   const sortedTaskTypes = useMemo(() => {
     const originalIndex = new Map(taskTypes.map((item, index) => [item.value, index]))
@@ -1503,7 +1526,7 @@ if (stepNumber === detailsStep) {
         </label>
         <select
           value={formData.vendorId || ''}
-          onChange={(event) => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setVendorDestinations([]); setQuotedServiceFee(null) }}
+          onChange={(event) => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setVendorDestinations([]); setVendorDestinationsLoading(Boolean(event.target.value)); setQuotedServiceFee(null) }}
           className="h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900 mb-4"
         >
           <option value="">{formData.taskType === 'restaurant' ? 'Buy from anywhere' : vendors.length ? 'Choose a vendor…' : `No ${formData.taskType === 'printing' ? 'print shops' : 'stores'} are currently available.`}</option>
@@ -1999,7 +2022,7 @@ if (stepNumber === detailsStep) {
         {!deliveryVendorId ? <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">Restaurant delivery coverage is not available yet.</p> : (
           <>
             {renderVendorDestinationPicker()}
-            {vendorDestinations.length === 0 ? <p className="mt-2 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
+            {vendorDestinationsLoading ? <p className="mt-2 text-sm text-slate-500">Loading delivery locations…</p> : vendorDestinations.length === 0 ? <p className="mt-2 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
             {formData.parentLocationId && selectedVendorDestination?.type !== 'hostel' ? <><label className="mt-3 mb-2 block text-sm font-bold">Exact location {requiresExactDeliveryLocation ? <span className="text-red-500">*</span> : <span className="text-slate-400">(optional)</span>}</label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900" />{errors.deliveryLocation ? <p className="mt-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
           </>
         )}
@@ -2518,7 +2541,7 @@ if (stepNumber === detailsStep) {
                   formData.taskType !== WATER_TASK_TYPE ? (
                     <div>
                       <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><Store className="h-4 w-4 text-indigo-500" />{formData.taskType === 'restaurant' ? 'Restaurant (optional)' : formData.taskType === PRINTING_TASK_TYPE ? 'Select Print Shop' : 'Select Store'}</label>
-                      <select value={formData.vendorId || ''} onChange={event => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setQuotedServiceFee(null) }} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
+                      <select value={formData.vendorId || ''} onChange={event => { const vendor = vendors.find(item => item.id === event.target.value); setFormData(previous => ({ ...previous, vendorId: event.target.value, store: vendor?.name || (formData.taskType === 'restaurant' ? 'Buy from anywhere' : ''), parentLocationId: '', exactLocationId: '', location: '', roomNumber: '' })); setVendorDestinations([]); setVendorDestinationsLoading(Boolean(event.target.value)); setQuotedServiceFee(null) }} className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800">
                         <option value="">{formData.taskType === 'restaurant' ? 'Buy from anywhere' : 'Choose a vendor…'}</option>
                         {vendors.map((vendor) => <option key={vendor.id} value={vendor.id}>{vendor.name}</option>)}
                       </select>
@@ -3449,7 +3472,7 @@ if (stepNumber === detailsStep) {
                     <label className="mb-2 flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300"><MapPin className="h-4 w-4 text-indigo-500" />Delivery Location</label>
                     {(vendorBackedTask || parentLocations.length > 0) ? <>
                       {vendorBackedTask ? renderVendorDestinationPicker() : <select value={formData.parentLocationId || ''} onChange={event => { const parent = parentLocations.find(item => item._id === event.target.value); setFormData(previous => ({ ...previous, parentLocationId: event.target.value, exactLocationId: '', location: parent?.name || '', roomNumber: '' })); clearError('location') }} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800"><option value="">Select a mapped parent location</option>{parentLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}</select>}
-                      {vendorBackedTask && formData.vendorId && vendorDestinations.length === 0 ? <p className="mb-3 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
+                      {vendorBackedTask && formData.vendorId && vendorDestinationsLoading ? <p className="mb-3 text-sm text-slate-500">Loading delivery locations…</p> : vendorBackedTask && formData.vendorId && vendorDestinations.length === 0 ? <p className="mb-3 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
                       {formData.parentLocationId && selectedVendorDestination?.type !== 'hostel' ? <><label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">Exact location {requiresExactDeliveryLocation ? <span className="text-red-500">*</span> : <span className="text-slate-400">(optional)</span>}</label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800" />{errors.deliveryLocation ? <p className="mb-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
                       <p className="mb-2 text-xs text-slate-500">Choose an exact place when mapped, or enter a room/detail below. Pricing uses the parent location.</p>
                     </> : null}
