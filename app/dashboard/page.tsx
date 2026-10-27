@@ -75,7 +75,6 @@ import {
 } from '@/lib/pricing'
 
 const REALTIME_PAUSE_MS = 1200
-const LOW_TASKER_NOTICE_RETURN_DATE = '2026-06-01'
 const PACKAGING_LANGUAGE_STORAGE_KEY = 'swiftdu:restaurant-packaging-language'
 
 type PackagingLanguage = 'pidgin' | 'english'
@@ -271,33 +270,15 @@ function formatReadyDate(value?: string) {
   }).format(new Date(value))
 }
 
-function getLagosDateKey(date: Date) {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Africa/Lagos',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(date)
-  const year = parts.find((part) => part.type === 'year')?.value
-  const month = parts.find((part) => part.type === 'month')?.value
-  const day = parts.find((part) => part.type === 'day')?.value
-
-  return year && month && day ? `${year}-${month}-${day}` : ''
-}
-
 function isLowTaskerAvailabilityWindow(date: Date) {
-  if (getLagosDateKey(date) < LOW_TASKER_NOTICE_RETURN_DATE) return false
-
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Africa/Lagos',
-    weekday: 'short',
     hour: 'numeric',
     hourCycle: 'h23',
   }).formatToParts(date)
-  const weekday = parts.find((part) => part.type === 'weekday')?.value
   const hour = Number(parts.find((part) => part.type === 'hour')?.value)
 
-  return ['Mon', 'Wed'].includes(weekday || '') && hour >= 0 && hour < 14
+  return hour >= 7 && hour < 15
 }
 
 
@@ -369,7 +350,6 @@ export default function ErrandWizardPage() {
   const [isRealtimePaused, setIsRealtimePaused] = useState(false)
   const [mounted, setMounted] = useState(false)
   const [packagingLanguage, setPackagingLanguage] = useState<PackagingLanguage>('pidgin')
-  const [isTaskerAvailabilityNoticeDismissed, setIsTaskerAvailabilityNoticeDismissed] = useState(false)
   const [currentTime, setCurrentTime] = useState(() => new Date())
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [indomieRun, setIndomieRun] = useState<{ scheduledFor: string; bookingClosesAt: string; availableSlots: number; status: string } | null>(null)
@@ -729,7 +709,7 @@ export default function ErrandWizardPage() {
 
   useVisibleInterval(
     () => setCurrentTime(new Date()),
-    mounted && !isTaskerAvailabilityNoticeDismissed ? 60_000 : null
+    mounted ? 60_000 : null
   )
 
   useEffect(() => {
@@ -1480,8 +1460,7 @@ if (stepNumber === detailsStep) {
   const activeOrderPaymentDue = needsOrderPayment(
     activeOrder ? { ...activeOrder, taskerId: activeOrder.taskerId || undefined } : null
   )
-  const showLowTaskerAvailabilityNotice =
-    isLowTaskerAvailabilityWindow(currentTime) && !isTaskerAvailabilityNoticeDismissed
+  const showLowTaskerAvailabilityNotice = isLowTaskerAvailabilityWindow(currentTime)
   const customerOperationsState = operationsStatus ? getCustomerOperationsState(operationsStatus) : null
   // The server independently authorizes Test Order Mode from the database account.
   // This only keeps that authorized training experience from being blocked by the
@@ -1491,20 +1470,6 @@ if (stepNumber === detailsStep) {
     ? 'New orders are temporarily paused.'
     : 'New orders are not available right now.'
   const shouldShowDiscountCard = hasAvailableAccountDiscount && step === 1
-  const dismissTaskerAvailabilityNotice = useCallback(() => {
-    setIsTaskerAvailabilityNoticeDismissed(true)
-  }, [])
-
-  const dismissNoticeOnWizardButtonClick = useCallback(
-    (event: React.MouseEvent<HTMLElement>) => {
-      if (!(event.target instanceof HTMLElement)) return
-      if (event.target.closest('button')) {
-        window.setTimeout(dismissTaskerAvailabilityNotice, 0)
-      }
-    },
-    [dismissTaskerAvailabilityNotice]
-  )
-
   const renderServiceFeeAmount = (className = 'font-medium') =>
     hasAvailableServiceFeeDiscount ? (
       <span className="flex items-center justify-end gap-2 text-right">
@@ -2217,8 +2182,8 @@ if (stepNumber === detailsStep) {
       ) : null}
       {showLowTaskerAvailabilityNotice ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
-          <p className="font-bold">Taskers may be in class right now</p>
-          <p className="mt-1">Please try again by 2:00 PM for quicker attention.</p>
+          <p className="font-bold">Taskers are not available right now</p>
+          <p className="mt-1">Please try again by 3:00 PM.</p>
         </div>
       ) : null}
       {shouldShowDiscountCard ? (
@@ -2261,7 +2226,7 @@ if (stepNumber === detailsStep) {
   )
 
   const DesktopErrandWizard = () => (
-    <section className="hidden lg:block" onClick={dismissNoticeOnWizardButtonClick}>
+    <section className="hidden lg:block">
       <div className="mx-auto max-w-4xl overflow-hidden rounded-[2rem] border border-indigo-100 bg-white shadow-[0_28px_80px_-36px_rgba(79,70,229,0.3)] dark:border-slate-800 dark:bg-slate-950">
         <header className="flex items-center justify-between border-b border-slate-100 px-8 py-5 dark:border-slate-800">
           <div className="flex items-center">
@@ -2306,7 +2271,7 @@ if (stepNumber === detailsStep) {
   )
 
   const MobileErrandWizard = () => (
-    <section className="lg:hidden" onClick={dismissNoticeOnWizardButtonClick}>
+    <section className="lg:hidden">
       <div className="min-h-screen bg-transparent px-3 pb-6 min-[390px]:px-4">
         <div className="mx-auto max-w-md">
           <div className={`relative ${step === 1 ? 'mb-1' : 'mb-5'} flex items-center justify-center`}>
@@ -2455,9 +2420,9 @@ if (stepNumber === detailsStep) {
               <div className="flex items-start gap-3">
                 <Clock className="mt-0.5 h-5 w-5 shrink-0" />
                 <div>
-                  <p className="text-sm font-semibold">Taskers may be in class right now</p>
+                  <p className="text-sm font-semibold">Taskers are not available right now</p>
                   <p className="mt-1 text-sm text-amber-900 dark:text-amber-100">
-                    It may be unlikely to get a tasker quickly at this time because many taskers are in ongoing classes. Please try again by 2:00 PM for quicker attention.
+                    Please try again by 3:00 PM.
                   </p>
                 </div>
               </div>
