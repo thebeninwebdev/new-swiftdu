@@ -115,6 +115,7 @@ export async function POST(request: NextRequest) {
       isTestOrder: requestedIsTestOrder,
       expectedIndomieMode,
       parentLocationId,
+      exactLocationId,
       deliveryLocation,
       vendorId,
       deliveryPricingVendorId,
@@ -127,6 +128,20 @@ export async function POST(request: NextRequest) {
       if (!Types.ObjectId.isValid(parentLocationId)) return NextResponse.json({ error: 'Choose a valid parent location.' }, { status: 400 });
       parentLocation = await CampusLocation.findOne({ _id: parentLocationId, parentLocationId: null, active: true }).select('name type coordinates deliveryPolicy').lean();
       if (!parentLocation) return NextResponse.json({ error: 'Choose an active parent location.' }, { status: 400 });
+    }
+
+    let exactLocation: { _id: Types.ObjectId; name: string; coordinates: unknown; parentLocationId?: Types.ObjectId | null } | null = null;
+    if (exactLocationId !== undefined && exactLocationId !== null && exactLocationId !== '') {
+      if (!parentLocation || !Types.ObjectId.isValid(exactLocationId)) return NextResponse.json({ error: 'Choose a valid exact delivery location.' }, { status: 400 });
+      exactLocation = await CampusLocation.findOne({ _id: exactLocationId, parentLocationId: parentLocation._id, active: true }).select('_id name coordinates parentLocationId').lean();
+      if (!exactLocation) return NextResponse.json({ error: 'Choose a valid exact delivery location.' }, { status: 400 });
+    }
+
+    // A mapped hostel with configured children needs a precise destination. Other
+    // parent types keep their existing optional-child behavior.
+    if (parentLocation?.type === 'hostel' && !exactLocation) {
+      const hasExactLocations = await CampusLocation.exists({ parentLocationId: parentLocation._id, active: true });
+      if (hasExactLocations) return NextResponse.json({ error: 'Choose a valid exact delivery location.' }, { status: 400 });
     }
 
     // Validation
@@ -149,7 +164,7 @@ export async function POST(request: NextRequest) {
     try {
       if (parentLocation) {
         roomNumber = typeof body.roomNumber === 'string' ? body.roomNumber.trim() || undefined : undefined;
-        if (parentLocation.type === 'hostel' && !roomNumber) throw new Error('Enter your room number for this hostel.');
+        if ((parentLocation.type === 'hostel' || parentLocation.deliveryPolicy?.requiresRoomNumber === true) && !roomNumber) throw new Error('Enter your room number for this hostel.');
       } else {
         roomNumber = validateDeliveryRoom(resolvedLocation, body.roomNumber);
       }
@@ -534,9 +549,9 @@ export async function POST(request: NextRequest) {
       location: resolvedLocation,
       taskerGenderRestriction: parentLocation?.deliveryPolicy?.taskerGenderRestriction,
       roomNumber,
-      deliveryLocation: normalizedDeliveryLocation || roomNumber,
+      deliveryLocation: exactLocation?.name || normalizedDeliveryLocation || roomNumber,
       parentLocationId: parentLocation?._id,
-      exactLocationId: undefined,
+      exactLocationId: exactLocation?._id,
       vendorId: selectedVendorPricing?.vendor.id,
       deliveryPricingVendorId: vendorPricing?.vendor.id,
       vendorName: selectedVendorPricing?.vendor.name,

@@ -26,7 +26,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       name: parent.name,
       type: parent.type,
       serviceFee: fees.get(String(parent._id)),
-      requiresRoomNumber: parent.type === 'hostel',
+      requiresRoomNumber: parent.type === 'hostel' || parent.deliveryPolicy?.requiresRoomNumber === true,
     })),
   }, { headers: { 'Cache-Control': 'no-store' } })
 }

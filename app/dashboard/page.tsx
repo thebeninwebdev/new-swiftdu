@@ -383,10 +383,11 @@ export default function ErrandWizardPage() {
   const [taskTypeUsageCounts, setTaskTypeUsageCounts] = useState<Record<string, number>>({})
   const [hasExcoDashboardAccess, setHasExcoDashboardAccess] = useState(false)
   const [quotedServiceFee, setQuotedServiceFee] = useState<number | null>(null)
-  const [parentLocations, setParentLocations] = useState<Array<{ _id: string; name: string }>>([])
+  const [parentLocations, setParentLocations] = useState<Array<{ _id: string; name: string; type?: CampusLocationType; deliveryPolicy?: { requiresRoomNumber?: boolean } }>>([])
   const [vendors, setVendors] = useState<VendorOption[]>([])
   const [vendorsLoading, setVendorsLoading] = useState(false)
   const [exactLocations, setExactLocations] = useState<Array<{ _id: string; name: string }>>([])
+  const [exactLocationsLoading, setExactLocationsLoading] = useState(false)
   const [isExcoTrainingMode, setIsExcoTrainingMode] = useState(false)
   const socketRef = useRef<Socket | null>(null)
   const activeOrderRef = useRef<ActiveOrder | null>(null)
@@ -421,8 +422,16 @@ export default function ErrandWizardPage() {
 
   useEffect(() => { void fetch('/api/locations').then(response => response.ok ? response.json() : null).then(data => setParentLocations(data?.locations || [])).catch(() => undefined) }, [])
   useEffect(() => {
-    if (!formData.parentLocationId) { setExactLocations([]); return }
-    void fetch(`/api/locations?parentLocationId=${encodeURIComponent(formData.parentLocationId)}`).then(response => response.ok ? response.json() : null).then(data => setExactLocations(data?.locations || []) ).catch(() => setExactLocations([]))
+    if (!formData.parentLocationId) { setExactLocations([]); setExactLocationsLoading(false); return }
+    const controller = new AbortController()
+    setExactLocations([])
+    setExactLocationsLoading(true)
+    void fetch(`/api/locations?parentLocationId=${encodeURIComponent(formData.parentLocationId)}`, { signal: controller.signal })
+      .then(response => response.ok ? response.json() : null)
+      .then(data => { if (!controller.signal.aborted) setExactLocations(data?.locations || []) })
+      .catch(() => { if (!controller.signal.aborted) setExactLocations([]) })
+      .finally(() => { if (!controller.signal.aborted) setExactLocationsLoading(false) })
+    return () => controller.abort()
   }, [formData.parentLocationId])
   const vendorBackedTask = ['shopping', 'restaurant', 'printing'].includes(formData.taskType)
   useEffect(() => {
@@ -452,6 +461,9 @@ export default function ErrandWizardPage() {
   const selectedVendor = vendors.find(vendor => vendor.id === deliveryVendorId)
   const vendorDestinations = selectedVendor?.destinations || EMPTY_VENDOR_DESTINATIONS
   const selectedVendorDestination = vendorDestinations.find(destination => destination.parentLocationId === formData.parentLocationId)
+  const selectedParentLocation = parentLocations.find(location => location._id === formData.parentLocationId)
+  const selectedParentLocationType = selectedVendorDestination?.type || selectedParentLocation?.type
+  const parentRequiresRoomNumber = selectedVendorDestination?.requiresRoomNumber || selectedParentLocationType === 'hostel' || selectedParentLocation?.deliveryPolicy?.requiresRoomNumber === true
   const sortedVendorDestinations = useMemo(() => [...vendorDestinations].sort((left, right) => (left.type === 'hostel' ? 0 : 1) - (right.type === 'hostel' ? 0 : 1) || left.name.localeCompare(right.name)), [vendorDestinations])
   const exactDeliveryPlaceholder = selectedVendorDestination?.type === 'lecture_theatre' ? 'e.g. LT1' : 'e.g. Front door'
   const selectVendor = (vendorId: string) => {
@@ -1309,7 +1321,8 @@ if (stepNumber === detailsStep) {
   if (vendorBackedTask) {
     if (!deliveryVendorId) nextErrors.vendorId = 'Restaurant delivery coverage is not available yet.'
     if (!formData.parentLocationId || !formData.location.trim()) nextErrors.location = 'Choose where to deliver.'
-    if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) nextErrors.roomNumber = 'Enter your room number for this hostel.'
+    if (parentRequiresRoomNumber && !(formData.roomNumber || '').trim()) nextErrors.roomNumber = 'Enter your room number for this hostel.'
+    if (selectedParentLocationType === 'hostel' && exactLocations.length > 0 && !formData.exactLocationId) nextErrors.exactLocationId = 'Choose an exact delivery location.'
   } else {
     try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { nextErrors.roomNumber = (error as Error).message }
     if (!formData.location.trim()) nextErrors.location = 'Enter the delivery location.'
@@ -1351,7 +1364,8 @@ if (stepNumber === detailsStep) {
     orderIdempotencyKeyRef.current = idempotencyKey
     if (vendorBackedTask) {
       if (!deliveryVendorId || !formData.parentLocationId) { toast.error('Choose a delivery location.'); return }
-      if (selectedVendorDestination?.requiresRoomNumber && !(formData.roomNumber || '').trim()) { toast.error('Enter your room number for this hostel.'); return }
+      if (parentRequiresRoomNumber && !(formData.roomNumber || '').trim()) { toast.error('Enter your room number for this hostel.'); return }
+      if (selectedParentLocationType === 'hostel' && exactLocations.length > 0 && !formData.exactLocationId) { toast.error('Choose an exact delivery location.'); return }
     } else {
       try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { toast.error((error as Error).message); return }
     }
@@ -1370,7 +1384,8 @@ if (stepNumber === detailsStep) {
           // Preserve the customer's selection. For "Choose from anywhere" this
           // remains empty while the server uses deliveryPricingVendorId for rules.
           deliveryPricingVendorId: deliveryVendorId,
-          roomNumber: vendorBackedTask ? (selectedVendorDestination?.requiresRoomNumber ? formData.roomNumber : undefined) : getRoomDestination(formData.location)?.requiresRoomNumber ? formData.roomNumber : undefined,
+          exactLocationId: formData.exactLocationId || undefined,
+          roomNumber: (formData.parentLocationId ? parentRequiresRoomNumber : getRoomDestination(formData.location)?.requiresRoomNumber) ? formData.roomNumber : undefined,
           description: formData.taskType === WATER_TASK_TYPE ? '' : description,
           amount: String(amount),
           cafeInquiry: isCafeInquiry,
@@ -2024,7 +2039,7 @@ if (stepNumber === detailsStep) {
     </div>
   )
 
-  const renderRoomNumber = () => (vendorBackedTask ? selectedVendorDestination?.requiresRoomNumber : getRoomDestination(formData.location)?.requiresRoomNumber) ? (
+  const renderRoomNumber = () => (formData.parentLocationId ? parentRequiresRoomNumber : getRoomDestination(formData.location)?.requiresRoomNumber) ? (
     <div>
       <label htmlFor="delivery-room" className="mb-1 block text-sm font-bold">Room number <span className="text-red-500">*</span></label>
       <p className="mb-2 text-xs text-slate-500">Enter the room number, for example A04.</p>
@@ -2032,6 +2047,28 @@ if (stepNumber === detailsStep) {
       {errors.roomNumber && <p id="delivery-room-error" className="mt-2 text-sm text-red-500">{errors.roomNumber}</p>}
     </div>
   ) : null
+
+  const chooseExactLocation = (location: { _id: string; name: string }) => {
+    setFormData(previous => ({ ...previous, exactLocationId: location._id, deliveryLocation: location.name }))
+    clearError('exactLocationId')
+  }
+
+  const renderExactLocationPicker = () => {
+    if (!formData.parentLocationId) return null
+    if (exactLocationsLoading) return <p className="mt-3 text-sm text-slate-500">Loading exact delivery locations…</p>
+    if (exactLocations.length === 0) return null
+    const required = selectedParentLocationType === 'hostel'
+    return <div className="mt-3" role="radiogroup" aria-label="Exact delivery location">
+      <p className="mb-2 text-sm font-semibold text-slate-700 dark:text-slate-300">Where exactly should we deliver? {required ? <span className="text-red-500">*</span> : <span className="text-slate-400">(optional)</span>}</p>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {exactLocations.map(location => {
+          const selected = formData.exactLocationId === location._id
+          return <button key={location._id} type="button" role="radio" aria-checked={selected} onClick={() => chooseExactLocation(location)} className={`min-h-12 rounded-xl border-2 px-4 py-3 text-left text-sm font-semibold transition ${selected ? 'border-indigo-600 bg-indigo-50 text-indigo-950 dark:bg-indigo-950/40 dark:text-indigo-100' : 'border-slate-200 bg-white text-slate-800 hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:border-indigo-700'}`}>{location.name}</button>
+        })}
+      </div>
+      {errors.exactLocationId ? <p className="mt-2 text-sm text-red-500">{errors.exactLocationId}</p> : null}
+    </div>
+  }
 
   const chooseVendorDestination = (parentLocationId: string) => {
     const destination = vendorDestinations.find(item => item.parentLocationId === parentLocationId)
@@ -2063,7 +2100,8 @@ if (stepNumber === detailsStep) {
           <>
             {renderVendorDestinationPicker()}
             {!vendorsLoading && vendorDestinations.length === 0 ? <p className="mt-2 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
-            {formData.parentLocationId && selectedVendorDestination?.type !== 'hostel' ? <><label className="mt-3 mb-2 block text-sm font-bold">Exact location <span className="text-slate-400">(optional)</span></label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900" />{errors.deliveryLocation ? <p className="mt-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
+            {renderExactLocationPicker()}
+            {formData.parentLocationId && selectedParentLocationType !== 'hostel' ? <><label className="mt-3 mb-2 block text-sm font-bold">Exact location <span className="text-slate-400">(optional)</span></label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm outline-none focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 dark:border-slate-800 dark:bg-slate-900" />{errors.deliveryLocation ? <p className="mt-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
           </>
         )}
         {errors.location ? <p className="mt-2 text-sm text-red-500">{errors.location}</p> : null}
@@ -3513,7 +3551,8 @@ if (stepNumber === detailsStep) {
                     {(vendorBackedTask || parentLocations.length > 0) ? <>
                       {vendorBackedTask ? renderVendorDestinationPicker() : <select value={formData.parentLocationId || ''} onChange={event => { const parent = parentLocations.find(item => item._id === event.target.value); setFormData(previous => ({ ...previous, parentLocationId: event.target.value, exactLocationId: '', location: parent?.name || '', roomNumber: '' })); clearError('location') }} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800"><option value="">Select a mapped parent location</option>{parentLocations.map(location => <option key={location._id} value={location._id}>{location.name}</option>)}</select>}
                       {vendorBackedTask && !vendorsLoading && deliveryVendorId && vendorDestinations.length === 0 ? <p className="mb-3 text-sm text-amber-700">This vendor does not currently deliver to any locations.</p> : null}
-                      {formData.parentLocationId && selectedVendorDestination?.type !== 'hostel' ? <><label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">Exact location <span className="text-slate-400">(optional)</span></label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800" />{errors.deliveryLocation ? <p className="mb-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
+                      {renderExactLocationPicker()}
+                      {formData.parentLocationId && selectedParentLocationType !== 'hostel' ? <><label className="mb-2 block text-sm font-semibold text-slate-700 dark:text-slate-300">Exact location <span className="text-slate-400">(optional)</span></label><input name="deliveryLocation" value={formData.deliveryLocation || ''} onChange={handleInputChange} maxLength={120} placeholder={exactDeliveryPlaceholder} className="mb-3 w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 dark:border-slate-700 dark:bg-slate-800" />{errors.deliveryLocation ? <p className="mb-2 text-sm text-red-500">{errors.deliveryLocation}</p> : null}</> : null}
                       <p className="mb-2 text-xs text-slate-500">Choose an exact place when mapped, or enter a room/detail below. Pricing uses the parent location.</p>
                     </> : null}
                     {!vendorBackedTask && <input type="text" name="location" value={formData.location} onChange={handleInputChange} placeholder="Library 2nd Floor, Hall B Room 204..." className="w-full rounded-xl border-2 border-slate-200 bg-white px-4 py-3 outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-800" />}
