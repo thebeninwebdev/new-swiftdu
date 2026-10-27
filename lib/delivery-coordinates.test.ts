@@ -69,7 +69,9 @@ test('order APIs enforce room requirements and completion ownership, validity, p
   const require = createRequire(import.meta.url)
   let user = { id: 'customer', role: 'admin', taskerId: '' }
   let saves = 0
-  let current = new Order({ userId: 'customer', taskerId: 'tasker', taskType: 'restaurant', location: 'Amnesty', roomNumber: 'A12', amount: 1, commission: 1, totalAmount: 2, hasPaid: true, status: 'in_progress', isTestOrder: true })
+  const existingPaidAt = new Date('2026-10-20T10:00:00Z')
+  const existingVerifiedAt = new Date('2026-10-20T10:01:00Z')
+  let current = new Order({ userId: 'customer', taskerId: 'tasker', taskType: 'restaurant', location: 'Amnesty', roomNumber: 'A12', amount: 1, commission: 1, totalAmount: 2, hasPaid: true, paymentStatus: 'paid', paidAt: existingPaidAt, paymentVerifiedAt: existingVerifiedAt, status: 'in_progress', isTestOrder: true })
   const stubs: Record<string, unknown> = {
     './db': { connectDB: async () => {} },
     './auth': { auth: { api: { getSession: async () => ({ user }) } } },
@@ -93,6 +95,7 @@ test('order APIs enforce room requirements and completion ownership, validity, p
   for (const location of ['Amnesty', 'Girls Hostel']) assert.equal((await POST(request({ taskType: 'restaurant', location }, 'POST'))).status, 400)
   const point = { latitude: 5.1, longitude: 5.2, accuracy: 15, capturedAt: new Date().toISOString() }
   const patch = (body: unknown) => PATCH(request(body), { params: Promise.resolve({ id: 'order' }) })
+  user = { id: 'worker', role: 'tasker', taskerId: 'other-tasker' }
   assert.equal((await patch({ status: 'completed', deliveryCoordinates: point })).status, 403)
   user = { id: 'worker', role: 'tasker', taskerId: 'tasker' }
   assert.equal((await patch({ status: 'completed', deliveryCoordinates: { ...point, latitude: 100 } })).status, 400)
@@ -100,12 +103,50 @@ test('order APIs enforce room requirements and completion ownership, validity, p
   const completed = await patch({ status: 'completed', deliveryCoordinates: point })
   assert.equal(completed.status, 200)
   assert.equal(current.deliveryCoordinates?.latitude, 5.1)
+  assert.equal(current.paidAt?.getTime(), existingPaidAt.getTime())
+  assert.equal(current.paymentVerifiedAt?.getTime(), existingVerifiedAt.getTime())
+  assert.equal(current.paymentConfirmationSource, undefined)
+  const firstCompletedAt = current.completedAt?.getTime()
+  const firstSettlementDueAt = current.settlementDueAt?.getTime()
   assert.equal((await completed.json()).deliveryCoordinates, undefined)
   assert.equal((await patch({ status: 'completed', deliveryCoordinates: { ...point, latitude: 4 } })).status, 200)
   assert.equal(current.deliveryCoordinates?.latitude, 5.1)
+  assert.equal(current.completedAt?.getTime(), firstCompletedAt)
+  assert.equal(current.settlementDueAt?.getTime(), firstSettlementDueAt)
   assert.equal(saves, 1)
   current = new Order({ userId: 'customer', taskerId: 'tasker', taskType: 'restaurant', location: 'Library', amount: 1, commission: 1, totalAmount: 2, hasPaid: true, status: 'in_progress', isTestOrder: true })
   assert.equal((await patch({ status: 'completed' })).status, 200)
   assert.equal(current.deliveryCoordinates, undefined)
+  current = new Order({
+    userId: 'customer', taskerId: 'tasker', taskType: 'restaurant', location: 'Library',
+    amount: 1, commission: 1, totalAmount: 2, platformFee: 100,
+    hasPaid: false, paymentStatus: 'unpaid', status: 'in_progress', isTestOrder: true,
+  })
+  current.isDeclinedTask = true
+  assert.equal((await patch({ status: 'completed' })).status, 409)
+  assert.equal(current.hasPaid, false)
+  current.isDeclinedTask = false
+  assert.equal((await patch({ status: 'completed' })).status, 200)
+  assert.equal(current.status, 'completed')
+  assert.equal(current.hasPaid, true)
+  assert.equal(current.paymentStatus, 'paid')
+  assert.equal(current.paymentProvider, 'manual_transfer')
+  assert.ok(current.paidAt)
+  assert.equal(current.paymentVerifiedAt?.getTime(), current.paidAt?.getTime())
+  assert.equal(current.customerTransferredAt?.getTime(), current.paidAt?.getTime())
+  assert.equal(current.paymentConfirmationSource, 'tasker_completion')
+  assert.equal(current.paymentConfirmedByTaskerAt?.getTime(), current.paidAt?.getTime())
+  assert.equal(current.settlementStatus, 'pending')
+  assert.ok(current.settlementDueAt)
+  assert.equal(current.completedBeforeTimer, false)
+  const taskerConfirmedPaidAt = current.paidAt?.getTime()
+  const taskerCompletedAt = current.completedAt?.getTime()
+  const taskerSettlementDueAt = current.settlementDueAt?.getTime()
+  const savesAfterTaskerCompletion = saves
+  assert.equal((await patch({ status: 'completed' })).status, 200)
+  assert.equal(current.paidAt?.getTime(), taskerConfirmedPaidAt)
+  assert.equal(current.completedAt?.getTime(), taskerCompletedAt)
+  assert.equal(current.settlementDueAt?.getTime(), taskerSettlementDueAt)
+  assert.equal(saves, savesAfterTaskerCompletion)
 })
 

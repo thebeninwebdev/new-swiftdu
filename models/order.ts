@@ -130,6 +130,8 @@ export interface IOrder extends Document, CafeInquiryFields {
   paymentTransactionId?: string;
   paymentInitializedAt?: Date;
   paymentVerifiedAt?: Date;
+  paymentConfirmationSource?: 'customer_transfer' | 'tasker_completion' | 'admin';
+  paymentConfirmedByTaskerAt?: Date;
   paymentFailureReason?: string;
   customerTransferredAt?: Date;
   settlementProvider?: 'paystack' | 'flutterwave';
@@ -489,6 +491,11 @@ const orderSchema = new Schema<IOrder>(
     paymentTransactionId: String,
     paymentInitializedAt: Date,
     paymentVerifiedAt: Date,
+    paymentConfirmationSource: {
+      type: String,
+      enum: ['customer_transfer', 'tasker_completion', 'admin'],
+    },
+    paymentConfirmedByTaskerAt: Date,
     paymentFailureReason: String,
     customerTransferredAt: Date,
     settlementProvider: {

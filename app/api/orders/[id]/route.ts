@@ -11,7 +11,7 @@ import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement';
 import {Order} from "@/models/order"
 import CampusLocation from '@/models/campus-location'
 import { auth } from '@/lib/auth'; 
-import { canCustomerCancelOrder, canTaskerCancelOrder } from '@/lib/order-status';
+import { canCustomerCancelOrder, canTaskerCancelOrder, isCustomerPaymentConfirmed } from '@/lib/order-status';
 import { emitOrderUpdated } from '@/lib/socket';
 import { expireUnmatchedOrder } from '@/lib/order-search-expiry';
 import { isTaskerSearchExpired } from '@/lib/order-tracking';
@@ -896,14 +896,15 @@ export async function PATCH(
         order.settlementDueAt = undefined;
         order.settlementFailureReason = undefined;
       } else if (status === 'completed') {
-        if (order.status !== 'in_progress' && order.status !== 'paid') {
-          return NextResponse.json({ error: 'Only an active order can be completed.' }, { status: 409 });
-        }
         if (!isTaskerOwner) {
           return NextResponse.json(
             { error: 'Only the assigned tasker can complete this order' },
             { status: 403 }
           );
+        }
+        if (order.status === 'completed') return NextResponse.json(order);
+        if (order.status !== 'in_progress' && order.status !== 'paid') {
+          return NextResponse.json({ error: 'Only an active order can be completed.' }, { status: 409 });
         }
 
         if (order.isDeclinedTask) {
@@ -912,13 +913,6 @@ export async function PATCH(
               error:
                 'This order has a transfer issue under review and cannot be completed yet.',
             },
-            { status: 400 }
-          );
-        }
-
-        if (!order.hasPaid) {
-          return NextResponse.json(
-            { error: 'Customer payment must be confirmed before completion' },
             { status: 400 }
           );
         }
@@ -933,10 +927,23 @@ export async function PATCH(
           return NextResponse.json({ error: (error as Error).message }, { status: 400 });
         }
         if (order.cafeInquiryStatus) order.cafeInquiryStatus = 'completed';
+        const completedAt = new Date();
+        const paymentWasConfirmed = isCustomerPaymentConfirmed(order);
+        if (!paymentWasConfirmed) {
+          order.hasPaid = true;
+          order.paymentStatus = 'paid';
+          order.paymentProvider = 'manual_transfer';
+          order.paymentVerifiedAt = completedAt;
+          order.paidAt = completedAt;
+          order.customerTransferredAt = order.customerTransferredAt || completedAt;
+          order.paymentConfirmationSource = 'tasker_completion';
+          order.paymentConfirmedByTaskerAt = completedAt;
+          order.paymentFailureReason = undefined;
+        }
         order.status = 'completed';
-        order.completedAt = new Date();
+        order.completedAt = completedAt;
         const completionDueAt = order.completionDueAt;
-        const completedBeforeTimer = completionDueAt
+        const completedBeforeTimer = paymentWasConfirmed && completionDueAt
           ? order.completedAt.getTime() <= completionDueAt.getTime()
           : false;
 
