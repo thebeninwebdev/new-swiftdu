@@ -75,6 +75,13 @@ function getTelegramChatId() {
   );
 }
 
+export function isTelegramMessagingDisabledInDevelopment(
+  nodeEnv = process.env.NODE_ENV,
+  vercelEnv = process.env.VERCEL_ENV
+) {
+  return nodeEnv === 'development' || vercelEnv === 'development';
+}
+
 export function getTelegramChatIdForTask(taskType?: string) {
   if (taskType === 'copy_notes') {
     return process.env.TELEGRAM_COPY_NOTES_CHAT_ID?.trim() || getTelegramChatId();
@@ -88,6 +95,11 @@ export async function sendTelegramMessage(
   chatId?: string,
   options?: TelegramSendOptions
 ): Promise<boolean> {
+  if (isTelegramMessagingDisabledInDevelopment()) {
+    console.info('[Telegram] message skipped in development');
+    return false;
+  }
+
   const botToken = getTelegramBotToken();
   const targetChatId = chatId || getTelegramChatId();
 

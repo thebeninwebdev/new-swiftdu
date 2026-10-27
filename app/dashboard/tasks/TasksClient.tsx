@@ -54,6 +54,7 @@ interface Order extends CafeInquiryFields {
   status: 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
   taskerName?: string
   taskerId?: string
+  taskerSearchStartedAt?: string
   createdAt: string
   updatedAt?: string
   hasPaid?: boolean
