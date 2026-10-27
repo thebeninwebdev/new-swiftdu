@@ -53,7 +53,11 @@ export function isTaskerSearchExpired(
   nowMs: number,
 ) {
   if (!order || !isWaitingForTasker(order)) return false
+  if (order.hasPaid || order.paymentStatus === 'paid' || order.cafeInquiryFeePaid) return false
   if (order.batchingStatus === 'waiting') return false
+  // A scheduled order has no active search until the server records one. Do not
+  // let the legacy createdAt fallback turn a future booking into a timeout.
+  if (!order.taskerSearchStartedAt && order.scheduledFor) return false
   const startedAt = new Date(order.taskerSearchStartedAt || order.createdAt).getTime()
   return Number.isFinite(startedAt) && nowMs >= startedAt + TASKER_SEARCH_TIMEOUT_MS
 }

@@ -313,7 +313,9 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const confirmCancelOrder = useCallback(() => { setCancelConfirmOpen(false); void handleCancelOrder() }, [handleCancelOrder])
 
   const waitingOrderId = isTrackingPage && isWaitingForTasker(currentOrder) ? currentOrder?._id : null
-  const waitingStartedAt = waitingOrderId ? currentOrder?.createdAt : null
+  // This only improves the customer-facing countdown. The server cron is the
+  // lifecycle authority and uses the same tasker-search start timestamp.
+  const waitingStartedAt = waitingOrderId ? (currentOrder?.taskerSearchStartedAt || currentOrder?.createdAt) : null
 
   useEffect(() => {
     if (!waitingOrderId || !waitingStartedAt) return

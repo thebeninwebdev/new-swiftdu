@@ -61,6 +61,17 @@ test('waiting requests expire at seven minutes, including cafe and test requests
   }
   assert.equal(isTaskerSearchExpired({ ...pending, createdAt: 'invalid' }, deadline), false)
 })
+
+test('search expiry excludes paid, batching, and not-yet-started scheduled orders', () => {
+  const pending = { ...assigned, status: 'pending', taskerId: undefined }
+  const now = Date.parse(pending.createdAt) + TASKER_SEARCH_TIMEOUT_MS
+  assert.equal(isTaskerSearchExpired({ ...pending, hasPaid: true }, now), false)
+  assert.equal(isTaskerSearchExpired({ ...pending, paymentStatus: 'paid' }, now), false)
+  assert.equal(isTaskerSearchExpired({ ...pending, cafeInquiryFeePaid: true }, now), false)
+  assert.equal(isTaskerSearchExpired({ ...pending, batchingStatus: 'waiting' }, now), false)
+  assert.equal(isTaskerSearchExpired({ ...pending, scheduledFor: '2026-10-01T18:00:00Z' }, now), false)
+  assert.equal(isTaskerSearchExpired({ ...pending, taskerSearchStartedAt: pending.createdAt, scheduledFor: '2026-10-01T18:00:00Z' }, now), true)
+})
 for (const isTestOrder of [false, true]) {
   test(`cancelled socket state overrides assignment and payment history (${isTestOrder ? 'test' : 'live'})`, () => {
     for (const hasPaid of [false, true]) {
