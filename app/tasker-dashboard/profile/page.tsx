@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { getTaskerId } from '@/lib/utils'
 import { BankDetailsForm } from '@/components/tasker/BankDetailsForm'
+import { LowDataModeControl } from '@/components/LowDataModeControl'
 
 interface TaskerProfile {
   _id: string
@@ -146,6 +147,8 @@ export default function ProfilePage() {
       </div>
 
       <div className="max-w-4xl mx-auto px-4 py-8">
+        <LowDataModeControl />
+        <div className="h-6" />
         {/* Message */}
         {message && (
           <div

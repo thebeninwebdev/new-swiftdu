@@ -9,6 +9,8 @@ import type { WorkSnapshot } from '@/lib/tasker-work'
 import { TaskerSwifty } from './Swifty'
 import { WorkDialog } from './WorkDialog'
 import { convertToNaira } from '@/lib/utils'
+import { useNetworkState } from '@/hooks/use-network-state'
+import { fetchWithTimeout } from '@/lib/client-fetch'
 
 export const workButton = 'inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-violet-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-violet-700 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-violet-600 disabled:cursor-not-allowed disabled:opacity-50'
 export const workCard = 'rounded-3xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900'
@@ -25,6 +27,7 @@ export function activeTime(ms: number) {
 }
 
 export function TaskerWorkProvider({ children }: { children: ReactNode }) {
+  const { online } = useNetworkState()
   const [data, setData] = useState<WorkSnapshot | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -38,7 +41,7 @@ export function TaskerWorkProvider({ children }: { children: ReactNode }) {
     if (mutation.current) return
     const request = ++sequence.current
     try {
-      const response = await fetch('/api/taskers/availability', { cache: 'no-store' })
+      const response = await fetchWithTimeout('/api/taskers/availability', { cache: 'no-store' })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Could not load your work status.')
       if (request === sequence.current) { setData(payload); setError(null) }
@@ -68,6 +71,7 @@ export function TaskerWorkProvider({ children }: { children: ReactNode }) {
   }, [refresh])
   const change = async (action: 'check-in' | 'check-out') => {
     if (mutation.current) return
+    if (!online) { toast.error('You are offline. Reconnect before changing your work status.'); return }
     mutation.current = true
     ++sequence.current
     setSaving(true); setError(null); setCheckingIn(action === 'check-in')
@@ -99,7 +103,7 @@ export function TaskerWorkProvider({ children }: { children: ReactNode }) {
       {data && <div className="my-5 grid grid-cols-3 gap-2 text-center text-sm"><div><strong>{data.summaries.today.tasks}</strong><p>Tasks</p></div><div><strong>{convertToNaira(data.summaries.today.earnings)}</strong><p>Earned</p></div><div><strong>{activeTime(data.summaries.today.activeMs)}</strong><p>Active time</p></div></div>}
       {Boolean(data?.activeTasks) && <p role="status" className="my-4 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900">Finish your active tasks before checking out. Your current work stays available from Tasks.</p>}
       {error && <p role="alert" className="my-3 text-sm text-rose-700">{error}</p>}
-      <button className={`${workButton} w-full`} disabled={saving || !data || Boolean(data.activeTasks)} onClick={() => void change('check-out')}>{saving ? 'Checking out...' : 'Check out'}</button>
+      <button className={`${workButton} w-full`} disabled={saving || !data || Boolean(data.activeTasks) || !online} onClick={() => void change('check-out')}>{saving ? 'Checking out...' : 'Check out'}</button>
       <button className="mt-2 min-h-12 w-full rounded-2xl font-semibold focus-visible:outline-2" disabled={saving} onClick={() => setCheckout(false)}>Keep working</button>
     </WorkDialog>}
   </Context.Provider>

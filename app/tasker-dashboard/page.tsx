@@ -7,14 +7,16 @@ import { toast } from 'sonner'
 import { TaskerHome } from '@/components/tasker/TaskerHome'
 import { useTaskerWork } from '@/components/tasker/WorkProvider'
 import { authClient } from '@/lib/auth-client'
-import { acquireSharedSocket, fetchWithSocketPause, releaseSharedSocket } from '@/lib/client-socket'
+import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { Building2, ShieldCheck } from 'lucide-react'
 import { BankDetailsForm } from '@/components/tasker/BankDetailsForm'
+import { useNetworkState } from '@/hooks/use-network-state'
+import { fetchWithTimeout } from '@/lib/client-fetch'
 
 const REALTIME_REVALIDATE_DELAY_MS = 1200
 const HEALTHY_SOCKET_RECONCILE_INTERVAL_MS = 60_000
-const UNHEALTHY_SOCKET_POLL_INTERVAL_MS = 10_000
+const UNHEALTHY_SOCKET_POLL_INTERVAL_MS = 30_000
 
 interface Errand extends CafeInquiryFields {
   batchId?: string
@@ -117,11 +119,7 @@ interface RealtimeTaskPayload {
   createdAt?: string
 }
 
-function matchesRealtimeFilters(
-  payload: RealtimeTaskPayload,
-  taskTypeFilter: string,
-  locationFilter: string
-) {
+function matchesRealtimeFilters(payload: RealtimeTaskPayload, taskTypeFilter: string, locationFilter: string) {
   const matchesTaskType = taskTypeFilter === 'all' || payload.taskType === taskTypeFilter
   const normalizedLocation = locationFilter.trim().toLowerCase()
   const matchesLocation =
@@ -134,10 +132,7 @@ function matchesRealtimeFilters(
 }
 
 function sortErrands(items: Errand[]) {
-  return [...items].sort(
-    (left, right) =>
-      new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime()
-  )
+  return [...items].sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
 }
 
 function toErrand(payload: RealtimeTaskPayload): Errand {
@@ -201,7 +196,8 @@ export default function TaskerDashboardPage() {
   const [taskerProfile, setTaskerProfile] = useState<TaskerData | null>(null)
   const [loadingTaskerProfile, setLoadingTaskerProfile] = useState(true)
   const [socketHealthy, setSocketHealthy] = useState(false)
-
+  const [backgroundRefreshFailed, setBackgroundRefreshFailed] = useState(false)
+  const { online } = useNetworkState()
 
   const fetchingRef = useRef(false)
   const queuedRefreshRef = useRef(false)
@@ -209,9 +205,8 @@ export default function TaskerDashboardPage() {
   const prevErrandsCount = useRef(0)
   const alertTimeoutRef = useRef<number | null>(null)
   const refreshTimeoutRef = useRef<number | null>(null)
-  const loadDashboardRef = useRef<
-    (initial?: boolean, options?: { silent?: boolean }) => Promise<void>
-  >(async () => {})
+  const hasDashboardDataRef = useRef(false)
+  const loadDashboardRef = useRef<(initial?: boolean, options?: { silent?: boolean }) => Promise<void>>(async () => {})
 
   const taskerName = session?.user?.name || 'Anonymous'
   const needsBankDetails = Boolean(taskerProfile && !taskerProfile.bankDetails?.accountNumber)
@@ -231,7 +226,6 @@ export default function TaskerDashboardPage() {
     toast.error(messages[notice] || 'This order is not available.')
     router.replace('/tasker-dashboard', { scroll: false })
   }, [router, searchParams])
-
 
   const triggerNewTaskAlert = useCallback(() => {
     setNewTaskAlert(true)
@@ -261,7 +255,7 @@ export default function TaskerDashboardPage() {
     const loadTaskerProfile = async () => {
       try {
         setLoadingTaskerProfile(true)
-        const taskerRes = await fetchWithSocketPause('/api/taskers/me', {
+        const taskerRes = await fetchWithTimeout('/api/taskers/me', {
           cache: 'no-store',
         })
 
@@ -274,13 +268,7 @@ export default function TaskerDashboardPage() {
 
         if (!cancelled) {
           setTaskerProfile(tasker)
-          setError(
-            !tasker?.isVerified
-              ? 'Your account is awaiting verification.'
-              : tasker?.isSettlementSuspended
-                ? 'Your tasker account is temporarily suspended until overdue platform settlements are paid.'
-                : null
-          )
+          setError(!tasker?.isVerified ? 'Your account is awaiting verification.' : tasker?.isSettlementSuspended ? 'Your tasker account is temporarily suspended until overdue platform settlements are paid.' : null)
         }
       } catch (profileError) {
         console.error('Failed to load tasker profile', profileError)
@@ -343,9 +331,7 @@ export default function TaskerDashboardPage() {
       if (taskerProfile.isSettlementSuspended) {
         setErrands([])
         setAcceptedErrands([])
-        setError(
-          'Your tasker account is temporarily suspended until overdue platform settlements are paid.'
-        )
+        setError('Your tasker account is temporarily suspended until overdue platform settlements are paid.')
         setLoading(false)
         setRefreshing(false)
         return
@@ -374,18 +360,18 @@ export default function TaskerDashboardPage() {
         params.append('fast', 'true')
         params.append('limit', '80')
 
-        const availableRes = work.data?.checkedIn ? await fetch(`/api/errands?${params.toString()}`, {
-          cache: 'no-store',
-        }) : null
+        const availableRes = work.data?.checkedIn
+          ? await fetchWithTimeout(`/api/errands?${params.toString()}`, {
+              cache: 'no-store',
+            })
+          : null
 
         if (availableRes && !availableRes.ok) {
           throw new Error('Failed to load errands')
         }
 
         const availableErrands: Errand[] = availableRes ? await availableRes.json() : []
-        const visibleAvailableErrands = availableErrands.filter(
-          (errand) => String(errand.taskerId || '') !== taskerProfile._id
-        )
+        const visibleAvailableErrands = availableErrands.filter((errand) => String(errand.taskerId || '') !== taskerProfile._id)
 
         if (!initial && visibleAvailableErrands.length > prevErrandsCount.current) {
           triggerNewTaskAlert()
@@ -395,19 +381,18 @@ export default function TaskerDashboardPage() {
         // Scheduled Indomie is automatically assigned when a customer reserves it.
         // It therefore appears in accepted errands, never as a second manual batch card.
         setErrands(sortErrands(visibleAvailableErrands))
+        hasDashboardDataRef.current = true
         setError(null)
+        setBackgroundRefreshFailed(false)
 
         if (initial) {
           setLoading(false)
         }
 
         try {
-          const acceptedRes = await fetch(
-            `/api/errands?accepted=true&taskerId=${taskerProfile._id}&fast=true&limit=40`,
-            {
-              cache: 'no-store',
-            }
-          )
+          const acceptedRes = await fetchWithTimeout(`/api/errands?accepted=true&taskerId=${taskerProfile._id}&fast=true&limit=40`, {
+            cache: 'no-store',
+          })
 
           if (!acceptedRes.ok) {
             throw new Error('Failed to load active errands')
@@ -417,10 +402,12 @@ export default function TaskerDashboardPage() {
           setAcceptedErrands(sortErrands(acceptedErrands))
         } catch (activeErrandsError) {
           console.warn('Failed to load active tasker errands', activeErrandsError)
+          if (hasDashboardDataRef.current) setBackgroundRefreshFailed(true)
         }
       } catch (dashboardError) {
         console.error('Failed to load tasker dashboard', dashboardError)
-        setError('Failed to load errands. Please try again.')
+        if (hasDashboardDataRef.current) setBackgroundRefreshFailed(true)
+        else setError('Failed to load errands. Please try again.')
       } finally {
         fetchingRef.current = false
         setLoading(false)
@@ -434,17 +421,7 @@ export default function TaskerDashboardPage() {
         }
       }
     },
-    [
-      loadingTaskerProfile,
-      work.data?.checkedIn,
-      locationFilter,
-      router,
-      session?.user?.id,
-      sessionPending,
-      taskerProfile,
-      taskTypeFilter,
-      triggerNewTaskAlert,
-    ]
+    [loadingTaskerProfile, work.data?.checkedIn, locationFilter, router, session?.user?.id, sessionPending, taskerProfile, taskTypeFilter, triggerNewTaskAlert],
   )
 
   useEffect(() => {
@@ -463,22 +440,33 @@ export default function TaskerDashboardPage() {
     }, REALTIME_REVALIDATE_DELAY_MS)
   }, [])
 
-  const acceptTaskFromCard = useCallback(async (orderId: string) => {
-    if (acceptingTaskId) return
-    setAcceptingTaskId(orderId)
-    try {
-      const response = await fetch('/api/errands', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) })
-      const order = await response.json()
-      if (!response.ok) throw new Error(order.error || 'This task is no longer available.')
-      window.dispatchEvent(new Event('swiftdu-work-updated'))
-      router.push(`/tasker-dashboard/${order._id}`)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Could not accept this task. Please try again.')
-      void loadDashboardRef.current(false)
-    } finally {
-      setAcceptingTaskId(null)
-    }
-  }, [acceptingTaskId, router])
+  const acceptTaskFromCard = useCallback(
+    async (orderId: string) => {
+      if (acceptingTaskId) return
+      if (!online) {
+        toast.error('You are offline. Reconnect before accepting this task.')
+        return
+      }
+      setAcceptingTaskId(orderId)
+      try {
+        const response = await fetch('/api/errands', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ orderId }),
+        })
+        const order = await response.json()
+        if (!response.ok) throw new Error(order.error || 'This task is no longer available.')
+        window.dispatchEvent(new Event('swiftdu-work-updated'))
+        router.push(`/tasker-dashboard/${order._id}`)
+      } catch (error) {
+        setError(error instanceof Error ? error.message : 'Could not accept this task. Please try again.')
+        void loadDashboardRef.current(false)
+      } finally {
+        setAcceptingTaskId(null)
+      }
+    },
+    [acceptingTaskId, online, router],
+  )
   useEffect(() => {
     if (sessionPending || loadingTaskerProfile) {
       return
@@ -486,11 +474,15 @@ export default function TaskerDashboardPage() {
 
     void loadDashboard(true)
 
-    const handleFocus = () => void loadDashboard(false)
-    window.addEventListener('focus', handleFocus)
+    const handleVisible = () => {
+      if (document.visibilityState === 'visible') void loadDashboard(false)
+    }
+    window.addEventListener('online', handleVisible)
+    document.addEventListener('visibilitychange', handleVisible)
 
     return () => {
-      window.removeEventListener('focus', handleFocus)
+      window.removeEventListener('online', handleVisible)
+      document.removeEventListener('visibilitychange', handleVisible)
     }
   }, [loadDashboard, loadingTaskerProfile, sessionPending])
 
@@ -502,8 +494,10 @@ export default function TaskerDashboardPage() {
     const socket = acquireSharedSocket()
     const handleConnect = () => {
       setSocketHealthy(true)
-      socket.emit('tasks:watch', { taskerMode: taskerProfile.taskerMode || 'live' })
-      void loadDashboardRef.current(false)
+      socket.emit('tasks:watch', {
+        taskerMode: taskerProfile.taskerMode || 'live',
+      })
+      if (hasDashboardDataRef.current) void loadDashboardRef.current(false, { silent: true })
     }
     const handleDisconnect = () => {
       setSocketHealthy(false)
@@ -516,23 +510,11 @@ export default function TaskerDashboardPage() {
       if (payload) {
         const payloadTaskerId = String(payload.taskerId || '')
         const belongsToCurrentTasker = payloadTaskerId === taskerProfile._id
-        const isActiveForCurrentTasker =
-          belongsToCurrentTasker &&
-          (payload.status === 'in_progress' || payload.status === 'paid')
-        const isPendingAvailable =
-          payload.status === 'pending' &&
-          !payload.taskerId
-        const isBeingFulfilled =
-          payload.status === 'in_progress' &&
-          payloadTaskerId !== taskerProfile._id
-        const payloadMatchesMode =
-          taskerProfile.taskerMode === 'training'
-            ? payload.isTestOrder === true
-            : payload.isTestOrder !== true
-        const shouldShow =
-          payloadMatchesMode &&
-          (isPendingAvailable || isBeingFulfilled) &&
-          matchesRealtimeFilters(payload, taskTypeFilter, locationFilter)
+        const isActiveForCurrentTasker = belongsToCurrentTasker && (payload.status === 'in_progress' || payload.status === 'paid')
+        const isPendingAvailable = payload.status === 'pending' && !payload.taskerId
+        const isBeingFulfilled = payload.status === 'in_progress' && payloadTaskerId !== taskerProfile._id
+        const payloadMatchesMode = taskerProfile.taskerMode === 'training' ? payload.isTestOrder === true : payload.isTestOrder !== true
+        const shouldShow = payloadMatchesMode && (isPendingAvailable || isBeingFulfilled) && matchesRealtimeFilters(payload, taskTypeFilter, locationFilter)
 
         if (work.data?.checkedIn && isPendingAvailable && shouldShow) {
           triggerNewTaskAlert()
@@ -602,7 +584,7 @@ export default function TaskerDashboardPage() {
     socket.on('disconnect', handleDisconnect)
     socket.on('connect_error', handleConnectError)
     socket.on('tasks:updated', handleTaskUpdate)
-    handleConnect()
+    if (socket.connected) handleConnect()
 
     return () => {
       if (socket.connected) {
@@ -614,34 +596,11 @@ export default function TaskerDashboardPage() {
       socket.off('tasks:updated', handleTaskUpdate)
       releaseSharedSocket(socket)
     }
-  }, [
-    loadingTaskerProfile,
-    locationFilter,
-    needsBankDetails,
-    router,
-    scheduleDashboardRefresh,
-    sessionPending,
-    taskTypeFilter,
-    taskerProfile?._id,
-    taskerProfile?.taskerMode,
-    triggerNewTaskAlert,
-    work.data?.checkedIn,
-  ])
+  }, [loadingTaskerProfile, locationFilter, needsBankDetails, router, scheduleDashboardRefresh, sessionPending, taskTypeFilter, taskerProfile?._id, taskerProfile?.taskerMode, triggerNewTaskAlert, work.data?.checkedIn])
 
-  const shouldPollForTasks =
-    !sessionPending &&
-    !loadingTaskerProfile &&
-    !needsBankDetails &&
-    Boolean(taskerProfile?._id) &&
-    Boolean(taskerProfile?.isVerified) &&
-    !taskerProfile?.isSettlementSuspended
+  const shouldPollForTasks = !sessionPending && !loadingTaskerProfile && !needsBankDetails && Boolean(taskerProfile?._id) && Boolean(taskerProfile?.isVerified) && !taskerProfile?.isSettlementSuspended
 
-  useVisibleInterval(
-    () => void loadDashboardRef.current(false, { silent: true }),
-    shouldPollForTasks
-      ? (socketHealthy ? HEALTHY_SOCKET_RECONCILE_INTERVAL_MS : UNHEALTHY_SOCKET_POLL_INTERVAL_MS)
-      : null
-  )
+  useVisibleInterval(() => void loadDashboardRef.current(false, { silent: true }), shouldPollForTasks ? (socketHealthy ? HEALTHY_SOCKET_RECONCILE_INTERVAL_MS : UNHEALTHY_SOCKET_POLL_INTERVAL_MS) : null, false)
 
   useEffect(() => {
     return () => {
@@ -656,12 +615,52 @@ export default function TaskerDashboardPage() {
   }, [])
 
   if (!loadingTaskerProfile && !taskerProfile && error?.includes('application')) {
-    return <main className="flex min-h-screen items-center justify-center bg-[#faf9ff] px-5 text-center dark:bg-slate-950"><section className="max-w-md rounded-3xl border border-violet-100 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900"><h1 className="text-2xl font-extrabold">Reapply as a Tasker</h1><p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">You were previously a SwiftDU Tasker, but you do not have an active application for the current intake. Submit a new application to continue.</p><button type="button" onClick={() => router.push('/tasker-signup')} className="mt-6 min-h-12 rounded-xl bg-violet-600 px-5 font-bold text-white hover:bg-violet-700">Reapply as a Tasker</button></section></main>
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#faf9ff] px-5 text-center dark:bg-slate-950">
+        <section className="max-w-md rounded-3xl border border-violet-100 bg-white p-8 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <h1 className="text-2xl font-extrabold">Reapply as a Tasker</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600 dark:text-slate-300">You were previously a SwiftDU Tasker, but you do not have an active application for the current intake. Submit a new application to continue.</p>
+          <button type="button" onClick={() => router.push('/tasker-signup')} className="mt-6 min-h-12 rounded-xl bg-violet-600 px-5 font-bold text-white hover:bg-violet-700">
+            Reapply as a Tasker
+          </button>
+        </section>
+      </main>
+    )
   }
 
   if (!loadingTaskerProfile && needsBankDetails) {
-    return <div className="min-h-screen bg-[#faf9ff] px-4 py-5 text-slate-900 dark:bg-slate-950 dark:text-slate-100"><div className="mx-auto flex max-w-md items-center gap-2 px-1 text-xl font-black tracking-tight text-violet-700 dark:text-violet-300">SwiftDU <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Tasker</span></div><div className="mx-auto mt-7 w-full max-w-md"><div role="dialog" aria-modal="true" aria-labelledby="bank-details-title" className="overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="bg-violet-50 px-6 pb-5 pt-6 dark:bg-violet-950/30"><div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-lg shadow-violet-500/25"><Building2 className="h-6 w-6" /></div><p className="mt-5 text-sm font-bold text-violet-700 dark:text-violet-300">Get paid</p><h1 id="bank-details-title" className="mt-1 text-2xl font-extrabold leading-tight tracking-tight">Drop account number</h1><p className="mt-2 text-sm leading-5 text-slate-600 dark:text-slate-300">Add your bank and account number so customers can pay you.</p></div><div className="p-6"><div className="mb-6 flex items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:bg-emerald-950/35 dark:text-emerald-100"><ShieldCheck className="h-5 w-5 shrink-0" /><p><span className="font-bold">Your details are private.</span> Only use an account in your own name.</p></div><BankDetailsForm onSaved={(details) => setTaskerProfile((current) => current ? { ...current, bankDetails: details } : current)} /><p className="mt-5 text-center text-xs leading-5 text-slate-500">Please double-check your account number before saving.</p></div></div></div></div>
+    return (
+      <div className="min-h-screen bg-[#faf9ff] px-4 py-5 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+        <div className="mx-auto flex max-w-md items-center gap-2 px-1 text-xl font-black tracking-tight text-violet-700 dark:text-violet-300">
+          SwiftDU <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-slate-400">Tasker</span>
+        </div>
+        <div className="mx-auto mt-7 w-full max-w-md">
+          <div role="dialog" aria-modal="true" aria-labelledby="bank-details-title" className="overflow-hidden rounded-3xl border border-violet-100 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="bg-violet-50 px-6 pb-5 pt-6 dark:bg-violet-950/30">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-600 text-white shadow-lg shadow-violet-500/25">
+                <Building2 className="h-6 w-6" />
+              </div>
+              <p className="mt-5 text-sm font-bold text-violet-700 dark:text-violet-300">Get paid</p>
+              <h1 id="bank-details-title" className="mt-1 text-2xl font-extrabold leading-tight tracking-tight">
+                Drop account number
+              </h1>
+              <p className="mt-2 text-sm leading-5 text-slate-600 dark:text-slate-300">Add your bank and account number so customers can pay you.</p>
+            </div>
+            <div className="p-6">
+              <div className="mb-6 flex items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:bg-emerald-950/35 dark:text-emerald-100">
+                <ShieldCheck className="h-5 w-5 shrink-0" />
+                <p>
+                  <span className="font-bold">Your details are private.</span> Only use an account in your own name.
+                </p>
+              </div>
+              <BankDetailsForm onSaved={(details) => setTaskerProfile((current) => (current ? { ...current, bankDetails: details } : current))} />
+              <p className="mt-5 text-center text-xs leading-5 text-slate-500">Please double-check your account number before saving.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
-  return <TaskerHome name={taskerName} errands={errands} accepted={acceptedErrands} loading={loading} refreshing={refreshing} error={error} newTaskAlert={newTaskAlert} refresh={() => void loadDashboard(false)} onAcceptTask={taskId => void acceptTaskFromCard(taskId)} acceptingTaskId={acceptingTaskId} taskType={taskTypeFilter} setTaskType={setTaskTypeFilter} location={locationFilter} setLocation={setLocationFilter} />
+  return <TaskerHome name={taskerName} errands={errands} accepted={acceptedErrands} loading={loading} refreshing={refreshing} error={error} refreshFailed={backgroundRefreshFailed} online={online} newTaskAlert={newTaskAlert} refresh={() => void loadDashboard(false)} onAcceptTask={(taskId) => void acceptTaskFromCard(taskId)} acceptingTaskId={acceptingTaskId} taskType={taskTypeFilter} setTaskType={setTaskTypeFilter} location={locationFilter} setLocation={setLocationFilter} />
 }

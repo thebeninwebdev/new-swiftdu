@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 
-export function useVisibleInterval(callback: () => void, delay: number | null) {
+export function useVisibleInterval(callback: () => void, delay: number | null, runImmediately = true) {
   const callbackRef = useRef(callback)
 
   useEffect(() => {
@@ -23,7 +23,7 @@ export function useVisibleInterval(callback: () => void, delay: number | null) {
 
     const start = () => {
       if (document.visibilityState !== 'visible' || intervalId !== null) return
-      callbackRef.current()
+      if (runImmediately) callbackRef.current()
       intervalId = window.setInterval(() => callbackRef.current(), delay)
     }
 
@@ -42,5 +42,5 @@ export function useVisibleInterval(callback: () => void, delay: number | null) {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       stop()
     }
-  }, [delay])
+  }, [delay, runImmediately])
 }

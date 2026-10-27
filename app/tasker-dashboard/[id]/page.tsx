@@ -9,20 +9,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { useTaskerWork, workButton } from '@/components/tasker/WorkProvider'
 import { TaskOutcome } from '@/components/tasker/TaskOutcome'
-import {
-  AlertCircle,
-  ArrowLeft,
-  CheckCircle2,
-  Clock,
-  Loader2,
-  MapPin,
-  MessageCircle,
-  Phone,
-  ShoppingBag,
-  Store,
-  Wallet,
-  XCircle,
-} from 'lucide-react'
+import { AlertCircle, ArrowLeft, CheckCircle2, Clock, Loader2, MapPin, MessageCircle, Phone, ShoppingBag, Store, Wallet, XCircle } from 'lucide-react'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -35,8 +22,12 @@ import { canTaskerCancelOrder, canTaskerReportTransferIssue, isCustomerPaymentCo
 import { convertToNaira } from '@/lib/utils'
 import { RESTAURANT_MAX_PEOPLE } from '@/lib/pricing'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
+import { useNetworkState } from '@/hooks/use-network-state'
+import { fetchWithTimeout } from '@/lib/client-fetch'
+import { ConnectionNotice } from '@/components/ConnectionNotice'
 
-const DETAIL_REFRESH_MS = 5000
+const HEALTHY_SOCKET_REVALIDATE_MS = 60_000
+const DISCONNECTED_SOCKET_POLL_MS = 30_000
 
 // ─── Types ───
 interface ErrandDetail extends CafeInquiryFields {
@@ -72,7 +63,10 @@ interface ErrandDetail extends CafeInquiryFields {
   location: string
   parentLocationId?: string
   exactLocationId?: string
-  exactLocation?: { name: string; coordinates: { latitude: number; longitude: number } }
+  exactLocation?: {
+    name: string
+    coordinates: { latitude: number; longitude: number }
+  }
   store?: string
   packaging?: string
   restaurantPeopleCount?: number
@@ -150,7 +144,12 @@ const formatDuration = (milliseconds: number) => {
 
 function formatDeadline(dueDate?: string, deadlineDate?: string, deadlineValue?: number, deadlineUnit?: string) {
   const exactDeadline = dueDate || deadlineDate
-  if (exactDeadline) return new Intl.DateTimeFormat('en-NG', { dateStyle: 'medium', timeStyle: 'short', hour12: true }).format(new Date(exactDeadline))
+  if (exactDeadline)
+    return new Intl.DateTimeFormat('en-NG', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+      hour12: true,
+    }).format(new Date(exactDeadline))
   if (deadlineValue && deadlineUnit) return `${deadlineValue} ${deadlineUnit}`
   return null
 }
@@ -238,6 +237,9 @@ function ErrandDetailPageContent() {
   const visibleOrderIdRef = useRef(errandId)
   visibleOrderIdRef.current = errandId
   const paymentMutationInFlight = useRef(false)
+  const loadedUserIdRef = useRef<string | null>(null)
+  const realtimeRefreshTimeoutRef = useRef<number | null>(null)
+  const { online } = useNetworkState()
 
   const [errand, setErrandState] = useState<ErrandDetail | null>(null)
   const errandRef = useRef<ErrandDetail | null>(null)
@@ -254,83 +256,160 @@ function ErrandDetailPageContent() {
   const [capturingLocation, setCapturingLocation] = useState(false)
   const [actionLoading, setActionLoading] = useState<'complete' | 'cancel' | 'report' | 'people' | 'clearDeclined' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [backgroundRefreshFailed, setBackgroundRefreshFailed] = useState(false)
+  const [socketHealthy, setSocketHealthy] = useState(false)
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [showConfirmModal, setShowConfirmModal] = useState<'complete' | 'cancel' | null>(null)
   const [showReportConfirmation, setShowReportConfirmation] = useState(false)
 
-  const previousSnapshotRef = useRef<{ status: ErrandDetail['status']; hasPaid: boolean; isDeclinedTask: boolean } | null>(null)
+  const previousSnapshotRef = useRef<{
+    status: ErrandDetail['status']
+    hasPaid: boolean
+    isDeclinedTask: boolean
+  } | null>(null)
   const fetchingRef = useRef(false)
   const queuedRefreshRef = useRef(false)
 
   useVisibleInterval(() => setNowMs(Date.now()), errand ? 1000 : null)
 
-  const loadErrand = useCallback(async (initial = false) => {
-    if (!errandId) return
-    if (fetchingRef.current) { queuedRefreshRef.current = true; return }
-    fetchingRef.current = true
-    try {
-      const isPreview = preview && !errandRef.current?.taskerId
-      const errandRes = await fetch(isPreview ? `/api/errands/${errandId}` : `/api/orders/${errandId}`, { cache: 'no-store' })
-      if (errandRes.status === 401) { router.push('/auth'); return }
-      if (!errandRes.ok) { const payload = await errandRes.json(); throw new Error(payload.error || 'Failed to fetch errand details') }
-      const fetchedOrder = await errandRes.json() as ErrandDetail
-      if (visibleOrderIdRef.current !== errandId) return
-      const errandData = setErrand(fetchedOrder)
-
-      const userRes = errandData.taskerId && errandData.userId ? await fetch(`/api/users/${errandData.userId}`) : null
-      if (userRes?.ok) { const userData = await userRes.json(); setUserInfo(userData) }
-      else setUserInfo(null)
-
-      if (!initial && previousSnapshotRef.current) {
-        if (!previousSnapshotRef.current.hasPaid && Boolean(errandData.hasPaid)) {
-          toast.success('Customer confirmed payment. You can now complete the delivery.')
+  const loadErrand = useCallback(
+    async (initial = false) => {
+      if (!errandId) return
+      if (fetchingRef.current) {
+        queuedRefreshRef.current = true
+        return
+      }
+      fetchingRef.current = true
+      try {
+        const isPreview = preview && !errandRef.current?.taskerId
+        const errandRes = await fetchWithTimeout(isPreview ? `/api/errands/${errandId}` : `/api/orders/${errandId}`, { cache: 'no-store' })
+        if (errandRes.status === 401) {
+          router.push('/auth')
+          return
         }
-        if (!previousSnapshotRef.current.isDeclinedTask && Boolean(errandData.isDeclinedTask)) {
-          toast.error(errandData.declinedMessage || 'This task has been flagged for transfer review.')
+        if (!errandRes.ok) {
+          const payload = await errandRes.json()
+          throw new Error(payload.error || 'Failed to fetch errand details')
         }
-        if (previousSnapshotRef.current.status !== errandData.status && errandData.status === 'cancelled') {
-          toast.error('This errand was cancelled.')
+        const fetchedOrder = (await errandRes.json()) as ErrandDetail
+        if (visibleOrderIdRef.current !== errandId) return
+        const errandData = setErrand(fetchedOrder)
+
+        if (errandData.taskerId && errandData.userId && loadedUserIdRef.current !== errandData.userId) {
+          const userRes = await fetchWithTimeout(`/api/users/${errandData.userId}`, { cache: 'no-store' })
+          if (userRes.ok) {
+            const userData = await userRes.json()
+            setUserInfo(userData)
+            loadedUserIdRef.current = errandData.userId
+          }
+        }
+
+        if (!initial && previousSnapshotRef.current) {
+          if (!previousSnapshotRef.current.hasPaid && Boolean(errandData.hasPaid)) {
+            toast.success('Customer confirmed payment. You can now complete the delivery.')
+          }
+          if (!previousSnapshotRef.current.isDeclinedTask && Boolean(errandData.isDeclinedTask)) {
+            toast.error(errandData.declinedMessage || 'This task has been flagged for transfer review.')
+          }
+          if (previousSnapshotRef.current.status !== errandData.status && errandData.status === 'cancelled') {
+            toast.error('This errand was cancelled.')
+          }
+        }
+
+        previousSnapshotRef.current = {
+          status: errandData.status,
+          hasPaid: Boolean(errandData.hasPaid),
+          isDeclinedTask: Boolean(errandData.isDeclinedTask),
+        }
+        setError(null)
+        setBackgroundRefreshFailed(false)
+      } catch (error) {
+        if (errandRef.current) setBackgroundRefreshFailed(true)
+        else setError(error instanceof Error ? error.message : 'Failed to load errand details')
+      } finally {
+        fetchingRef.current = false
+        setLoading(false)
+        if (queuedRefreshRef.current) {
+          queuedRefreshRef.current = false
+          void loadErrand(false)
         }
       }
+    },
+    [errandId, router, setErrand, preview],
+  )
 
-      previousSnapshotRef.current = { status: errandData.status, hasPaid: Boolean(errandData.hasPaid), isDeclinedTask: Boolean(errandData.isDeclinedTask) }
-      setError(null)
-    } catch (error) {
-      setError(error instanceof Error ? error.message : 'Failed to load errand details')
-    } finally {
-      fetchingRef.current = false
-      setLoading(false)
-      if (queuedRefreshRef.current) { queuedRefreshRef.current = false; void loadErrand(false) }
-    }
-  }, [errandId, router, setErrand, preview])
-
-  useEffect(() => { void loadErrand(true) }, [loadErrand])
+  useEffect(() => {
+    void loadErrand(true)
+  }, [loadErrand])
 
   useVisibleInterval(
     () => {
       if (errandId) void loadErrand(false)
     },
-    errandId ? DETAIL_REFRESH_MS : null
+    errandId ? (socketHealthy ? HEALTHY_SOCKET_REVALIDATE_MS : DISCONNECTED_SOCKET_POLL_MS) : null,
+    false,
   )
 
   useEffect(() => {
     if (!errandId) return
     const socket = acquireSharedSocket()
-    const handleConnect = () => { socket.emit('order:watch', errandId); void loadErrand(false) }
-    const handleOrderUpdate = (payload?: { _id?: string }) => { if (!payload?._id || payload._id === errandId) void loadErrand(false) }
+    const scheduleRevalidation = () => {
+      if (realtimeRefreshTimeoutRef.current) return
+      realtimeRefreshTimeoutRef.current = window.setTimeout(() => {
+        realtimeRefreshTimeoutRef.current = null
+        void loadErrand(false)
+      }, 1200)
+    }
+    const handleConnect = () => {
+      setSocketHealthy(true)
+      socket.emit('order:watch', errandId)
+      if (errandRef.current) scheduleRevalidation()
+    }
+    const handleDisconnect = () => setSocketHealthy(false)
+    const handleConnectError = () => setSocketHealthy(false)
+    const handleOrderUpdate = (payload?: { _id?: string }) => {
+      if (!payload?._id || payload._id === errandId) scheduleRevalidation()
+    }
     socket.on('connect', handleConnect)
+    socket.on('disconnect', handleDisconnect)
+    socket.on('connect_error', handleConnectError)
     socket.on('order:updated', handleOrderUpdate)
-    handleConnect()
+    if (socket.connected) handleConnect()
     return () => {
       socket.off('connect', handleConnect)
+      socket.off('disconnect', handleDisconnect)
+      socket.off('connect_error', handleConnectError)
       socket.off('order:updated', handleOrderUpdate)
+      if (realtimeRefreshTimeoutRef.current) {
+        window.clearTimeout(realtimeRefreshTimeoutRef.current)
+        realtimeRefreshTimeoutRef.current = null
+      }
       if (socket.connected) socket.emit('order:unwatch', errandId)
       releaseSharedSocket(socket)
     }
   }, [errandId, loadErrand])
 
+  useEffect(() => {
+    const revalidate = () => {
+      if (navigator.onLine) void loadErrand(false)
+    }
+    const visible = () => {
+      if (document.visibilityState === 'visible') revalidate()
+    }
+    window.addEventListener('online', revalidate)
+    document.addEventListener('visibilitychange', visible)
+    return () => {
+      window.removeEventListener('online', revalidate)
+      document.removeEventListener('visibilitychange', visible)
+    }
+  }, [loadErrand])
+
   const handleAction = async (action: 'complete' | 'cancel', skipGps = false) => {
     if (completionInFlight.current) return
+    if (!online) {
+      toast.error('Reconnect before changing this task.')
+      return
+    }
     if (action === 'cancel' && errand && !canTaskerCancelOrder(errand)) {
       setShowConfirmModal(null)
       toast.error('Customer payment has already been confirmed, so this errand can no longer be cancelled.')
@@ -345,9 +424,14 @@ function ErrandDetailPageContent() {
       if (action === 'complete' && !skipGps) {
         setCapturingLocation(true)
         setGpsError(null)
-        try { deliveryCoordinates = await captureDeliveryPosition() }
-        catch (error) { setGpsError((error as Error).message); return }
-        finally { setCapturingLocation(false) }
+        try {
+          deliveryCoordinates = await captureDeliveryPosition()
+        } catch (error) {
+          setGpsError((error as Error).message)
+          return
+        } finally {
+          setCapturingLocation(false)
+        }
       }
       const nextStatus = action === 'complete' ? 'completed' : 'cancelled'
       const response = await fetch(`/api/orders/${errandId}`, {
@@ -356,39 +440,78 @@ function ErrandDetailPageContent() {
         body: JSON.stringify({ status: nextStatus, deliveryCoordinates }),
       })
       const payload = await response.json()
-      if (!response.ok) { setError(payload.error || `Failed to ${action} errand`); return }
+      if (!response.ok) {
+        setError(payload.error || `Failed to ${action} errand`)
+        return
+      }
       const confirmed = setErrand(payload)
       if (action === 'complete' && wasActive && response.headers.get('X-SwiftDU-Completion-Transition') === '1' && confirmed.taskerId && getCompletionRecognition(confirmed).eligible) {
         let storage: Storage | undefined
-        try { storage = window.sessionStorage } catch { /* Storage may be blocked. */ }
+        try {
+          storage = window.sessionStorage
+        } catch {
+          /* Storage may be blocked. */
+        }
         if (claimCompletionCelebration(confirmed.taskerId, confirmed._id, storage)) setCelebrationOrderId(confirmed._id)
       }
-      previousSnapshotRef.current = { status: payload.status, hasPaid: Boolean(payload.hasPaid), isDeclinedTask: Boolean(payload.isDeclinedTask) }
+      previousSnapshotRef.current = {
+        status: payload.status,
+        hasPaid: Boolean(payload.hasPaid),
+        isDeclinedTask: Boolean(payload.isDeclinedTask),
+      }
       toast.success(action === 'complete' ? 'Errand marked as completed.' : 'Errand cancelled successfully.')
       window.dispatchEvent(new Event('swiftdu-work-updated'))
       if (action === 'cancel') router.replace('/tasker-dashboard')
-    } catch { setError(`Failed to ${action} errand`) }
-    finally { completionInFlight.current = false; setActionLoading(null) }
+    } catch {
+      setError(`Failed to ${action} errand`)
+    } finally {
+      completionInFlight.current = false
+      setActionLoading(null)
+    }
   }
 
   const acceptTask = async () => {
     if (accepting) return
-    setAccepting(true); setError(null)
+    if (!online) {
+      toast.error('Reconnect before accepting this task.')
+      return
+    }
+    setAccepting(true)
+    setError(null)
     try {
-      const response = await fetch('/api/errands', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId: errandId }) })
+      const response = await fetch('/api/errands', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: errandId }),
+      })
       const payload = await response.json()
       if (!response.ok) {
-        if (response.status === 409) { toast.error(payload.error || 'Another tasker accepted this task.'); router.replace('/tasker-dashboard?view=all'); return }
+        if (response.status === 409) {
+          toast.error(payload.error || 'Another tasker accepted this task.')
+          router.replace('/tasker-dashboard?view=all')
+          return
+        }
         throw new Error(payload.error || 'Could not accept task.')
       }
-      setErrand(payload); setAcceptedConfirmation(true)
-      if (payload.serviceFeeDiscountApplied && payload.serviceFeeDiscountGrantedByPhone) toast('Customer discount active', { description: 'Contact ' + payload.serviceFeeDiscountGrantedByPhone + ' to collect your commission.' })
+      setErrand(payload)
+      setAcceptedConfirmation(true)
+      if (payload.serviceFeeDiscountApplied && payload.serviceFeeDiscountGrantedByPhone)
+        toast('Customer discount active', {
+          description: 'Contact ' + payload.serviceFeeDiscountGrantedByPhone + ' to collect your commission.',
+        })
       window.dispatchEvent(new Event('swiftdu-work-updated'))
-    } catch (error) { setError(error instanceof Error ? error.message : 'Check your connection and try again.') }
-    finally { setAccepting(false) }
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Check your connection and try again.')
+    } finally {
+      setAccepting(false)
+    }
   }
 
   const handleReportTransferIssue = async () => {
+    if (!online) {
+      toast.error('Reconnect before reporting a payment issue.')
+      return
+    }
     if (!errandRef.current || !canTaskerReportTransferIssue(errandRef.current)) return
     if (paymentMutationInFlight.current || actionLoading) return
     paymentMutationInFlight.current = true
@@ -397,24 +520,40 @@ function ErrandDetailPageContent() {
       setError(null)
       const response = await fetch(`/api/orders/${errandId}/report-transfer-issue`, { method: 'POST' })
       const payload = await response.json()
-      if (!response.ok) { setError(payload.error || 'Failed to report transfer issue'); return }
+      if (!response.ok) {
+        setError(payload.error || 'Failed to report transfer issue')
+        return
+      }
       if (visibleOrderIdRef.current !== errandId) return
       setErrand(payload.order)
-      previousSnapshotRef.current = { status: payload.order.status, hasPaid: Boolean(payload.order.hasPaid), isDeclinedTask: Boolean(payload.order.isDeclinedTask) }
+      previousSnapshotRef.current = {
+        status: payload.order.status,
+        hasPaid: Boolean(payload.order.hasPaid),
+        isDeclinedTask: Boolean(payload.order.isDeclinedTask),
+      }
       toast.success('Transfer issue submitted for admin review.')
       window.dispatchEvent(new Event('swiftdu-work-updated'))
-    } catch { setError('Failed to report transfer issue') }
-    finally { paymentMutationInFlight.current = false; setActionLoading(null) }
+    } catch {
+      setError('Failed to report transfer issue')
+    } finally {
+      paymentMutationInFlight.current = false
+      setActionLoading(null)
+    }
   }
 
   const handleClearDeclinedTask = async (): Promise<boolean> => {
+    if (!online) {
+      toast.error('Reconnect before confirming payment receipt.')
+      return false
+    }
     if (paymentMutationInFlight.current || actionLoading) return false
     paymentMutationInFlight.current = true
     try {
       setActionLoading('clearDeclined')
       setError(null)
       const response = await fetch(`/api/orders/${errandId}`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ clearDeclinedTask: true }),
       })
       const payload = await response.json()
@@ -423,20 +562,32 @@ function ErrandDetailPageContent() {
       // Navigation or another order's socket event must never replace the newer task.
       if (visibleOrderIdRef.current !== errandId) return true
       setErrand(payload)
-      previousSnapshotRef.current = { status: payload.status, hasPaid: Boolean(payload.hasPaid), isDeclinedTask: Boolean(payload.isDeclinedTask) }
+      previousSnapshotRef.current = {
+        status: payload.status,
+        hasPaid: Boolean(payload.hasPaid),
+        isDeclinedTask: Boolean(payload.isDeclinedTask),
+      }
       toast.success('Payment received. You can now give the order to the customer.')
       return true
     } catch (error) {
       if (visibleOrderIdRef.current === errandId) {
         const message = error instanceof Error ? error.message : 'Failed to confirm payment receipt'
-        setError(message); toast.error(message)
+        setError(message)
+        toast.error(message)
       }
       return false
-    } finally { paymentMutationInFlight.current = false; setActionLoading(null) }
+    } finally {
+      paymentMutationInFlight.current = false
+      setActionLoading(null)
+    }
   }
 
   const handleRestaurantPeopleUpdate = async (peopleCount: number) => {
     if (!errand || errand.taskType !== 'restaurant') return
+    if (!online) {
+      toast.error('Reconnect before changing this order.')
+      return
+    }
     try {
       setActionLoading('people')
       setError(null)
@@ -446,12 +597,22 @@ function ErrandDetailPageContent() {
         body: JSON.stringify({ restaurantPeopleCount: peopleCount }),
       })
       const payload = await response.json()
-      if (!response.ok) { setError(payload.error || 'Failed to update the restaurant order count'); return }
+      if (!response.ok) {
+        setError(payload.error || 'Failed to update the restaurant order count')
+        return
+      }
       setErrand(payload)
-      previousSnapshotRef.current = { status: payload.status, hasPaid: Boolean(payload.hasPaid), isDeclinedTask: Boolean(payload.isDeclinedTask) }
+      previousSnapshotRef.current = {
+        status: payload.status,
+        hasPaid: Boolean(payload.hasPaid),
+        isDeclinedTask: Boolean(payload.isDeclinedTask),
+      }
       toast.success('Restaurant order count updated. The customer total has been recalculated.')
-    } catch { setError('Failed to update the restaurant order count') }
-    finally { setActionLoading(null) }
+    } catch {
+      setError('Failed to update the restaurant order count')
+    } finally {
+      setActionLoading(null)
+    }
   }
 
   if (loading) {
@@ -472,7 +633,9 @@ function ErrandDetailPageContent() {
           <XCircle className="mx-auto h-12 w-12 text-rose-500" />
           <h1 className="mt-4 text-xl font-bold text-slate-900 dark:text-white">Task not found</h1>
           <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">{error || 'This task may have been removed or you no longer have access to it.'}</p>
-          <Button onClick={() => router.push('/tasker-dashboard')} className="mt-6 h-11 w-full rounded-2xl bg-sky-600 text-white hover:bg-sky-700">Back to dashboard</Button>
+          <Button onClick={() => router.push('/tasker-dashboard')} className="mt-6 h-11 w-full rounded-2xl bg-sky-600 text-white hover:bg-sky-700">
+            Back to dashboard
+          </Button>
         </div>
       </div>
     )
@@ -505,7 +668,16 @@ function ErrandDetailPageContent() {
   const completionProgress = hasCompletionTimer && completionWindowMs > 0 ? Math.min(100, Math.max(0, ((nowMs - completionStartedMs) / completionWindowMs) * 100)) : 0
   const deadline = formatDeadline(errand.dueDate || errand.deadline, errand.deadlineDate, errand.deadlineValue, errand.deadlineUnit)
 
-  if (acceptedConfirmation) return <TaskOutcome task={errand} onContinue={() => { setAcceptedConfirmation(false); router.replace('/tasker-dashboard/' + errand._id) }} />
+  if (acceptedConfirmation)
+    return (
+      <TaskOutcome
+        task={errand}
+        onContinue={() => {
+          setAcceptedConfirmation(false)
+          router.replace('/tasker-dashboard/' + errand._id)
+        }}
+      />
+    )
   if (errand.status === 'completed') return <TaskOutcome task={errand} completed celebrate={celebrationOrderId === errand._id} settlementDue={settlementOutstanding} />
 
   const reportTransferConfirmation = (
@@ -513,14 +685,12 @@ function ErrandDetailPageContent() {
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>Report payment not received?</AlertDialogTitle>
-          <AlertDialogDescription>
-            Please check your bank account before continuing. Confirming will report this payment to SwiftDU for review.
-          </AlertDialogDescription>
+          <AlertDialogDescription>Please check your bank account before continuing. Confirming will report this payment to SwiftDU for review.</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>Go back</AlertDialogCancel>
           <AlertDialogAction
-            disabled={Boolean(actionLoading) || !canReportTransferIssue}
+            disabled={Boolean(actionLoading) || !canReportTransferIssue || !online}
             onClick={() => {
               setShowReportConfirmation(false)
               void handleReportTransferIssue()
@@ -538,24 +708,255 @@ function ErrandDetailPageContent() {
     const earnings = errand.serviceFeeDiscountApplied ? errand.discountCommissionAmount || errand.taskerFee || 0 : errand.taskerFee || 0
     const pickup = getStoreDisplayName(errand.store)
     const taskIcon = errand.taskType === 'restaurant' ? 'Food delivery' : taskTypeLabels[errand.taskType] || 'Errand'
-    return <div className="min-h-screen bg-[#faf9ff] pb-40 dark:bg-slate-950"><header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95"><div className="mx-auto flex h-14 max-w-lg items-center px-4"><button onClick={() => router.push('/tasker-dashboard')} className="flex min-h-11 items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200"><ArrowLeft className="h-5 w-5" />Task details</button></div></header><main className="mx-auto max-w-lg px-4 py-5">{error && <p role="alert" className="mb-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-800 dark:bg-rose-950/30 dark:text-rose-200">{error}</p>}<section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"><div className="p-5"><span className="inline-flex rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700 dark:bg-violet-950/40 dark:text-violet-200">{taskIcon}</span>{isActive && !transferUnderReview && !errand.cafeInquiry && (
-          <section aria-label="Task completion timer" className={`mt-5 flex min-h-28 flex-col items-center justify-center rounded-3xl border px-4 py-3 text-center sm:px-6 sm:py-4 ${completionTimerExpired || (hasCompletionTimer && completionRemainingMs <= 300000) ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100' : 'border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-100'}`}>
-              <div className="flex items-center gap-2 text-xs font-bold"><Clock className="h-4 w-4" />Task timer</div>
-              <p role="timer" aria-label={hasCompletionTimer ? 'Time remaining' : 'Completion window'} className="mt-1 text-4xl font-black tabular-nums tracking-tight sm:text-5xl">
-                {formatDuration(hasCompletionTimer ? completionRemainingMs : (completionWindowMinutes + completionExtensionMinutes) * 60000)}
-              </p>
-              <p className="mt-1 text-sm font-bold">{completionTimerExpired ? 'Time is up' : hasCompletionTimer ? 'Time remaining' : 'Waiting for payment'}</p>
-              <p className="mt-1 max-w-xs text-xs opacity-80">{completionTimerExpired ? 'Finish the delivery as soon as possible.' : hasCompletionTimer ? `Complete within ${completionWindowMinutes} minutes.` : 'Your countdown starts when customer payment is confirmed.'}</p>
-            </section>
+    return (
+      <div className="min-h-screen bg-[#faf9ff] pb-40 dark:bg-slate-950">
+        <header className="sticky top-0 z-40 border-b border-slate-200/70 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-950/95">
+          <div className="mx-auto flex h-14 max-w-lg items-center px-4">
+            <button onClick={() => router.push('/tasker-dashboard')} className="flex min-h-11 items-center gap-2 text-sm font-bold text-slate-700 dark:text-slate-200">
+              <ArrowLeft className="h-5 w-5" />
+              Task details
+            </button>
+          </div>
+        </header>
+        <main className="mx-auto max-w-lg px-4 py-5">
+          <ConnectionNotice refreshFailed={backgroundRefreshFailed} />
+          {error && (
+            <p role="alert" className="mb-4 rounded-xl bg-rose-50 p-3 text-sm text-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
+              {error}
+            </p>
           )}
-          <section aria-label="Order details" className="mt-5 rounded-2xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900 dark:bg-violet-950/25">
-              <div className="flex items-center gap-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white"><ShoppingBag aria-hidden="true" className="h-5 w-5" /></span>
-                <h2 className="text-sm font-extrabold tracking-wide text-violet-900 dark:text-violet-100">{errand.taskType === 'printing' || errand.taskType === 'copy_notes' || errand.taskType === 'others' ? 'WHAT TO DO' : 'WHAT TO GET'}</h2>
+          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <div className="p-5">
+              <span className="inline-flex rounded-full bg-violet-50 px-3 py-1 text-xs font-bold text-violet-700 dark:bg-violet-950/40 dark:text-violet-200">{taskIcon}</span>
+              {isActive && !transferUnderReview && !errand.cafeInquiry && (
+                <section aria-label="Task completion timer" className={`mt-5 flex min-h-28 flex-col items-center justify-center rounded-3xl border px-4 py-3 text-center sm:px-6 sm:py-4 ${completionTimerExpired || (hasCompletionTimer && completionRemainingMs <= 300000) ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-100' : 'border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-900 dark:bg-violet-950/40 dark:text-violet-100'}`}>
+                  <div className="flex items-center gap-2 text-xs font-bold">
+                    <Clock className="h-4 w-4" />
+                    Task timer
+                  </div>
+                  <p role="timer" aria-label={hasCompletionTimer ? 'Time remaining' : 'Completion window'} className="mt-1 text-4xl font-black tabular-nums tracking-tight sm:text-5xl">
+                    {formatDuration(hasCompletionTimer ? completionRemainingMs : (completionWindowMinutes + completionExtensionMinutes) * 60000)}
+                  </p>
+                  <p className="mt-1 text-sm font-bold">{completionTimerExpired ? 'Time is up' : hasCompletionTimer ? 'Time remaining' : 'Waiting for payment'}</p>
+                  <p className="mt-1 max-w-xs text-xs opacity-80">{completionTimerExpired ? 'Finish the delivery as soon as possible.' : hasCompletionTimer ? `Complete within ${completionWindowMinutes} minutes.` : 'Your countdown starts when customer payment is confirmed.'}</p>
+                </section>
+              )}
+              <section aria-label="Order details" className="mt-5 rounded-2xl border border-violet-200 bg-violet-50/60 p-4 dark:border-violet-900 dark:bg-violet-950/25">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white">
+                    <ShoppingBag aria-hidden="true" className="h-5 w-5" />
+                  </span>
+                  <h2 className="text-sm font-extrabold tracking-wide text-violet-900 dark:text-violet-100">{errand.taskType === 'printing' || errand.taskType === 'copy_notes' || errand.taskType === 'others' ? 'WHAT TO DO' : 'WHAT TO GET'}</h2>
+                </div>
+                <div className="mt-3 space-y-2 text-[16px] font-semibold leading-6">{items.length ? items.map((item) => <p key={item}>{item}</p>) : <p>Follow the customer’s instructions.</p>}</div>
+              </section>
+              <section className={`mt-5 rounded-2xl p-4 ${transferUnderReview ? 'bg-rose-50 text-rose-950 dark:bg-rose-950/30 dark:text-rose-100' : paymentConfirmed ? 'bg-emerald-50 text-emerald-950 dark:bg-emerald-950/30 dark:text-emerald-100' : 'bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100'}`}>
+                <div className="flex gap-3">
+                  {transferUnderReview ? <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" /> : paymentConfirmed ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <Clock className="mt-0.5 h-5 w-5 shrink-0" />}
+                  <div>
+                    <p className="font-bold">{transferUnderReview ? 'Payment under review' : paymentConfirmed ? 'Payment received' : 'Payment pending'}</p>
+                    <p className="mt-1 text-sm">{transferUnderReview ? "We're checking this payment. Do not hand over the order yet. You can check other available tasks while this is being resolved." : paymentConfirmed ? 'Customer payment has been confirmed.' : 'Customer payment has not been confirmed yet.'}</p>
+                  </div>
+                </div>
+                {transferUnderReview && isActive && <PaymentReviewActions busy={Boolean(actionLoading)} onConfirm={handleClearDeclinedTask} />}
+              </section>
+              {errand.isTestOrder && <p className="mt-5 rounded-xl bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-900 dark:bg-indigo-950/35 dark:text-indigo-100">Training task · No real money is involved.</p>}
+              <div className="my-6 border-t border-slate-100 dark:border-slate-800" />
+              <div className="relative space-y-6">
+                <div className="absolute bottom-10 left-2 top-8 border-l-2 border-dotted border-slate-200 dark:border-slate-700" />
+                <div className="relative flex gap-4">
+                  <span className="mt-1 h-4 w-4 rounded-full border-4 border-emerald-100 bg-emerald-500 dark:border-emerald-950" />
+                  <div>
+                    <p className="text-xs font-bold tracking-wide text-slate-400">PICK UP</p>
+                    <p className="mt-1 text-lg font-bold">{pickup || errand.location}</p>
+                    {pickup && (
+                      <p className="text-sm text-slate-500">
+                        {errand.location}
+                        {errand.roomNumber ? ` - Room ${errand.roomNumber}` : ''}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="relative flex gap-4">
+                  <span className="mt-1 h-4 w-4 rounded-full border-4 border-violet-100 bg-violet-600 dark:border-violet-950" />
+                  <div>
+                    <p className="text-xs font-bold tracking-wide text-slate-400">DELIVER TO</p>
+                    <p className="mt-1 text-lg font-bold">
+                      {errand.location}
+                      {errand.roomNumber ? ` - Room ${errand.roomNumber}` : ''}
+                    </p>
+                    <p className="text-sm text-slate-500">Customer destination</p>
+                  </div>
+                </div>
               </div>
-              <div className="mt-3 space-y-2 text-[16px] font-semibold leading-6">{items.length ? items.map(item => <p key={item}>{item}</p>) : <p>Follow the customer’s instructions.</p>}</div></section>
-          <section className={`mt-5 rounded-2xl p-4 ${transferUnderReview ? 'bg-rose-50 text-rose-950 dark:bg-rose-950/30 dark:text-rose-100' : paymentConfirmed ? 'bg-emerald-50 text-emerald-950 dark:bg-emerald-950/30 dark:text-emerald-100' : 'bg-amber-50 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100'}`}><div className="flex gap-3">{transferUnderReview ? <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" /> : paymentConfirmed ? <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" /> : <Clock className="mt-0.5 h-5 w-5 shrink-0" />}<div><p className="font-bold">{transferUnderReview ? 'Payment under review' : paymentConfirmed ? 'Payment received' : 'Payment pending'}</p><p className="mt-1 text-sm">{transferUnderReview ? "We're checking this payment. Do not hand over the order yet. You can check other available tasks while this is being resolved." : paymentConfirmed ? 'Customer payment has been confirmed.' : 'Customer payment has not been confirmed yet.'}</p></div></div>{transferUnderReview && isActive && <PaymentReviewActions busy={Boolean(actionLoading)} onConfirm={handleClearDeclinedTask} />}</section>
-          {errand.isTestOrder && <p className="mt-5 rounded-xl bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-900 dark:bg-indigo-950/35 dark:text-indigo-100">Training task · No real money is involved.</p>}<div className="my-6 border-t border-slate-100 dark:border-slate-800" /><div className="relative space-y-6"><div className="absolute bottom-10 left-2 top-8 border-l-2 border-dotted border-slate-200 dark:border-slate-700" /><div className="relative flex gap-4"><span className="mt-1 h-4 w-4 rounded-full border-4 border-emerald-100 bg-emerald-500 dark:border-emerald-950" /><div><p className="text-xs font-bold tracking-wide text-slate-400">PICK UP</p><p className="mt-1 text-lg font-bold">{pickup || errand.location}</p>{pickup && <p className="text-sm text-slate-500">{errand.location}{errand.roomNumber ? ` - Room ${errand.roomNumber}` : ''}</p>}</div></div><div className="relative flex gap-4"><span className="mt-1 h-4 w-4 rounded-full border-4 border-violet-100 bg-violet-600 dark:border-violet-950" /><div><p className="text-xs font-bold tracking-wide text-slate-400">DELIVER TO</p><p className="mt-1 text-lg font-bold">{errand.location}{errand.roomNumber ? ` - Room ${errand.roomNumber}` : ''}</p><p className="text-sm text-slate-500">Customer destination</p></div></div></div>{canUpdateRestaurantPeople && <section className="mt-6 border-t border-slate-100 pt-5 dark:border-slate-800"><p className="font-bold">How many people is this order for?</p><p className="mt-1 text-sm text-slate-500">This updates the customer’s total.</p><div className="mt-3 grid grid-cols-5 gap-2">{Array.from({ length: RESTAURANT_MAX_PEOPLE }, (_, i) => i + 1).map(people => <button key={people} onClick={() => void handleRestaurantPeopleUpdate(people)} disabled={actionLoading === 'people'} className={`h-11 rounded-xl font-bold ${people === restaurantPeopleCount ? 'bg-violet-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>{people}</button>)}</div></section>}<div className="my-6 border-t border-slate-100 dark:border-slate-800" />{userInfo && <section><p className="text-xs font-bold tracking-wide text-slate-400">CUSTOMER</p><div className="mt-3 flex items-center gap-3"><div className="flex h-11 w-11 items-center justify-center rounded-full bg-violet-100 font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-200">{userInfo.name.charAt(0).toUpperCase()}</div><div className="min-w-0 flex-1"><p className="font-bold">{userInfo.name}</p><p className="text-sm text-slate-500">{errand.location}{errand.roomNumber ? ` - Room ${errand.roomNumber}` : ''}</p></div><a aria-label="Call customer" href={`tel:${userInfo.phone}`} className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-white"><Phone className="h-5 w-5" /></a>{whatsappLink && <a aria-label="Message customer on WhatsApp" href={whatsappLink} target="_blank" rel="noreferrer" className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white"><MessageCircle className="h-5 w-5" /></a>}</div></section>}<div className="my-6 border-t border-slate-100 dark:border-slate-800" />{errand.cafeInquiryStatus && <div className="mt-5"><CafeInquiryPanel order={errand} tasker whatsappHref={whatsappLink} onUpdated={() => { void loadErrand(false) }} /></div>}<FirstOrderBonusNotice order={errand} tasker /><details className="mt-6 border-t border-slate-100 pt-5 dark:border-slate-800"><summary className="cursor-pointer text-sm font-bold text-slate-600 dark:text-slate-300">View payment details</summary><div className="mt-3 space-y-2 text-sm"><p className="flex justify-between"><span>Customer sends you</span><b>{convertToNaira(errand.totalAmount || errand.amount + errand.commission)}</b></p><p className="flex justify-between"><span>You earn</span><b className="text-emerald-600">{convertToNaira(earnings)}</b></p>{errand.platformFee > 0 && <p className="flex justify-between"><span>Send SwiftDU after task</span><b>{convertToNaira(errand.platformFee)}</b></p>}</div></details>{isActive && !transferUnderReview && <details className="mt-5 text-sm"><summary className="cursor-pointer font-semibold text-slate-500">Having a problem?</summary><div className="mt-3 flex gap-3">{canReportTransferIssue && <button disabled={Boolean(actionLoading)} onClick={() => setShowReportConfirmation(true)} className="text-amber-700 underline disabled:opacity-50">I didn’t receive the payment</button>}{taskerCanCancel && <button onClick={() => setShowConfirmModal('cancel')} className="text-rose-600 underline">Cancel task</button>}</div></details>}</div></section></main><div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 p-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95"><div className="mx-auto max-w-lg">{isActive && !transferUnderReview ? <div className="space-y-2"><Button onClick={() => setShowConfirmModal('complete')} disabled={Boolean(actionLoading)} className="h-12 w-full rounded-2xl bg-violet-600 font-bold text-white hover:bg-violet-700"><CheckCircle2 className="mr-2 h-5 w-5" />{capturingLocation ? 'Confirming delivery location...' : errand.cafeInquiry ? 'Inquiry completed' : 'Order delivered'}</Button>{!paymentConfirmed && <p className="text-center text-xs font-semibold text-amber-700 dark:text-amber-300">{errand.cafeInquiry ? 'Payment is pending. Completing confirms payment received and the inquiry finished.' : 'Payment is pending. Completing confirms payment received and delivery complete.'}</p>}</div> : <p className="text-center text-sm font-semibold text-slate-600 dark:text-slate-300">SwiftDU is checking the payment.</p>}</div></div>{gpsError && <div role="dialog" aria-modal="true" aria-label="Delivery location unavailable" className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4"><div className="w-full max-w-sm rounded-3xl bg-white p-6 dark:bg-slate-900"><h2 className="text-xl font-bold">Could not confirm delivery location</h2><p role="alert" className="my-4 text-sm">{gpsError} Retry, or finish without GPS if you have delivered the order. No location will be saved.</p><div className="flex flex-col gap-3"><Button disabled={Boolean(actionLoading)} onClick={() => { setGpsError(null); void handleAction('complete') }}>Retry location</Button><Button variant="outline" disabled={Boolean(actionLoading)} onClick={() => { setGpsError(null); void handleAction('complete', true) }}>Finish without GPS</Button><Button variant="ghost" onClick={() => setGpsError(null)}>Go back</Button></div></div></div>}{reportTransferConfirmation}{showConfirmModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4"><div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-900"><h2 className="text-xl font-bold">{showConfirmModal === 'complete' ? errand.cafeInquiry ? 'Complete this inquiry?' : 'Complete this order?' : 'Cancel this task?'}</h2>{showConfirmModal === 'complete' ? <div className="mt-3 text-sm text-slate-500"><p>By completing, you confirm that:</p><ul className="mt-2 list-disc space-y-1 pl-5"><li>you have received the customer’s payment</li><li>{errand.cafeInquiry ? 'you have completed the cafe inquiry' : 'you have delivered the order to the customer'}</li></ul></div> : <p className="mt-2 text-sm text-slate-500">Only cancel if you cannot complete this task.</p>}<div className="mt-6 flex flex-col gap-3"><Button variant="outline" className="h-11 flex-1 rounded-xl" onClick={() => setShowConfirmModal(null)}>Go back</Button><Button className={`h-11 flex-1 rounded-xl ${showConfirmModal === 'complete' ? 'bg-violet-600' : 'bg-rose-600'}`} onClick={() => handleAction(showConfirmModal)}>{showConfirmModal === 'complete' ? errand.cafeInquiry ? 'Yes, payment received & inquiry complete' : 'Yes, payment received & delivered' : 'Cancel task'}</Button></div></div></div>}</div>
+              {canUpdateRestaurantPeople && (
+                <section className="mt-6 border-t border-slate-100 pt-5 dark:border-slate-800">
+                  <p className="font-bold">How many people is this order for?</p>
+                  <p className="mt-1 text-sm text-slate-500">This updates the customer’s total.</p>
+                  <div className="mt-3 grid grid-cols-5 gap-2">
+                    {Array.from({ length: RESTAURANT_MAX_PEOPLE }, (_, i) => i + 1).map((people) => (
+                      <button key={people} onClick={() => void handleRestaurantPeopleUpdate(people)} disabled={actionLoading === 'people' || !online} className={`h-11 rounded-xl font-bold ${people === restaurantPeopleCount ? 'bg-violet-600 text-white' : 'bg-slate-100 dark:bg-slate-800'}`}>
+                        {people}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+              <div className="my-6 border-t border-slate-100 dark:border-slate-800" />
+              {userInfo && (
+                <section>
+                  <p className="text-xs font-bold tracking-wide text-slate-400">CUSTOMER</p>
+                  <div className="mt-3 flex items-center gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-full bg-violet-100 font-bold text-violet-700 dark:bg-violet-950 dark:text-violet-200">{userInfo.name.charAt(0).toUpperCase()}</div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold">{userInfo.name}</p>
+                      <p className="text-sm text-slate-500">
+                        {errand.location}
+                        {errand.roomNumber ? ` - Room ${errand.roomNumber}` : ''}
+                      </p>
+                    </div>
+                    <a aria-label="Call customer" href={`tel:${userInfo.phone}`} className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-white">
+                      <Phone className="h-5 w-5" />
+                    </a>
+                    {whatsappLink && (
+                      <a aria-label="Message customer on WhatsApp" href={whatsappLink} target="_blank" rel="noreferrer" className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white">
+                        <MessageCircle className="h-5 w-5" />
+                      </a>
+                    )}
+                  </div>
+                </section>
+              )}
+              <div className="my-6 border-t border-slate-100 dark:border-slate-800" />
+              {errand.cafeInquiryStatus && (
+                <div className="mt-5">
+                  <CafeInquiryPanel
+                    order={errand}
+                    tasker
+                    whatsappHref={whatsappLink}
+                    onUpdated={() => {
+                      void loadErrand(false)
+                    }}
+                  />
+                </div>
+              )}
+              <FirstOrderBonusNotice order={errand} tasker />
+              <details className="mt-6 border-t border-slate-100 pt-5 dark:border-slate-800">
+                <summary className="cursor-pointer text-sm font-bold text-slate-600 dark:text-slate-300">View payment details</summary>
+                <div className="mt-3 space-y-2 text-sm">
+                  <p className="flex justify-between">
+                    <span>Customer sends you</span>
+                    <b>{convertToNaira(errand.totalAmount || errand.amount + errand.commission)}</b>
+                  </p>
+                  <p className="flex justify-between">
+                    <span>You earn</span>
+                    <b className="text-emerald-600">{convertToNaira(earnings)}</b>
+                  </p>
+                  {errand.platformFee > 0 && (
+                    <p className="flex justify-between">
+                      <span>Send SwiftDU after task</span>
+                      <b>{convertToNaira(errand.platformFee)}</b>
+                    </p>
+                  )}
+                </div>
+              </details>
+              {isActive && !transferUnderReview && (
+                <details className="mt-5 text-sm">
+                  <summary className="cursor-pointer font-semibold text-slate-500">Having a problem?</summary>
+                  <div className="mt-3 flex gap-3">
+                    {canReportTransferIssue && (
+                      <button disabled={Boolean(actionLoading) || !online} onClick={() => setShowReportConfirmation(true)} className="text-amber-700 underline disabled:opacity-50">
+                        I didn’t receive the payment
+                      </button>
+                    )}
+                    {taskerCanCancel && (
+                      <button disabled={!online} onClick={() => setShowConfirmModal('cancel')} className="text-rose-600 underline disabled:opacity-50">
+                        Cancel task
+                      </button>
+                    )}
+                  </div>
+                </details>
+              )}
+            </div>
+          </section>
+        </main>
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 p-4 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+          <div className="mx-auto max-w-lg">
+            {isActive && !transferUnderReview ? (
+              <div className="space-y-2">
+                <Button onClick={() => setShowConfirmModal('complete')} disabled={Boolean(actionLoading) || !online} className="h-12 w-full rounded-2xl bg-violet-600 font-bold text-white hover:bg-violet-700">
+                  <CheckCircle2 className="mr-2 h-5 w-5" />
+                  {actionLoading === 'complete' ? 'Completing order...' : capturingLocation ? 'Confirming delivery location...' : errand.cafeInquiry ? 'Inquiry completed' : 'Order delivered'}
+                </Button>
+                {!paymentConfirmed && <p className="text-center text-xs font-semibold text-amber-700 dark:text-amber-300">{errand.cafeInquiry ? 'Payment is pending. Completing confirms payment received and the inquiry finished.' : 'Payment is pending. Completing confirms payment received and delivery complete.'}</p>}
+              </div>
+            ) : (
+              <p className="text-center text-sm font-semibold text-slate-600 dark:text-slate-300">SwiftDU is checking the payment.</p>
+            )}
+          </div>
+        </div>
+        {gpsError && (
+          <div role="dialog" aria-modal="true" aria-label="Delivery location unavailable" className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 dark:bg-slate-900">
+              <h2 className="text-xl font-bold">Could not confirm delivery location</h2>
+              <p role="alert" className="my-4 text-sm">
+                {gpsError} Retry, or finish without GPS if you have delivered the order. No location will be saved.
+              </p>
+              <div className="flex flex-col gap-3">
+                <Button
+                  disabled={Boolean(actionLoading) || !online}
+                  onClick={() => {
+                    setGpsError(null)
+                    void handleAction('complete')
+                  }}
+                >
+                  Retry location
+                </Button>
+                <Button
+                  variant="outline"
+                  disabled={Boolean(actionLoading) || !online}
+                  onClick={() => {
+                    setGpsError(null)
+                    void handleAction('complete', true)
+                  }}
+                >
+                  Finish without GPS
+                </Button>
+                <Button variant="ghost" onClick={() => setGpsError(null)}>
+                  Go back
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+        {reportTransferConfirmation}
+        {showConfirmModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-900">
+              <h2 className="text-xl font-bold">{showConfirmModal === 'complete' ? (errand.cafeInquiry ? 'Complete this inquiry?' : 'Complete this order?') : 'Cancel this task?'}</h2>
+              {showConfirmModal === 'complete' ? (
+                <div className="mt-3 text-sm text-slate-500">
+                  <p>By completing, you confirm that:</p>
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    <li>you have received the customer’s payment</li>
+                    <li>{errand.cafeInquiry ? 'you have completed the cafe inquiry' : 'you have delivered the order to the customer'}</li>
+                  </ul>
+                </div>
+              ) : (
+                <p className="mt-2 text-sm text-slate-500">Only cancel if you cannot complete this task.</p>
+              )}
+              <div className="mt-6 flex flex-col gap-3">
+                <Button variant="outline" className="h-11 flex-1 rounded-xl" onClick={() => setShowConfirmModal(null)}>
+                  Go back
+                </Button>
+                <Button className={`h-11 flex-1 rounded-xl ${showConfirmModal === 'complete' ? 'bg-violet-600' : 'bg-rose-600'}`} disabled={Boolean(actionLoading) || !online} onClick={() => handleAction(showConfirmModal)}>
+                  {showConfirmModal === 'complete' ? (errand.cafeInquiry ? 'Yes, payment received & inquiry complete' : 'Yes, payment received & delivered') : 'Cancel task'}
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
@@ -567,18 +968,32 @@ function ErrandDetailPageContent() {
             <ArrowLeft className="h-4 w-4" />
             Back
           </button>
-          <span className={`text-xs font-bold px-3 py-1 rounded-full ${statusStyles[errand.status]}`}>
-            {errand.status.replace('_', ' ')}
-          </span>
+          <span className={`text-xs font-bold px-3 py-1 rounded-full ${statusStyles[errand.status]}`}>{errand.status.replace('_', ' ')}</span>
         </div>
       </div>
 
       {/* ─── Main Content ─── */}
       <div className="max-w-2xl mx-auto px-4 pt-4 space-y-4">
+        <ConnectionNotice refreshFailed={backgroundRefreshFailed} />
         <h1 className="text-2xl font-black tracking-tight">{getTaskTitle(errand)}</h1>
-        <p className="text-sm text-slate-500">{errand.cafeInquiry ? 'Cafe inquiry' : taskTypeLabels[errand.taskType]} <span aria-hidden="true">•</span> Order #{errand._id.slice(-6)}</p>
-        {error && <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">{error}</p>}
-        {errand.taskerId && errand.cafeInquiryStatus && <CafeInquiryPanel order={errand} tasker whatsappHref={whatsappLink} onUpdated={() => { void loadErrand(false) }} />}
+        <p className="text-sm text-slate-500">
+          {errand.cafeInquiry ? 'Cafe inquiry' : taskTypeLabels[errand.taskType]} <span aria-hidden="true">•</span> Order #{errand._id.slice(-6)}
+        </p>
+        {error && (
+          <p role="alert" className="rounded-xl bg-rose-50 p-3 text-sm text-rose-800">
+            {error}
+          </p>
+        )}
+        {errand.taskerId && errand.cafeInquiryStatus && (
+          <CafeInquiryPanel
+            order={errand}
+            tasker
+            whatsappHref={whatsappLink}
+            onUpdated={() => {
+              void loadErrand(false)
+            }}
+          />
+        )}
         {errand.isTestOrder ? (
           <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-950 dark:border-indigo-900/60 dark:bg-indigo-950/30 dark:text-indigo-100">
             <p className="font-bold">Training task</p>
@@ -591,14 +1006,14 @@ function ErrandDetailPageContent() {
           <div className="border-b border-slate-100 bg-white px-5 py-4 text-slate-900 dark:border-slate-800 dark:bg-slate-900 dark:text-white">
             <div className="flex flex-wrap items-center gap-2">
               <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Order #{errand._id.slice(-6)}</p>
-              {errand.isTestOrder ? (
-                <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white ring-1 ring-white/30">
-                  Test Order
-                </span>
-              ) : null}
+              {errand.isTestOrder ? <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white ring-1 ring-white/30">Test Order</span> : null}
             </div>
             <h2 className="mt-1 text-lg font-bold">What to do</h2>
-            <div className="mt-2 space-y-1 text-base font-semibold leading-6">{getTaskDetails(errand, restaurantPackaging).map(detail => <p key={detail}>{detail}</p>)}</div>
+            <div className="mt-2 space-y-1 text-base font-semibold leading-6">
+              {getTaskDetails(errand, restaurantPackaging).map((detail) => (
+                <p key={detail}>{detail}</p>
+              ))}
+            </div>
           </div>
 
           {/* ─── ABOVE THE FOLD: Timer + WhatsApp ─── */}
@@ -606,9 +1021,19 @@ function ErrandDetailPageContent() {
             {/* Timer */}
             {!errand.cafeInquiry && hasCompletionTimer ? (
               <div className={`rounded-xl p-3 ${completionTimerExpired || completionRemainingMs <= 5 * 60 * 1000 ? 'bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-100' : 'bg-slate-50 dark:bg-slate-800/50'}`}>
-                <div className="flex items-center gap-2 font-bold"><Clock className="h-5 w-5" />{completionTimerExpired ? 'Time is up' : `${formatDuration(completionRemainingMs)} left`}</div>
+                <div className="flex items-center gap-2 font-bold">
+                  <Clock className="h-5 w-5" />
+                  {completionTimerExpired ? 'Time is up' : `${formatDuration(completionRemainingMs)} left`}
+                </div>
                 <p className="mt-1 text-sm opacity-75">{completionTimerExpired ? 'Finish the delivery as soon as possible.' : `Try to complete this delivery within ${completionWindowMinutes} minutes.`}</p>
-                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/10"><div className="h-full rounded-full bg-current" style={{ width: `${completionTimerExpired ? 100 : completionProgress}%` }} /></div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-black/10">
+                  <div
+                    className="h-full rounded-full bg-current"
+                    style={{
+                      width: `${completionTimerExpired ? 100 : completionProgress}%`,
+                    }}
+                  />
+                </div>
               </div>
             ) : deadline ? (
               <div className="flex items-center gap-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 p-3">
@@ -621,26 +1046,32 @@ function ErrandDetailPageContent() {
             ) : null}
 
             {/* WhatsApp Chat Button */}
-            {errand.taskerId && isActive && (whatsappLink ? (
-              <a
-                href={whatsappLink}
-                target="_blank"
-                rel="noreferrer"
-                className="flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98]"
-              >
-                <MessageCircle className="h-5 w-5" />
-                Chat with Customer on WhatsApp
-              </a>
-            ) : (
-              <div className="flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 font-bold">
-                Customer WhatsApp contact is unavailable
-              </div>
-            ))}
+            {errand.taskerId &&
+              isActive &&
+              (whatsappLink ? (
+                <a href={whatsappLink} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98]">
+                  <MessageCircle className="h-5 w-5" />
+                  Chat with Customer on WhatsApp
+                </a>
+              ) : (
+                <div className="flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 font-bold">Customer WhatsApp contact is unavailable</div>
+              ))}
 
             {/* Quick Info Row */}
             <div className="border-y border-slate-100 py-4 dark:border-slate-800">
               <p className="text-sm font-semibold text-slate-500 dark:text-slate-400">Go to</p>
-              <div className="mt-2 flex gap-3"><MapPin className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" /><div><p className="text-lg font-bold text-slate-900 dark:text-white">{getStoreDisplayName(errand.store) || errand.location}</p><p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{[errand.exactLocation?.name, errand.roomNumber ? `Room ${errand.roomNumber}` : ''].filter(Boolean).join(' · ')}</p>{errand.exactLocation?.coordinates ? <a className="mt-2 inline-block text-sm font-semibold text-indigo-600" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${errand.exactLocation.coordinates.latitude},${errand.exactLocation.coordinates.longitude}`}>Navigate to exact location</a> : null}</div></div>
+              <div className="mt-2 flex gap-3">
+                <MapPin className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
+                <div>
+                  <p className="text-lg font-bold text-slate-900 dark:text-white">{getStoreDisplayName(errand.store) || errand.location}</p>
+                  <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">{[errand.exactLocation?.name, errand.roomNumber ? `Room ${errand.roomNumber}` : ''].filter(Boolean).join(' · ')}</p>
+                  {errand.exactLocation?.coordinates ? (
+                    <a className="mt-2 inline-block text-sm font-semibold text-indigo-600" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/dir/?api=1&destination=${errand.exactLocation.coordinates.latitude},${errand.exactLocation.coordinates.longitude}`}>
+                      Navigate to exact location
+                    </a>
+                  ) : null}
+                </div>
+              </div>
             </div>
 
             {/* Packaging (for restaurant) */}
@@ -672,8 +1103,6 @@ function ErrandDetailPageContent() {
                 </div>
               </div>
             ) : null}
-
-
           </div>
         </div>
 
@@ -682,15 +1111,26 @@ function ErrandDetailPageContent() {
           <div className="rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-sm p-4">
             <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Customer</p>
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white font-bold text-sm">
-                {userInfo.name.charAt(0).toUpperCase()}
-              </div>
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-sky-400 to-indigo-500 flex items-center justify-center text-white font-bold text-sm">{userInfo.name.charAt(0).toUpperCase()}</div>
               <div className="flex-1 min-w-0">
                 <p className="font-bold text-slate-900 dark:text-white truncate">{userInfo.name}</p>
                 <p className="text-xs text-slate-500 dark:text-slate-400">{userInfo.phone}</p>
               </div>
             </div>
-            <div className="mt-4 grid grid-cols-2 gap-2"><a href={`tel:${userInfo.phone}`} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-100 text-sm font-bold text-slate-800 dark:bg-slate-800 dark:text-white"><Phone className="h-4 w-4" />Call</a>{whatsappLink ? <a href={whatsappLink} target="_blank" rel="noreferrer" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-bold text-white"><MessageCircle className="h-4 w-4" />WhatsApp</a> : <p className="flex items-center justify-center text-sm text-slate-500">WhatsApp unavailable</p>}</div>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <a href={`tel:${userInfo.phone}`} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-slate-100 text-sm font-bold text-slate-800 dark:bg-slate-800 dark:text-white">
+                <Phone className="h-4 w-4" />
+                Call
+              </a>
+              {whatsappLink ? (
+                <a href={whatsappLink} target="_blank" rel="noreferrer" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-bold text-white">
+                  <MessageCircle className="h-4 w-4" />
+                  WhatsApp
+                </a>
+              ) : (
+                <p className="flex items-center justify-center text-sm text-slate-500">WhatsApp unavailable</p>
+              )}
+            </div>
           </div>
         )}
 
@@ -703,17 +1143,7 @@ function ErrandDetailPageContent() {
             </div>
             <div className="grid grid-cols-5 gap-2">
               {Array.from({ length: RESTAURANT_MAX_PEOPLE }, (_, i) => i + 1).map((people) => (
-                <button
-                  key={people}
-                  type="button"
-                  onClick={() => void handleRestaurantPeopleUpdate(people)}
-                  disabled={actionLoading === 'people'}
-                  className={`h-11 rounded-xl text-sm font-bold transition active:scale-95 ${
-                    people === restaurantPeopleCount
-                      ? 'bg-sky-600 text-white shadow-lg shadow-sky-500/25'
-                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
-                  }`}
-                >
+                <button key={people} type="button" onClick={() => void handleRestaurantPeopleUpdate(people)} disabled={actionLoading === 'people' || !online} className={`h-11 rounded-xl text-sm font-bold transition active:scale-95 ${people === restaurantPeopleCount ? 'bg-sky-600 text-white shadow-lg shadow-sky-500/25' : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}>
                   {actionLoading === 'people' && people === restaurantPeopleCount ? <Loader2 className="h-4 w-4 animate-spin mx-auto" /> : people}
                 </button>
               ))}
@@ -731,9 +1161,7 @@ function ErrandDetailPageContent() {
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-slate-500 dark:text-slate-400">You earn</span>
-              <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">
-                {convertToNaira(errand.serviceFeeDiscountApplied ? errand.discountCommissionAmount || errand.taskerFee || 0 : errand.taskerFee || 0)}
-              </span>
+              <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">{convertToNaira(errand.serviceFeeDiscountApplied ? errand.discountCommissionAmount || errand.taskerFee || 0 : errand.taskerFee || 0)}</span>
             </div>
             <div className="h-px bg-slate-100 dark:bg-slate-800" />
             <div className="flex justify-between items-center">
@@ -764,67 +1192,59 @@ function ErrandDetailPageContent() {
         )}
 
         {/* ─── Error ─── */}
-        {error && (
-          <div className="rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 p-4 text-sm text-rose-700 dark:text-rose-200">
-            {error}
-          </div>
-        )}
+        {error && <div className="rounded-2xl bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/50 p-4 text-sm text-rose-700 dark:text-rose-200">{error}</div>}
       </div>
 
       {/* ─── Bottom Action Bar ─── */}
-      {errand.status === 'pending' && <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-white/95 p-4 backdrop-blur lg:left-72 dark:bg-slate-900"><div className="mx-auto max-w-2xl"><button className={workButton + ' w-full'} disabled={accepting || !work.data?.checkedIn || !work.data?.canCheckIn} onClick={() => void acceptTask()}>{accepting ? 'Accepting task...' : !work.data?.checkedIn ? 'Check in from Home to accept' : 'Accept task'}</button><button onClick={() => router.push('/tasker-dashboard?view=all')} className="min-h-11 w-full text-sm font-semibold">Not this one</button></div></div>}
+      {errand.status === 'pending' && (
+        <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-white/95 p-4 backdrop-blur lg:left-72 dark:bg-slate-900">
+          <div className="mx-auto max-w-2xl">
+            <button className={workButton + ' w-full'} disabled={accepting || !work.data?.checkedIn || !work.data?.canCheckIn} onClick={() => void acceptTask()}>
+              {accepting ? 'Accepting task...' : !work.data?.checkedIn ? 'Check in from Home to accept' : 'Accept task'}
+            </button>
+            <button onClick={() => router.push('/tasker-dashboard?view=all')} className="min-h-11 w-full text-sm font-semibold">
+              Not this one
+            </button>
+          </div>
+        </div>
+      )}
       {errand.taskerId && isActive && !transferUnderReview && (
         <div className="fixed bottom-0 left-0 right-0 z-40 lg:left-72 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200/50 dark:border-slate-800/50">
           <div className="max-w-2xl mx-auto px-4 py-3 space-y-2">
             {paymentConfirmed ? (
               <>
-                <Button
-                  onClick={() => setShowConfirmModal('complete')}
-                  disabled={Boolean(actionLoading)}
-                  className="h-12 w-full rounded-xl bg-violet-600 text-white font-bold hover:bg-violet-700 disabled:opacity-60"
-                >
+                <Button onClick={() => setShowConfirmModal('complete')} disabled={Boolean(actionLoading) || !online} className="h-12 w-full rounded-xl bg-violet-600 text-white font-bold hover:bg-violet-700 disabled:opacity-60">
                   {actionLoading === 'complete' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <CheckCircle2 className="h-4 w-4 mr-2" />}
                   {errand.cafeInquiry ? 'Inquiry completed' : 'Order delivered'}
                 </Button>
-                <details className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800"><summary className="h-8 cursor-pointer list-none px-2 text-sm font-semibold text-slate-600 dark:text-slate-300">Need help?</summary><div className="grid grid-cols-2 gap-2 pt-2">
-                  {canReportTransferIssue && <Button
-                    variant="outline"
-                    onClick={() => setShowReportConfirmation(true)}
-                    disabled={Boolean(actionLoading)}
-                    className="h-10 rounded-xl border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950/30"
-                  >
-                    {actionLoading === 'report' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <AlertCircle className="h-4 w-4 mr-2" />}
-                    Payment problem
-                  </Button>}
-                  {taskerCanCancel ? (
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowConfirmModal('cancel')}
-                      disabled={Boolean(actionLoading)}
-                      className="h-10 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
-                    >
-                      {actionLoading === 'cancel' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
-                      Cancel task
-                    </Button>
-                  ) : (
-                    <div className="h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-500 dark:text-slate-400 text-center px-2">
-                      Cancel locked after payment
-                    </div>
-                  )}
-                </div></details>
+                <details className="rounded-xl bg-slate-50 p-2 dark:bg-slate-800">
+                  <summary className="h-8 cursor-pointer list-none px-2 text-sm font-semibold text-slate-600 dark:text-slate-300">Need help?</summary>
+                  <div className="grid grid-cols-2 gap-2 pt-2">
+                    {canReportTransferIssue && (
+                      <Button variant="outline" onClick={() => setShowReportConfirmation(true)} disabled={Boolean(actionLoading) || !online} className="h-10 rounded-xl border-amber-200 text-amber-700 hover:bg-amber-50 dark:border-amber-900 dark:text-amber-300 dark:hover:bg-amber-950/30">
+                        {actionLoading === 'report' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <AlertCircle className="h-4 w-4 mr-2" />}
+                        Payment problem
+                      </Button>
+                    )}
+                    {taskerCanCancel ? (
+                      <Button variant="outline" onClick={() => setShowConfirmModal('cancel')} disabled={Boolean(actionLoading) || !online} className="h-10 rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30">
+                        {actionLoading === 'cancel' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
+                        Cancel task
+                      </Button>
+                    ) : (
+                      <div className="h-10 flex items-center justify-center rounded-xl bg-slate-100 dark:bg-slate-800 text-xs text-slate-500 dark:text-slate-400 text-center px-2">Cancel locked after payment</div>
+                    )}
+                  </div>
+                </details>
               </>
             ) : (
               <div className="space-y-2">
                 <div className="rounded-xl bg-sky-50 dark:bg-sky-950/20 border border-sky-200 dark:border-sky-900/50 p-3 text-center">
-                  <p className="text-sm font-semibold text-sky-700 dark:text-sky-300">Waiting for payment</p><p className="mt-1 text-xs text-sky-700 dark:text-sky-300">Do not hand over the order yet.</p>
+                  <p className="text-sm font-semibold text-sky-700 dark:text-sky-300">Waiting for payment</p>
+                  <p className="mt-1 text-xs text-sky-700 dark:text-sky-300">Do not hand over the order yet.</p>
                 </div>
                 {taskerCanCancel && (
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowConfirmModal('cancel')}
-                    disabled={Boolean(actionLoading)}
-                    className="h-10 w-full rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30"
-                  >
+                  <Button variant="outline" onClick={() => setShowConfirmModal('cancel')} disabled={Boolean(actionLoading) || !online} className="h-10 w-full rounded-xl border-rose-200 text-rose-600 hover:bg-rose-50 dark:border-rose-900 dark:text-rose-300 dark:hover:bg-rose-950/30">
                     {actionLoading === 'cancel' ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <XCircle className="h-4 w-4 mr-2" />}
                     Cancel task
                   </Button>
@@ -839,18 +1259,12 @@ function ErrandDetailPageContent() {
       {!isActive && (
         <div className="fixed bottom-0 left-0 right-0 z-40 lg:left-72 bg-white/90 dark:bg-slate-900/90 backdrop-blur-lg border-t border-slate-200/50 dark:border-slate-800/50">
           <div className="max-w-2xl mx-auto px-4 py-3 space-y-2">
-              {settlementOutstanding && (
-              <Button
-                onClick={() => router.push(`/tasker-dashboard/payment/${errand._id}`)}
-                className="h-12 w-full rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600"
-              >
+            {settlementOutstanding && (
+              <Button onClick={() => router.push(`/tasker-dashboard/payment/${errand._id}`)} className="h-12 w-full rounded-xl bg-amber-500 text-white font-bold hover:bg-amber-600">
                 Pay SwiftDU {convertToNaira(errand.platformFee)}
               </Button>
             )}
-            <Button
-              onClick={() => router.push('/tasker-dashboard')}
-              className="h-12 w-full rounded-xl bg-sky-600 text-white font-bold hover:bg-sky-700"
-            >
+            <Button onClick={() => router.push('/tasker-dashboard')} className="h-12 w-full rounded-xl bg-sky-600 text-white font-bold hover:bg-sky-700">
               Return to Dashboard
             </Button>
           </div>
@@ -858,23 +1272,29 @@ function ErrandDetailPageContent() {
       )}
 
       {/* ─── Confirm Modal ─── */}
-      {reportTransferConfirmation}{showConfirmModal && (
+      {reportTransferConfirmation}
+      {showConfirmModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
           <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
-            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${showConfirmModal === 'complete' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400' : 'bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400'}`}>
-              {showConfirmModal === 'complete' ? <CheckCircle2 className="h-6 w-6" /> : <XCircle className="h-6 w-6" />}
-            </div>
-            <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-white">
-              {showConfirmModal === 'complete' ? errand.cafeInquiry ? 'Complete this inquiry?' : 'Complete this order?' : 'Cancel this task?'}
-            </h2>
-            {showConfirmModal === 'complete' ? <div className="mt-3 text-sm text-slate-500 dark:text-slate-400"><p>By completing, you confirm that:</p><ul className="mt-2 list-disc space-y-1 pl-5"><li>you have received the customer&apos;s payment</li><li>{errand.cafeInquiry ? 'you have completed the cafe inquiry' : 'you have delivered the order to the customer'}</li></ul></div> : <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Only cancel if you cannot complete this task.</p>}
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${showConfirmModal === 'complete' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400' : 'bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400'}`}>{showConfirmModal === 'complete' ? <CheckCircle2 className="h-6 w-6" /> : <XCircle className="h-6 w-6" />}</div>
+            <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-white">{showConfirmModal === 'complete' ? (errand.cafeInquiry ? 'Complete this inquiry?' : 'Complete this order?') : 'Cancel this task?'}</h2>
+            {showConfirmModal === 'complete' ? (
+              <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
+                <p>By completing, you confirm that:</p>
+                <ul className="mt-2 list-disc space-y-1 pl-5">
+                  <li>you have received the customer&apos;s payment</li>
+                  <li>{errand.cafeInquiry ? 'you have completed the cafe inquiry' : 'you have delivered the order to the customer'}</li>
+                </ul>
+              </div>
+            ) : (
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">Only cancel if you cannot complete this task.</p>
+            )}
             <div className="mt-6 flex flex-col gap-3">
-              <Button variant="outline" onClick={() => setShowConfirmModal(null)} className="h-11 flex-1 rounded-xl">Go back</Button>
-              <Button
-                onClick={() => handleAction(showConfirmModal)}
-                className={`h-11 flex-1 rounded-xl text-white font-bold ${showConfirmModal === 'complete' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}
-              >
-                {showConfirmModal === 'complete' ? errand.cafeInquiry ? 'Yes, payment received & inquiry complete' : 'Yes, payment received & delivered' : 'Yes, cancel task'}
+              <Button variant="outline" onClick={() => setShowConfirmModal(null)} className="h-11 flex-1 rounded-xl">
+                Go back
+              </Button>
+              <Button onClick={() => handleAction(showConfirmModal)} disabled={Boolean(actionLoading) || !online} className={`h-11 flex-1 rounded-xl text-white font-bold ${showConfirmModal === 'complete' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>
+                {showConfirmModal === 'complete' ? (errand.cafeInquiry ? 'Yes, payment received & inquiry complete' : 'Yes, payment received & delivered') : 'Yes, cancel task'}
               </Button>
             </div>
           </div>
@@ -885,5 +1305,9 @@ function ErrandDetailPageContent() {
 }
 
 export default function ErrandDetailPage() {
-  return <Suspense fallback={null}><ErrandDetailPageContent /></Suspense>
+  return (
+    <Suspense fallback={null}>
+      <ErrandDetailPageContent />
+    </Suspense>
+  )
 }

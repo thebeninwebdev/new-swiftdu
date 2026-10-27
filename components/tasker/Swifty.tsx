@@ -3,12 +3,14 @@
 import { useReducedMotion } from 'framer-motion'
 import { useState } from 'react'
 import { SWIFTY_ALT, SWIFTY_ASSETS, type SwiftyMood } from '@/components/swifty/swifty-config'
+import { useLowDataMode } from '@/hooks/use-network-state'
 
 export function TaskerSwifty({ state = 'idle', large = false }: { state?: SwiftyMood; large?: boolean }) {
   const reduced = useReducedMotion()
+  const lowData = useLowDataMode()
   const [failed, setFailed] = useState(false)
   const className = large ? 'mx-auto h-48 w-48 object-contain sm:h-56 sm:w-56' : 'h-24 w-24 shrink-0 object-contain'
-  return state === 'idle' && reduced === false && !failed ? (
+  return state === 'idle' && reduced === false && !lowData && !failed ? (
     <video src="/mascot/idle.webm" poster={SWIFTY_ASSETS.idle} autoPlay loop muted playsInline aria-label={SWIFTY_ALT.idle} onError={() => setFailed(true)} className={className} />
   ) : (
     // Existing transparent mascot assets; retain their intrinsic proportions.

@@ -2,10 +2,12 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { SWIFTY_ALT, SWIFTY_ASSETS } from './swifty-config'
+import { useLowDataMode } from '@/hooks/use-network-state'
 
 const REPLAY_DELAY_MS = 4000
 
 export function SwiftyIdle({ reducedMotion }: { reducedMotion: boolean }) {
+  const lowData = useLowDataMode()
   const [videoFailed, setVideoFailed] = useState(false)
   const replayTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
@@ -18,7 +20,7 @@ export function SwiftyIdle({ reducedMotion }: { reducedMotion: boolean }) {
     }
   }, [reducedMotion, videoFailed])
 
-  if (reducedMotion || videoFailed) {
+  if (reducedMotion || lowData || videoFailed) {
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={SWIFTY_ASSETS.idle} alt={SWIFTY_ALT.idle} draggable={false} className="h-full w-full object-contain" />
   }

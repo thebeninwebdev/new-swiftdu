@@ -28,6 +28,7 @@ import { Field, FieldLabel, FieldError } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { authClient } from "@/lib/auth-client"
 import { cn } from "@/lib/utils"
+import { LowDataModeControl } from "@/components/LowDataModeControl"
 
 type Gender = "" | "male" | "female" | "other" | "prefer_not_to_say"
 
@@ -329,6 +330,7 @@ export function ProfileTab() {
         isVisible ? "translate-y-0 opacity-100" : "translate-y-8 opacity-0"
       )}
     >
+      <LowDataModeControl />
       <div className="flex flex-col items-center gap-3">
         <button
           type="button"

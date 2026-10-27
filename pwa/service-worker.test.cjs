@@ -92,6 +92,27 @@ test('activation only deletes audited legacy caches and navigation requests bypa
   const hook = sw.config.runtimeCaching[0].handler.plugins[0].requestWillFetch
   assert.equal((await hook({ request })).cache, 'no-store')
 })
+test('mascot media is cache-first while APIs, writes and Socket.IO remain authoritative', () => {
+  const { config } = worker()
+  const routes = config.runtimeCaching
+  const mascot = routes.find(route => route.handler.options?.cacheName === 'swiftdu-mascot-media-v1')
+  assert.ok(mascot)
+  assert.equal(mascot.matcher({ sameOrigin: true, url: new URL('https://swiftdu.test/mascot/idle.webm') }), true)
+  assert.equal(mascot.matcher({ sameOrigin: true, url: new URL('https://swiftdu.test/uploads/customer-video.webm') }), false)
+  assert.equal(mascot.handler.options.plugins[1].options.maxEntries, 8)
+  assert.equal(mascot.handler.options.plugins[1].options.purgeOnQuotaError, true)
+
+  const api = routes[1]
+  assert.equal(api.matcher({ request: new Request('https://swiftdu.test/api/orders/1'), url: new URL('https://swiftdu.test/api/orders/1') }), true)
+  assert.equal(api.handler.options.fetchOptions.cache, 'no-store')
+  const post = routes.find(route => route.method === 'POST')
+  assert.ok(post)
+  assert.equal(post.matcher({ url: new URL('https://swiftdu.test/api/orders') }), true)
+  assert.equal(post.handler.options.fetchOptions.cache, 'no-store')
+  for (const route of routes) {
+    assert.equal(route.matcher({ request: new Request('https://swiftdu.test/socket.io/?EIO=4'), sameOrigin: true, url: new URL('https://swiftdu.test/socket.io/?EIO=4') }), false)
+  }
+})
 
 for (const scenario of ['compatible', 'missing', 'incompatible', 'legacy-script', 'development']) {
   test('push subscription lifecycle: ' + scenario, async () => {

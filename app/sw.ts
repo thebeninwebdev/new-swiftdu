@@ -16,6 +16,7 @@ const networkOnly = () => new NetworkOnly({
   plugins: [{ requestWillFetch: async ({ request }) => new Request(request, { cache: 'no-store' }) }],
 })
 const isSocket = (url: URL) => url.pathname === '/socket.io' || url.pathname.startsWith('/socket.io/')
+const isMascotVideo = (url: URL) => /^\/mascot\/[^/]+\.webm$/.test(url.pathname)
 const isStaticImage = (url: URL) =>
   /^\/(?:logo(?:-white)?|pwa-192x192|pwa-512x512|apple-icon)\.png$/.test(url.pathname) ||
   /^\/mascot\/[^/]+\.(?:png|webp|svg|jpg)$/.test(url.pathname) ||
@@ -59,6 +60,16 @@ const serwist = new Serwist({
         plugins: [
           new CacheableResponsePlugin({ statuses: [200] }),
           new ExpirationPlugin({ maxEntries: 192, maxAgeSeconds: 30 * DAY, purgeOnQuotaError: true }),
+        ],
+      }),
+    },
+    {
+      matcher: ({ sameOrigin, url }) => sameOrigin && isMascotVideo(url),
+      handler: new CacheFirst({
+        cacheName: 'swiftdu-mascot-media-v1',
+        plugins: [
+          new CacheableResponsePlugin({ statuses: [200] }),
+          new ExpirationPlugin({ maxEntries: 8, maxAgeSeconds: 30 * DAY, purgeOnQuotaError: true }),
         ],
       }),
     },
