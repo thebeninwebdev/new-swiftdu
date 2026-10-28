@@ -239,6 +239,7 @@ function ErrandDetailPageContent() {
   const paymentMutationInFlight = useRef(false)
   const loadedUserIdRef = useRef<string | null>(null)
   const realtimeRefreshTimeoutRef = useRef<number | null>(null)
+  const observedSocketConnectionRef = useRef(false)
   const { online } = useNetworkState()
 
   const [errand, setErrandState] = useState<ErrandDetail | null>(null)
@@ -352,6 +353,7 @@ function ErrandDetailPageContent() {
 
   useEffect(() => {
     if (!errandId) return
+    observedSocketConnectionRef.current = false
     const socket = acquireSharedSocket()
     const scheduleRevalidation = () => {
       if (realtimeRefreshTimeoutRef.current) return
@@ -361,9 +363,11 @@ function ErrandDetailPageContent() {
       }, 1200)
     }
     const handleConnect = () => {
+      const isReconnect = observedSocketConnectionRef.current
+      observedSocketConnectionRef.current = true
       setSocketHealthy(true)
       socket.emit('order:watch', errandId)
-      if (errandRef.current) scheduleRevalidation()
+      if (isReconnect && errandRef.current) scheduleRevalidation()
     }
     const handleDisconnect = () => setSocketHealthy(false)
     const handleConnectError = () => setSocketHealthy(false)

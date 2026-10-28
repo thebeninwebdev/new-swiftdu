@@ -275,6 +275,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const redirectedToReviewRef = useRef<string | null>(null)
   const cancellationInFlightRef = useRef(false)
   const realtimeRefreshTimerRef = useRef<number | null>(null)
+  const observedSocketConnectionRef = useRef(false)
 
   const setCurrentOrder = useCallback((incoming: Order | null) => {
     const next = incoming ? mergeOrderUpdate<Order>(currentOrderRef.current, incoming) : null
@@ -454,6 +455,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
     false,
   )
   useEffect(() => {
+    observedSocketConnectionRef.current = false
     const socket = acquireSharedSocket()
     socketRef.current = socket
     const watchCurrentOrder = () => {
@@ -468,9 +470,11 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
       }, REALTIME_REVALIDATE_DELAY_MS)
     }
     const handleConnect = () => {
+      const isReconnect = observedSocketConnectionRef.current
+      observedSocketConnectionRef.current = true
       setSocketHealthy(true)
       watchCurrentOrder()
-      if (currentOrderRef.current) scheduleRevalidation()
+      if (isReconnect && currentOrderRef.current) scheduleRevalidation()
     }
     const handleDisconnect = () => setSocketHealthy(false)
     const handleOrderUpdate = (payload?: OrderRealtimePayload) => {

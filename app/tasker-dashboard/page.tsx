@@ -206,6 +206,7 @@ export default function TaskerDashboardPage() {
   const alertTimeoutRef = useRef<number | null>(null)
   const refreshTimeoutRef = useRef<number | null>(null)
   const hasDashboardDataRef = useRef(false)
+  const observedSocketConnectionRef = useRef(false)
   const loadDashboardRef = useRef<(initial?: boolean, options?: { silent?: boolean }) => Promise<void>>(async () => {})
 
   const taskerName = session?.user?.name || 'Anonymous'
@@ -491,13 +492,16 @@ export default function TaskerDashboardPage() {
       return
     }
 
+    observedSocketConnectionRef.current = false
     const socket = acquireSharedSocket()
     const handleConnect = () => {
+      const isReconnect = observedSocketConnectionRef.current
+      observedSocketConnectionRef.current = true
       setSocketHealthy(true)
       socket.emit('tasks:watch', {
         taskerMode: taskerProfile.taskerMode || 'live',
       })
-      if (hasDashboardDataRef.current) void loadDashboardRef.current(false, { silent: true })
+      if (isReconnect && hasDashboardDataRef.current) void loadDashboardRef.current(false, { silent: true })
     }
     const handleDisconnect = () => {
       setSocketHealthy(false)

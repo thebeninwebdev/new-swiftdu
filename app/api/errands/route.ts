@@ -105,8 +105,29 @@ export async function GET(request: NextRequest) {
     const fast = request.nextUrl.searchParams.get('fast') === 'true'
     const limit = Math.max(0, Number(request.nextUrl.searchParams.get('limit') || 0))
     const safeSortBy = allowedSortFields.has(sortBy) ? sortBy : 'createdAt'
+    const session = await auth.api.getSession({ headers: request.headers })
+    const authenticatedTasker = session?.user?.id
+      ? await Tasker.findOne({ userId: session.user.id })
+          .select('_id taskerMode isVerified')
+          .lean()
+      : null
+
+    if (accepted === 'true') {
+      if (!session?.user?.id) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
+      if (!taskerId) {
+        return NextResponse.json({ error: 'taskerId is required' }, { status: 400 })
+      }
+      if (!authenticatedTasker || String(authenticatedTasker._id) !== taskerId) {
+        return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+      }
+    }
+
     const taskerForMode = taskerId
-      ? await Tasker.findById(taskerId).select('taskerMode isVerified').lean()
+      ? String(authenticatedTasker?._id || '') === taskerId
+        ? authenticatedTasker
+        : await Tasker.findById(taskerId).select('taskerMode isVerified').lean()
       : null
 
     // Keep the mode filter in $and so later available-task $or clauses cannot replace it.
@@ -187,10 +208,16 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const session = await auth.api.getSession({ headers: request.headers })
+    if (accepted === 'true') {
+      return NextResponse.json(orders, {
+        headers: {
+          'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        },
+      })
+    }
     const account = session?.user?.id ? await User.findById(session.user.id).select('gender').lean() : null
     const visibleOrders = orders.filter(order =>
-      (session?.user?.taskerId && String(order.taskerId) === session.user.taskerId) || canTaskerDeliver(order, account?.gender)
+      (authenticatedTasker && String(order.taskerId) === String(authenticatedTasker._id)) || canTaskerDeliver(order, account?.gender)
     )
     return NextResponse.json(visibleOrders, {
       headers: {

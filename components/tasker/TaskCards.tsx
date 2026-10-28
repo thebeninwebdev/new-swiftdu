@@ -36,6 +36,7 @@ export function TaskCard({ task, active, now, onAccept, accepting = false }: { t
   const deadline = task.dueDate || task.deadline || task.deadlineDate
   return <article className={`${workCard} transition hover:border-violet-300`}>
     <div className="flex items-center justify-between gap-2"><CategoryBadge type={task.taskType} /><strong className="text-lg tracking-tight text-violet-700 dark:text-violet-300">{convertToNaira(taskerEarnings(task))}</strong></div>
+    {active && <p className="mt-2 inline-flex rounded-full bg-sky-100 px-2.5 py-1 text-xs font-bold text-sky-700 dark:bg-sky-950/50 dark:text-sky-300">In progress{paid ? ' · Payment confirmed' : ''}</p>}
     {task.isTestOrder && <p className="mt-2 text-xs font-semibold text-violet-700">Training task · simulated earnings</p>}
     <p className="mt-4 font-bold text-slate-900 dark:text-white">{task.isBatch ? `INDOMIE BATCH · ${task.orderCount} orders` : task.cafeInquiry ? `Check availability at ${task.store || 'the cafe'}` : task.store || categoryLabels[task.taskType]}</p>
     <p className="mt-1 flex items-center gap-2 text-sm text-slate-500"><ArrowRight size={14} />{task.location || 'See task instructions'}</p>

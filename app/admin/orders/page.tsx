@@ -148,6 +148,8 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
   const [orders, setOrders] = useState<Order[]>([])
   const [isFetching, setIsFetching] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
+  const [sessionName, setSessionName] = useState('')
   const [statusFilter, setStatusFilter] = useState(initialStatus)
   const [taskTypeFilter, setTaskTypeFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
@@ -177,12 +179,17 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
   }, [router])
 
   // Fetch orders
+  useEffect(() => {
+    const timer = window.setTimeout(() => setDebouncedSearchTerm(searchTerm.trim()), 350)
+    return () => window.clearTimeout(timer)
+  }, [searchTerm])
+
   const fetchOrders = useCallback(async () => {
     setIsFetching(true)
     try {
       const params = new URLSearchParams({
         page: currentPage.toString(),
-        search: searchTerm,
+        search: debouncedSearchTerm,
         status: statusFilter,
         taskType: taskTypeFilter,
         source: sourceFilter,
@@ -199,12 +206,13 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
 
       setOrders(data.orders)
       setTotalPages(data.totalPages)
+      setSessionName(data.session?.name || '')
     } catch {
       toast.error('Failed to load orders')
     } finally {
       setIsFetching(false)
     }
-  }, [currentPage, searchTerm, statusFilter, taskTypeFilter, sourceFilter, declinedFilter])
+  }, [currentPage, debouncedSearchTerm, statusFilter, taskTypeFilter, sourceFilter, declinedFilter])
 
   useEffect(() => {
     if (typeof window === 'undefined') return
@@ -300,7 +308,7 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">Order Management</h1>
-              <p className="text-slate-500 mt-1">Monitor and manage all platform orders</p>
+              <p className="text-slate-500 mt-1">Current academic session orders only{sessionName ? ` · ${sessionName}` : ''}</p>
             </div>
             <Badge variant="secondary" className="w-fit px-3 py-1">
               Admin Panel
@@ -319,7 +327,7 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
                 <Input
                   placeholder="Search orders..."
                   value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
+                  onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1) }}
                   className="pl-9"
                 />
               </div>

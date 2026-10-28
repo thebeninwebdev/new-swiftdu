@@ -5,6 +5,18 @@ import { Order } from '@/models/order'
 import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
 import mongoose from 'mongoose'
+import { AcademicSession } from '@/models/academic-session'
+
+const ADMIN_ORDER_FIELDS = [
+  'userId', 'source', 'customerPhone', 'customerName', 'taskType', 'description',
+  'amount', 'commission', 'platformFee', 'taskerFee', 'totalAmount', 'noteSize',
+  'numberOfPages', 'copyNotesType', 'copyNotesPages', 'deadline', 'dueDate',
+  'deadlineDate', 'deadlineValue', 'deadlineUnit', 'location', 'store', 'status',
+  'taskerId', 'bookedAt', 'acceptedAt', 'cancelledAt', 'isDeclinedTask',
+  'declinedMessage', 'declinedAt', 'paymentFailureReason', 'cafeInquiry',
+  'cafeInquiryStatus', 'cafeAvailableItems', 'cafeSelectedItems', 'createdAt',
+  'updatedAt',
+].join(' ')
 
 // ─── GET /api/admin/orders ──────────────────────────────────────────────────
 // Returns paginated list of orders with user and tasker details.
@@ -26,8 +38,24 @@ export async function GET(req: NextRequest) {
     const limit = 20
     const skip = (page - 1) * limit
 
+    const currentSession = await AcademicSession.findOne({ isActive: true })
+      .select('_id name startDate endDate')
+      .lean()
+
+    if (!currentSession) {
+      return NextResponse.json(
+        { error: 'No active academic session is configured.' },
+        { status: 409 }
+      )
+    }
+
     // Build filters
-    const filters: Record<string, unknown> = {}
+    const filters: Record<string, unknown> = {
+      createdAt: {
+        $gte: currentSession.startDate,
+        $lte: currentSession.endDate,
+      },
+    }
 
     const search = searchParams.get('search')
     if (search) {
@@ -60,11 +88,15 @@ export async function GET(req: NextRequest) {
     }
 
     // Get orders with user and tasker details
-    const orders = await Order.find(filters)
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(limit)
-      .lean()
+    const [orders, totalOrders] = await Promise.all([
+      Order.find(filters)
+        .select(ADMIN_ORDER_FIELDS)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Order.countDocuments(filters),
+    ])
 
     // Get user details
     const userIds = [
@@ -74,24 +106,25 @@ export async function GET(req: NextRequest) {
           .filter((id): id is string => Boolean(id && mongoose.Types.ObjectId.isValid(id)))
       )
     ]
-    const users = await User.find({ _id: { $in: userIds } })
-      .select('_id name email')
-      .lean()
+    // Get tasker details
+    const taskerIds = [...new Set(orders
+      .map(o => o.taskerId)
+      .filter((id): id is NonNullable<typeof id> => Boolean(id))
+      .map(id => id.toString()))]
+
+    const [users, taskers] = await Promise.all([
+      User.find({ _id: { $in: userIds } })
+        .select('_id name email')
+        .lean(),
+      Tasker.find({ _id: { $in: taskerIds } })
+        .select('_id userId')
+        .populate('userId', 'name')
+        .lean(),
+    ])
 
     const userMap = Object.fromEntries(
       users.map(u => [u._id.toString(), u])
     )
-
-    // Get tasker details
-    const taskerIds = orders
-      .map(o => o.taskerId)
-      .filter((id): id is NonNullable<typeof id> => Boolean(id))
-      .map(id => id.toString())
-
-    const taskers = await Tasker.find({ _id: { $in: taskerIds } })
-      .select('_id userId')
-      .populate('userId', 'name')
-      .lean()
 
     const taskerMap = Object.fromEntries(
       taskers.map((tasker) => {
@@ -121,14 +154,19 @@ export async function GET(req: NextRequest) {
       })()
     }))
 
-    const totalOrders = await Order.countDocuments(filters)
     const totalPages = Math.ceil(totalOrders / limit)
 
     return NextResponse.json({
       orders: ordersWithDetails,
       currentPage: page,
       totalPages,
-      totalOrders
+      totalOrders,
+      session: {
+        id: currentSession._id.toString(),
+        name: currentSession.name,
+        startDate: currentSession.startDate,
+        endDate: currentSession.endDate,
+      },
     })
 
   } catch (error) {
