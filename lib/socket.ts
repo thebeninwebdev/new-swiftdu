@@ -1,9 +1,5 @@
 import type { CafeInquiryFields } from '@/lib/cafe-inquiry'
-import type { Server as SocketIOServer } from 'socket.io'
-
-declare global {
-  var __swiftDuIo: SocketIOServer | undefined
-}
+import Ably from 'ably'
 
 export type OrderSocketPayload = CafeInquiryFields & {
   _id: string
@@ -127,14 +123,6 @@ type SocketOrderLike = CafeInquiryFields & {
   createdInMode?: string
 }
 
-export function setSocketServer(io: SocketIOServer) {
-  globalThis.__swiftDuIo = io
-}
-
-export function getSocketServer() {
-  return globalThis.__swiftDuIo
-}
-
 function serializeId(value?: { toString(): string } | string | null) {
   if (!value) {
     return undefined
@@ -219,24 +207,49 @@ export function toOrderSocketPayload(order: SocketOrderLike): OrderSocketPayload
 }
 
 export function emitOrderUpdated(order: SocketOrderLike) {
-  const io = getSocketServer()
+  // Existing mutation routes remain fire-and-forget. Order creation uses the
+  // exported promise below so Vercel can keep the publish alive with waitUntil.
+  void publishOrderUpdated(order).catch((error) => {
+    const orderId = serializeId(order._id)
+    console.error('[realtime] failed to publish order update', { orderId, error })
+  })
+}
 
-  if (!io) {
-    return
-  }
-
+export async function publishOrderUpdated(order: SocketOrderLike) {
   const payload = toOrderSocketPayload(order)
 
   if (!payload._id || !payload.userId) {
     return
   }
 
-  io.to(payload.isTestOrder ? 'taskers:training' : 'taskers:live').emit('tasks:updated', payload)
-  if (!payload.isTestOrder) {
-    io.to('taskers').emit('tasks:updated', payload)
+  await publishOrderUpdatedPayload(payload)
+}
+
+async function publishOrderUpdatedPayload(payload: OrderSocketPayload) {
+  const key = process.env.ABLY_API_KEY
+  if (!key) {
+    console.warn('[realtime] ABLY_API_KEY is not configured; update was not published', { orderId: payload._id })
+    return
   }
-  const rooms = [`user:${payload.userId}`, `order:${payload._id}`]
-  if (payload.taskerId) rooms.push(`tasker:${payload.taskerId}`)
-  // A socket in multiple rooms receives this update once.
-  io.to(rooms).emit('order:updated', payload)
+
+  const client = new Ably.Rest(key)
+  const publications = getOrderRealtimePublications(payload).map(({ channel, event }) =>
+    client.channels.get(channel).publish(event, event === 'tasks:updated' ? toTaskDiscoveryPayload(payload) : payload),
+  )
+  await Promise.all(publications)
+}
+
+export function getOrderRealtimePublications(payload: Pick<OrderSocketPayload, 'userId' | 'taskerId' | 'isTestOrder'>) {
+  return [
+    { channel: `user:${payload.userId}`, event: 'order:updated' as const },
+    ...(payload.taskerId ? [{ channel: `tasker:${payload.taskerId}`, event: 'order:updated' as const }] : []),
+    { channel: payload.isTestOrder ? 'tasks:training' : 'tasks:live', event: 'tasks:updated' as const },
+  ]
+}
+
+function toTaskDiscoveryPayload(payload: OrderSocketPayload) {
+  // Pending tasks are intentionally discoverable. Once assigned, only publish enough
+  // information for other taskers to remove/reconcile their local discovery cards.
+  if (payload.status === 'pending' && !payload.taskerId) return payload
+  return { _id: payload._id, status: payload.status, taskerId: payload.taskerId, isTestOrder: payload.isTestOrder }
 }

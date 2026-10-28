@@ -133,10 +133,18 @@ type PushPayload = {
   title?: string; body?: string; icon?: string; badge?: string
   image?: string; tag?: string; url?: string
 }
-function notificationTarget(value?: string) {
+function notificationTarget(value?: string, tag?: string) {
   try {
     const url = new URL(value || '/tasker-dashboard', self.location.origin)
-    if (url.origin === self.location.origin) return url.href
+    if (url.origin === self.location.origin) {
+      // Older new-task pushes linked to the retired standalone task list. Keep
+      // notifications already displayed on a device useful after this deploy.
+      if (url.pathname === '/available-tasks') {
+        const orderId = tag?.match(/^new-task-([a-f\d]{24})$/i)?.[1]
+        return new URL(orderId ? `/tasker-dashboard/${orderId}?preview=true` : '/tasker-dashboard', self.location.origin).href
+      }
+      return url.href
+    }
   } catch { /* Use the existing tasker destination for malformed payloads. */ }
   return new URL('/tasker-dashboard', self.location.origin).href
 }
@@ -148,7 +156,7 @@ function showSwiftDUNotification(payload: PushPayload) {
     badge: asset(payload.badge || '/pwa-192x192.png?v=swiftdu-symbol-v1'),
     image: asset(payload.image || '/logo.png?v=swiftdu-symbol-v1'),
     tag: payload.tag || 'swiftdu-update',
-    data: { url: notificationTarget(payload.url) },
+    data: { url: notificationTarget(payload.url, payload.tag) },
   }
   return self.registration.showNotification(payload.title || 'SwiftDU', options)
 }
@@ -173,7 +181,7 @@ self.addEventListener('message', (event) => {
 })
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const target = notificationTarget(event.notification.data?.url)
+  const target = notificationTarget(event.notification.data?.url, event.notification.tag)
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     const exact = windows.find((client) => client.url === target)

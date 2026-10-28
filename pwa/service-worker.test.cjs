@@ -84,6 +84,20 @@ test('notification click focuses exact destination or opens it; local test messa
   await sw.dispatch('message', { data: { type: 'SWIFTDU_SHOW_TEST_NOTIFICATION' } })
   assert.equal(sw.shown[0].title, 'Swift DU Local Test')
 })
+test('legacy available-task notifications open the task preview in the tasker dashboard', async () => {
+  const sw = worker()
+  const orderId = '507f1f77bcf86cd799439011'
+  await sw.dispatch('push', { data: { json: () => ({ url: '/available-tasks', tag: `new-task-${orderId}` }) } })
+  assert.equal(sw.shown[0].data.url, `https://swiftdu.test/tasker-dashboard/${orderId}?preview=true`)
+
+  const legacyNotification = {
+    data: { url: 'https://swiftdu.test/available-tasks' },
+    tag: `new-task-${orderId}`,
+    close: () => {},
+  }
+  await sw.dispatch('notificationclick', { notification: legacyNotification })
+  assert.equal(sw.opened[0], `https://swiftdu.test/tasker-dashboard/${orderId}?preview=true`)
+})
 test('activation only deletes audited legacy caches and navigation requests bypass HTTP cache', async () => {
   const sw = worker()
   await sw.dispatch('activate')

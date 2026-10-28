@@ -4,6 +4,7 @@ import { connectDB } from '@/lib/db'
 import {User} from '@/models/user'
 import { Order } from '@/models/order'
 import { buildAdminUserSearch } from '@/lib/admin-user-search'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 
 function getUserLookupConditions(userId?: string | null) {
   const conditions: Record<string, unknown>[] = []
@@ -25,12 +26,9 @@ function getUserLookupConditions(userId?: string | null) {
 
 export async function GET(req: NextRequest) {
   try {
-    // TODO: Add admin auth check
-    // const session = await authClient.getSession()
-    // const user = session?.data?.user
-    // if (!user || user.role !== 'admin') {
-    //   return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
-    // }
+    if (!await getAdminDashboardAccess(req.headers)) {
+      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+    }
 
     await connectDB()
 

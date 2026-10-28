@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-import { auth } from '@/lib/auth'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { connectDB } from '@/lib/db'
-import { normalizeExcoRole } from '@/lib/exco-constants'
 import Tasker from '@/models/tasker'
 import { User } from '@/models/user'
 import { issueTaskerOnboardingLink, synchronizeTaskerAccountLink } from '@/lib/tasker-onboarding'
@@ -12,18 +11,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth.api.getSession({
-      headers: req.headers,
-    })
-
-    const excoRole = normalizeExcoRole(
-      (session?.user as { excoRole?: string | null } | undefined)?.excoRole
-    )
-
-    if (
-      !session?.user ||
-      (session.user.role !== 'admin' && !excoRole)
-    ) {
+    if (!await getAdminDashboardAccess(req.headers)) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 
@@ -37,10 +25,6 @@ export async function PATCH(
         { error: 'action must be "approve", "reject", "suspend", or "activate".' },
         { status: 400 }
       )
-    }
-
-    if (['suspend', 'activate'].includes(action) && session.user.role !== 'admin' && excoRole !== 'COO') {
-      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 
     const hasBankDetails = bankDetails !== undefined

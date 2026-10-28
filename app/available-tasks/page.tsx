@@ -104,7 +104,6 @@ export default function AvailableTasksPage() {
     }
 
     const handleConnect = () => {
-      socket.emit('tasks:watch')
       void fetchAvailableTasks(false)
     }
 
@@ -113,9 +112,6 @@ export default function AvailableTasksPage() {
     handleConnect()
 
     return () => {
-      if (socket.connected) {
-        socket.emit('tasks:unwatch')
-      }
       socket.off('connect', handleConnect)
       socket.off('tasks:updated', handleTaskUpdate)
       releaseSharedSocket(socket)

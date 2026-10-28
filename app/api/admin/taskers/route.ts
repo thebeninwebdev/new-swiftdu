@@ -3,8 +3,7 @@ import { connectDB } from '@/lib/db'
 import Tasker from '@/models/tasker'
 import {User} from '@/models/user'
 import { getTaskerMode } from '@/lib/test-orders'
-import { auth } from '@/lib/auth'
-import { normalizeExcoRole } from '@/lib/exco-constants'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { reviewTaskerApplication } from '@/lib/tasker-application-review'
 
 // ─── GET /api/admin/taskers?status=pending|verified|rejected ─────────────────
@@ -13,22 +12,11 @@ import { reviewTaskerApplication } from '@/lib/tasker-application-review'
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth.api.getSession({ headers: req.headers })
-    const excoRole = normalizeExcoRole(
-      (session?.user as { excoRole?: string | null } | undefined)?.excoRole
-    )
-    if (!session?.user || (session.user.role !== 'admin' && !excoRole)) {
+    if (!await getAdminDashboardAccess(req.headers)) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 
     // ── Auth guard ─────────────────────────────────────────────────────────
-    // const session = await authClient.getSession()
-    // const user = session?.data?.user
-
-    // if (!user || user.role !== 'admin') {
-    //   return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
-    // }
-
     await connectDB()
 
     const { searchParams } = new URL(req.url)

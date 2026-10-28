@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { connectDB } from '@/lib/db'
 import {Review} from '@/models/review'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 
 // ─── PATCH /api/admin/reviews/[id] ──────────────────────────────────────────
 // Update review visibility or delete review.
@@ -11,6 +12,10 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
+    if (!await getAdminDashboardAccess(req.headers)) {
+      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+    }
+
     await connectDB()
 
     const { action } = await req.json()
@@ -36,7 +41,7 @@ export async function PATCH(
       return NextResponse.json({ message: 'Review deleted successfully' })
     }
 
-    const updateData: any = {
+    const updateData: { updatedAt: Date; isVisible: boolean } = {
       updatedAt: new Date(),
       isVisible: action === 'show'
     }

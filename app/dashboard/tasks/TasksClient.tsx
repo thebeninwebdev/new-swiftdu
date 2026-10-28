@@ -7,7 +7,6 @@ import { type CafeInquiryFields } from '@/lib/cafe-inquiry'
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertCircle, ArrowLeft, CheckCircle2, Clock, CreditCard, Loader2, Package, RefreshCw, Store, XCircle, ChevronRight } from 'lucide-react'
-import type { Socket } from 'socket.io-client'
 import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
@@ -18,7 +17,7 @@ import { mergeOrderUpdate } from '@/lib/order-sync'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { OrderMascot } from '@/components/order-mascot'
 import type { SwiftySearchPhase } from '@/components/swifty/Swifty'
-import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
+import { acquireSharedSocket, releaseSharedSocket, type SharedRealtimeClient } from '@/lib/client-socket'
 import { fetchWithTimeout } from '@/lib/client-fetch'
 import { useNetworkState } from '@/hooks/use-network-state'
 import { ConnectionNotice } from '@/components/ConnectionNotice'
@@ -268,7 +267,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
   const fetchingRef = useRef(false)
   const queuedReloadRef = useRef(false)
   const queuedInitialReloadRef = useRef(false)
-  const socketRef = useRef<Socket | null>(null)
+  const socketRef = useRef<SharedRealtimeClient | null>(null)
   const currentOrderRef = useRef<Order | null>(null)
   const requestGenerationRef = useRef(0)
   const realtimeGenerationRef = useRef(0)
@@ -458,10 +457,6 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
     observedSocketConnectionRef.current = false
     const socket = acquireSharedSocket()
     socketRef.current = socket
-    const watchCurrentOrder = () => {
-      const orderId = trackedOrderIdRef.current || currentOrderRef.current?._id
-      if (orderId) socket.emit('order:watch', orderId)
-    }
     const scheduleRevalidation = () => {
       if (realtimeRefreshTimerRef.current) return
       realtimeRefreshTimerRef.current = window.setTimeout(() => {
@@ -473,7 +468,6 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
       const isReconnect = observedSocketConnectionRef.current
       observedSocketConnectionRef.current = true
       setSocketHealthy(true)
-      watchCurrentOrder()
       if (isReconnect && currentOrderRef.current) scheduleRevalidation()
     }
     const handleDisconnect = () => setSocketHealthy(false)
@@ -503,10 +497,7 @@ export default function OrdersPage({ trackingOrderId }: OrdersPageProps = {}) {
     const orderId = currentOrder?._id
     const socket = socketRef.current
     if (!socket || !orderId) return
-    socket.emit('order:watch', orderId)
-    return () => {
-      socket.emit('order:unwatch', orderId)
-    }
+    return undefined
   }, [currentOrder?._id])
   useEffect(() => {
     if (!currentOrder?.taskerId) {

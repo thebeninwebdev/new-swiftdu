@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { auth } from "@/lib/auth";
+import { getAdminDashboardAccess } from "@/lib/admin-access";
 import { connectDB } from "@/lib/db";
 import { AnalyticsEventModel } from "@/models/analytics";
 
@@ -20,9 +20,7 @@ function normalizeLimit(value: string | null, fallback = 8) {
 }
 
 export async function GET(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: request.headers });
-
-  if (!session?.user || session.user.role !== "admin") {
+  if (!(await getAdminDashboardAccess(request.headers))) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 

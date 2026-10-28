@@ -11,9 +11,18 @@ const compiled = ts.transpileModule(source, {
 const exportsObject = {}
 vm.runInNewContext(compiled, {
   exports: exportsObject,
-  require: (name) => name === 'react' ? { useCallback: (fn) => fn, useEffect: () => {}, useState: () => [] } : require(name),
+  require: (name) => name === 'react' ? {
+    useCallback: (fn) => fn,
+    useEffect: () => {},
+    useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useSyncExternalStore: (_subscribe, _getSnapshot, getServerSnapshot) => getServerSnapshot(),
+  } : require(name),
 })
-const { prefersLowData } = exportsObject
+const { prefersLowData, useNetworkState } = exportsObject
+
+test('server network state starts online so hydration uses a stable snapshot', () => {
+  assert.equal(useNetworkState().online, true)
+})
 
 test('automatic low-data mode follows Save-Data and slow connection hints', () => {
   assert.equal(prefersLowData('automatic', { saveData: true, effectiveType: '4g' }), true)

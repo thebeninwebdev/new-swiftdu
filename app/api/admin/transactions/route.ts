@@ -10,7 +10,7 @@ import {
   excludeTestOrders,
   getEffectivePlatformFee,
 } from '@/lib/order-finance';
-import { auth } from '@/lib/auth';
+import { getAdminDashboardAccess } from '@/lib/admin-access';
 import { buildCreatedAtPeriodMatch, resolveFinancePeriod } from '@/lib/finance-periods';
 
 type TransactionOrder = {
@@ -31,8 +31,7 @@ type TransactionOrder = {
 
 export async function GET(request: NextRequest) {
   try {
-    const session = await auth.api.getSession({ headers: request.headers });
-    if (session?.user?.role !== 'admin') return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
+    if (!await getAdminDashboardAccess(request.headers)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 });
 
     await connectDB();
 

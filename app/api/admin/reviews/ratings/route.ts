@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { connectDB } from '@/lib/db'
 import { Review } from '@/models/review'
 import Tasker from '@/models/tasker'
 
 export async function GET(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: request.headers })
-  if (!session?.user || session.user.role !== 'admin') return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+  if (!await getAdminDashboardAccess(request.headers)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
   await connectDB()
   const selectedBand = Number(new URL(request.url).searchParams.get('band') || '')
   const grouped = await Review.aggregate<{ _id: unknown; averageRating: number; reviewCount: number }>([

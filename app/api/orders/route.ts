@@ -10,7 +10,7 @@ import { User } from '@/models/user';
 import { auth } from '@/lib/auth';
 import { Review } from '@/models/review';
 import { ACTIVE_ORDER_STATUSES } from '@/lib/order-status';
-import { emitOrderUpdated } from '@/lib/socket';
+import { emitOrderUpdated, publishOrderUpdated } from '@/lib/socket';
 import { ensureCompletionTimer } from '@/lib/completion-timer';
 import {
   calculateOrderPricing,
@@ -50,10 +50,12 @@ import { getNextAvailableIndomieRun, getNextTrainingIndomieRun, isRunStillBookab
 import { randomUUID } from 'node:crypto';
 import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings';
 import { formatMinute, getIndomieServiceMode, getNextOpeningTime, getOperationsSettings, getOperationsStatus } from '@/lib/operations-settings';
+import { persistThenScheduleOrderCreation, type OrderCreationBackgroundJob } from '@/lib/order-creation-background';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 
 export async function POST(request: NextRequest) {
+  const orderCreateStartedAt = performance.now()
   const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() || undefined
   try {
     await connectDB();
@@ -65,6 +67,7 @@ export async function POST(request: NextRequest) {
     if (!session || !session.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    const authCompletedAt = performance.now()
 
     // A retry must only ever see its own original order.
     if (idempotencyKey) {
@@ -376,6 +379,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    const validationCompletedAt = performance.now()
     const vendorBacked = normalizedTaskType === 'shopping' || normalizedTaskType === 'restaurant' || normalizedTaskType === PRINTING_TASK_TYPE
     const selectedVendorId = typeof vendorId === 'string' && vendorId ? vendorId : ''
     // A restaurant bought "from anywhere" has no actual vendor. The client may
@@ -515,6 +519,7 @@ export async function POST(request: NextRequest) {
     const totalAmount = serviceFeeDiscountApplied
       ? Math.max(0, pricing.totalAmount - pricing.serviceFee + (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
       : pricing.totalAmount;
+    const pricingCompletedAt = performance.now()
 
     const bookedAt = new Date();
     const isScheduledIndomie = normalizedTaskType === INDOMIE_TASK_TYPE && indomieMode === 'batching'
@@ -620,29 +625,111 @@ export async function POST(request: NextRequest) {
         : undefined,
     });
 
+    let dbCommitStartedAt = performance.now()
+    let dbCommitCompletedAt = dbCommitStartedAt
     try {
-      if (isScheduledIndomie) {
-        await reserveIndomieCapacity({
-          location,
-          isTestOrder,
-          requiredUnits: order.indomieSlotCount,
-          save: async (taskerId) => {
-            order.taskerId = taskerId
-            const assignedTasker = await (await import('@/models/tasker')).default.findById(taskerId).select('userId').lean()
-            const assignedUser = assignedTasker?.userId ? await User.findById(assignedTasker.userId).select('name').lean() : null
-            order.taskerName = assignedUser?.name || 'Your tasker'
-            order.acceptedBy = assignedTasker?.userId ? String(assignedTasker.userId) : undefined
-            order.acceptedAt = bookedAt
-            order.status = 'in_progress'
-            order.batchStatus = 'booked'
-            order.batchId = `indomie:${order.indomieRunAt?.toISOString()}:${taskerId}:${order.deliveryDestinationKey || 'campus'}`
-            await saveNewOrderWithBonus(order, pricing)
+      await persistThenScheduleOrderCreation({
+        persist: async () => {
+          dbCommitStartedAt = performance.now()
+          try {
+            if (isScheduledIndomie) {
+              await reserveIndomieCapacity({
+                location,
+                isTestOrder,
+                requiredUnits: order.indomieSlotCount,
+                save: async (taskerId) => {
+                  order.taskerId = taskerId
+                  const assignedTasker = await (await import('@/models/tasker')).default.findById(taskerId).select('userId').lean()
+                  const assignedUser = assignedTasker?.userId ? await User.findById(assignedTasker.userId).select('name').lean() : null
+                  order.taskerName = assignedUser?.name || 'Your tasker'
+                  order.acceptedBy = assignedTasker?.userId ? String(assignedTasker.userId) : undefined
+                  order.acceptedAt = bookedAt
+                  order.status = 'in_progress'
+                  order.batchStatus = 'booked'
+                  order.batchId = `indomie:${order.indomieRunAt?.toISOString()}:${taskerId}:${order.deliveryDestinationKey || 'campus'}`
+                  await saveNewOrderWithBonus(order, pricing)
+                  return order
+                },
+              })
+            } else {
+              await saveNewOrderWithBonus(order, pricing)
+            }
             return order
-          },
-        })
-      } else {
-        await saveNewOrderWithBonus(order, pricing)
-      }
+          } finally {
+            dbCommitCompletedAt = performance.now()
+          }
+        },
+        getOrderId: (persistedOrder) => persistedOrder._id.toString(),
+        createJobs: (persistedOrder) => {
+          const jobs: OrderCreationBackgroundJob[] = [
+            {
+              channel: 'realtime',
+              run: () => publishOrderUpdated(persistedOrder),
+            },
+          ]
+
+          // Orders held for an Indomie collection window are deliberately invisible
+          // until the release materializer creates one batch notification.
+          if (persistedOrder.batchingStatus !== 'waiting' && !isScheduledIndomie) {
+            jobs.push({
+              channel: 'push',
+              run: async () => {
+                const result = await sendPushNotification({
+                  audience: { roles: ['tasker'], taskerGenderRestriction: persistedOrder.taskerGenderRestriction || null, taskerMode: persistedOrder.isTestOrder ? 'training' : 'live' },
+                  title: persistedOrder.isTestOrder ? '[Training] New Task Available' : 'New Task Available',
+                  body: isCafeInquiry
+                    ? `Cafe inquiry in ${location} - NGN ${pricing.serviceFee.toLocaleString()} service fee`
+                    : `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${totalAmount.toLocaleString()}`,
+                  url: `/tasker-dashboard/${persistedOrder._id.toString()}?preview=true`,
+                  tag: `new-task-${persistedOrder._id.toString()}`,
+                })
+
+                if (result.skipped || result.deliveredCount + (result.expiredCount || 0) < result.recipientCount) {
+                  console.warn('[Orders POST Notification Delivery]', {
+                    orderId: persistedOrder._id.toString(),
+                    channel: 'push',
+                    recipientCount: result.recipientCount,
+                    deliveredCount: result.deliveredCount,
+                    expiredCount: result.expiredCount || 0,
+                    skipped: result.skipped,
+                    reason: result.reason,
+                  })
+                }
+                return result
+              },
+            })
+          }
+
+          if (shouldSendOrderNotification(persistedOrder) || persistedOrder.isTestOrder) {
+            jobs.push({
+              channel: 'telegram',
+              run: async () => {
+                const result = await notifyAdminsOfOrderEvent({
+                  event: 'created',
+                  order: persistedOrder,
+                  actorName: session.user.name || null,
+                  actorEmail: session.user.email || null,
+                  actorRole: 'customer',
+                })
+
+                if (result.skipped || result.deliveredCount < result.recipientCount) {
+                  console.warn('[Orders POST Notification Delivery]', {
+                    orderId: persistedOrder._id.toString(),
+                    channel: 'telegram',
+                    recipientCount: result.recipientCount,
+                    deliveredCount: result.deliveredCount,
+                    skipped: result.skipped,
+                    reason: result.reason,
+                  })
+                }
+                return result
+              },
+            })
+          }
+
+          return jobs
+        },
+      })
     } catch (error) {
       if (error instanceof Error && error.message.includes('No compatible Live tasker capacity')) {
         return NextResponse.json({ error: error.message, code: 'INDOMIE_BATCH_FULL' }, { status: 409 })
@@ -650,50 +737,15 @@ export async function POST(request: NextRequest) {
       throw error
     }
 
-    emitOrderUpdated(order);
-
-    // Orders held for an Indomie collection window are deliberately invisible
-    // until the release materializer creates one batch notification.
-    if (order.batchingStatus !== 'waiting' && !isScheduledIndomie) {
-      const taskerPushResult = await sendPushNotification({
-        audience: { roles: ['tasker'], taskerGenderRestriction: order.taskerGenderRestriction || null, taskerMode: order.isTestOrder ? 'training' : 'live' },
-        title: order.isTestOrder ? '[Training] New Task Available' : 'New Task Available',
-        body: isCafeInquiry
-          ? `Cafe inquiry in ${location} - NGN ${pricing.serviceFee.toLocaleString()} service fee`
-          : `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${totalAmount.toLocaleString()}`,
-        url: '/available-tasks',
-        tag: `new-task-${order._id.toString()}`,
-      });
-
-      if (
-        taskerPushResult.skipped ||
-        taskerPushResult.deliveredCount + (taskerPushResult.expiredCount || 0) <
-          taskerPushResult.recipientCount
-      ) {
-        console.warn('[Orders POST Tasker Push Notification]:', taskerPushResult);
-      }
-    }
-
-    if (shouldSendOrderNotification(order) || order.isTestOrder) {
-      try {
-        const adminAlertResult = await notifyAdminsOfOrderEvent({
-          event: 'created',
-          order,
-          actorName: session.user.name || null,
-          actorEmail: session.user.email || null,
-          actorRole: 'customer',
-        });
-
-        if (
-          adminAlertResult.skipped ||
-          adminAlertResult.deliveredCount < adminAlertResult.recipientCount
-        ) {
-          console.warn('[Orders POST Admin Notification]:', adminAlertResult);
-        }
-      } catch (notificationError) {
-        console.error('[Orders POST Admin Notification Error]:', notificationError);
-      }
-    }
+    const responseReadyAt = performance.now()
+    console.info('[Orders POST Timing]', {
+      orderId: order._id.toString(),
+      ORDER_CREATE_AUTH_MS: Math.round((authCompletedAt - orderCreateStartedAt) * 100) / 100,
+      ORDER_CREATE_VALIDATION_MS: Math.round((validationCompletedAt - authCompletedAt) * 100) / 100,
+      ORDER_CREATE_PRICING_MS: Math.round((pricingCompletedAt - validationCompletedAt) * 100) / 100,
+      ORDER_CREATE_DB_COMMIT_MS: Math.round((dbCommitCompletedAt - dbCommitStartedAt) * 100) / 100,
+      ORDER_CREATE_TOTAL_RESPONSE_MS: Math.round((responseReadyAt - orderCreateStartedAt) * 100) / 100,
+    })
 
     return NextResponse.json(order, { status: 201 });
   } catch (error) {

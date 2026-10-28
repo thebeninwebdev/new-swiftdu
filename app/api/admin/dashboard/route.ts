@@ -12,7 +12,7 @@ import {
   excludeTestOrders,
 } from '@/lib/order-finance'
 import { getApprovedExpenditureTotal } from '@/lib/expenditures'
-import { auth } from '@/lib/auth'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { buildCreatedAtPeriodMatch, resolveFinancePeriod } from '@/lib/finance-periods'
 
 // ─── GET /api/admin/dashboard ────────────────────────────────────────────────
@@ -27,8 +27,7 @@ export async function GET(request: NextRequest) {
   const activityOffset = (activityPage - 1) * activityLimit
   const activityFetchLimit = activityOffset + activityLimit
   try {
-    const session = await auth.api.getSession({ headers: request.headers })
-    if (session?.user?.role !== 'admin') return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+    if (!await getAdminDashboardAccess(request.headers)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
 
     await connectDB()
     const period = await resolveFinancePeriod({ sessionId: request.nextUrl.searchParams.get('sessionId'), semesterId: request.nextUrl.searchParams.get('semesterId'), allTime: request.nextUrl.searchParams.get('period') === 'all-time' })

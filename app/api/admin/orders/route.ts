@@ -6,6 +6,9 @@ import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
 import mongoose from 'mongoose'
 import { AcademicSession } from '@/models/academic-session'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
+import { IndomieBatch } from '@/models/indomie-batch'
+import { LIVE_ORDER_STATUSES, isAdminOrderStatus } from '@/lib/admin-workspaces'
 
 const ADMIN_ORDER_FIELDS = [
   'userId', 'source', 'customerPhone', 'customerName', 'taskType', 'description',
@@ -24,17 +27,15 @@ const ADMIN_ORDER_FIELDS = [
 
 export async function GET(req: NextRequest) {
   try {
-    // TODO: Add admin auth check
-    // const session = await authClient.getSession()
-    // const user = session?.data?.user
-    // if (!user || user.role !== 'admin') {
-    //   return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
-    // }
+    if (!await getAdminDashboardAccess(req.headers)) {
+      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+    }
 
     await connectDB()
 
     const { searchParams } = new URL(req.url)
-    const page = parseInt(searchParams.get('page') || '1')
+    const requestedPage = Number.parseInt(searchParams.get('page') || '1', 10)
+    const page = Number.isInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1
     const limit = 20
     const skip = (page - 1) * limit
 
@@ -57,6 +58,28 @@ export async function GET(req: NextRequest) {
       },
     }
 
+    if (searchParams.get('view') === 'indomie-batches') {
+      const sessionWindow = { $gte: currentSession.startDate, $lte: currentSession.endDate }
+      const [orders, batches] = await Promise.all([
+        Order.find({ taskType: 'indomie', createdAt: sessionWindow })
+          .select('_id batchId batchStatus batchingStatus batchWindowStart batchWindowEnd indomieRunAt indomieRunStatus scheduledFor indomieReservationGroupId indomiePacks eggCount indomieSlotCount status paymentStatus taskerId taskerName location deliveryDestinationKey isTestOrder createdAt')
+          .sort({ indomieRunAt: -1, scheduledFor: -1, createdAt: -1 })
+          .lean(),
+        IndomieBatch.find({ createdAt: sessionWindow }).sort({ windowStart: -1, createdAt: -1 }).lean(),
+      ])
+
+      return NextResponse.json({
+        orders,
+        batches,
+        session: {
+          id: currentSession._id.toString(),
+          name: currentSession.name,
+          startDate: currentSession.startDate,
+          endDate: currentSession.endDate,
+        },
+      }, { headers: { 'Cache-Control': 'no-store' } })
+    }
+
     const search = searchParams.get('search')
     if (search) {
       filters.$or = [
@@ -65,9 +88,22 @@ export async function GET(req: NextRequest) {
       ]
     }
 
-    const status = searchParams.get('status')
-    if (status && status !== 'all') {
-      filters.status = status
+    const scope = searchParams.get('scope') === 'live' ? 'live' : 'all'
+    const statusParam = searchParams.get('status')
+    const statuses = statusParam && statusParam !== 'all'
+      ? statusParam.split(',').map((value) => value.trim()).filter(Boolean)
+      : []
+    if (statuses.some((status) => !isAdminOrderStatus(status))) {
+      return NextResponse.json({ error: 'Choose a valid order status.' }, { status: 400 })
+    }
+    if (scope === 'live') {
+      const liveStatuses = statuses.length ? statuses : [...LIVE_ORDER_STATUSES]
+      if (liveStatuses.some((status) => !(LIVE_ORDER_STATUSES as readonly string[]).includes(status))) {
+        return NextResponse.json({ error: 'Completed and cancelled orders are not part of the Live workspace.' }, { status: 400 })
+      }
+      filters.status = { $in: liveStatuses }
+    } else if (statuses.length) {
+      filters.status = statuses.length === 1 ? statuses[0] : { $in: statuses }
     }
 
     const taskType = searchParams.get('taskType')
@@ -154,7 +190,7 @@ export async function GET(req: NextRequest) {
       })()
     }))
 
-    const totalPages = Math.ceil(totalOrders / limit)
+    const totalPages = Math.max(1, Math.ceil(totalOrders / limit))
 
     return NextResponse.json({
       orders: ordersWithDetails,
@@ -167,7 +203,7 @@ export async function GET(req: NextRequest) {
         startDate: currentSession.startDate,
         endDate: currentSession.endDate,
       },
-    })
+    }, { headers: { 'Cache-Control': 'no-store' } })
 
   } catch (error) {
     console.error('[GET /api/admin/orders]', error)

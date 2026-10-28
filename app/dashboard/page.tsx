@@ -39,7 +39,6 @@ import {
   Wallet,
   type LucideIcon,
 } from 'lucide-react'
-import { io, type Socket } from 'socket.io-client'
 import { toast } from 'sonner'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Button } from '@/components/ui/button'
@@ -53,6 +52,7 @@ import { useSpeechRecognition } from '@/hooks/use-speech-recognition'
 import { authClient } from '@/lib/auth-client'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { useIdleEffect } from '@/hooks/use-idle-effect'
+import { acquireSharedSocket, releaseSharedSocket, type SharedRealtimeClient } from '@/lib/client-socket'
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 import {
   getCustomerOperationsState,
@@ -369,7 +369,7 @@ export default function ErrandWizardPage() {
   const [exactLocations, setExactLocations] = useState<Array<{ _id: string; name: string }>>([])
   const [exactLocationsLoading, setExactLocationsLoading] = useState(false)
   const [isExcoTrainingMode, setIsExcoTrainingMode] = useState(false)
-  const socketRef = useRef<Socket | null>(null)
+  const socketRef = useRef<SharedRealtimeClient | null>(null)
   const activeOrderRef = useRef<ActiveOrder | null>(null)
   const fetchingActiveOrderRef = useRef(false)
   const isRealtimePausedRef = useRef(false)
@@ -642,7 +642,7 @@ export default function ErrandWizardPage() {
   }, [])
 
   const disconnectSocket = useCallback(() => {
-    socketRef.current?.disconnect()
+    if (socketRef.current) releaseSharedSocket(socketRef.current)
     socketRef.current = null
   }, [])
 
@@ -752,12 +752,8 @@ export default function ErrandWizardPage() {
     }
 
     const activeOrderId = activeOrder._id
-    const socket = io({ withCredentials: true })
+    const socket = acquireSharedSocket()
     socketRef.current = socket
-
-    socket.on('connect', () => {
-      socket.emit('order:watch', activeOrderId)
-    })
 
     socket.on('order:updated', (payload?: ActiveOrderRealtimePayload) => {
       const applied = applyActiveOrderRealtimeUpdate(payload)
@@ -767,15 +763,12 @@ export default function ErrandWizardPage() {
     })
 
     return () => {
-      if (socket.connected) {
-        socket.emit('order:unwatch', activeOrderId)
-      }
       if (socketRef.current === socket) {
-        socket.disconnect()
+        releaseSharedSocket(socket)
         socketRef.current = null
         return
       }
-      socket.disconnect()
+      releaseSharedSocket(socket)
     }
   }, [
     activeOrder?._id,

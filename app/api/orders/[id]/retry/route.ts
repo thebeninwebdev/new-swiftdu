@@ -217,7 +217,7 @@ export async function POST(
         body: `${formatPushTaskType(retriedOrder.taskType)} in ${retriedOrder.location} - NGN ${Number(
           retriedOrder.totalAmount || 0
         ).toLocaleString()}`,
-        url: '/available-tasks',
+        url: `/tasker-dashboard/${retriedOrder._id.toString()}?preview=true`,
         tag: `new-task-${retriedOrder._id.toString()}`,
       });
 

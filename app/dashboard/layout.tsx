@@ -1,6 +1,7 @@
 import { Suspense } from 'react';
 import DashboardMenu from '@/components/dashboard-menu';
 import type { Metadata } from 'next';
+import { AppInstallPromptManager } from '@/components/AppInstallPromptManager';
 
 export const metadata: Metadata = {
   title: 'SwiftDU - Dashboard page',
@@ -21,6 +22,7 @@ export default function RootLayout({
       }
     >
         <DashboardMenu>{children}</DashboardMenu>
+        <AppInstallPromptManager />
     </Suspense>
   );
 }

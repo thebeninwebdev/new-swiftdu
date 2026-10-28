@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { connectDB } from '@/lib/db'
 import Tasker from '@/models/tasker'
 import { reviewTaskerApplication, type ApplicationReview } from '@/lib/tasker-application-review'
@@ -18,8 +18,7 @@ function deterministicSummary(review: ApplicationReview): ReviewSummary {
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth.api.getSession({ headers: request.headers })
-  if (!session?.user || session.user.role !== 'admin') return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+  if (!await getAdminDashboardAccess(request.headers)) return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
   await connectDB()
   const { id } = await params
   const tasker = await Tasker.findById(id).lean()

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Types } from 'mongoose'
 import { connectDB } from '@/lib/db'
-import { auth } from '@/lib/auth'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { User } from '@/models/user'
 
 function getUserLookupConditions({
@@ -37,12 +37,10 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    // TODO: Add admin auth check
-    // const session = await authClient.getSession()
-    // const user = session?.data?.user
-    // if (!user || user.role !== 'admin') {
-    //   return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
-    // }
+    const access = await getAdminDashboardAccess(req.headers)
+    if (!access) {
+      return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
+    }
 
     await connectDB()
 
@@ -114,10 +112,9 @@ export async function PATCH(
         )
       }
 
-      const session = await auth.api.getSession({ headers: req.headers })
       const grantorLookupConditions = getUserLookupConditions({
-        id: session?.user?.id,
-        email: session?.user?.email,
+        id: access.userId,
+        email: access.email,
       })
       const grantor = grantorLookupConditions.length
         ? await User.findOne({ $or: grantorLookupConditions })
@@ -134,9 +131,9 @@ export async function PATCH(
       }
 
       updateData.serviceFeeDiscountEnabled = true
-      updateData.serviceFeeDiscountGrantedByUserId = session?.user?.id
+      updateData.serviceFeeDiscountGrantedByUserId = access.userId
       updateData.serviceFeeDiscountGrantedByName =
-        grantor?.name || session?.user?.name || session?.user?.email || 'SwiftDU team'
+        grantor?.name || access.email || 'SwiftDU team'
       updateData.serviceFeeDiscountGrantedByPhone = grantorPhone
       updateData.serviceFeeDiscountGrantedAt = new Date()
       updateData.serviceFeeDiscountRemainingOrders = normalizedDiscountOrderCount

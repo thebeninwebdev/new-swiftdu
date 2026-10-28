@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 
-import { auth } from '@/lib/auth'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { connectDB } from '@/lib/db'
-import { normalizeExcoRole } from '@/lib/exco-constants'
 import Tasker from '@/models/tasker'
 import { Order } from '@/models/order'
 
@@ -17,14 +16,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth.api.getSession({
-      headers: request.headers,
-    })
-    const excoRole = normalizeExcoRole(
-      (session?.user as { excoRole?: string | null } | undefined)?.excoRole
-    )
-
-    if (!session?.user || (session.user.role !== 'admin' && !excoRole)) {
+    if (!await getAdminDashboardAccess(request.headers)) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
 

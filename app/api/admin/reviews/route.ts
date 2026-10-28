@@ -3,7 +3,7 @@ import { connectDB } from '@/lib/db'
 import {Review} from '@/models/review'
 import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
-import { auth } from '@/lib/auth'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 
 // ─── GET /api/admin/reviews ─────────────────────────────────────────────────
 // Returns paginated list of reviews with user and tasker details.
@@ -11,16 +11,9 @@ import { auth } from '@/lib/auth'
 
 export async function GET(req: NextRequest) {
   try {
-    const session = await auth.api.getSession({ headers: req.headers })
-    if (!session?.user || session.user.role !== 'admin') {
+    if (!await getAdminDashboardAccess(req.headers)) {
       return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
     }
-    // TODO: Add admin auth check
-    // const session = await authClient.getSession()
-    // const user = session?.data?.user
-    // if (!user || user.role !== 'admin') {
-    //   return NextResponse.json({ error: 'Forbidden.' }, { status: 403 })
-    // }
 
     await connectDB()
 
@@ -30,7 +23,7 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit
 
     // Build filters
-    const filters: any = {}
+    const filters: Record<string, unknown> = {}
 
     const taskerId = searchParams.get('taskerId')
     if (taskerId) filters.taskerId = taskerId
@@ -79,7 +72,10 @@ export async function GET(req: NextRequest) {
       .lean()
 
     const taskerMap = Object.fromEntries(
-      taskers.map(t => [t._id.toString(), (t as any).userId?.name || 'Unknown Tasker'])
+      taskers.map(t => [
+        t._id.toString(),
+        (t.userId as { name?: string } | null)?.name || 'Unknown Tasker',
+      ])
     )
 
     // Attach user and tasker details

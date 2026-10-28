@@ -1,7 +1,7 @@
 'use client'
 import { cafeStatusLabels, type CafeInquiryFields } from '@/lib/cafe-inquiry'
 
-import React, { Suspense, useState, useEffect, useCallback } from 'react'
+import React, { Suspense, useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
@@ -22,6 +22,8 @@ import {
   AlertCircle,
   MessageCircle
 } from 'lucide-react'
+import { getAdminOrderStatusQuery, isLatestAdminOrderRequest, isStatusAvailableInOrderScope, type AdminOrderScope } from '@/lib/admin-workspaces'
+import { AdminIndomieBatches } from '@/components/admin-indomie-batches'
 
 interface Order extends CafeInquiryFields {
   cafeInquiry?: boolean
@@ -141,8 +143,9 @@ const formatResponseSummary = (order: Pick<Order, 'responseOutcome' | 'responseT
   return 'No response timing yet'
 }
 
-function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) {
+function AdminOrdersPage({ scope }: { scope: AdminOrderScope }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [admin, setAdmin] = useState<AdminUser | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [orders, setOrders] = useState<Order[]>([])
@@ -150,13 +153,16 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
   const [searchTerm, setSearchTerm] = useState('')
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('')
   const [sessionName, setSessionName] = useState('')
-  const [statusFilter, setStatusFilter] = useState(initialStatus)
+  const [filterScope, setFilterScope] = useState<AdminOrderScope>(scope)
+  const [statusFilter, setStatusFilter] = useState('all')
   const [taskTypeFilter, setTaskTypeFilter] = useState('all')
   const [sourceFilter, setSourceFilter] = useState('all')
   const [declinedFilter, setDeclinedFilter] = useState('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const requestGeneration = useRef(0)
+  const scopeChanging = filterScope !== scope
 
   // Auth check
   useEffect(() => {
@@ -167,7 +173,7 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
           router.push('/auth')
           return
         }
-        // TODO: Add admin role check
+        // The admin proxy protects this page; every data/action API repeats the server-side role check.
         setAdmin(data.user)
       } catch {
         router.push('/auth')
@@ -184,46 +190,72 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
     return () => window.clearTimeout(timer)
   }, [searchTerm])
 
-  const fetchOrders = useCallback(async () => {
+  const fetchOrders = useCallback(async (signal?: AbortSignal) => {
+    const generation = ++requestGeneration.current
     setIsFetching(true)
     try {
       const params = new URLSearchParams({
         page: currentPage.toString(),
         search: debouncedSearchTerm,
-        status: statusFilter,
+        scope,
+        status: getAdminOrderStatusQuery(scope, statusFilter),
         taskType: taskTypeFilter,
         source: sourceFilter,
         declined: declinedFilter
       })
 
-      const res = await fetch(`/api/admin/orders?${params}`)
+      const res = await fetch(`/api/admin/orders?${params}`, { cache: 'no-store', signal })
       const data = await res.json()
+      if (!isLatestAdminOrderRequest(generation, requestGeneration.current)) return
 
       if (!res.ok) {
         toast.error(data.error || 'Failed to load orders')
         return
       }
 
+      const nextTotalPages = Math.max(1, Number(data.totalPages) || 1)
+      if (currentPage > nextTotalPages) {
+        setOrders([])
+        setTotalPages(nextTotalPages)
+        setCurrentPage(nextTotalPages)
+        return
+      }
       setOrders(data.orders)
-      setTotalPages(data.totalPages)
+      setTotalPages(nextTotalPages)
       setSessionName(data.session?.name || '')
-    } catch {
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      if (!isLatestAdminOrderRequest(generation, requestGeneration.current)) return
       toast.error('Failed to load orders')
     } finally {
-      setIsFetching(false)
+      if (isLatestAdminOrderRequest(generation, requestGeneration.current)) setIsFetching(false)
     }
-  }, [currentPage, debouncedSearchTerm, statusFilter, taskTypeFilter, sourceFilter, declinedFilter])
+  }, [currentPage, debouncedSearchTerm, statusFilter, taskTypeFilter, sourceFilter, declinedFilter, scope])
+
+  const declinedFromUrl = searchParams.get('declined')
+  useEffect(() => {
+    const next = declinedFromUrl === 'only' || declinedFromUrl === 'exclude' ? declinedFromUrl : 'all'
+    setDeclinedFilter(next)
+    setCurrentPage(1)
+  }, [declinedFromUrl])
 
   useEffect(() => {
-    if (typeof window === 'undefined') return
-
-    const params = new URLSearchParams(window.location.search)
-    setDeclinedFilter(params.get('declined') || 'all')
-  }, [])
+    if (filterScope === scope) return
+    requestGeneration.current += 1
+    setFilterScope(scope)
+    setStatusFilter('all')
+    setCurrentPage(1)
+    setExpandedId(null)
+    setOrders([])
+    setIsFetching(true)
+  }, [filterScope, scope])
 
   useEffect(() => {
-    if (admin) fetchOrders()
-  }, [admin, fetchOrders])
+    if (!admin || scopeChanging) return
+    const controller = new AbortController()
+    void fetchOrders(controller.signal)
+    return () => controller.abort()
+  }, [admin, fetchOrders, scopeChanging])
 
   // Handle order actions
   const handleOrderAction = async (orderId: string, action: 'cancel' | 'complete' | 'clear-declined') => {
@@ -247,7 +279,7 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
       )
 
       // Refresh orders list
-      fetchOrders()
+      await fetchOrders()
     } catch {
       toast.error('Something went wrong')
     }
@@ -332,20 +364,21 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
                 />
               </div>
 
-              <Select value={statusFilter} onValueChange={(value) => setStatusFilter(value ?? 'all')}>
+              <Select value={isStatusAvailableInOrderScope(scope, statusFilter) ? statusFilter : 'all'} onValueChange={(value) => { setStatusFilter(value ?? 'all'); setCurrentPage(1); setExpandedId(null) }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="all">{scope === 'live' ? 'All Live' : 'All Statuses'}</SelectItem>
                   <SelectItem value="pending">Pending</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                  <SelectItem value="paid">Paid</SelectItem>
+                  {scope === 'all' && <SelectItem value="completed">Completed</SelectItem>}
+                  {scope === 'all' && <SelectItem value="cancelled">Cancelled</SelectItem>}
                 </SelectContent>
               </Select>
 
-              <Select value={taskTypeFilter} onValueChange={(value) => setTaskTypeFilter(value ?? 'all')}>
+              <Select value={taskTypeFilter} onValueChange={(value) => { setTaskTypeFilter(value ?? 'all'); setCurrentPage(1) }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by task type" />
                 </SelectTrigger>
@@ -361,7 +394,7 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
                 </SelectContent>
               </Select>
 
-              <Select value={sourceFilter} onValueChange={(value) => setSourceFilter(value ?? 'all')}>
+              <Select value={sourceFilter} onValueChange={(value) => { setSourceFilter(value ?? 'all'); setCurrentPage(1) }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by source" />
                 </SelectTrigger>
@@ -372,7 +405,7 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
                 </SelectContent>
               </Select>
 
-              <Select value={declinedFilter} onValueChange={(value) => setDeclinedFilter(value ?? 'all')}>
+              <Select value={declinedFilter} onValueChange={(value) => { setDeclinedFilter(value ?? 'all'); setCurrentPage(1) }}>
                 <SelectTrigger>
                   <SelectValue placeholder="Filter by payment review" />
                 </SelectTrigger>
@@ -392,7 +425,11 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
 
         {/* Orders List */}
         <div className="space-y-4">
-          {orders.length === 0 ? (
+          {scopeChanging || (isFetching && orders.length === 0) ? (
+            <div role="status" aria-label="Loading orders" className="space-y-3">
+              {[0, 1, 2].map((item) => <div key={item} className="h-32 animate-pulse rounded-3xl border border-slate-200 bg-white" />)}
+            </div>
+          ) : orders.length === 0 ? (
             <Card>
               <CardContent className="py-12 text-center">
                 <ShoppingBag className="w-12 h-12 mx-auto mb-4 text-slate-500" />
@@ -689,17 +726,22 @@ function AdminOrdersPage({ initialStatus = 'all' }: { initialStatus?: string }) 
   )
 }
 
-import { AdminWorkspaceTabs } from '@/components/admin-workspace-tabs'
-import AdminReviewsPage from '@/app/admin/reviews/page'
+import { AdminWorkspaceTabs, useAdminWorkspaceTab } from '@/components/admin-workspace-tabs'
+import { AdminReviewsContent } from '@/components/admin-reviews-content'
 
-const orderTabs = [{ value: 'live', label: 'Live' }, { value: 'all', label: 'All Orders' }, { value: 'batches', label: 'Indomie Batches' }, { value: 'reviews', label: 'Reviews' }]
+const orderTabs = [
+  { value: 'live', label: 'Live' },
+  { value: 'all', label: 'All Orders' },
+  { value: 'batches', label: 'Indomie Batches', resetParams: ['declined', 'page', 'status', 'taskType', 'source'] },
+  { value: 'reviews', label: 'Reviews', resetParams: ['declined', 'page', 'status', 'taskType', 'source'] },
+]
 function IndomieBatches() {
-  return <div className="mx-auto max-w-6xl px-4 py-6 sm:px-6 lg:py-10"><div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm"><p className="text-sm font-semibold text-violet-700">Orders</p><h2 className="mt-1 text-2xl font-bold">Indomie batches</h2><p className="mt-3 max-w-2xl text-sm text-slate-600">Batch scheduling remains controlled in Operations → Availability. Indomie orders appear in All Orders, where existing order actions and payment handling are preserved.</p><a href="/admin/orders?tab=all" className="mt-5 inline-flex rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white">View Indomie orders</a></div></div>
+  return <AdminIndomieBatches />
 }
 function OrdersWorkspaceContent() {
-  const tab = useSearchParams().get('tab') || 'live'
-  const content = tab === 'reviews' ? <AdminReviewsPage /> : tab === 'batches' ? <IndomieBatches /> : <AdminOrdersPage initialStatus={tab === 'live' ? 'pending' : 'all'} />
-  return <><div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6 lg:pt-10"><p className="text-sm font-semibold text-violet-700">Orders</p><h1 className="mt-1 text-3xl font-bold">Orders</h1><p className="mt-2 text-sm text-slate-600">Live orders, batches and customer feedback.</p><AdminWorkspaceTabs tabs={orderTabs} /></div>{content}</>
+  const tab = useAdminWorkspaceTab('orders')
+  const content = tab === 'reviews' ? <AdminReviewsContent embedded /> : tab === 'batches' ? <IndomieBatches /> : <AdminOrdersPage scope={tab === 'all' ? 'all' : 'live'} />
+  return <><div className="mx-auto max-w-7xl px-4 pt-6 sm:px-6 lg:pt-10"><p className="text-sm font-semibold text-violet-700">Orders</p><h1 className="mt-1 text-3xl font-bold">Orders</h1><p className="mt-2 text-sm text-slate-600">Live orders, batches and customer feedback.</p><AdminWorkspaceTabs workspace="orders" tabs={orderTabs} /></div>{content}</>
 }
 
 export default function OrdersWorkspace() {

@@ -5,6 +5,7 @@ import { DeferredAppScripts } from "@/components/DeferredAppScripts";
 import { PublicNavigationShell } from "@/components/public-navigation-shell";
 import { adsenseAccount, siteUrl } from "@/lib/site";
 import { Manrope } from "next/font/google";
+import { PwaInstallProvider } from "@/components/PwaInstallProvider";
 
 const manrope = Manrope({
   subsets: ["latin"],
@@ -94,9 +95,11 @@ export default function RootLayout({
       <body
         className={`${manrope.className} antialiased tracking-wide`}
       >
-        <PublicNavigationShell>{children}</PublicNavigationShell>
-        <DeferredAppScripts />
-        <DevelopmentWorkerCleanup />
+        <PwaInstallProvider>
+          <PublicNavigationShell>{children}</PublicNavigationShell>
+          <DeferredAppScripts />
+          <DevelopmentWorkerCleanup />
+        </PwaInstallProvider>
       </body>
     </html>
   );

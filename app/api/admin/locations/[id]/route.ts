@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Types } from 'mongoose'
-import { auth } from '@/lib/auth'
-import { normalizeExcoRole } from '@/lib/exco-constants'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { connectDB } from '@/lib/db'
 import CampusLocation from '@/models/campus-location'
 import { validateCampusLocationInput, validateTaskerGenderRestriction } from '@/lib/campus-location'
 
 async function authorized(headers: Headers) {
-  const session = await auth.api.getSession({ headers })
-  return session?.user && (session.user.role === 'admin' || Boolean(normalizeExcoRole((session.user as { excoRole?: string }).excoRole)))
+  return getAdminDashboardAccess(headers)
 }
 
 function coordinatesAreUnchanged(value: unknown, saved: { latitude: number; longitude: number; accuracy?: number; capturedAt: Date }) {

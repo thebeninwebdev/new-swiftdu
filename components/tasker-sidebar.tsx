@@ -1,5 +1,6 @@
 'use client'
 import { WorkControl } from '@/components/tasker/WorkControl'
+import { TaskerInstallPwaAction } from '@/components/TaskerInstallPwaAction'
 
 import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
@@ -267,9 +268,11 @@ export default function TaskerSidebar() {
     }
 
     socket.on('tasks:updated', handleTaskUpdate)
+    socket.on('order:updated', handleTaskUpdate)
 
     return () => {
       socket.off('tasks:updated', handleTaskUpdate)
+      socket.off('order:updated', handleTaskUpdate)
       releaseSharedSocket(socket)
     }
   }, [
@@ -643,6 +646,7 @@ export default function TaskerSidebar() {
                 item={item}
               />
             ))}
+            <TaskerInstallPwaAction />
             {hasExcoAccess ? (
               <button
                 type="button"

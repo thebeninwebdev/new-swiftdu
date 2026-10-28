@@ -1,7 +1,7 @@
 import { clearZeroFeeSettlement, saveOrderLifecycle, OrderChangedError } from '@/lib/first-order-bonus'
 import { canPayCafeInquiry } from '@/lib/cafe-inquiry'
 import { NextRequest, NextResponse } from 'next/server'
-import { auth } from '@/lib/auth'
+import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { connectDB } from '@/lib/db'
 import { ensureBookedAt } from '@/lib/order-response-time'
 import { Order } from '@/models/order'
@@ -22,8 +22,7 @@ export async function PATCH(
   context: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await auth.api.getSession({ headers: req.headers })
-    if (session?.user?.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    if (!await getAdminDashboardAccess(req.headers)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
     await connectDB()
 

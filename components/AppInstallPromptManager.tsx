@@ -3,108 +3,76 @@
 import { useEffect, useState } from 'react'
 import { Download, X } from 'lucide-react'
 
-interface BeforeInstallPromptEvent extends Event {
-  prompt: () => Promise<void>
-  userChoice: Promise<{
-    outcome: 'accepted' | 'dismissed'
-    platform: string
-  }>
-}
-
-const SESSION_DISMISS_KEY = 'swiftdu-install-prompt-dismissed'
-
-function isStandaloneMode() {
-  return (
-    window.matchMedia('(display-mode: standalone)').matches ||
-    Boolean((window.navigator as Navigator & { standalone?: boolean }).standalone)
-  )
-}
-
-function isIosDevice() {
-  const userAgent = window.navigator.userAgent.toLowerCase()
-  const touchMac =
-    window.navigator.platform === 'MacIntel' && window.navigator.maxTouchPoints > 1
-
-  return /iphone|ipad|ipod/.test(userAgent) || touchMac
-}
+import { usePwaInstall } from '@/components/PwaInstallProvider'
+import { authClient } from '@/lib/auth-client'
+import {
+  CUSTOMER_INSTALL_SUGGESTION_KEY,
+  shouldShowCustomerInstallSuggestion,
+} from '@/lib/pwa-install'
 
 export function AppInstallPromptManager() {
-  const [deferredPrompt, setDeferredPrompt] =
-    useState<BeforeInstallPromptEvent | null>(null)
+  const { data: session, isPending: sessionPending } = authClient.useSession()
+  const {
+    fallbackInstructions,
+    install,
+    isInstalled,
+    isInstalling,
+    isReady,
+  } = usePwaInstall()
   const [showPrompt, setShowPrompt] = useState(false)
-  const [showIosHelp, setShowIosHelp] = useState(false)
-  const [isInstalling, setIsInstalling] = useState(false)
+  const [showHelp, setShowHelp] = useState(false)
+
+  const isTasker = session?.user?.role === 'tasker'
+  const isEligibleCustomer = isReady && !sessionPending && !isInstalled && !isTasker
 
   useEffect(() => {
-    if (isStandaloneMode()) {
+    if (!isEligibleCustomer) return
+
+    let lastShown: string | null = null
+    try {
+      lastShown = window.localStorage.getItem(CUSTOMER_INSTALL_SUGGESTION_KEY)
+    } catch {
+      // Without durable storage we cannot guarantee the seven-day limit.
       return
     }
+    if (!shouldShowCustomerInstallSuggestion(lastShown)) return
 
-    if (window.sessionStorage.getItem(SESSION_DISMISS_KEY) === 'true') {
-      return
-    }
-
-    const handleBeforeInstallPrompt = (event: Event) => {
-      event.preventDefault()
-      setDeferredPrompt(event as BeforeInstallPromptEvent)
+    const timeoutId = window.setTimeout(() => {
+      try {
+        const latest = window.localStorage.getItem(CUSTOMER_INSTALL_SUGGESTION_KEY)
+        if (!shouldShowCustomerInstallSuggestion(latest)) return
+        window.localStorage.setItem(CUSTOMER_INSTALL_SUGGESTION_KEY, String(Date.now()))
+      } catch {
+        return
+      }
       setShowPrompt(true)
-    }
+    }, 1500)
 
-    const handleAppInstalled = () => {
-      setShowPrompt(false)
-      setDeferredPrompt(null)
-    }
-
-    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
-    window.addEventListener('appinstalled', handleAppInstalled)
-
-    if (isIosDevice()) {
-      const timeoutId = window.setTimeout(() => setShowPrompt(true), 1500)
-
-      return () => {
-        window.clearTimeout(timeoutId)
-        window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
-        window.removeEventListener('appinstalled', handleAppInstalled)
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === CUSTOMER_INSTALL_SUGGESTION_KEY && event.newValue) {
+        setShowPrompt(false)
       }
     }
+    window.addEventListener('storage', handleStorage)
 
     return () => {
-      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
-      window.removeEventListener('appinstalled', handleAppInstalled)
+      window.clearTimeout(timeoutId)
+      window.removeEventListener('storage', handleStorage)
     }
-  }, [])
+  }, [isEligibleCustomer])
 
-  const dismiss = () => {
-    setShowPrompt(false)
-    window.sessionStorage.setItem(SESSION_DISMISS_KEY, 'true')
-  }
+  const dismiss = () => setShowPrompt(false)
 
   const handleInstall = async () => {
-    if (!deferredPrompt) {
-      setShowIosHelp(true)
+    const outcome = await install()
+    if (outcome === 'accepted' || outcome === 'installed') {
+      setShowPrompt(false)
       return
     }
-
-    setIsInstalling(true)
-
-    try {
-      await deferredPrompt.prompt()
-      const result = await deferredPrompt.userChoice
-
-      if (result.outcome === 'accepted') {
-        setShowPrompt(false)
-      } else {
-        setShowIosHelp(true)
-      }
-    } finally {
-      setDeferredPrompt(null)
-      setIsInstalling(false)
-    }
+    setShowHelp(true)
   }
 
-  if (!showPrompt) {
-    return null
-  }
+  if (!showPrompt || !isEligibleCustomer) return null
 
   return (
     <div className="fixed inset-x-3 bottom-4 z-[90] mx-auto max-w-md rounded-xl border border-slate-200 bg-white p-4 text-slate-900 shadow-2xl shadow-slate-900/20 sm:bottom-6 dark:border-slate-800 dark:bg-slate-950 dark:text-white">
@@ -115,39 +83,25 @@ export function AppInstallPromptManager() {
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold">Install Swiftdu</h2>
+              <h2 className="text-sm font-semibold">Install SwiftDU</h2>
               <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
-                Add the app to your device for faster access and better order updates.
+                Add SwiftDU to your device for faster access and better order updates.
               </p>
             </div>
-            <button
-              type="button"
-              onClick={dismiss}
-              className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-900 dark:hover:text-slate-200"
-              aria-label="Dismiss install prompt"
-            >
+            <button type="button" onClick={dismiss} className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-900 dark:hover:text-slate-200" aria-label="Dismiss install suggestion">
               <X className="h-4 w-4" />
             </button>
           </div>
-          {showIosHelp ? (
+          {showHelp ? (
             <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm leading-5 text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-              Use your browser menu to install Swiftdu. On iPhone or iPad, tap Share, then Add to Home Screen.
+              {fallbackInstructions}
             </p>
           ) : null}
           <div className="mt-4 flex gap-2">
-            <button
-              type="button"
-              onClick={handleInstall}
-              disabled={isInstalling}
-              className="inline-flex h-10 flex-1 items-center justify-center rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100"
-            >
+            <button type="button" onClick={() => void handleInstall()} disabled={isInstalling} className="inline-flex h-10 flex-1 items-center justify-center rounded-lg bg-slate-900 px-3 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60 dark:bg-white dark:text-slate-950 dark:hover:bg-slate-100">
               {isInstalling ? 'Opening...' : 'Install app'}
             </button>
-            <button
-              type="button"
-              onClick={dismiss}
-              className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
-            >
+            <button type="button" onClick={dismiss} className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900">
               Not now
             </button>
           </div>

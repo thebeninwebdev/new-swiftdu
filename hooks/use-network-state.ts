@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState, useSyncExternalStore } from 'react'
 
 export type LowDataPreference = 'automatic' | 'on' | 'off'
 
@@ -32,8 +32,27 @@ function savedPreference(): LowDataPreference {
   }
 }
 
+function subscribeToOnlineState(onStoreChange: () => void) {
+  window.addEventListener('online', onStoreChange)
+  window.addEventListener('offline', onStoreChange)
+  return () => {
+    window.removeEventListener('online', onStoreChange)
+    window.removeEventListener('offline', onStoreChange)
+  }
+}
+
+function getOnlineSnapshot() {
+  return navigator.onLine
+}
+
+function getServerOnlineSnapshot() {
+  // The server cannot know the browser's connection state. React rechecks the
+  // client snapshot immediately after hydration and shows the offline notice.
+  return true
+}
+
 export function useNetworkState() {
-  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine)
+  const online = useSyncExternalStore(subscribeToOnlineState, getOnlineSnapshot, getServerOnlineSnapshot)
   const [preference, setPreferenceState] = useState<LowDataPreference>('automatic')
   const [lowData, setLowData] = useState(false)
 
@@ -41,7 +60,6 @@ export function useNetworkState() {
     const info = connection()
     const update = () => {
       const nextPreference = savedPreference()
-      setOnline(navigator.onLine)
       setPreferenceState(nextPreference)
       setLowData(prefersLowData(nextPreference, info))
     }

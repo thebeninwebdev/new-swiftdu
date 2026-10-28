@@ -366,7 +366,6 @@ function ErrandDetailPageContent() {
       const isReconnect = observedSocketConnectionRef.current
       observedSocketConnectionRef.current = true
       setSocketHealthy(true)
-      socket.emit('order:watch', errandId)
       if (isReconnect && errandRef.current) scheduleRevalidation()
     }
     const handleDisconnect = () => setSocketHealthy(false)
@@ -388,7 +387,6 @@ function ErrandDetailPageContent() {
         window.clearTimeout(realtimeRefreshTimeoutRef.current)
         realtimeRefreshTimeoutRef.current = null
       }
-      if (socket.connected) socket.emit('order:unwatch', errandId)
       releaseSharedSocket(socket)
     }
   }, [errandId, loadErrand])

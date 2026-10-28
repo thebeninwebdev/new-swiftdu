@@ -498,9 +498,6 @@ export default function TaskerDashboardPage() {
       const isReconnect = observedSocketConnectionRef.current
       observedSocketConnectionRef.current = true
       setSocketHealthy(true)
-      socket.emit('tasks:watch', {
-        taskerMode: taskerProfile.taskerMode || 'live',
-      })
       if (isReconnect && hasDashboardDataRef.current) void loadDashboardRef.current(false, { silent: true })
     }
     const handleDisconnect = () => {
@@ -588,16 +585,15 @@ export default function TaskerDashboardPage() {
     socket.on('disconnect', handleDisconnect)
     socket.on('connect_error', handleConnectError)
     socket.on('tasks:updated', handleTaskUpdate)
+    socket.on('order:updated', handleTaskUpdate)
     if (socket.connected) handleConnect()
 
     return () => {
-      if (socket.connected) {
-        socket.emit('tasks:unwatch')
-      }
       socket.off('connect', handleConnect)
       socket.off('disconnect', handleDisconnect)
       socket.off('connect_error', handleConnectError)
       socket.off('tasks:updated', handleTaskUpdate)
+      socket.off('order:updated', handleTaskUpdate)
       releaseSharedSocket(socket)
     }
   }, [loadingTaskerProfile, locationFilter, needsBankDetails, router, scheduleDashboardRefresh, sessionPending, taskTypeFilter, taskerProfile?._id, taskerProfile?.taskerMode, triggerNewTaskAlert, work.data?.checkedIn])

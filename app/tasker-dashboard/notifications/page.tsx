@@ -66,9 +66,11 @@ export default function TaskerNotificationsPage() {
     }
 
     socket.on('tasks:updated', handleTaskUpdate)
+    socket.on('order:updated', handleTaskUpdate)
 
     return () => {
       socket.off('tasks:updated', handleTaskUpdate)
+      socket.off('order:updated', handleTaskUpdate)
       releaseSharedSocket(socket)
     }
   }, [fetchNotifications])
