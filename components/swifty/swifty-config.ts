@@ -2,8 +2,8 @@ export type SwiftyMood = 'idle' | 'thinking' | 'searching' | 'matched' | 'moving
 export type SwiftyInteraction = 'rest' | 'greet' | 'acknowledge' | 'consider' | 'guide' | 'check' | 'scan' | 'celebrate' | 'travel' | 'complete' | 'attention' | 'apologize'
 
 export const SWIFTY_ASSETS = {
-  idle: '/mascot/idle.png', thinking: '/mascot/thinking.png', searching: '/mascot/searching.png', matched: '/mascot/matched.png',
-  moving: '/mascot/moving.png', success: '/mascot/success.png', warning: '/mascot/warning.png', error: '/mascot/error.png',
+  idle: '/mascot/idle.webp', thinking: '/mascot/thinking.webp', searching: '/mascot/searching.webp', matched: '/mascot/matched.webp',
+  moving: '/mascot/moving.webp', success: '/mascot/success.webp', warning: '/mascot/warning.webp', error: '/mascot/error.webp',
 } satisfies Record<SwiftyMood, string>
 
 export const SWIFTY_ALT: Record<SwiftyMood, string> = {

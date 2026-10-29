@@ -55,7 +55,9 @@ function SwiftyComponent({ mood, interaction = 'rest', size = 'md', message, com
 
   useEffect(() => {
     const preload = mood === 'idle' ? 'thinking' : mood === 'thinking' ? 'searching' : null
-    if (preload) { const image = new window.Image(); image.src = SWIFTY_ASSETS[preload] }
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+    const slowConnection = connection?.saveData === true || connection?.effectiveType === 'slow-2g' || connection?.effectiveType === '2g'
+    if (preload && !slowConnection) { const image = new window.Image(); image.src = SWIFTY_ASSETS[preload] }
   }, [mood])
 
   const isCelebrating = displayMood === 'matched' || displayMood === 'success'

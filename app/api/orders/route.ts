@@ -60,6 +60,25 @@ const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping
 export async function POST(request: NextRequest) {
   const orderCreateStartedAt = performance.now()
   const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() || undefined
+  const compactResponse = request.headers.get('X-SwiftDU-Compact-Response') === '1'
+  const respondWithOrder = (order: {
+    _id: unknown
+    taskType?: string
+    status?: string
+    isTestOrder?: boolean
+    batchingStatus?: string
+    scheduledFor?: Date | string
+  }, status = 200) => {
+    if (!compactResponse) return NextResponse.json(order, { status })
+    return NextResponse.json({
+      _id: order._id,
+      taskType: order.taskType,
+      status: order.status,
+      isTestOrder: order.isTestOrder,
+      batchingStatus: order.batchingStatus,
+      scheduledFor: order.scheduledFor,
+    }, { status })
+  }
   try {
     await connectDB();
 
@@ -76,7 +95,7 @@ export async function POST(request: NextRequest) {
     if (idempotencyKey) {
       const existingOrder = await Order.findOne({ userId: session.user.id, idempotencyKey }).lean()
       if (existingOrder) {
-        return NextResponse.json(existingOrder)
+        return respondWithOrder(existingOrder)
       }
     }
 
@@ -453,12 +472,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 });
     }
     const now = new Date();
-    const [operationsSettings, indomieSettings] = await Promise.all([getOperationsSettings(), getIndomieBatchSettings()]);
+    const [operationsSettings, indomieSettings] = await Promise.all([
+      getOperationsSettings(),
+      normalizedTaskType === INDOMIE_TASK_TYPE ? getIndomieBatchSettings() : Promise.resolve(null),
+    ]);
     const operationsStatus = getOperationsStatus(now, operationsSettings);
     if (!isTestOrder && !operationsStatus.open) {
       return NextResponse.json({ error: `SwiftDU is closed for today. We open again at ${formatMinute(operationsSettings.openMinute)}.`, code: 'OUTSIDE_OPERATING_HOURS', nextOpeningAt: operationsStatus.nextOpeningAt }, { status: 409 });
     }
-    const indomieMode = isTestOrder ? 'batching' : getIndomieServiceMode({ now, operationsSettings, batchingSettings: indomieSettings });
+    const indomieMode = normalizedTaskType === INDOMIE_TASK_TYPE
+      ? isTestOrder ? 'batching' : getIndomieServiceMode({ now, operationsSettings, batchingSettings: indomieSettings! })
+      : 'normal';
     if (!isTestOrder && normalizedTaskType === INDOMIE_TASK_TYPE && expectedIndomieMode && expectedIndomieMode !== indomieMode) {
       return NextResponse.json({ error: indomieMode === 'batching' ? 'Evening Indomie runs have started.' : 'Indomie orders are closed for tonight.', code: 'INDOMIE_MODE_CHANGED', mode: indomieMode }, { status: 409 });
     }
@@ -534,8 +558,8 @@ export async function POST(request: NextRequest) {
 
     const bookedAt = new Date();
     const isScheduledIndomie = normalizedTaskType === INDOMIE_TASK_TYPE && indomieMode === 'batching'
-    const indomieRunAt = isScheduledIndomie ? (isTestOrder ? getNextTrainingIndomieRun(bookedAt, indomieSettings) : getNextAvailableIndomieRun(bookedAt, indomieSettings)) : null
-    if (isScheduledIndomie && (!indomieRunAt || (!isTestOrder && !isRunStillBookable(indomieRunAt, bookedAt, indomieSettings)))) {
+    const indomieRunAt = isScheduledIndomie ? (isTestOrder ? getNextTrainingIndomieRun(bookedAt, indomieSettings!) : getNextAvailableIndomieRun(bookedAt, indomieSettings!)) : null
+    if (isScheduledIndomie && (!indomieRunAt || (!isTestOrder && !isRunStillBookable(indomieRunAt, bookedAt, indomieSettings!)))) {
       return NextResponse.json({ error: 'There is no Indomie run open for booking right now.', code: 'INDOMIE_RUN_CLOSED' }, { status: 409 })
     }
     const batching = normalizedTaskType === INDOMIE_TASK_TYPE ? { taskerSearchStartedAt: bookedAt } : await batchingMetadata(normalizedTaskType, bookedAt)
@@ -758,7 +782,7 @@ export async function POST(request: NextRequest) {
       ORDER_CREATE_TOTAL_RESPONSE_MS: Math.round((responseReadyAt - orderCreateStartedAt) * 100) / 100,
     })
 
-    return NextResponse.json(order, { status: 201 });
+    return respondWithOrder(order, 201);
   } catch (error) {
     if (error instanceof NoActiveAcademicSessionError) return NextResponse.json({ error: error.message, code: 'NO_ACTIVE_SESSION' }, { status: 409 })
     // The unique sparse index closes the race between two simultaneous retries.
@@ -766,7 +790,7 @@ export async function POST(request: NextRequest) {
       const session = await auth.api.getSession({ headers: request.headers })
       if (session?.user?.id) {
         const existingOrder = await Order.findOne({ userId: session.user.id, idempotencyKey }).lean()
-        if (existingOrder) return NextResponse.json(existingOrder)
+        if (existingOrder) return respondWithOrder(existingOrder)
       }
     }
     console.error('[Orders POST Error]:', error);

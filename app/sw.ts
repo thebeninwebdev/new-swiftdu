@@ -20,7 +20,8 @@ const isMascotVideo = (url: URL) => /^\/mascot\/[^/]+\.webm$/.test(url.pathname)
 const isStaticImage = (url: URL) =>
   /^\/(?:logo(?:-white)?|pwa-192x192|pwa-512x512|apple-icon)\.png$/.test(url.pathname) ||
   /^\/mascot\/[^/]+\.(?:png|webp|svg|jpg)$/.test(url.pathname) ||
-  /^\/(?:sign-up|support|earn|learn|tasker-signup|Western_Delta_University)\.(?:png|jpe?g)$/.test(url.pathname)
+  /^\/dashboard\/tasks\/[^/]+\.webp$/.test(url.pathname) ||
+  /^\/(?:sign-up|support|earn|learn|tasker-signup|Western_Delta_University)\.(?:png|jpe?g|webp)$/.test(url.pathname)
 
 const serwist = new Serwist({
   cacheId: 'swiftdu',

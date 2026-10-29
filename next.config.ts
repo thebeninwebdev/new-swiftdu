@@ -22,7 +22,6 @@ const withSerwist = withSerwistInit({
   manifestTransforms: [async (entries) => ({
     manifest: entries.filter(({ url }) =>
       url === "/offline" ||
-      /^\/_next\/static\/.*\.(?:js|css|woff2?|ttf|otf)$/.test(url) ||
       /^\/(?:logo(?:-white)?|pwa-192x192|pwa-512x512|apple-icon)\.png$/.test(url)
     ),
     warnings: [],

@@ -7,10 +7,10 @@ import { mergeOrderUpdate } from '@/lib/order-sync'
 import { needsOrderPayment } from '@/lib/order-tracking'
 import { formatRestaurantCost, getRestaurantEstimate } from '@/lib/restaurant-estimate'
 import type { CampusLocationType } from '@/lib/campus-location'
-import taskFoodImage from '@/public/dashboard/tasks/task-food.png'
-import taskStoreShoppingImage from '@/public/dashboard/tasks/task-store-shopping.png'
-import taskPrintingImage from '@/public/dashboard/tasks/task-printing.png'
-import taskWaterImage from '@/public/dashboard/tasks/task-water.png'
+import taskFoodImage from '@/public/dashboard/tasks/task-food.webp'
+import taskStoreShoppingImage from '@/public/dashboard/tasks/task-store-shopping.webp'
+import taskPrintingImage from '@/public/dashboard/tasks/task-printing.webp'
+import taskWaterImage from '@/public/dashboard/tasks/task-water.webp'
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Image, { type StaticImageData } from 'next/image'
@@ -76,6 +76,10 @@ import {
 
 const REALTIME_PAUSE_MS = 1200
 const PACKAGING_LANGUAGE_STORAGE_KEY = 'swiftdu:restaurant-packaging-language'
+const PENDING_ORDER_STORAGE_KEY = 'swiftdu:pending-order-submission-v1'
+const PENDING_ORDER_MAX_AGE_MS = 24 * 60 * 60 * 1000
+const ORDER_REQUEST_TIMEOUT_MS = 22_000
+const ORDER_SLOW_REQUEST_MS = 8_000
 
 type PackagingLanguage = 'pidgin' | 'english'
 
@@ -177,7 +181,7 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'Food & meals',
     icon: ShoppingBag,
     accent: 'from-blue-500 to-cyan-500',
-    image: '/dashboard/tasks/task-food.png',
+    image: '/dashboard/tasks/task-food.webp',
   },
   {
     value: 'shopping',
@@ -186,7 +190,7 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'Groceries',
     icon: Store,
     accent: 'from-emerald-500 to-teal-500',
-    image: '/dashboard/tasks/task-store-shopping.png',
+    image: '/dashboard/tasks/task-store-shopping.webp',
   },
   {
     value: 'printing',
@@ -195,7 +199,7 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'Documents',
     icon: FileText,
     accent: 'from-sky-500 to-indigo-500',
-    image: '/dashboard/tasks/task-printing.png',
+    image: '/dashboard/tasks/task-printing.webp',
   },
   // {
   //   value: DRY_CLEANING_TASK_TYPE,
@@ -212,15 +216,15 @@ const taskTypes: TaskTypeConfig[] = [
     mobileDescription: 'Per bag',
     icon: Droplets,
     accent: 'from-cyan-500 to-blue-500',
-    image: '/dashboard/tasks/task-water.png',
+    image: '/dashboard/tasks/task-water.webp',
   },
 ]
 
 const taskArtwork: Record<string, StaticImageData> = {
-  '/dashboard/tasks/task-food.png': taskFoodImage,
-  '/dashboard/tasks/task-store-shopping.png': taskStoreShoppingImage,
-  '/dashboard/tasks/task-printing.png': taskPrintingImage,
-  '/dashboard/tasks/task-water.png': taskWaterImage,
+  '/dashboard/tasks/task-food.webp': taskFoodImage,
+  '/dashboard/tasks/task-store-shopping.webp': taskStoreShoppingImage,
+  '/dashboard/tasks/task-printing.webp': taskPrintingImage,
+  '/dashboard/tasks/task-water.webp': taskWaterImage,
 }
 const restaurantQuickOrders = [
   'Fried rice and chicken',
@@ -346,6 +350,10 @@ export default function ErrandWizardPage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [transitioningOrderId, setTransitioningOrderId] = useState<string | null>(null)
   const [submissionFailed, setSubmissionFailed] = useState(false)
+  const [submissionUncertain, setSubmissionUncertain] = useState(false)
+  const [submissionSlow, setSubmissionSlow] = useState(false)
+  const [isOffline, setIsOffline] = useState(false)
+  const [pendingRecovery, setPendingRecovery] = useState<{ body: Record<string, unknown>; idempotencyKey: string; createdAt: number } | null>(null)
   const [mascotInteraction, setMascotInteraction] = useState<SwiftyInteraction>('greet')
   const [isRealtimePaused, setIsRealtimePaused] = useState(false)
   const [mounted, setMounted] = useState(false)
@@ -401,6 +409,23 @@ export default function ErrandWizardPage() {
   const sessionUserId = session?.user?.id
 
   useEffect(() => { void fetch('/api/locations').then(response => response.ok ? response.json() : null).then(data => setParentLocations(data?.locations || [])).catch(() => undefined) }, [])
+  useEffect(() => {
+    const stored = window.localStorage.getItem(PENDING_ORDER_STORAGE_KEY)
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as { version?: number; body?: Record<string, unknown>; idempotencyKey?: string; createdAt?: number }
+        if (parsed.version === 1 && parsed.body && parsed.idempotencyKey && parsed.createdAt && Date.now() - parsed.createdAt < PENDING_ORDER_MAX_AGE_MS) {
+          orderIdempotencyKeyRef.current = parsed.idempotencyKey
+          setPendingRecovery({ body: parsed.body, idempotencyKey: parsed.idempotencyKey, createdAt: parsed.createdAt })
+        } else window.localStorage.removeItem(PENDING_ORDER_STORAGE_KEY)
+      } catch { window.localStorage.removeItem(PENDING_ORDER_STORAGE_KEY) }
+    }
+    const updateOnline = () => setIsOffline(!navigator.onLine)
+    updateOnline()
+    window.addEventListener('online', updateOnline)
+    window.addEventListener('offline', updateOnline)
+    return () => { window.removeEventListener('online', updateOnline); window.removeEventListener('offline', updateOnline) }
+  }, [])
   useEffect(() => {
     if (!formData.parentLocationId) { setExactLocations([]); setExactLocationsLoading(false); return }
     const controller = new AbortController()
@@ -1331,65 +1356,80 @@ if (stepNumber === detailsStep) {
     setErrors({})
   }
 
-  const createOrder = async () => {
+  const createOrder = async (recoveredSubmission?: { body: Record<string, unknown>; idempotencyKey: string }) => {
     // Keep one key across retries of this logical submission.
-    const idempotencyKey = orderIdempotencyKeyRef.current || crypto.randomUUID()
+    const idempotencyKey = recoveredSubmission?.idempotencyKey || orderIdempotencyKeyRef.current || crypto.randomUUID()
     orderIdempotencyKeyRef.current = idempotencyKey
-    if (vendorBackedTask) {
+    if (!recoveredSubmission && vendorBackedTask) {
       if (!deliveryVendorId || !formData.parentLocationId) { toast.error('Choose a delivery location.'); return }
       if (parentRequiresRoomNumber && !(formData.roomNumber || '').trim()) { toast.error('Enter your room number for this hostel.'); return }
       if (selectedParentLocationType === 'hostel' && exactLocations.length > 0 && !formData.exactLocationId) { toast.error('Choose an exact delivery location.'); return }
-    } else {
+    } else if (!recoveredSubmission) {
       try { validateDeliveryRoom(formData.location, formData.roomNumber) } catch (error) { toast.error((error as Error).message); return }
     }
     pauseRealtime(REALTIME_PAUSE_MS * 2)
 
+    const body = recoveredSubmission?.body || {
+      ...formData,
+      deliveryPricingVendorId: deliveryVendorId,
+      exactLocationId: formData.exactLocationId || undefined,
+      roomNumber: (formData.parentLocationId ? parentRequiresRoomNumber : getRoomDestination(formData.location)?.requiresRoomNumber) ? formData.roomNumber : undefined,
+      description: formData.taskType === WATER_TASK_TYPE ? '' : description,
+      amount: String(amount),
+      cafeInquiry: isCafeInquiry,
+      restaurantPeopleCount: formData.taskType === 'restaurant' ? normalizedRestaurantPeopleCount : undefined,
+      restaurantTakeawayCount: formData.taskType === 'restaurant' ? normalizedRestaurantTakeawayCount : undefined,
+      printingServiceType: formData.printingServiceType,
+      printingNeedsEditing: formData.printingNeedsEditing === 'yes',
+      indomiePacks: formData.taskType === INDOMIE_TASK_TYPE ? indomiePacks : undefined,
+      eggCount: formData.taskType === INDOMIE_TASK_TYPE ? eggCount : undefined,
+      indomieMeals: formData.taskType === INDOMIE_TASK_TYPE ? [{ indomiePacks, eggCount, amount: Number(amount), description: description || undefined }] : undefined,
+      expectedIndomieMode: formData.taskType === INDOMIE_TASK_TYPE ? 'normal' : undefined,
+    }
+    window.localStorage.setItem(PENDING_ORDER_STORAGE_KEY, JSON.stringify({ version: 1, body, idempotencyKey, createdAt: Date.now() }))
+    const savedSubmission = { body, idempotencyKey, createdAt: Date.now() }
+    setPendingRecovery(null)
+    if (!navigator.onLine) {
+      setIsOffline(true)
+      setPendingRecovery(savedSubmission)
+      setIsSubmitting(false)
+      toast.error('You’re offline. Your order is ready and can be sent when your connection returns.')
+      return
+    }
+
     setSubmissionFailed(false)
+    setSubmissionUncertain(false)
+    setSubmissionSlow(false)
     setMascotInteraction('scan')
     setIsSubmitting(true)
     let submitted = false
+    let timeout = 0
+    let slowNotice = 0
     try {
+      const controller = new AbortController()
+      timeout = window.setTimeout(() => controller.abort(), ORDER_REQUEST_TIMEOUT_MS)
+      slowNotice = window.setTimeout(() => setSubmissionSlow(true), ORDER_SLOW_REQUEST_MS)
+      const startedAt = performance.now()
       const response = await fetch('/api/orders', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
-        body: JSON.stringify({
-          ...formData,
-          // Preserve the customer's selection. For "Choose from anywhere" this
-          // remains empty while the server uses deliveryPricingVendorId for rules.
-          deliveryPricingVendorId: deliveryVendorId,
-          exactLocationId: formData.exactLocationId || undefined,
-          roomNumber: (formData.parentLocationId ? parentRequiresRoomNumber : getRoomDestination(formData.location)?.requiresRoomNumber) ? formData.roomNumber : undefined,
-          description: formData.taskType === WATER_TASK_TYPE ? '' : description,
-          amount: String(amount),
-          cafeInquiry: isCafeInquiry,
-          restaurantPeopleCount:
-            formData.taskType === 'restaurant'
-              ? normalizedRestaurantPeopleCount
-              : undefined,
-          restaurantTakeawayCount:
-            formData.taskType === 'restaurant'
-              ? normalizedRestaurantTakeawayCount
-              : undefined,
-          printingServiceType: formData.printingServiceType,
-          printingNeedsEditing: formData.printingNeedsEditing === 'yes',
-          indomiePacks:
-            formData.taskType === INDOMIE_TASK_TYPE ? indomiePacks : undefined,
-          eggCount:
-            formData.taskType === INDOMIE_TASK_TYPE ? eggCount : undefined,
-          indomieMeals: formData.taskType === INDOMIE_TASK_TYPE ? [{ indomiePacks, eggCount, amount: Number(amount), description: description || undefined }] : undefined,
-          expectedIndomieMode: formData.taskType === INDOMIE_TASK_TYPE ? 'normal' : undefined,
-        }),
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey, 'X-SwiftDU-Compact-Response': '1' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
       })
+      const responsePayload = await response.json()
+      window.clearTimeout(timeout)
+      window.clearTimeout(slowNotice)
+      console.info('[Orders Client Timing]', { durationMs: Math.round(performance.now() - startedAt), outcome: response.ok ? 'success' : 'server-error' })
 
       if (!response.ok) {
-        const error = await response.json()
         setSubmissionFailed(true)
         setMascotInteraction('apologize')
-        toast.error(error.error || 'Failed to submit task.')
+        toast.error(responsePayload.error || 'Failed to submit task.')
         return
       }
 
-      const createdOrder = await response.json()
+      const createdOrder = responsePayload
+      window.localStorage.removeItem(PENDING_ORDER_STORAGE_KEY)
       toast.success(createdOrder.taskType === INDOMIE_TASK_TYPE ? 'Your Indomie run is reserved. Send payment to your tasker.' : createdOrder.isTestOrder ? 'Training order posted successfully.' : 'Task posted successfully. Taskers can see it now.')
       setActiveOrder(createdOrder)
       setTaskTypeUsageCounts((previous) => ({
@@ -1399,14 +1439,22 @@ if (stepNumber === detailsStep) {
       submitted = true
       setTransitioningOrderId(createdOrder._id)
       router.replace(`/dashboard/tasks/${createdOrder._id}`)
-    } catch {
+    } catch (error) {
       if (!submitted) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          setPendingRecovery({ body, idempotencyKey, createdAt: Date.now() })
+          setSubmissionUncertain(true)
+          setMascotInteraction('attention')
+          return
+        }
         setSubmissionFailed(true)
         setMascotInteraction('apologize')
         toast.error('An error occurred while posting the task.')
       }
     } finally {
-      if (!submitted) setIsSubmitting(false)
+      window.clearTimeout(timeout)
+      window.clearTimeout(slowNotice)
+      if (!submitted) { setIsSubmitting(false); setSubmissionSlow(false) }
     }
   }
 
@@ -1426,6 +1474,12 @@ if (stepNumber === detailsStep) {
       return
     }
     await createOrder()
+  }
+
+  const discardPendingOrder = () => {
+    window.localStorage.removeItem(PENDING_ORDER_STORAGE_KEY)
+    orderIdempotencyKeyRef.current = null
+    setPendingRecovery(null)
   }
 
   const activeStatusLabel = activeOrder
@@ -2363,14 +2417,27 @@ if (stepNumber === detailsStep) {
     return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">Indomie is unavailable 🍜</h1><p className="mt-3 text-slate-600 dark:text-slate-300">Please choose another service.</p><Button className="mt-8 min-h-12 w-full bg-violet-600" onClick={() => { setFormData(previous => ({ ...previous, taskType: 'restaurant' })); setStep(1) }}>Choose another service</Button></main>
   }
 
+  if (pendingRecovery && !isSubmitting) return (
+    <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 py-10 text-center">
+      <OrderMascot mood={submissionUncertain ? 'warning' : 'thinking'} interaction="attention" size="lg" />
+      <h1 className="mt-5 text-2xl font-black text-slate-950 dark:text-white">{isOffline ? 'You’re offline' : submissionUncertain ? 'We couldn’t confirm your order' : 'We found an order that may not have finished sending.'}</h1>
+      <p className="mt-2 max-w-sm text-sm leading-6 text-slate-600 dark:text-slate-300">{isOffline ? 'Your order is ready and can be sent when your connection returns.' : submissionUncertain ? 'Your order may already be on its way. Retry safely to check without creating a duplicate.' : 'Retry safely with the same request, or discard this pending submission.'}</p>
+      <div className="mt-6 flex w-full max-w-sm gap-3">
+        <Button className="min-h-12 flex-1 bg-indigo-600" disabled={isOffline} onClick={() => void createOrder(pendingRecovery)}>Retry safely</Button>
+        <Button variant="outline" className="min-h-12 flex-1" onClick={discardPendingOrder}>Discard</Button>
+      </div>
+      {isOffline ? <p className="mt-4 text-xs text-slate-500">When you are online, choose Send when online to try again.</p> : null}
+    </main>
+  )
+
   if (isSubmitting) return (
     <main className="flex min-h-[calc(100dvh-5rem)] flex-col items-center justify-center px-5 py-10 text-center">
       <OrderMascot mood="searching" interaction="scan" size="lg" />
       <h1 className="mt-5 text-2xl font-black text-slate-950 dark:text-white">
-        {transitioningOrderId ? 'Opening your task...' : 'Posting your task...'}
+        {transitioningOrderId ? 'Opening your task...' : submissionSlow ? 'Your connection is slow. We’re still sending your order.' : 'Posting your task...'}
       </h1>
       <p className="mt-2 max-w-xs text-sm leading-6 text-slate-600 dark:text-slate-300">
-        {transitioningOrderId ? 'Your request is ready. Taking you to tracking.' : 'Sending your request to SwiftDU.'}
+        {transitioningOrderId ? 'Your request is ready. Taking you to tracking.' : submissionSlow ? 'Please keep this page open while we confirm it.' : 'Sending your request to SwiftDU.'}
       </p>
       <Loader2 aria-hidden="true" className="mt-6 h-5 w-5 animate-spin text-indigo-600 motion-reduce:animate-none" />
     </main>
