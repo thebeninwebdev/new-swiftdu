@@ -53,38 +53,27 @@ import { formatMinute, getIndomieServiceMode, getNextOpeningTime, getOperationsS
 import { persistThenScheduleOrderCreation, type OrderCreationBackgroundJob } from '@/lib/order-creation-background';
 import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError, serializeOrderSession } from '@/lib/orders/order-session-scope';
 import { CUSTOMER_ORDER_CARD_FIELDS, parseOrderPagination } from '@/lib/orders/order-list-fields';
-import { createCustomerOrder, CustomerOrderServiceError, registerCustomerOrderImplementation, type CustomerOrderActor } from '@/lib/orders/customer-order-service';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 
-async function createCustomerOrderResponse(
-  request: NextRequest,
-  actorOverride?: CustomerOrderActor
-) {
+export async function POST(request: NextRequest) {
   const orderCreateStartedAt = performance.now()
   const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() || undefined
-  let actor: CustomerOrderActor | null = actorOverride || null
   try {
     await connectDB();
 
-    const authenticatedSession = actorOverride ? null : await auth.api.getSession({ headers: request.headers });
-    actor = actorOverride || (authenticatedSession?.user ? {
-      id: authenticatedSession.user.id,
-      name: authenticatedSession.user.name,
-      email: authenticatedSession.user.email,
-      role: authenticatedSession.user.role,
-      source: 'website' as const,
-    } : null)
+    const session = await auth.api.getSession({
+      headers: request.headers,
+    });
 
-    if (!actor) {
+    if (!session || !session.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
-    const customerActor = actor
     const authCompletedAt = performance.now()
 
     // A retry must only ever see its own original order.
     if (idempotencyKey) {
-      const existingOrder = await Order.findOne({ userId: customerActor.id, idempotencyKey }).lean()
+      const existingOrder = await Order.findOne({ userId: session.user.id, idempotencyKey }).lean()
       if (existingOrder) {
         return NextResponse.json(existingOrder)
       }
@@ -92,8 +81,8 @@ async function createCustomerOrderResponse(
 
     // Customer operational details are required to place an order, not to authenticate.
     // Privileged/test-order behavior remains governed by the existing authorization below.
-    if (customerActor.role === 'user') {
-      const profile = await User.findById(customerActor.id)
+    if (session.user.role === 'user') {
+      const profile = await User.findById(session.user.id)
         .select('name gender phone location defaultLocation')
         .lean();
       if (!profile || !isProfileComplete(profile)) {
@@ -435,7 +424,7 @@ async function createCustomerOrderResponse(
       serviceFee: configuredServiceFee ?? undefined,
     });
 
-    const customerLookupConditions = getUserLookupConditions(customerActor);
+    const customerLookupConditions = getUserLookupConditions(session.user);
     const customerAccount = customerLookupConditions.length
       ? await User.findOne({ $or: customerLookupConditions })
       .select(
@@ -516,7 +505,7 @@ async function createCustomerOrderResponse(
             taskerFee: pricing.taskerFee || 0,
           }
         : splitServiceFee(pricing.serviceFee);
-    const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(customerActor.id);
+    const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(session.user.id);
     const serviceFeeDiscountApplied = Boolean(
       customerAccount?.serviceFeeDiscountEnabled &&
         Number(customerAccount?.serviceFeeDiscountRemainingOrders || 0) > 0 &&
@@ -543,11 +532,9 @@ async function createCustomerOrderResponse(
     const batching = normalizedTaskType === INDOMIE_TASK_TYPE ? { taskerSearchStartedAt: bookedAt } : await batchingMetadata(normalizedTaskType, bookedAt)
 
     const order = new Order({
-      userId: customerActor.id,
+      userId: session.user.id,
       idempotencyKey,
-      source: customerActor.source,
-      customerPhone: customerActor.source === 'whatsapp' ? customerActor.customerPhone : undefined,
-      customerName: customerActor.source === 'whatsapp' ? customerActor.customerName || customerActor.name || undefined : undefined,
+      source: 'website',
       taskType: normalizedTaskType,
       description: isCafeInquiry ? 'Text me what is in cafe' : normalizedDescription,
       amount: pricing.amount,
@@ -634,9 +621,9 @@ async function createCustomerOrderResponse(
       settlementStatus: 'not_due',
       isTestOrder,
       createdInMode: getCreatedInMode(isTestOrder),
-      testOrderCreatedBy: isTestOrder ? customerActor.id : undefined,
+      testOrderCreatedBy: isTestOrder ? session.user.id : undefined,
       testOrderCreatedByRole: isTestOrder
-        ? customerAccount?.excoRole || customerActor.role || 'exco'
+        ? customerAccount?.excoRole || session.user.role || 'exco'
         : undefined,
     });
 
@@ -722,8 +709,8 @@ async function createCustomerOrderResponse(
                 const result = await notifyAdminsOfOrderEvent({
                   event: 'created',
                   order: persistedOrder,
-                  actorName: customerActor.name || null,
-                  actorEmail: customerActor.email || null,
+                  actorName: session.user.name || null,
+                  actorEmail: session.user.email || null,
                   actorRole: 'customer',
                 })
 
@@ -767,8 +754,9 @@ async function createCustomerOrderResponse(
     if (error instanceof NoActiveAcademicSessionError) return NextResponse.json({ error: error.message, code: 'NO_ACTIVE_SESSION' }, { status: 409 })
     // The unique sparse index closes the race between two simultaneous retries.
     if (idempotencyKey && (error as { code?: number }).code === 11000) {
-      if (actor?.id) {
-        const existingOrder = await Order.findOne({ userId: actor.id, idempotencyKey }).lean()
+      const session = await auth.api.getSession({ headers: request.headers })
+      if (session?.user?.id) {
+        const existingOrder = await Order.findOne({ userId: session.user.id, idempotencyKey }).lean()
         if (existingOrder) return NextResponse.json(existingOrder)
       }
     }
@@ -777,30 +765,6 @@ async function createCustomerOrderResponse(
       { error: 'Failed to create order' },
       { status: 500 }
     );
-  }
-}
-
-registerCustomerOrderImplementation(createCustomerOrderResponse)
-
-export async function POST(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: request.headers })
-  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  try {
-    const input = await request.json()
-    const result = await createCustomerOrder({
-      id: session.user.id,
-      name: session.user.name,
-      email: session.user.email,
-      role: session.user.role,
-      source: 'website',
-    }, input, request.headers.get('Idempotency-Key')?.trim() || undefined)
-    return NextResponse.json(result.order, { status: result.recovered ? 200 : 201 })
-  } catch (error) {
-    if (error instanceof CustomerOrderServiceError) {
-      return NextResponse.json(error.details || { error: error.message, code: error.code }, { status: error.status })
-    }
-    console.error('[Orders POST Adapter Error]', error)
-    return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
   }
 }
 
