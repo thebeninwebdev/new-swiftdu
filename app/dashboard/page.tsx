@@ -56,6 +56,7 @@ import { acquireSharedSocket, releaseSharedSocket, type SharedRealtimeClient } f
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 import {
   getCustomerOperationsState,
+  formatNextOperationalOpening,
   isCustomerOrderingUnavailable,
   type CustomerOperationsStatus,
 } from '@/lib/operations-display'
@@ -80,6 +81,28 @@ const PENDING_ORDER_STORAGE_KEY = 'swiftdu:pending-order-submission-v1'
 const PENDING_ORDER_MAX_AGE_MS = 24 * 60 * 60 * 1000
 const ORDER_REQUEST_TIMEOUT_MS = 22_000
 const ORDER_SLOW_REQUEST_MS = 8_000
+
+type PendingOrderSubmission = { version: 1; body: Record<string, unknown>; idempotencyKey: string; createdAt: number }
+
+function readPendingOrderSubmission(): PendingOrderSubmission | null {
+  try {
+    const stored = window.localStorage.getItem(PENDING_ORDER_STORAGE_KEY)
+    if (!stored) return null
+    const parsed = JSON.parse(stored) as Partial<PendingOrderSubmission>
+    if (parsed.version !== 1 || !parsed.body || !parsed.idempotencyKey || !parsed.createdAt) return null
+    return parsed as PendingOrderSubmission
+  } catch {
+    return null
+  }
+}
+
+function writePendingOrderSubmission(submission: PendingOrderSubmission) {
+  try { window.localStorage.setItem(PENDING_ORDER_STORAGE_KEY, JSON.stringify(submission)) } catch { /* Best-effort recovery must never block submission. */ }
+}
+
+function clearPendingOrderSubmission() {
+  try { window.localStorage.removeItem(PENDING_ORDER_STORAGE_KEY) } catch { /* Best-effort recovery. */ }
+}
 
 type PackagingLanguage = 'pidgin' | 'english'
 
@@ -410,15 +433,14 @@ export default function ErrandWizardPage() {
 
   useEffect(() => { void fetch('/api/locations').then(response => response.ok ? response.json() : null).then(data => setParentLocations(data?.locations || [])).catch(() => undefined) }, [])
   useEffect(() => {
-    const stored = window.localStorage.getItem(PENDING_ORDER_STORAGE_KEY)
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as { version?: number; body?: Record<string, unknown>; idempotencyKey?: string; createdAt?: number }
-        if (parsed.version === 1 && parsed.body && parsed.idempotencyKey && parsed.createdAt && Date.now() - parsed.createdAt < PENDING_ORDER_MAX_AGE_MS) {
-          orderIdempotencyKeyRef.current = parsed.idempotencyKey
-          setPendingRecovery({ body: parsed.body, idempotencyKey: parsed.idempotencyKey, createdAt: parsed.createdAt })
-        } else window.localStorage.removeItem(PENDING_ORDER_STORAGE_KEY)
-      } catch { window.localStorage.removeItem(PENDING_ORDER_STORAGE_KEY) }
+    const parsed = readPendingOrderSubmission()
+    if (parsed) {
+      if (Date.now() - parsed.createdAt < PENDING_ORDER_MAX_AGE_MS) {
+        orderIdempotencyKeyRef.current = parsed.idempotencyKey
+        setPendingRecovery({ body: parsed.body, idempotencyKey: parsed.idempotencyKey, createdAt: parsed.createdAt })
+      } else {
+        clearPendingOrderSubmission()
+      }
     }
     const updateOnline = () => setIsOffline(!navigator.onLine)
     updateOnline()
@@ -1386,7 +1408,7 @@ if (stepNumber === detailsStep) {
       indomieMeals: formData.taskType === INDOMIE_TASK_TYPE ? [{ indomiePacks, eggCount, amount: Number(amount), description: description || undefined }] : undefined,
       expectedIndomieMode: formData.taskType === INDOMIE_TASK_TYPE ? 'normal' : undefined,
     }
-    window.localStorage.setItem(PENDING_ORDER_STORAGE_KEY, JSON.stringify({ version: 1, body, idempotencyKey, createdAt: Date.now() }))
+    writePendingOrderSubmission({ version: 1, body, idempotencyKey, createdAt: Date.now() })
     const savedSubmission = { body, idempotencyKey, createdAt: Date.now() }
     setPendingRecovery(null)
     if (!navigator.onLine) {
@@ -1403,6 +1425,7 @@ if (stepNumber === detailsStep) {
     setMascotInteraction('scan')
     setIsSubmitting(true)
     let submitted = false
+    let responseReceived = false
     let timeout = 0
     let slowNotice = 0
     try {
@@ -1416,12 +1439,16 @@ if (stepNumber === detailsStep) {
         body: JSON.stringify(body),
         signal: controller.signal,
       })
+      responseReceived = true
       const responsePayload = await response.json()
       window.clearTimeout(timeout)
       window.clearTimeout(slowNotice)
       console.info('[Orders Client Timing]', { durationMs: Math.round(performance.now() - startedAt), outcome: response.ok ? 'success' : 'server-error' })
 
       if (!response.ok) {
+        clearPendingOrderSubmission()
+        setPendingRecovery(null)
+        orderIdempotencyKeyRef.current = null
         setSubmissionFailed(true)
         setMascotInteraction('apologize')
         toast.error(responsePayload.error || 'Failed to submit task.')
@@ -1429,7 +1456,7 @@ if (stepNumber === detailsStep) {
       }
 
       const createdOrder = responsePayload
-      window.localStorage.removeItem(PENDING_ORDER_STORAGE_KEY)
+      clearPendingOrderSubmission()
       toast.success(createdOrder.taskType === INDOMIE_TASK_TYPE ? 'Your Indomie run is reserved. Send payment to your tasker.' : createdOrder.isTestOrder ? 'Training order posted successfully.' : 'Task posted successfully. Taskers can see it now.')
       setActiveOrder(createdOrder)
       setTaskTypeUsageCounts((previous) => ({
@@ -1439,9 +1466,9 @@ if (stepNumber === detailsStep) {
       submitted = true
       setTransitioningOrderId(createdOrder._id)
       router.replace(`/dashboard/tasks/${createdOrder._id}`)
-    } catch (error) {
+    } catch {
       if (!submitted) {
-        if (error instanceof DOMException && error.name === 'AbortError') {
+        if (!responseReceived) {
           setPendingRecovery({ body, idempotencyKey, createdAt: Date.now() })
           setSubmissionUncertain(true)
           setMascotInteraction('attention')
@@ -1477,7 +1504,7 @@ if (stepNumber === detailsStep) {
   }
 
   const discardPendingOrder = () => {
-    window.localStorage.removeItem(PENDING_ORDER_STORAGE_KEY)
+    clearPendingOrderSubmission()
     orderIdempotencyKeyRef.current = null
     setPendingRecovery(null)
   }
@@ -1516,6 +1543,14 @@ if (stepNumber === detailsStep) {
   const unavailableOrderMessage = customerOperationsState === 'paused'
     ? 'New orders are temporarily paused.'
     : 'New orders are not available right now.'
+  const renderClosedOperationsCard = () => customerOperationsState === 'closed' && operationsStatus ? (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-amber-950 shadow-sm dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100" role="status">
+      <p className="font-black">SwiftDU is currently closed</p>
+      <p className="mt-1 text-sm font-medium">
+        New orders are paused until {formatNextOperationalOpening(operationsStatus.nextOpeningAt, operationsStatus.openingTime, currentTime)}. You can still view and manage existing orders.
+      </p>
+    </div>
+  ) : null
   const shouldShowDiscountCard = hasAvailableAccountDiscount && step === 1
   const renderServiceFeeAmount = (className = 'font-medium') =>
     hasAvailableServiceFeeDiscount ? (
@@ -2211,6 +2246,7 @@ if (stepNumber === detailsStep) {
 
   const renderTopNotices = () => (
     <div className="space-y-3 px-3 min-[390px]:px-4 lg:px-0">
+      {renderClosedOperationsCard()}
       {hasExcoDashboardAccess && isExcoTrainingMode ? (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-950 shadow-sm dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-100">
           <div className="flex items-start gap-3">
@@ -2402,7 +2438,7 @@ if (stepNumber === detailsStep) {
 
   if (newOrdersUnavailable && step > 1 && !activeOrder) {
     const paused = customerOperationsState === 'paused'
-    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" /><h1 className="mt-6 text-3xl font-black">{paused ? 'SwiftDU is temporarily paused' : 'New orders are unavailable'}</h1><p className="mt-3 text-slate-600 dark:text-slate-300">Your existing orders will continue normally.</p><div className="mt-8 w-full space-y-3"><Link href="/dashboard/tasks" className="flex min-h-12 items-center justify-center rounded-xl bg-violet-600 px-4 font-bold text-white">View my orders</Link><Button variant="outline" className="min-h-12 w-full" onClick={() => setStep(1)}>Back to dashboard</Button></div></main>
+    return <main className="mx-auto flex min-h-[calc(100dvh-5rem)] max-w-lg flex-col items-center justify-center px-5 text-center"><OrderMascot mood="warning" interaction="apologize" size="lg" />{renderClosedOperationsCard()}<h1 className="mt-6 text-3xl font-black">{paused ? 'SwiftDU is temporarily paused' : 'New orders are unavailable'}</h1><p className="mt-3 text-slate-600 dark:text-slate-300">Your existing orders will continue normally.</p><div className="mt-8 w-full space-y-3"><Link href="/dashboard/tasks" className="flex min-h-12 items-center justify-center rounded-xl bg-violet-600 px-4 font-bold text-white">View my orders</Link><Button variant="outline" className="min-h-12 w-full" onClick={() => setStep(1)}>Back to dashboard</Button></div></main>
   }
 
   // Scheduled Indomie owns the evening flow only; daytime Indomie stays in the generic wizard.
@@ -2426,7 +2462,7 @@ if (stepNumber === detailsStep) {
         <Button className="min-h-12 flex-1 bg-indigo-600" disabled={isOffline} onClick={() => void createOrder(pendingRecovery)}>Retry safely</Button>
         <Button variant="outline" className="min-h-12 flex-1" onClick={discardPendingOrder}>Discard</Button>
       </div>
-      {isOffline ? <p className="mt-4 text-xs text-slate-500">When you are online, choose Send when online to try again.</p> : null}
+      {isOffline ? <p className="mt-4 text-xs text-slate-500">Retry safely when your connection returns.</p> : null}
     </main>
   )
 
