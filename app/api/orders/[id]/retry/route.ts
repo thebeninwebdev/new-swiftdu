@@ -2,6 +2,7 @@ import { validateDeliveryRoom } from '@/lib/delivery-policy';
 import { NoActiveAcademicSessionError, saveNewOrderWithBonus } from '@/lib/first-order-bonus';
 import { calculateOrderPricing, type PricingResult } from '@/lib/pricing';
 import { getConfiguredServiceFee } from '@/lib/pricing-config';
+import { validateOrderAgainstCommercePolicy } from '@/lib/commerce-policy';
 import { resolveVendorDeliveryPricing, VendorPricingError } from '@/lib/vendors';
 import { NextResponse, type NextRequest } from 'next/server';
 
@@ -92,6 +93,13 @@ export async function POST(
         { status: 409 }
       );
     }
+
+    const commercePolicy = validateOrderAgainstCommercePolicy({
+      taskType: order.taskType,
+      description: order.description,
+      vendorName: order.store,
+    });
+    if (!commercePolicy.allowed) return NextResponse.json({ error: commercePolicy.reason }, { status: 400 });
     if (!canCreateOrder(isTestOrder)) {
       return NextResponse.json(OPERATIONS_SUSPENDED, { status: 503 });
     }

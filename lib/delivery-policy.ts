@@ -1,5 +1,8 @@
 export type TaskerGenderRestriction = 'male' | 'female' | 'any'
 
+// These internal values represent physical residence access requirements, not
+// the customer's gender. The stored enum remains unchanged for compatibility.
+
 // The booking form currently accepts free text. Keep explicit destination aliases
 // here until delivery locations have their own persisted IDs.
 export const DELIVERY_DESTINATIONS: ReadonlyArray<{

@@ -3060,6 +3060,9 @@ if (stepNumber === detailsStep) {
                         <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
                           Tap the microphone to say your order or type manually.
                         </p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">
+                          Restricted items are not accepted. <Link href="/policies/ordering-and-whatsapp" className="font-semibold text-emerald-700 underline dark:text-emerald-300">View ordering policy</Link>.
+                        </p>
                         {isSpeechSupported === true ? (
                           <Button
                             type="button"

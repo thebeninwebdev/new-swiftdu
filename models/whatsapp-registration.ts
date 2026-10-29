@@ -9,6 +9,9 @@ export interface IWhatsAppRegistration extends Document {
   token: string;
   status: WhatsAppRegistrationStatus;
   linkedAt?: Date;
+  whatsappConsentAt?: Date;
+  whatsappConsentVersion?: string;
+  whatsappConsentSource?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -42,6 +45,9 @@ const whatsappRegistrationSchema = new Schema<IWhatsAppRegistration>(
       required: true,
     },
     linkedAt: Date,
+    whatsappConsentAt: Date,
+    whatsappConsentVersion: String,
+    whatsappConsentSource: String,
   },
   { timestamps: true }
 );

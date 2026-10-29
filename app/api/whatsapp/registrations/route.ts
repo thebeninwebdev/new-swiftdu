@@ -7,6 +7,9 @@ import { sendWhatsAppWelcomeMenu } from '@/lib/whatsapp/send-message';
 import { User } from '@/models/user';
 import { WhatsAppRegistration } from '@/models/whatsapp-registration';
 
+const WHATSAPP_CONSENT_VERSION = '2026-10';
+const WHATSAPP_CONSENT_SOURCE = 'whatsapp-link-page';
+
 export const runtime = 'nodejs';
 
 async function findRegistration(token: string) {
@@ -52,9 +55,13 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const token = typeof body?.token === 'string' ? body.token.trim() : '';
+    const consent = body?.whatsappConsent === true;
 
     if (!token) {
       return NextResponse.json({ error: 'Registration token is required.' }, { status: 400 });
+    }
+    if (!consent) {
+      return NextResponse.json({ error: 'Please agree to receive transactional WhatsApp messages before linking.' }, { status: 400 });
     }
 
     await connectDB();
@@ -89,6 +96,9 @@ export async function POST(request: NextRequest) {
     registration.userId = session.user.id;
     registration.status = 'linked';
     registration.linkedAt = new Date();
+    registration.whatsappConsentAt = new Date();
+    registration.whatsappConsentVersion = WHATSAPP_CONSENT_VERSION;
+    registration.whatsappConsentSource = WHATSAPP_CONSENT_SOURCE;
     await registration.save();
 
     if (!wasAlreadyLinkedToUser) {

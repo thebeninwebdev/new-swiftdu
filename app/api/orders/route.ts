@@ -51,6 +51,7 @@ import { randomUUID } from 'node:crypto';
 import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings';
 import { formatMinute, getIndomieServiceMode, getNextOpeningTime, getOperationsSettings, getOperationsStatus } from '@/lib/operations-settings';
 import { persistThenScheduleOrderCreation, type OrderCreationBackgroundJob } from '@/lib/order-creation-background';
+import { validateOrderAgainstCommercePolicy } from '@/lib/commerce-policy';
 import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError, serializeOrderSession } from '@/lib/orders/order-session-scope';
 import { CUSTOMER_ORDER_CARD_FIELDS, parseOrderPagination } from '@/lib/orders/order-list-fields';
 
@@ -180,6 +181,14 @@ export async function POST(request: NextRequest) {
     if (normalizedDeliveryLocation && normalizedDeliveryLocation.length > 120) return NextResponse.json({ error: 'Exact delivery location must be at most 120 characters.' }, { status: 400 });
     const normalizedDescription = String(description || '').trim();
     const normalizedTaskType = String(taskType || '').trim();
+    const commercePolicy = validateOrderAgainstCommercePolicy({
+      taskType: normalizedTaskType,
+      description: normalizedDescription,
+      vendorName: typeof store === 'string' ? store : undefined,
+    });
+    if (!commercePolicy.allowed) {
+      return NextResponse.json({ error: commercePolicy.reason }, { status: 400 });
+    }
     const isCafeInquiry = normalizedTaskType === 'restaurant' && cafeInquiry === true;
     const parsedAmount = isCafeInquiry ? 0 : Number(amount);
     if (isCafeInquiry && (typeof store !== 'string' || !store.trim() || typeof location !== 'string' || !location.trim())) {

@@ -41,6 +41,7 @@ import {
 } from '@/lib/push-notifications';
 import { shouldSendOrderNotification } from '@/lib/test-orders';
 import { canWorkOnOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
+import { validateOrderAgainstCommercePolicy } from '@/lib/commerce-policy';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 const COMPLETION_EXTENSION_MINUTES = 10;
@@ -92,6 +93,15 @@ export async function PATCH(
 
     if (!order) {
       return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    }
+
+    if (body.description !== undefined || body.taskType !== undefined || body.store !== undefined) {
+      const commercePolicy = validateOrderAgainstCommercePolicy({
+        taskType: body.taskType !== undefined ? String(body.taskType) : order.taskType,
+        description: body.description !== undefined ? String(body.description) : order.description,
+        vendorName: body.store !== undefined ? String(body.store) : order.store,
+      });
+      if (!commercePolicy.allowed) return NextResponse.json({ error: commercePolicy.reason }, { status: 400 });
     }
 
     ensureBookedAt(order);
@@ -1110,6 +1120,7 @@ const session = await auth.api.getSession({
       const exact = await CampusLocation.findById(order.exactLocationId).select('name coordinates').lean()
       return NextResponse.json({ ...order.toObject(), exactLocation: exact ? { name: exact.name, coordinates: exact.coordinates } : undefined });
     }
+
     return NextResponse.json(order);
   } catch (error) {
     console.error('[Orders DELETE Error]:', error);

@@ -7,6 +7,10 @@ interface WhatsAppTextPayload {
   };
 }
 
+import { connectDB } from '@/lib/db';
+import { WhatsAppSession } from '@/models/whatsapp-session';
+import { isWithinWhatsAppCustomerServiceWindow } from './window';
+
 const WHATSAPP_MESSAGE_FOOTER = 'Sammy from SwiftDU';
 
 export type WhatsAppListSection = {
@@ -68,6 +72,13 @@ type WhatsAppMessagePayload =
   | WhatsAppListPayload
   | WhatsAppReplyButtonsPayload;
 
+type WhatsAppTemplatePayload = {
+  messaging_product: 'whatsapp';
+  to: string;
+  type: 'template';
+  template: { name: string; language: { code: string }; components?: unknown[] };
+};
+
 interface WhatsAppReadPayload {
   messaging_product: 'whatsapp';
   status: 'read';
@@ -88,8 +99,16 @@ function requireWhatsAppSendEnv() {
   return { accessToken, phoneNumberId };
 }
 
-async function sendWhatsAppPayload(payload: WhatsAppMessagePayload, logLabel: string) {
+async function sendWhatsAppPayload(payload: WhatsAppMessagePayload | WhatsAppTemplatePayload, logLabel: string, bypassWindow = false) {
   try {
+    if (!bypassWindow) {
+      await connectDB();
+      const session = await WhatsAppSession.findOne({ phone: payload.to }).select('lastCustomerMessageAt').lean();
+      if (!isWithinWhatsAppCustomerServiceWindow(session?.lastCustomerMessageAt)) {
+        console.warn('[WhatsApp Compliance] Free-form message suppressed outside 24-hour window.');
+        return;
+      }
+    }
     const { accessToken, phoneNumberId } = requireWhatsAppSendEnv();
 
     const response = await fetch(
@@ -112,6 +131,26 @@ async function sendWhatsAppPayload(payload: WhatsAppMessagePayload, logLabel: st
     console.error(`[${logLabel}]:`, error);
     throw error;
   }
+}
+
+export async function sendWhatsAppTemplate(input: {
+  to: string;
+  templateName?: string;
+  languageCode?: string;
+  components?: unknown[];
+}) {
+  const name = input.templateName?.trim() || process.env.WHATSAPP_TEMPLATE_NAME?.trim();
+  const languageCode = input.languageCode?.trim() || process.env.WHATSAPP_TEMPLATE_LANGUAGE_CODE?.trim() || 'en_US';
+  if (!name) {
+    console.warn('[WhatsApp Compliance] No approved template configured; message suppressed outside 24-hour window.');
+    return;
+  }
+  await sendWhatsAppPayload({
+    messaging_product: 'whatsapp',
+    to: input.to,
+    type: 'template',
+    template: { name, language: { code: languageCode }, components: input.components },
+  }, 'WhatsApp Template Send Error', true);
 }
 
 function withWhatsAppFooter(body: string) {

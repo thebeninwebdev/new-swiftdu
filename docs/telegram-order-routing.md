@@ -2,17 +2,17 @@
 
 Order creation and retry save the order first, then call notifyAdminsOfOrderEvent in lib/order-alerts.ts. Telegram errors remain caught; each chat delivery settles independently and has a 10-second timeout. No extra order is created for a broadcast.
 
-## Destination policy
+## Destination access policy
 
-lib/delivery-policy.ts is the shared destination catalogue. The current booking UI and stored orders use free-text locations, not delivery-zone IDs. Matching uses explicit normalized, whole-word aliases and allows room/block details. Customer gender is never consulted.
+lib/delivery-policy.ts is the shared destination catalogue. The current booking UI and stored orders use free-text locations, not delivery-zone IDs. Matching uses explicit normalized, whole-word aliases and allows room/block details. Customer gender is never consulted. Certain university residences restrict who may enter the premises. SwiftDU applies destination access requirements based on physical campus access requirements, not the customer's gender.
 
-- Girls Hostel / Female Hostel: female.
-- Amnesty / Amnesty Hostel / Boys Hostel / Male Hostel: male.
+- Girls Hostel / Female Hostel: Girls Hostel access required internally.
+- Amnesty / Amnesty Hostel / Boys Hostel / Male Hostel: Boys Hostel access required internally.
 - Every other non-empty destination: any (open to all taskers).
 - Empty or conflicting hostel destinations: unclassified; no Telegram broadcast. Creation/location edits reject these ambiguous destinations.
 - Other free-text destinations, including legacy Law Hall orders, are open to all taskers.
 
-models/order.ts derives taskerGenderRestriction on validation of new orders and location changes, covering creation and retry. Legacy orders use the same catalogue for routing and visibility, so a bulk database migration is not required for recognized destinations. Stored restrictions never override the delivery destination; non-hostel destinations route to all taskers.
+models/order.ts derives the internal access-routing value on validation of new orders and location changes, covering creation and retry. Legacy orders use the same catalogue for routing and visibility, so a bulk database migration is not required for recognized destinations. Stored restrictions never override the delivery destination; non-hostel destinations route to all taskers.
 
 ## Telegram configuration
 
@@ -32,7 +32,7 @@ Order alerts now reuse the existing direct sender rather than Sammy: the relay's
 
 ## Acceptance and visibility
 
-Gender restriction is routing and distribution metadata, not an acceptance authorization boundary. Any otherwise eligible authenticated tasker who receives a direct Accept Order link may accept the order regardless of gender, including missing, other, or undisclosed gender. The same rule applies to direct Indomie batch acceptance. Request-supplied gender/restriction fields remain ignored. Atomic assignment still matches the inspected location and updatedAt to reject a concurrent location edit.
+Destination access is routing and distribution metadata, not an acceptance authorization boundary. Any otherwise eligible authenticated tasker who receives a direct Accept Order link may accept the order regardless of this metadata. The same rule applies to direct Indomie batch acceptance. Request-supplied access fields remain ignored. Atomic assignment still matches the inspected location and updatedAt to reject a concurrent location edit.
 
 Both available-order endpoints continue to filter with the routing policy; existing assigned work remains visible to its tasker in the errands feed. Telegram and new/retried order web-push distribution also remain gender-routed. These visibility choices do not control direct-link acceptance. Existing authentication, tasker-profile, mode, verification, rejection, settlement, check-in, capacity, freshness, batching, and first-accept-wins rules still apply.
 

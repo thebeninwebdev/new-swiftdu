@@ -25,6 +25,7 @@ function WhatsAppRegistrationContent() {
   const [registration, setRegistration] = useState<RegistrationResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [linking, setLinking] = useState(false);
+  const [whatsappConsent, setWhatsappConsent] = useState(false);
 
   useEffect(() => {
     if (!token) {
@@ -70,7 +71,7 @@ function WhatsAppRegistrationContent() {
       const response = await fetch('/api/whatsapp/registrations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, whatsappConsent }),
       });
       const data = (await response.json()) as RegistrationResponse;
 
@@ -127,8 +128,20 @@ function WhatsAppRegistrationContent() {
                   Log in to any SwiftDU account you own, then link this WhatsApp number to use Sammy.
                   If you changed numbers, this will replace your previous WhatsApp link.
                 </p>
+                <label className="flex items-start gap-3 text-sm text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    checked={whatsappConsent}
+                    onChange={(event) => setWhatsappConsent(event.target.checked)}
+                    className="mt-1 h-4 w-4 rounded border-border"
+                  />
+                  <span>
+                    I agree to receive WhatsApp messages from SwiftDU about my account and orders. I can stop these messages at any time.{' '}
+                    <Link className="font-semibold text-primary underline" href="/policies/ordering-and-whatsapp">Read the policy</Link>.
+                  </span>
+                </label>
                 {session?.user ? (
-                  <Button onClick={handleLink} disabled={linking} size="lg" className="w-full">
+                  <Button onClick={handleLink} disabled={linking || !whatsappConsent} size="lg" className="w-full">
                     {linking ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                     Link WhatsApp to my account
                   </Button>

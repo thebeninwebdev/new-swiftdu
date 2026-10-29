@@ -24,6 +24,7 @@ export interface IWhatsAppSession extends Document {
     location?: string;
   };
   lastMessageId?: string;
+  lastCustomerMessageAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,6 +63,7 @@ const whatsappSessionSchema = new Schema<IWhatsAppSession>(
       location: String,
     },
     lastMessageId: String,
+    lastCustomerMessageAt: Date,
   },
   { timestamps: true }
 );

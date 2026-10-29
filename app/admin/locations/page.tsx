@@ -117,17 +117,17 @@ export default function AdminLocationsPage(){
          </label>
          {mode === "parent" && (
            <label className="text-sm font-semibold">
-             Delivery access *
+              Hostel access requirement *
              <select
                value={form.taskerGenderRestriction}
                onChange={(e) => setForm({ ...form, taskerGenderRestriction: e.target.value as GenderRestriction })}
                className="mt-1 h-11 w-full rounded-xl border px-3"
              >
-               <option value="any">Everyone</option>
-               <option value="male">Boys only</option>
-               <option value="female">Girls only</option>
+                <option value="any">No special access requirement</option>
+                <option value="male">Boys Hostel access required</option>
+                <option value="female">Girls Hostel access required</option>
              </select>
-             <span className="mt-1 block text-xs font-normal text-slate-500">Only matching taskers can accept orders to this parent location.</span>
+              <span className="mt-1 block text-xs font-normal text-slate-500">Certain residences restrict who may enter. Only taskers with the required destination access are shown this order.</span>
            </label>
          )}
        </div>
