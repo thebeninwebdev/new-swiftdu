@@ -10,11 +10,6 @@ export const TASKER_AVAILABLE_ORDER_FIELDS = [
   'taskerGenderRestriction', 'cafeInquiry', 'isTestOrder', 'createdAt', 'updatedAt',
 ].join(' ')
 
-export const SAMMY_TRACKING_ORDER_FIELDS = [
-  '_id', 'taskType', 'description', 'status', 'totalAmount', 'location', 'store',
-  'taskerName', 'hasPaid', 'paymentStatus', 'trackingToken', 'createdAt',
-].join(' ')
-
 export const DEFAULT_ORDER_PAGE_LIMIT = 20
 export const MAX_ORDER_PAGE_LIMIT = 50
 
