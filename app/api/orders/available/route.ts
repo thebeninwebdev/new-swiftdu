@@ -7,6 +7,8 @@ import {auth} from '@/lib/auth';
 import Tasker from '@/models/tasker';
 import { getTaskerOrderModeFilter } from '@/lib/test-orders';
 import { TASKER_SEARCH_TIMEOUT_MS } from '@/lib/order-tracking';
+import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError } from '@/lib/orders/order-session-scope';
+import { TASKER_AVAILABLE_ORDER_FIELDS } from '@/lib/orders/order-list-fields';
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,18 +28,24 @@ export async function GET(request: NextRequest) {
       : null;
 
     // Fetch all pending tasks that don't belong to the current user
-    const availableTasks = await Order.find({
+    const currentSession = await getActiveAcademicSession();
+    const availableTasks = await Order.find(applyCurrentSessionOrderScope({
       status: 'pending',
       createdAt: { $gt: new Date(Date.now() - TASKER_SEARCH_TIMEOUT_MS) },
       ...getTaskerOrderModeFilter(tasker || undefined),
       // userId: { $ne: session.user.id }, // Exclude user's own tasks
-    })
+    }, currentSession))
+      .select(TASKER_AVAILABLE_ORDER_FIELDS)
       .sort({ createdAt: -1 })
+      .limit(50)
       .lean();
 
     const account = await User.findById(session.user.id).select('gender').lean();
     return NextResponse.json(availableTasks.filter(order => canTaskerDeliver(order, account?.gender)));
   } catch (error) {
+    if (error instanceof NoActiveOrderSessionError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    }
     console.error('[Available Tasks GET Error]:', error);
     return NextResponse.json(
       { error: 'Failed to fetch available tasks' },

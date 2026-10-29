@@ -8,6 +8,14 @@ interface WhatsAppTextPayload {
 }
 
 const WHATSAPP_MESSAGE_FOOTER = 'Sammy from SwiftDU';
+const DEFAULT_WHATSAPP_GRAPH_API_VERSION = 'v20.0';
+
+function whatsappGraphApiVersion() {
+  const configured = process.env.WHATSAPP_GRAPH_API_VERSION?.trim();
+  return configured && /^v\d+\.\d+$/.test(configured)
+    ? configured
+    : DEFAULT_WHATSAPP_GRAPH_API_VERSION;
+}
 
 export type WhatsAppListSection = {
   title?: string;
@@ -93,7 +101,7 @@ async function sendWhatsAppPayload(payload: WhatsAppMessagePayload, logLabel: st
     const { accessToken, phoneNumberId } = requireWhatsAppSendEnv();
 
     const response = await fetch(
-      `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+      `https://graph.facebook.com/${whatsappGraphApiVersion()}/${phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {
@@ -140,6 +148,10 @@ export async function sendWhatsAppListMessage({
   buttonText: string;
   sections: WhatsAppListSection[];
 }) {
+  const rowCount = sections.reduce((count, section) => count + section.rows.length, 0);
+  if (rowCount < 1 || rowCount > 10) {
+    throw new Error('WhatsApp lists must contain between 1 and 10 rows.');
+  }
   const payload: WhatsAppListPayload = {
     messaging_product: 'whatsapp',
     to,
@@ -186,6 +198,9 @@ export async function sendWhatsAppReplyButtons({
   body: string;
   buttons: WhatsAppReplyButton[];
 }) {
+  if (buttons.length < 1 || buttons.length > 3) {
+    throw new Error('WhatsApp reply messages must contain between 1 and 3 buttons.');
+  }
   const payload: WhatsAppReplyButtonsPayload = {
     messaging_product: 'whatsapp',
     to,
@@ -217,7 +232,7 @@ export async function markWhatsAppMessageRead(messageId: string, showTyping = tr
     };
 
     const response = await fetch(
-      `https://graph.facebook.com/v20.0/${phoneNumberId}/messages`,
+      `https://graph.facebook.com/${whatsappGraphApiVersion()}/${phoneNumberId}/messages`,
       {
         method: 'POST',
         headers: {

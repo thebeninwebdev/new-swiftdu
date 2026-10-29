@@ -14,6 +14,7 @@ import {
 import { getApprovedExpenditureTotal } from '@/lib/expenditures'
 import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { buildCreatedAtPeriodMatch, resolveFinancePeriod } from '@/lib/finance-periods'
+import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError } from '@/lib/orders/order-session-scope'
 
 // ─── GET /api/admin/dashboard ────────────────────────────────────────────────
 // Returns dashboard statistics and recent activity.
@@ -34,6 +35,8 @@ export async function GET(request: NextRequest) {
     const periodMatch = buildCreatedAtPeriodMatch(period)
     const financeMatch = excludeCancelledOrders(periodMatch)
     const nonTestMatch = excludeTestOrders(periodMatch)
+    const currentSession = await getActiveAcademicSession()
+    const operationalOrderMatch = applyCurrentSessionOrderScope(excludeTestOrders(), currentSession)
 
     // Get stats
     const [
@@ -87,7 +90,8 @@ export async function GET(request: NextRequest) {
 
     // Get recent activity (last 10 items)
     // Recent activity is platform-wide; the selected period scopes financial reporting only.
-    const recentOrders = await Order.find(excludeTestOrders())
+    const recentOrders = await Order.find(operationalOrderMatch)
+      .select('_id taskType location status createdAt')
       .sort({ createdAt: -1 })
       .limit(activityFetchLimit)
       .populate('taskerId', 'name')
@@ -106,7 +110,8 @@ export async function GET(request: NextRequest) {
       .lean()
 
 
-    const recentDeclinedOrders = await Order.find(excludeTestOrders({ isDeclinedTask: true }))
+    const recentDeclinedOrders = await Order.find(applyCurrentSessionOrderScope(excludeTestOrders({ isDeclinedTask: true }), currentSession))
+      .select('_id taskType location status declinedAt updatedAt createdAt')
       .sort({ declinedAt: -1, updatedAt: -1 })
       .limit(activityFetchLimit)
       .lean()
@@ -136,10 +141,10 @@ export async function GET(request: NextRequest) {
       .slice(activityOffset, activityOffset + activityLimit)
 
     const totalActivityItems = (await Promise.all([
-      Order.countDocuments(excludeTestOrders()),
+      Order.countDocuments(operationalOrderMatch),
       Tasker.countDocuments({ isVerified: false, isRejected: false }),
       Review.countDocuments(),
-      Order.countDocuments(excludeTestOrders({ isDeclinedTask: true }))
+      Order.countDocuments(applyCurrentSessionOrderScope(excludeTestOrders({ isDeclinedTask: true }), currentSession))
     ])).reduce((total, count) => total + count, 0)
 
     const stats = {
@@ -151,6 +156,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ stats, period, recentActivity, activityPagination: { page: activityPage, limit: activityLimit, totalItems: totalActivityItems, totalPages: Math.max(1, Math.ceil(totalActivityItems / activityLimit)) } })
   } catch (error) {
+    if (error instanceof NoActiveOrderSessionError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
+    }
     console.error('[GET /api/admin/dashboard]', error)
     return NextResponse.json({ error: 'Failed to fetch dashboard data' }, { status: 500 })
   }

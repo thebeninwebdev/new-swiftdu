@@ -548,9 +548,12 @@ orderSchema.index({ userId: 1, idempotencyKey: 1 }, { unique: true, sparse: true
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ userId: 1, isTestOrder: 1, status: 1 });
 orderSchema.index({ userId: 1, sessionId: 1, isTestOrder: 1 });
+orderSchema.index({ userId: 1, sessionId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ taskerId: 1, status: 1, createdAt: -1 });
+orderSchema.index({ taskerId: 1, sessionId: 1, status: 1, acceptedAt: -1 });
 orderSchema.index({ taskType: 1, status: 1, createdAt: -1 });
 orderSchema.index({ isTestOrder: 1, status: 1, createdAt: -1 });
+orderSchema.index({ sessionId: 1, isTestOrder: 1, status: 1, createdAt: -1 });
 orderSchema.index({ batchingStatus: 1, batchWindowEnd: 1, taskType: 1 });
 orderSchema.index({ taskerId: 1, batchingStatus: 1, scheduledFor: 1 });
 orderSchema.index({ userId: 1, indomieRunAt: 1, indomieReservationGroupId: 1 });

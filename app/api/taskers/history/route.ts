@@ -3,6 +3,8 @@ import {Order} from '@/models/order';
 import Tasker from '@/models/tasker';
 import { NextRequest, NextResponse } from 'next/server';
 import { getTaskerOrderModeFilter } from '@/lib/test-orders';
+import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError, serializeOrderSession } from '@/lib/orders/order-session-scope';
+import { parseOrderPagination } from '@/lib/orders/order-list-fields';
 
 const NON_TEST_ORDER_MATCH = {
   $or: [{ isTestOrder: false }, { isTestOrder: { $exists: false } }],
@@ -14,8 +16,10 @@ export async function GET(req: NextRequest) {
 
     const taskerId = req.nextUrl.searchParams.get('taskerId');
     const status = req.nextUrl.searchParams.get('status');
-    const page = parseInt(req.nextUrl.searchParams.get('page') || '1');
-    const limit = parseInt(req.nextUrl.searchParams.get('limit') || '10');
+    const { page, limit, skip } = parseOrderPagination(
+      req.nextUrl.searchParams.get('page'),
+      req.nextUrl.searchParams.get('limit') || '10'
+    );
 
     if (!taskerId) {
       return NextResponse.json(
@@ -24,38 +28,37 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const skip = (page - 1) * limit;
+    const currentSession = await getActiveAcademicSession();
     const tasker = await Tasker.findById(taskerId).select('taskerMode isVerified').lean();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const query: any = { taskerId, ...getTaskerOrderModeFilter(tasker || undefined) };
+    let query: any = applyCurrentSessionOrderScope(
+      { taskerId, ...getTaskerOrderModeFilter(tasker || undefined) },
+      currentSession
+    );
 
     // Filter by status if provided
     if (status) {
-      query.status = status;
+      query = { $and: [query, { status }] };
     }
 
     const orders = await Order.find(query)
       .skip(skip)
       .limit(limit)
       .populate('userId', 'name email profileImage')
-      .sort({ acceptedAt: -1 });
+      .sort({ acceptedAt: -1 })
+      .lean();
 
     const total = await Order.countDocuments(query);
 
     // Calculate stats
-    const completedOrders = await Order.countDocuments({
-      taskerId,
-      status: 'completed',
-      ...NON_TEST_ORDER_MATCH,
-    });
+    const completedQuery = applyCurrentSessionOrderScope({
+      taskerId, status: 'completed', ...NON_TEST_ORDER_MATCH,
+    }, currentSession);
+    const completedOrders = await Order.countDocuments(completedQuery);
 
     const totalEarnings = await Order.aggregate([
       {
-        $match: {
-          taskerId,
-          status: 'completed',
-          ...NON_TEST_ORDER_MATCH,
-        },
+        $match: completedQuery,
       },
       {
         $group: {
@@ -77,8 +80,12 @@ export async function GET(req: NextRequest) {
         limit,
         pages: Math.ceil(total / limit),
       },
+      session: serializeOrderSession(currentSession),
     });
   } catch (error) {
+    if (error instanceof NoActiveOrderSessionError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    }
     console.error('Error fetching task history:', error);
     return NextResponse.json(
       { error: 'Failed to fetch task history' },

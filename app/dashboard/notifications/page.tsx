@@ -54,7 +54,7 @@ export default function DashboardNotifications() {
 
         const [activeResponse, reviewsResponse] = await Promise.all([
           fetch('/api/orders?status=pending,in_progress,paid&limit=12'),
-          fetch('/api/orders?status=completed&needsReview=true'),
+          fetch('/api/orders?status=completed&needsReview=true&limit=12'),
         ])
 
         const activeData = activeResponse.ok ? await activeResponse.json() : []

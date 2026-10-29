@@ -5,10 +5,10 @@ import { Order } from '@/models/order'
 import {User} from '@/models/user'
 import Tasker from '@/models/tasker'
 import mongoose from 'mongoose'
-import { AcademicSession } from '@/models/academic-session'
 import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { IndomieBatch } from '@/models/indomie-batch'
 import { LIVE_ORDER_STATUSES, isAdminOrderStatus } from '@/lib/admin-workspaces'
+import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError, serializeOrderSession } from '@/lib/orders/order-session-scope'
 
 const ADMIN_ORDER_FIELDS = [
   'userId', 'source', 'customerPhone', 'customerName', 'taskType', 'description',
@@ -39,29 +39,15 @@ export async function GET(req: NextRequest) {
     const limit = 20
     const skip = (page - 1) * limit
 
-    const currentSession = await AcademicSession.findOne({ isActive: true })
-      .select('_id name startDate endDate')
-      .lean()
-
-    if (!currentSession) {
-      return NextResponse.json(
-        { error: 'No active academic session is configured.' },
-        { status: 409 }
-      )
-    }
+    const currentSession = await getActiveAcademicSession()
 
     // Build filters
-    const filters: Record<string, unknown> = {
-      createdAt: {
-        $gte: currentSession.startDate,
-        $lte: currentSession.endDate,
-      },
-    }
+    const filters: Record<string, unknown> = {}
 
     if (searchParams.get('view') === 'indomie-batches') {
       const sessionWindow = { $gte: currentSession.startDate, $lte: currentSession.endDate }
       const [orders, batches] = await Promise.all([
-        Order.find({ taskType: 'indomie', createdAt: sessionWindow })
+        Order.find(applyCurrentSessionOrderScope({ taskType: 'indomie' }, currentSession))
           .select('_id batchId batchStatus batchingStatus batchWindowStart batchWindowEnd indomieRunAt indomieRunStatus scheduledFor indomieReservationGroupId indomiePacks eggCount indomieSlotCount status paymentStatus taskerId taskerName location deliveryDestinationKey isTestOrder createdAt')
           .sort({ indomieRunAt: -1, scheduledFor: -1, createdAt: -1 })
           .lean(),
@@ -72,10 +58,7 @@ export async function GET(req: NextRequest) {
         orders,
         batches,
         session: {
-          id: currentSession._id.toString(),
-          name: currentSession.name,
-          startDate: currentSession.startDate,
-          endDate: currentSession.endDate,
+          ...serializeOrderSession(currentSession),
         },
       }, { headers: { 'Cache-Control': 'no-store' } })
     }
@@ -125,13 +108,13 @@ export async function GET(req: NextRequest) {
 
     // Get orders with user and tasker details
     const [orders, totalOrders] = await Promise.all([
-      Order.find(filters)
+      Order.find(applyCurrentSessionOrderScope(filters, currentSession))
         .select(ADMIN_ORDER_FIELDS)
         .sort({ createdAt: -1 })
         .skip(skip)
         .limit(limit)
         .lean(),
-      Order.countDocuments(filters),
+      Order.countDocuments(applyCurrentSessionOrderScope(filters, currentSession)),
     ])
 
     // Get user details
@@ -198,14 +181,14 @@ export async function GET(req: NextRequest) {
       totalPages,
       totalOrders,
       session: {
-        id: currentSession._id.toString(),
-        name: currentSession.name,
-        startDate: currentSession.startDate,
-        endDate: currentSession.endDate,
+        ...serializeOrderSession(currentSession),
       },
     }, { headers: { 'Cache-Control': 'no-store' } })
 
   } catch (error) {
+    if (error instanceof NoActiveOrderSessionError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
+    }
     console.error('[GET /api/admin/orders]', error)
     return NextResponse.json(
       { error: 'Failed to fetch orders' },

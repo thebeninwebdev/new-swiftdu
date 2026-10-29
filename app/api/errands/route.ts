@@ -24,6 +24,7 @@ import {
 } from '@/lib/test-orders'
 import { releaseDueIndomieBatches } from '@/lib/indomie-batch-release'
 import { getTaskerRemainingCapacity, MAX_TASKER_ACTIVE_ORDERS } from '@/lib/indomie-capacity'
+import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError } from '@/lib/orders/order-session-scope'
 
 export const dynamic = 'force-dynamic'
 
@@ -185,7 +186,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch only the fields the tasker dashboard cards need.
-    let ordersQuery = Order.find(filter)
+    const currentSession = await getActiveAcademicSession()
+    const scopedFilter = applyCurrentSessionOrderScope(filter, currentSession)
+    let ordersQuery = Order.find(scopedFilter)
       .select(ERRAND_LIST_FIELDS)
       .sort({ [safeSortBy]: -1 })
 
@@ -225,6 +228,9 @@ export async function GET(request: NextRequest) {
       },
     })
   } catch (error) {
+    if (error instanceof NoActiveOrderSessionError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
+    }
     console.error('GET /api/errands error:', error)
     return NextResponse.json(
       { error: 'Failed to fetch errands' },

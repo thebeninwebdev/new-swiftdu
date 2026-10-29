@@ -8,6 +8,8 @@ export type LinkedWhatsAppUser = {
   name?: string | null;
   email?: string | null;
   phone?: string | null;
+  role?: 'user' | 'admin' | 'tasker' | null;
+  isSuspended?: boolean;
 };
 
 export function normalizeWhatsAppPhone(value?: string | null) {
@@ -81,11 +83,8 @@ export async function findLinkedWhatsAppUser(phone: string): Promise<LinkedWhats
     return null;
   }
 
-  const user = await User.findOne({
-    _id: registration.userId,
-    isSuspended: { $ne: true },
-  })
-    .select('_id name email phone')
+  const user = await User.findById(registration.userId)
+    .select('_id name email phone role isSuspended')
     .lean();
 
   if (!user) {
@@ -97,5 +96,7 @@ export async function findLinkedWhatsAppUser(phone: string): Promise<LinkedWhats
     name: user.name,
     email: user.email,
     phone: user.phone,
+    role: user.role,
+    isSuspended: user.isSuspended,
   };
 }

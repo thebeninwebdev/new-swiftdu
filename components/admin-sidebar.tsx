@@ -7,6 +7,8 @@ import { authClient } from '@/lib/auth-client'
 import { MobilePushFrame } from '@/components/mobile-push-frame'
 import {
   LayoutDashboard,
+  Bike,
+  CircleUserRound,
   LogOut,
   Menu,
   ShoppingBag,
@@ -54,6 +56,21 @@ const adminNavigation = [
     href: '/admin/operations',
     icon: SlidersHorizontal,
     description: 'Hours, periods & finances',
+  },
+]
+
+const dashboardNavigation = [
+  {
+    label: 'User dashboard',
+    href: '/dashboard',
+    icon: CircleUserRound,
+    description: 'Book and track tasks',
+  },
+  {
+    label: 'Tasker dashboard',
+    href: '/tasker-dashboard',
+    icon: Bike,
+    description: 'Open the tasker workspace',
   },
 ]
 
@@ -127,6 +144,28 @@ export default function AdminSidebar({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="border-t border-slate-200 p-4">
+          <p className="px-4 pb-2 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+            Switch workspace
+          </p>
+          <div className="mb-2 space-y-1">
+            {dashboardNavigation.map((item) => {
+              const Icon = item.icon
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={closeMobileMenu}
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3 text-slate-600 transition-colors hover:bg-violet-50 hover:text-violet-700"
+                >
+                  <Icon className="h-5 w-5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">{item.label}</p>
+                    <p className="text-xs text-slate-400">{item.description}</p>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
           <button
             type="button"
             onClick={handleSignOut}
@@ -210,6 +249,28 @@ export default function AdminSidebar({ children }: { children: ReactNode }) {
         </nav>
 
         <div className="border-t border-slate-200 p-4">
+          <p className="px-4 pb-2 text-[11px] font-bold uppercase tracking-[0.16em] text-slate-400">
+            Switch workspace
+          </p>
+          <div className="mb-2 space-y-1">
+            {dashboardNavigation.map((item) => {
+              const Icon = item.icon
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={closeMobileMenu}
+                  className="flex items-center gap-3 rounded-2xl px-4 py-3 text-slate-600 transition-colors hover:bg-violet-50 hover:text-violet-700"
+                >
+                  <Icon className="h-5 w-5 shrink-0" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold">{item.label}</p>
+                    <p className="text-xs text-slate-400">{item.description}</p>
+                  </div>
+                </Link>
+              )
+            })}
+          </div>
           <button
             type="button"
             onClick={handleSignOut}

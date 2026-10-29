@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertCircle,
-  ArrowRight,
   CheckCircle2,
   Clock,
   Loader2,
@@ -15,7 +14,6 @@ import {
   XCircle,
   ChevronRight,
   Search,
-  Filter,
 } from 'lucide-react'
 import { toast } from 'sonner'
 
@@ -175,9 +173,16 @@ export default function TaskListClient() {
   const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
+
+  const statusesForTab = useCallback((tab: TaskTab) => {
+    if (tab === 'in_progress') return 'pending,in_progress,paid'
+    return tab
+  }, [])
 
   const loadOrders = useCallback(
-    async (initial = false) => {
+    async (initial = false, requestedPage = 1) => {
       if (initial) {
         setLoading(true)
       } else {
@@ -186,7 +191,14 @@ export default function TaskListClient() {
 
       try {
         setError(null)
-        const response = await fetch('/api/orders?status=pending,in_progress,paid,completed,cancelled', {
+        const params = new URLSearchParams({
+          paginated: 'true',
+          status: statusesForTab(activeTab),
+          page: String(requestedPage),
+          limit: '20',
+        })
+        if (searchQuery.trim()) params.set('search', searchQuery.trim())
+        const response = await fetch(`/api/orders?${params.toString()}`, {
           cache: 'no-store',
         })
 
@@ -199,8 +211,13 @@ export default function TaskListClient() {
           throw new Error('Failed to load your tasks.')
         }
 
-        const data: Order[] = await response.json()
-        setOrders(data)
+        const data = (await response.json()) as {
+          orders: Order[]
+          pagination: { page: number; hasMore: boolean }
+        }
+        setOrders((previous) => requestedPage === 1 ? data.orders : [...previous, ...data.orders])
+        setPage(data.pagination.page)
+        setHasMore(data.pagination.hasMore)
       } catch (loadError) {
         console.error(loadError)
         setError('Could not load your tasks right now.')
@@ -209,33 +226,24 @@ export default function TaskListClient() {
         setRefreshing(false)
       }
     },
-    [router]
+    [activeTab, router, searchQuery, statusesForTab]
   )
 
   useEffect(() => {
-    void loadOrders(true)
-  }, [loadOrders])
+    const timer = window.setTimeout(() => void loadOrders(true, 1), searchQuery ? 250 : 0)
+    return () => window.clearTimeout(timer)
+  }, [loadOrders, searchQuery])
 
   const groupedOrders = useMemo(
     () => ({
-      in_progress: orders.filter((order) => ACTIVE_STATUSES.has(order.status)),
-      completed: orders.filter((order) => order.status === 'completed'),
-      cancelled: orders.filter((order) => order.status === 'cancelled'),
+      in_progress: activeTab === 'in_progress' ? orders : [],
+      completed: activeTab === 'completed' ? orders : [],
+      cancelled: activeTab === 'cancelled' ? orders : [],
     }),
-    [orders]
+    [activeTab, orders]
   )
 
-  const filteredOrders = useMemo(() => {
-    const tabOrders = groupedOrders[activeTab]
-    if (!searchQuery.trim()) return tabOrders
-    const q = searchQuery.toLowerCase()
-    return tabOrders.filter(
-      (order) =>
-        getTaskTitle(order).toLowerCase().includes(q) ||
-        order.location.toLowerCase().includes(q) ||
-        order.taskType.toLowerCase().includes(q)
-    )
-  }, [groupedOrders, activeTab, searchQuery])
+  const filteredOrders = groupedOrders[activeTab]
 
   const retryOrder = async (order: Order) => {
     if (retryingOrderId || order.taskType === 'copy_notes') return
@@ -395,7 +403,7 @@ export default function TaskListClient() {
           <Button
             type="button"
             variant="outline"
-            onClick={() => void loadOrders(false)}
+            onClick={() => void loadOrders(false, 1)}
             disabled={refreshing}
             className="h-11 rounded-xl border-slate-200 px-5 text-sm font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800"
           >
@@ -480,6 +488,20 @@ export default function TaskListClient() {
                   </p>
                 </div>
                 {filteredOrders.map(renderOrder)}
+                {hasMore ? (
+                  <div className="flex justify-center pt-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={refreshing}
+                      onClick={() => void loadOrders(false, page + 1)}
+                      className="rounded-xl"
+                    >
+                      {refreshing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                      Load more
+                    </Button>
+                  </div>
+                ) : null}
               </div>
             ) : (
               <EmptyState tab={tab} />

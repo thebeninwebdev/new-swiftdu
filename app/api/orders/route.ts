@@ -51,27 +51,40 @@ import { randomUUID } from 'node:crypto';
 import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings';
 import { formatMinute, getIndomieServiceMode, getNextOpeningTime, getOperationsSettings, getOperationsStatus } from '@/lib/operations-settings';
 import { persistThenScheduleOrderCreation, type OrderCreationBackgroundJob } from '@/lib/order-creation-background';
+import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError, serializeOrderSession } from '@/lib/orders/order-session-scope';
+import { CUSTOMER_ORDER_CARD_FIELDS, parseOrderPagination } from '@/lib/orders/order-list-fields';
+import { createCustomerOrder, CustomerOrderServiceError, registerCustomerOrderImplementation, type CustomerOrderActor } from '@/lib/orders/customer-order-service';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 
-export async function POST(request: NextRequest) {
+async function createCustomerOrderResponse(
+  request: NextRequest,
+  actorOverride?: CustomerOrderActor
+) {
   const orderCreateStartedAt = performance.now()
   const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() || undefined
+  let actor: CustomerOrderActor | null = actorOverride || null
   try {
     await connectDB();
 
-    const session = await auth.api.getSession({
-      headers: request.headers,
-    });
+    const authenticatedSession = actorOverride ? null : await auth.api.getSession({ headers: request.headers });
+    actor = actorOverride || (authenticatedSession?.user ? {
+      id: authenticatedSession.user.id,
+      name: authenticatedSession.user.name,
+      email: authenticatedSession.user.email,
+      role: authenticatedSession.user.role,
+      source: 'website' as const,
+    } : null)
 
-    if (!session || !session.user) {
+    if (!actor) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    const customerActor = actor
     const authCompletedAt = performance.now()
 
     // A retry must only ever see its own original order.
     if (idempotencyKey) {
-      const existingOrder = await Order.findOne({ userId: session.user.id, idempotencyKey }).lean()
+      const existingOrder = await Order.findOne({ userId: customerActor.id, idempotencyKey }).lean()
       if (existingOrder) {
         return NextResponse.json(existingOrder)
       }
@@ -79,8 +92,8 @@ export async function POST(request: NextRequest) {
 
     // Customer operational details are required to place an order, not to authenticate.
     // Privileged/test-order behavior remains governed by the existing authorization below.
-    if (session.user.role === 'user') {
-      const profile = await User.findById(session.user.id)
+    if (customerActor.role === 'user') {
+      const profile = await User.findById(customerActor.id)
         .select('name gender phone location defaultLocation')
         .lean();
       if (!profile || !isProfileComplete(profile)) {
@@ -422,7 +435,7 @@ export async function POST(request: NextRequest) {
       serviceFee: configuredServiceFee ?? undefined,
     });
 
-    const customerLookupConditions = getUserLookupConditions(session.user);
+    const customerLookupConditions = getUserLookupConditions(customerActor);
     const customerAccount = customerLookupConditions.length
       ? await User.findOne({ $or: customerLookupConditions })
       .select(
@@ -503,7 +516,7 @@ export async function POST(request: NextRequest) {
             taskerFee: pricing.taskerFee || 0,
           }
         : splitServiceFee(pricing.serviceFee);
-    const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(session.user.id);
+    const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(customerActor.id);
     const serviceFeeDiscountApplied = Boolean(
       customerAccount?.serviceFeeDiscountEnabled &&
         Number(customerAccount?.serviceFeeDiscountRemainingOrders || 0) > 0 &&
@@ -530,9 +543,11 @@ export async function POST(request: NextRequest) {
     const batching = normalizedTaskType === INDOMIE_TASK_TYPE ? { taskerSearchStartedAt: bookedAt } : await batchingMetadata(normalizedTaskType, bookedAt)
 
     const order = new Order({
-      userId: session.user.id,
+      userId: customerActor.id,
       idempotencyKey,
-      source: 'website',
+      source: customerActor.source,
+      customerPhone: customerActor.source === 'whatsapp' ? customerActor.customerPhone : undefined,
+      customerName: customerActor.source === 'whatsapp' ? customerActor.customerName || customerActor.name || undefined : undefined,
       taskType: normalizedTaskType,
       description: isCafeInquiry ? 'Text me what is in cafe' : normalizedDescription,
       amount: pricing.amount,
@@ -619,9 +634,9 @@ export async function POST(request: NextRequest) {
       settlementStatus: 'not_due',
       isTestOrder,
       createdInMode: getCreatedInMode(isTestOrder),
-      testOrderCreatedBy: isTestOrder ? session.user.id : undefined,
+      testOrderCreatedBy: isTestOrder ? customerActor.id : undefined,
       testOrderCreatedByRole: isTestOrder
-        ? customerAccount?.excoRole || session.user.role || 'exco'
+        ? customerAccount?.excoRole || customerActor.role || 'exco'
         : undefined,
     });
 
@@ -707,8 +722,8 @@ export async function POST(request: NextRequest) {
                 const result = await notifyAdminsOfOrderEvent({
                   event: 'created',
                   order: persistedOrder,
-                  actorName: session.user.name || null,
-                  actorEmail: session.user.email || null,
+                  actorName: customerActor.name || null,
+                  actorEmail: customerActor.email || null,
                   actorRole: 'customer',
                 })
 
@@ -752,9 +767,8 @@ export async function POST(request: NextRequest) {
     if (error instanceof NoActiveAcademicSessionError) return NextResponse.json({ error: error.message, code: 'NO_ACTIVE_SESSION' }, { status: 409 })
     // The unique sparse index closes the race between two simultaneous retries.
     if (idempotencyKey && (error as { code?: number }).code === 11000) {
-      const session = await auth.api.getSession({ headers: request.headers })
-      if (session?.user?.id) {
-        const existingOrder = await Order.findOne({ userId: session.user.id, idempotencyKey }).lean()
+      if (actor?.id) {
+        const existingOrder = await Order.findOne({ userId: actor.id, idempotencyKey }).lean()
         if (existingOrder) return NextResponse.json(existingOrder)
       }
     }
@@ -763,6 +777,30 @@ export async function POST(request: NextRequest) {
       { error: 'Failed to create order' },
       { status: 500 }
     );
+  }
+}
+
+registerCustomerOrderImplementation(createCustomerOrderResponse)
+
+export async function POST(request: NextRequest) {
+  const session = await auth.api.getSession({ headers: request.headers })
+  if (!session?.user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  try {
+    const input = await request.json()
+    const result = await createCustomerOrder({
+      id: session.user.id,
+      name: session.user.name,
+      email: session.user.email,
+      role: session.user.role,
+      source: 'website',
+    }, input, request.headers.get('Idempotency-Key')?.trim() || undefined)
+    return NextResponse.json(result.order, { status: result.recovered ? 200 : 201 })
+  } catch (error) {
+    if (error instanceof CustomerOrderServiceError) {
+      return NextResponse.json(error.details || { error: error.message, code: error.code }, { status: error.status })
+    }
+    console.error('[Orders POST Adapter Error]', error)
+    return NextResponse.json({ error: 'Failed to create order' }, { status: 500 })
   }
 }
 
@@ -783,16 +821,24 @@ export async function GET(request: NextRequest) {
     const currentOnly = searchParams.get('current') === 'true';
     const needsReview = searchParams.get('needsReview') === 'true';
     const taskTypeUsage = searchParams.get('taskTypeUsage') === 'true';
-    const limit = Number(searchParams.get('limit') || 0);
+    const paginated = searchParams.get('paginated') === 'true';
+    const { page, limit, skip } = parseOrderPagination(
+      searchParams.get('page'),
+      searchParams.get('limit')
+    );
     const statusParam = searchParams.get('status');
+    const search = searchParams.get('search')?.trim();
+    const currentSession = await getActiveAcademicSession();
 
-    const query: Record<string, unknown> = {
+    let query: Record<string, unknown> = {
       userId: session.user.id,
     };
 
+    query = applyCurrentSessionOrderScope(query, currentSession);
+
     if (taskTypeUsage) {
       const rows = await Order.aggregate<{ _id: string; count: number }>([
-        { $match: { userId: session.user.id } },
+        { $match: query },
         { $group: { _id: '$taskType', count: { $sum: 1 } } },
       ]);
       const taskTypeCounts = rows.reduce<Record<string, number>>((counts, row) => {
@@ -817,11 +863,30 @@ export async function GET(request: NextRequest) {
         .map((value) => value.trim())
         .filter(Boolean);
 
-      if (statuses.length === 1) {
-        query.status = statuses[0];
-      } else if (statuses.length > 1) {
-        query.status = { $in: statuses };
+      const allowedStatuses = new Set(['pending', 'in_progress', 'paid', 'completed', 'cancelled']);
+      if (statuses.some((status) => !allowedStatuses.has(status))) {
+        return NextResponse.json({ error: 'Choose a valid order status.' }, { status: 400 });
       }
+      const statusFilter = statuses.length === 1 ? statuses[0] : { $in: statuses };
+      query = { $and: [query, { status: statusFilter }] };
+    }
+
+    if (search) {
+      if (search.length > 80) {
+        return NextResponse.json({ error: 'Search must be at most 80 characters.' }, { status: 400 });
+      }
+      const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      query = {
+        $and: [
+          query,
+          { $or: [
+            { description: { $regex: escaped, $options: 'i' } },
+            { location: { $regex: escaped, $options: 'i' } },
+            { store: { $regex: escaped, $options: 'i' } },
+            { taskType: { $regex: escaped, $options: 'i' } },
+          ] },
+        ],
+      };
     }
 
     if (currentOnly) {
@@ -835,24 +900,31 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(order);
     }
 
-    let ordersQuery = Order.find(query).sort({
+    if (needsReview) {
+      query = { $and: [query, { status: 'completed' }] };
+    }
+
+    let ordersQuery = Order.find(query)
+      .select(CUSTOMER_ORDER_CARD_FIELDS)
+      .sort({
       createdAt: -1,
     });
 
-    if (limit > 0) {
+    if (paginated) {
+      ordersQuery = ordersQuery.skip(skip).limit(limit);
+    } else if (searchParams.has('limit')) {
       ordersQuery = ordersQuery.limit(limit);
     }
 
+    const listQueryStartedAt = performance.now();
     let orders = await ordersQuery.lean();
 
     if (needsReview) {
-      const completedOrders = orders.filter((order) => order.status === 'completed');
-
-      if (completedOrders.length === 0) {
+      if (orders.length === 0) {
         return NextResponse.json([]);
       }
 
-      const orderIds = completedOrders.map((order) => order._id);
+      const orderIds = orders.map((order) => order._id);
       const existingReviews = await Review.find({
         userId: session.user.id,
         orderId: { $in: orderIds },
@@ -864,13 +936,40 @@ export async function GET(request: NextRequest) {
         existingReviews.map((review) => review.orderId.toString())
       );
 
-      orders = completedOrders.filter(
+      orders = orders.filter(
         (order) => !reviewedOrderIds.has(order._id.toString())
       );
     }
 
+    if (paginated) {
+      const totalItems = await Order.countDocuments(query);
+      const payload = {
+        orders,
+        pagination: {
+          page,
+          limit,
+          totalItems,
+          totalPages: Math.ceil(totalItems / limit),
+          hasMore: skip + orders.length < totalItems,
+        },
+        session: serializeOrderSession(currentSession),
+      };
+      if (process.env.NODE_ENV !== 'production') {
+        console.info('[Orders GET Pagination]', {
+          returnedDocuments: orders.length,
+          totalItems,
+          queryDurationMs: Math.round((performance.now() - listQueryStartedAt) * 100) / 100,
+          payloadBytes: Buffer.byteLength(JSON.stringify(payload)),
+        });
+      }
+      return NextResponse.json(payload);
+    }
+
     return NextResponse.json(orders);
   } catch (error) {
+    if (error instanceof NoActiveOrderSessionError) {
+      return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
+    }
     console.error('[Orders GET Error]:', error);
     return NextResponse.json(
       { error: 'Failed to fetch orders' },
