@@ -9,6 +9,7 @@ interface WhatsAppTextPayload {
 
 import { connectDB } from '@/lib/db';
 import { WhatsAppSession } from '@/models/whatsapp-session';
+import { WhatsAppRegistration } from '@/models/whatsapp-registration';
 import { isWithinWhatsAppCustomerServiceWindow } from './window';
 
 const WHATSAPP_MESSAGE_FOOTER = 'Sammy from SwiftDU';
@@ -99,8 +100,18 @@ function requireWhatsAppSendEnv() {
   return { accessToken, phoneNumberId };
 }
 
-async function sendWhatsAppPayload(payload: WhatsAppMessagePayload | WhatsAppTemplatePayload, logLabel: string, bypassWindow = false) {
+async function sendWhatsAppPayload(payload: WhatsAppMessagePayload | WhatsAppTemplatePayload, logLabel: string, bypassWindow = false, proactive = false) {
   try {
+    if (proactive) {
+      await connectDB();
+      const registration = await WhatsAppRegistration.findOne({ phone: payload.to, status: 'linked' })
+        .select('whatsappNotificationsEnabled')
+        .lean();
+      if (registration?.whatsappNotificationsEnabled === false) {
+        console.warn('[WhatsApp Compliance] Proactive message suppressed after customer opt-out.');
+        return;
+      }
+    }
     if (!bypassWindow) {
       await connectDB();
       const session = await WhatsAppSession.findOne({ phone: payload.to }).select('lastCustomerMessageAt').lean();
@@ -138,6 +149,7 @@ export async function sendWhatsAppTemplate(input: {
   templateName?: string;
   languageCode?: string;
   components?: unknown[];
+  proactive?: boolean;
 }) {
   const name = input.templateName?.trim() || process.env.WHATSAPP_TEMPLATE_NAME?.trim();
   const languageCode = input.languageCode?.trim() || process.env.WHATSAPP_TEMPLATE_LANGUAGE_CODE?.trim() || 'en_US';
@@ -150,14 +162,14 @@ export async function sendWhatsAppTemplate(input: {
     to: input.to,
     type: 'template',
     template: { name, language: { code: languageCode }, components: input.components },
-  }, 'WhatsApp Template Send Error', true);
+  }, 'WhatsApp Template Send Error', true, input.proactive === true);
 }
 
 function withWhatsAppFooter(body: string) {
   return `${body}\n\n${WHATSAPP_MESSAGE_FOOTER}`;
 }
 
-export async function sendWhatsAppText(to: string, body: string) {
+export async function sendWhatsAppText(to: string, body: string, options?: { proactive?: boolean }) {
   const payload: WhatsAppTextPayload = {
     messaging_product: 'whatsapp',
     to,
@@ -165,7 +177,7 @@ export async function sendWhatsAppText(to: string, body: string) {
     text: { body: withWhatsAppFooter(body) },
   };
 
-  await sendWhatsAppPayload(payload, 'WhatsApp Text Send Error');
+  await sendWhatsAppPayload(payload, 'WhatsApp Text Send Error', false, options?.proactive === true);
 }
 
 export async function sendWhatsAppListMessage({

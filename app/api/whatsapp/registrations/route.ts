@@ -99,6 +99,8 @@ export async function POST(request: NextRequest) {
     registration.whatsappConsentAt = new Date();
     registration.whatsappConsentVersion = WHATSAPP_CONSENT_VERSION;
     registration.whatsappConsentSource = WHATSAPP_CONSENT_SOURCE;
+    registration.whatsappNotificationsEnabled = true;
+    registration.whatsappConsentRevokedAt = undefined;
     await registration.save();
 
     if (!wasAlreadyLinkedToUser) {

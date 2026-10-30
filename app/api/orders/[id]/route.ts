@@ -12,6 +12,7 @@ import {Order} from "@/models/order"
 import CampusLocation from '@/models/campus-location'
 import { auth } from '@/lib/auth'; 
 import { canCustomerCancelOrder, canTaskerCancelOrder, isCustomerPaymentConfirmed } from '@/lib/order-status';
+import { cancelCustomerOrder, CustomerCancellationError } from '@/lib/orders/customer-order';
 import { emitOrderUpdated } from '@/lib/socket';
 import { expireUnmatchedOrder } from '@/lib/order-search-expiry';
 import { isTaskerSearchExpired } from '@/lib/order-tracking';
@@ -1087,34 +1088,14 @@ const session = await auth.api.getSession({
       );
     }
 
-    if (!canCustomerCancelOrder(order)) {
-      return NextResponse.json(
-        { error: 'This order can no longer be deleted' },
-        { status: 400 }
-      );
+    try {
+      await cancelCustomerOrder(order);
+    } catch (error) {
+      if (error instanceof CustomerCancellationError) {
+        return NextResponse.json({ error: 'This order can no longer be deleted' }, { status: 400 });
+      }
+      throw error;
     }
-
-    const cancelledAt = new Date();
-
-    ensureBookedAt(order);
-    order.status = 'cancelled';
-    order.cancelledAt = cancelledAt;
-    if (!order.hasPaid) {
-      order.paymentStatus = 'cancelled';
-    }
-    order.settlementStatus = 'not_due';
-    order.settlementReference = undefined;
-    order.settlementAccessCode = undefined;
-    order.settlementCheckoutUrl = undefined;
-    order.settlementTransactionId = undefined;
-    order.settlementInitializedAt = undefined;
-    order.settlementPaidAt = undefined;
-    order.settlementDueAt = undefined;
-    order.settlementFailureReason = undefined;
-
-    await saveOrderLifecycle(order);
-
-    emitOrderUpdated(order);
 
     if (order.taskerId === session.user.taskerId && order.exactLocationId) {
       const exact = await CampusLocation.findById(order.exactLocationId).select('name coordinates').lean()

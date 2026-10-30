@@ -404,7 +404,8 @@ export async function POST(request: NextRequest) {
           updatedOrder.customerPhone,
           `${updatedOrder.taskerName || 'A tasker'} has accepted your SwiftDU order.
 
-Please stay close to WhatsApp. SwiftDU will contact you with the next step.`
+Please stay close to WhatsApp. SwiftDU will contact you with the next step.`,
+          { proactive: true }
         )
       } catch (whatsAppError) {
         console.error('[Errands Accept WhatsApp Notification]:', whatsAppError)

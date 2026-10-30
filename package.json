@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test:first-order": "tsx --test lib/first-order-pricing.test.tsx lib/first-order-bonus.integration.test.ts",
     "test:cafe": "tsx --test lib/cafe-inquiry.test.ts lib/order-sync.test.ts lib/order-tracking.test.tsx",
+    "test:sammy": "tsx --test lib/sammy/server.test.ts lib/sammy/input.test.ts lib/commerce-policy.test.ts lib/delivery-policy.test.ts lib/operations.test.ts lib/operations-settings.test.ts lib/pricing.test.ts lib/pricing-config.test.ts lib/first-order-pricing.test.tsx",
     "test:businesses": "tsx --test lib/business-directory.test.ts lib/business-api.test.ts lib/business-search.test.ts",
     "businesses:backfill-embeddings": "tsx scripts/backfill-business-embeddings.ts",
     "backfill:order-sessions": "tsx scripts/backfill-order-sessions.ts"

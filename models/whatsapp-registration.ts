@@ -12,6 +12,8 @@ export interface IWhatsAppRegistration extends Document {
   whatsappConsentAt?: Date;
   whatsappConsentVersion?: string;
   whatsappConsentSource?: string;
+  whatsappNotificationsEnabled?: boolean;
+  whatsappConsentRevokedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -48,6 +50,8 @@ const whatsappRegistrationSchema = new Schema<IWhatsAppRegistration>(
     whatsappConsentAt: Date,
     whatsappConsentVersion: String,
     whatsappConsentSource: String,
+    whatsappNotificationsEnabled: { type: Boolean, default: true },
+    whatsappConsentRevokedAt: Date,
   },
   { timestamps: true }
 );
