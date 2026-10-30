@@ -16,6 +16,7 @@ import {
   SlidersHorizontal,
   Store,
   Truck,
+  RadioTower,
   Users,
   X,
 } from 'lucide-react'
@@ -32,6 +33,12 @@ const adminNavigation = [
     href: '/admin/orders',
     icon: ShoppingBag,
     description: 'Live orders, batches & issues',
+  },
+  {
+    label: 'Live Taskers',
+    href: '/admin/taskers/live',
+    icon: RadioTower,
+    description: 'Check-ins & availability',
   },
   {
     label: 'People',

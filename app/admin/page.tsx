@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
@@ -36,6 +36,9 @@ interface DashboardStats {
   approvedExpenditures: number
   totalCompensation: number
   declinedTasks: number
+  checkedInTaskers: number
+  availableTaskers: number
+  busyTaskers: number
 }
 
 interface RecentActivity {
@@ -57,7 +60,7 @@ interface AcademicSession { _id: string; name: string; isActive: boolean; semest
 
 export default function AdminDashboard() {
   const router = useRouter()
-  const [admin, setAdmin] = useState<any>(null)
+  const [admin, setAdmin] = useState<{ id: string } | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([])
@@ -89,7 +92,7 @@ export default function AdminDashboard() {
   }, [router])
 
   // Fetch dashboard stats
-  const fetchStats = async () => {
+  const fetchStats = useCallback(async () => {
     setIsStatsLoading(true)
     try {
       const params = new URLSearchParams({ activityPage: String(activityPage), activityLimit: '10' })
@@ -107,13 +110,13 @@ export default function AdminDashboard() {
     } finally {
       setIsStatsLoading(false)
     }
-  }
+  }, [activityPage, semesterId, sessionId])
 
   useEffect(() => {
     if (admin) {
       fetchStats()
     }
-  }, [admin, activityPage, sessionId, semesterId])
+  }, [admin, fetchStats])
 
   useEffect(() => { if (!admin) return; void fetch('/api/admin/finance/periods').then(r => r.ok ? r.json() : []).then((items: AcademicSession[]) => { setSessions(items); const query = new URLSearchParams(window.location.search); const selected = query.get('period') === 'all-time' ? 'all-time' : query.get('sessionId') || items.find(item => item.isActive)?._id || 'all-time'; setSessionId(selected); setSemesterId(query.get('semesterId') || '') }).catch(() => setSessionId('all-time')) }, [admin])
   const selectedSession = sessions.find(item => item._id === sessionId)
@@ -236,7 +239,7 @@ export default function AdminDashboard() {
 
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Active Taskers</CardTitle>
+              <CardTitle className="text-sm font-medium">Verified Taskers</CardTitle>
               <ShoppingBag className="h-4 w-4 text-slate-500" />
             </CardHeader>
             <CardContent>
@@ -244,6 +247,17 @@ export default function AdminDashboard() {
                 {isStatsLoading ? '...' : stats?.totalTaskers || 0}
               </div>
               <p className="text-xs text-slate-500">Verified taskers</p>
+            </CardContent>
+          </Card>
+
+          <Card className="cursor-pointer transition hover:border-violet-300 hover:shadow-md" role="link" tabIndex={0} onClick={() => router.push('/admin/taskers/live')} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') router.push('/admin/taskers/live') }}>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Checked In Now</CardTitle>
+              <Activity className="h-4 w-4 text-emerald-600" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{isStatsLoading ? '...' : stats?.checkedInTaskers || 0}</div>
+              <p className="text-xs text-slate-500">{stats?.availableTaskers || 0} available · {stats?.busyTaskers || 0} busy</p>
             </CardContent>
           </Card>
 

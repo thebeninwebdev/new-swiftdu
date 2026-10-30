@@ -3,12 +3,27 @@
 import { useEffect, useState } from 'react'
 import { authClient } from '@/lib/auth-client'
 
+const eligibilityCache = new Map<string, boolean>()
+const eligibilityRequests = new Map<string, Promise<boolean>>()
+
+function loadEligibility(userId: string) {
+  const existing = eligibilityRequests.get(userId)
+  if (existing) return existing
+  const request = fetch('/api/users/me/tasker-eligibility', { cache: 'no-store' })
+    .then(async (response) => response.ok && (await response.json())?.canApply === true)
+    .catch(() => false)
+    .then((canApply) => { eligibilityCache.set(userId, canApply); return canApply })
+    .finally(() => eligibilityRequests.delete(userId))
+  eligibilityRequests.set(userId, request)
+  return request
+}
+
 export function useTaskerEligibility() {
   const { data: session } = authClient.useSession()
   const userId = session?.user?.id
   const role = session?.user?.role
   const taskerId = session?.user?.taskerId
-  const [eligibility, setEligibility] = useState<{ userId: string; canApply: boolean } | null>(null)
+  const [eligibility, setEligibility] = useState<{ userId: string; canApply: boolean } | null>(() => userId && eligibilityCache.has(userId) ? { userId, canApply: eligibilityCache.get(userId)! } : null)
 
   useEffect(() => {
     if (!userId || role !== 'user' || taskerId) return
@@ -17,9 +32,8 @@ export function useTaskerEligibility() {
 
     async function refresh() {
       try {
-        const response = await fetch('/api/users/me/tasker-eligibility', { cache: 'no-store' })
-        const data = response.ok ? await response.json() : null
-        if (!ignore) setEligibility({ userId: currentUserId, canApply: data?.canApply === true })
+        const canApply = await loadEligibility(currentUserId)
+        if (!ignore) setEligibility({ userId: currentUserId, canApply })
       } catch {
         if (!ignore) setEligibility({ userId: currentUserId, canApply: false })
       }

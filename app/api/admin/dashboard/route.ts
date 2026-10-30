@@ -15,6 +15,7 @@ import { getApprovedExpenditureTotal } from '@/lib/expenditures'
 import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { buildCreatedAtPeriodMatch, resolveFinancePeriod } from '@/lib/finance-periods'
 import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError } from '@/lib/orders/order-session-scope'
+import { getAdminTaskerWorkOverview } from '@/lib/admin-tasker-work'
 
 // ─── GET /api/admin/dashboard ────────────────────────────────────────────────
 // Returns dashboard statistics and recent activity.
@@ -41,7 +42,7 @@ export async function GET(request: NextRequest) {
     // Get stats
     const [
       totalUsers,
-      totalTaskers,
+      taskerWorkOverview,
       totalOrders,
       totalRevenue,
       pendingOrders,
@@ -51,7 +52,7 @@ export async function GET(request: NextRequest) {
       declinedTasks
     ] = await Promise.all([
       User.countDocuments(),
-      Tasker.countDocuments({ isVerified: true }),
+      getAdminTaskerWorkOverview(),
       Order.countDocuments(nonTestMatch),
       Order.aggregate([
         { $match: excludeTestOrders({ ...periodMatch, status: 'completed' }) },
@@ -148,7 +149,11 @@ export async function GET(request: NextRequest) {
     ])).reduce((total, count) => total + count, 0)
 
     const stats = {
-      totalUsers, totalTaskers, totalOrders, grossRevenue, profit: businessProfit,
+      totalUsers, totalTaskers: taskerWorkOverview.summary.total,
+      checkedInTaskers: taskerWorkOverview.summary.checkedIn,
+      availableTaskers: taskerWorkOverview.summary.available,
+      busyTaskers: taskerWorkOverview.summary.busy,
+      totalOrders, grossRevenue, profit: businessProfit,
       netPlatformProfit: profit, approvedExpenditures, totalPlatformFees,
       paystackSettlementFees, totalCompensation, totalRevenue: totalRevenue[0]?.total || 0,
       pendingOrders, completedOrders, totalReviews, pendingTaskerApprovals, declinedTasks

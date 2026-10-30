@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { currentTasker, lockTaskerWork, WorkError, workSnapshot } from '@/lib/tasker-work-server'
 import { TaskerWorkSession } from '@/models/tasker-work-session'
 import { Order } from '@/models/order'
+import { TASKER_BUSY_ORDER_STATUSES } from '@/lib/tasker-work'
 
 function failure(error: unknown) {
   if (error instanceof WorkError) return NextResponse.json({ error: error.message }, { status: error.status })
@@ -27,7 +28,7 @@ export async function PATCH(request: NextRequest) {
         if (!current.canCheckIn) throw new WorkError(current.blockedReason || 'Check-in unavailable.', 403)
         await TaskerWorkSession.findOneAndUpdate({ taskerId: id, open: true }, { $setOnInsert: { startedAt: new Date() } }, { upsert: true })
       } else {
-        if (await Order.exists({ taskerId: id, status: { $in: ['in_progress', 'paid'] } })) throw new WorkError('Finish your active tasks before checking out.')
+        if (await Order.exists({ taskerId: id, status: { $in: [...TASKER_BUSY_ORDER_STATUSES] } })) throw new WorkError('Finish your active tasks before checking out.')
         await TaskerWorkSession.updateOne({ taskerId: id, open: true }, { $set: { open: false, endedAt: new Date() } })
       }
     } finally { await release() }

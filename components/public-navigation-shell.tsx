@@ -2,10 +2,13 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { usePathname } from 'next/navigation'
-import { Navbar, PublicMobileMenu } from './Navbar'
-import { Footer } from './Footer'
+import dynamic from 'next/dynamic'
 import { isChromeHiddenPath } from './ChromeVisibility'
 import { MobilePushFrame } from './mobile-push-frame'
+
+const Navbar = dynamic(() => import('./Navbar').then((module) => module.Navbar))
+const PublicMobileMenu = dynamic(() => import('./Navbar').then((module) => module.PublicMobileMenu))
+const Footer = dynamic(() => import('./Footer').then((module) => module.Footer))
 
 export function PublicNavigationShell({ children }: { children: ReactNode }) {
   const pathname = usePathname()

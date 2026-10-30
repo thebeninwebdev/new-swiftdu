@@ -7,6 +7,7 @@ import {ChevronLeft, LogOut, PlusCircle, ListTodo, User, Bell, Star, BriefcaseBu
 import { useIdleEffect } from '@/hooks/use-idle-effect'
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 import { toast } from 'sonner'
+import { fetchDashboardExco, fetchDashboardProfile } from '@/lib/dashboard-client-data'
 
 
 const subscribeToHydration = () => () => {}
@@ -157,15 +158,14 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
 
     async function fetchHeaderProfile() {
       try {
-        const response = await fetch('/api/users/me/profile', { cache: 'no-store' })
-        if (!response.ok) return
-
-        const payload = await response.json()
+        const payload = await fetchDashboardProfile()
+        if (!payload) return
         if (isMounted) {
+          const user = payload.user as Partial<HeaderProfile> | undefined
           setHeaderProfile({
-            name: payload.user?.name || '',
-            email: payload.user?.email || '',
-            profileImage: payload.user?.profileImage || '',
+            name: user?.name || '',
+            email: user?.email || '',
+            profileImage: user?.profileImage || '',
           })
         }
       } catch {
@@ -176,11 +176,12 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
     }
 
     void fetchHeaderProfile()
-    window.addEventListener('swiftdu-profile-updated', fetchHeaderProfile)
+    const refreshHeaderProfile = () => { void fetchDashboardProfile(true).then((payload) => { if (payload && isMounted) setHeaderProfile({ name: String((payload.user as HeaderProfile | undefined)?.name || ''), email: String((payload.user as HeaderProfile | undefined)?.email || ''), profileImage: String((payload.user as HeaderProfile | undefined)?.profileImage || '') }) }) }
+    window.addEventListener('swiftdu-profile-updated', refreshHeaderProfile)
 
     return () => {
       isMounted = false
-      window.removeEventListener('swiftdu-profile-updated', fetchHeaderProfile)
+      window.removeEventListener('swiftdu-profile-updated', refreshHeaderProfile)
     }
   }, [sessionUserId])
 
@@ -189,10 +190,8 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
 
     async function fetchExcoDashboard() {
       try {
-        const response = await fetch('/api/exco/me', { cache: 'no-store' })
-        if (!response.ok) return
-
-        const data = (await response.json()) as Partial<ExcoDashboardAccess>
+        const data = await fetchDashboardExco() as Partial<ExcoDashboardAccess> | null
+        if (!data) return
         if (data.excoRole && data.label && data.dashboardPath) {
           setExcoDashboard({
             excoRole: data.excoRole,

@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { CheckCircle2, ChevronRight, Sparkles, UserCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 import type { getProfileCompletion } from "@/lib/profile-completion"
+import { fetchDashboardProfile } from "@/lib/dashboard-client-data"
 
 type ProfileCompletion = ReturnType<typeof getProfileCompletion>
 
@@ -24,12 +25,8 @@ export function ProfileCompletionCard() {
 
     async function loadCompletion() {
       try {
-        const response = await fetch("/api/users/me/profile", {
-          cache: "no-store",
-        })
-        if (!response.ok) return
-
-        const payload = (await response.json()) as ProfileResponse
+        const payload = await fetchDashboardProfile() as ProfileResponse | null
+        if (!payload) return
         if (isMounted) {
           setCompletion(payload.completion)
           // Trigger entrance animation

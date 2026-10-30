@@ -1,4 +1,6 @@
 export type WorkStatus = 'offline' | 'available' | 'busy'
+export const TASKER_BUSY_ORDER_STATUSES = ['in_progress', 'paid'] as const
+export const LONG_WORK_SESSION_MS = 8 * 60 * 60 * 1000
 export function getWorkStatus(checkedIn: boolean, activeTasks: number): WorkStatus {
   return activeTasks > 0 ? 'busy' : checkedIn ? 'available' : 'offline'
 }

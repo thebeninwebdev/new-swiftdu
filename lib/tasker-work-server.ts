@@ -7,7 +7,7 @@ import { auth } from '@/lib/auth'
 import { connectDB } from '@/lib/db'
 import { getTaskerMode } from '@/lib/test-orders'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
-import { getWorkStatus, overlapMilliseconds, periodStarts, type WorkSnapshot, type WorkSummary } from '@/lib/tasker-work'
+import { getWorkStatus, overlapMilliseconds, periodStarts, TASKER_BUSY_ORDER_STATUSES, type WorkSnapshot, type WorkSummary } from '@/lib/tasker-work'
 import { calculateTaskerPeriodStats } from '@/lib/tasker-stats'
 
 export class WorkError extends Error {
@@ -43,7 +43,7 @@ export async function workSnapshot(taskerId: string): Promise<WorkSnapshot> {
   const earliest = new Date(Math.min(starts.month.getTime(), starts.week.getTime()))
   const [open, activeTasks, sessions, periods] = await Promise.all([
     TaskerWorkSession.findOne({ taskerId, open: true }).lean(),
-    Order.countDocuments({ taskerId, status: { $in: ['in_progress', 'paid'] } }),
+    Order.countDocuments({ taskerId, status: { $in: [...TASKER_BUSY_ORDER_STATUSES] } }),
     TaskerWorkSession.find({ taskerId, startedAt: { $lte: now }, $or: [{ endedAt: { $gte: earliest } }, { open: true }] }).lean(),
     calculateTaskerPeriodStats(taskerId, starts),
   ])

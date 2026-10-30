@@ -413,3 +413,10 @@
 @media (prefers-reduced-motion: reduce) {
   .mobile-push-page, .mobile-push-menu { transition: none; }
 }
+@keyframes dashboard-swifty-float {
+  0%, 100% { transform: translateY(0) rotate(-0.4deg); }
+  50% { transform: translateY(-4px) rotate(0.4deg); }
+}
+
+.dashboard-swifty-idle { animation: dashboard-swifty-float 4.2s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .dashboard-swifty-idle { animation: none; } }

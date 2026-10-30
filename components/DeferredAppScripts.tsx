@@ -2,6 +2,7 @@
 
 import dynamic from "next/dynamic";
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 const DeferredTopLoader = dynamic(() => import("nextjs-toploader"), {
   ssr: false,
@@ -61,9 +62,17 @@ function onIdle(callback: () => void) {
 }
 
 export function DeferredAppScripts() {
+  const pathname = usePathname();
   const [ready, setReady] = useState(false);
+  const [analyticsReady, setAnalyticsReady] = useState(false);
+  const authenticatedRoute = pathname.startsWith('/dashboard') || pathname.startsWith('/tasker-dashboard') || pathname.startsWith('/admin');
 
   useEffect(() => onIdle(() => setReady(true)), []);
+  useEffect(() => {
+    if (!ready) return;
+    const timer = window.setTimeout(() => setAnalyticsReady(true), authenticatedRoute ? 8000 : 0);
+    return () => window.clearTimeout(timer);
+  }, [authenticatedRoute, ready]);
 
   if (!ready) {
     return null;
@@ -72,10 +81,8 @@ export function DeferredAppScripts() {
   return (
     <>
       <DeferredTopLoader color="#2563eb" height={2} showSpinner={false} />
-      <DeferredVercelAnalytics />
-      <DeferredGoogleAnalytics />
-      <DeferredAnalyticsTracker />
-      <DeferredAdsenseLoader />
+      {analyticsReady ? <><DeferredVercelAnalytics /><DeferredGoogleAnalytics /><DeferredAnalyticsTracker /></> : null}
+      {!authenticatedRoute ? <DeferredAdsenseLoader /> : null}
       <DeferredToaster richColors position="bottom-right" />
     </>
   );
