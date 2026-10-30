@@ -374,7 +374,7 @@ export async function PATCH(
           ? pricing.serviceFee
           : undefined;
         order.discountCommissionAmount = discountStillApplies
-          ? baseSettlement.taskerFee || pricing.serviceFee
+          ? priceWithOrderDiscounts(pricing, { cafeInquiry: order.cafeInquiry }).taskerFee
           : 0;
         order.pricingModel = pricing.pricingModel;
         order.totalAmount = discountStillApplies
@@ -743,9 +743,7 @@ export async function PATCH(
         ? pricing.serviceFee
         : undefined;
       order.discountCommissionAmount = discountStillApplies
-        ? pricing.pricingModel === 'tiered'
-          ? nextCafeInquiry ? splitServiceFee(pricing.serviceFee - CAFE_INQUIRY_EXTRA_FEE).taskerFee : baseSettlement.taskerFee || pricing.serviceFee
-          : pricing.serviceFee
+        ? priceWithOrderDiscounts(pricing, { cafeInquiry: nextCafeInquiry }).taskerFee
         : 0;
       order.pricingModel = pricing.pricingModel;
       order.totalAmount = discountStillApplies

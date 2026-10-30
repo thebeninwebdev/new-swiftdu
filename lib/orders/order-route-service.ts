@@ -1,5 +1,6 @@
 import { classifyDeliveryLocation, validateDeliveryRoom } from '@/lib/delivery-policy';
 import { NoActiveAcademicSessionError, saveNewOrderWithBonus } from '@/lib/first-order-bonus';
+import { priceWithOrderDiscounts } from '@/lib/first-order-pricing';
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { notifyAdminsOfOrderEvent } from '@/lib/order-alerts';
@@ -15,7 +16,6 @@ import { ensureCompletionTimer } from '@/lib/completion-timer';
 import {
   calculateOrderPricing,
   type PricingResult,
-  CAFE_INQUIRY_EXTRA_FEE,
   descriptionMentionsWater,
   normalizeRestaurantPeopleCount,
   normalizeRestaurantTakeawayCount,
@@ -28,7 +28,6 @@ import {
 } from '@/lib/pricing';
 import { getConfiguredServiceFee } from '@/lib/pricing-config';
 import { resolveVendorDeliveryPricing, VendorPricingError } from '@/lib/vendors';
-import { splitServiceFee } from '@/lib/order-finance';
 import {
   getCreatedInMode,
   shouldCreateTestOrder,
@@ -550,14 +549,6 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
       }
     }
 
-    const baseSettlement =
-      pricing.pricingModel === 'copy_notes' || pricing.pricingModel === 'water'
-        ? {
-            serviceFee: pricing.serviceFee,
-            platformFee: pricing.platformFee || 0,
-            taskerFee: pricing.taskerFee || 0,
-          }
-        : splitServiceFee(pricing.serviceFee);
     const hasDiscountReservation = await hasActiveServiceFeeDiscountReservation(session.user.id);
     const serviceFeeDiscountApplied = Boolean(
       customerAccount?.serviceFeeDiscountEnabled &&
@@ -565,15 +556,13 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
         !hasDiscountReservation &&
         pricing.serviceFee > 0
     );
-    const discountCommissionAmount = serviceFeeDiscountApplied
-      ? pricing.pricingModel === 'tiered'
-        ? isCafeInquiry ? splitServiceFee(pricing.serviceFee - CAFE_INQUIRY_EXTRA_FEE).taskerFee : baseSettlement.taskerFee || pricing.serviceFee
-        : pricing.serviceFee
-      : 0;
-    const settlement = baseSettlement;
-    const totalAmount = serviceFeeDiscountApplied
-      ? Math.max(0, pricing.totalAmount - pricing.serviceFee + (isCafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0))
-      : pricing.totalAmount;
+    const normalSettlement = priceWithOrderDiscounts(pricing, { cafeInquiry: isCafeInquiry });
+    const settlement = priceWithOrderDiscounts(pricing, {
+      cafeInquiry: isCafeInquiry,
+      serviceFeeDiscount: serviceFeeDiscountApplied,
+    });
+    const discountCommissionAmount = serviceFeeDiscountApplied ? normalSettlement.taskerFee : 0;
+    const totalAmount = settlement.totalAmount;
     const pricingCompletedAt = performance.now()
 
     const bookedAt = new Date();

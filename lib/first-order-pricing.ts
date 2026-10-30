@@ -20,18 +20,26 @@ export function priceWithOrderDiscounts(pricing: PricingResult, options: {
   serviceFeeDiscount?: boolean
   cafeInquiry?: boolean
 } = {}) {
-  const normal = pricing.pricingModel === 'tiered' ? splitServiceFee(pricing.serviceFee) : {
+  const inquiryFee = options.cafeInquiry
+    ? Math.min(CAFE_INQUIRY_EXTRA_FEE, Math.max(0, pricing.serviceFee))
+    : 0
+  const baseServiceFee = Math.max(0, pricing.serviceFee - inquiryFee)
+  const baseFees = pricing.pricingModel === 'tiered' ? splitServiceFee(baseServiceFee) : {
     serviceFee: pricing.serviceFee, platformFee: pricing.platformFee || 0, taskerFee: pricing.taskerFee || 0,
   }
+  // Cafe inquiry compensation belongs entirely to the tasker, so add it only
+  // after the configured base delivery fee has been split.
+  const normal = pricing.pricingModel === 'tiered' ? {
+    serviceFee: baseFees.serviceFee + inquiryFee,
+    platformFee: baseFees.platformFee,
+    taskerFee: baseFees.taskerFee + inquiryFee,
+  } : baseFees
   const broaderDiscount = options.serviceFeeDiscount && pricing.serviceFee > 0
-  const retainedInquiryFee = options.cafeInquiry ? CAFE_INQUIRY_EXTRA_FEE : 0
   const totalBeforeBonus = broaderDiscount
-    ? Math.max(0, pricing.totalAmount - pricing.serviceFee + retainedInquiryFee)
+    ? Math.max(0, pricing.totalAmount - pricing.serviceFee + inquiryFee)
     : pricing.totalAmount
   const effectiveFees = broaderDiscount
-    ? pricing.pricingModel === 'tiered'
-      ? splitServiceFee(retainedInquiryFee)
-      : { serviceFee: retainedInquiryFee, platformFee: 0, taskerFee: retainedInquiryFee }
+    ? { serviceFee: inquiryFee, platformFee: 0, taskerFee: inquiryFee }
     : normal
   const firstOrder = Boolean(options.firstOrderBonus)
 

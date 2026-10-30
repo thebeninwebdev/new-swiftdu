@@ -81,6 +81,50 @@ test('vendor-specific tiered fees waive the actual platform share, not a fixed a
   assert.equal(bonus.totalAmount, 2750)
 })
 
+test('cafe inquiry fee is tasker-only for normal and first orders', () => {
+  const pricing = calculateOrderPricing({ taskType: 'restaurant', amount: 0, serviceFee: 600, cafeInquiry: true })
+  const normal = priceWithOrderDiscounts(pricing, { cafeInquiry: true })
+  const firstOrder = priceWithOrderDiscounts(pricing, { cafeInquiry: true, firstOrderBonus: true })
+
+  assert.deepEqual(
+    { total: normal.totalAmount, service: normal.serviceFee, tasker: normal.taskerFee, platform: normal.platformFee },
+    { total: 650, service: 650, tasker: 550, platform: 100 },
+  )
+  assert.deepEqual(
+    { total: firstOrder.totalAmount, service: firstOrder.serviceFee, tasker: firstOrder.taskerFee, platform: firstOrder.platformFee, bonus: firstOrder.firstOrderBonusAmount },
+    { total: 550, service: 550, tasker: 550, platform: 0, bonus: 100 },
+  )
+})
+
+test('cafe inquiry split uses the configured base delivery fee', () => {
+  const pricing = calculateOrderPricing({ taskType: 'restaurant', amount: 0, serviceFee: 900, cafeInquiry: true })
+  const normal = priceWithOrderDiscounts(pricing, { cafeInquiry: true })
+  const firstOrder = priceWithOrderDiscounts(pricing, { cafeInquiry: true, firstOrderBonus: true })
+
+  assert.deepEqual(
+    { total: normal.totalAmount, tasker: normal.taskerFee, platform: normal.platformFee },
+    { total: 950, tasker: 800, platform: 150 },
+  )
+  assert.deepEqual(
+    { total: firstOrder.totalAmount, tasker: firstOrder.taskerFee, platform: firstOrder.platformFee, bonus: firstOrder.firstOrderBonusAmount },
+    { total: 800, tasker: 800, platform: 0, bonus: 150 },
+  )
+})
+
+test('service-fee discounts retain the full cafe inquiry fee for the tasker', () => {
+  const pricing = calculateOrderPricing({ taskType: 'restaurant', amount: 0, serviceFee: 600, cafeInquiry: true })
+  const discounted = priceWithOrderDiscounts(pricing, { cafeInquiry: true, serviceFeeDiscount: true })
+  const discountedFirstOrder = priceWithOrderDiscounts(pricing, { cafeInquiry: true, serviceFeeDiscount: true, firstOrderBonus: true })
+
+  for (const result of [discounted, discountedFirstOrder]) {
+    assert.equal(result.totalAmount, 50)
+    assert.equal(result.serviceFee, 50)
+    assert.equal(result.taskerFee, 50)
+    assert.equal(result.platformFee, 0)
+  }
+  assert.equal(discountedFirstOrder.firstOrderBonusAmount, 0)
+})
+
 test('only genuinely unpaid cancelled orders release reservations', () => {
   assert.equal(canReleaseFirstOrderReservation({ status: 'cancelled', paymentStatus: 'cancelled' }), true)
   for (const patch of [{ status: 'pending' }, { isTestOrder: true }, { hasPaid: true }, { paymentStatus: 'paid' }, { cafeInquiryFeePaid: true }, { customerTransferredAt: new Date() }, { paidAt: new Date() }]) {

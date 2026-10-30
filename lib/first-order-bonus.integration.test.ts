@@ -50,6 +50,24 @@ test('historical live orders do not exclude customers from a new session', async
   assert.equal(next.firstOrderBonusApplied, true)
 })
 
+test('first cafe inquiry snapshots the tasker-only inquiry fee', async () => {
+  const user = await customer()
+  const cafePricing = calculateOrderPricing({ taskType: 'restaurant', amount: 0, serviceFee: 600, cafeInquiry: true })
+  const order = new Order({
+    userId: String(user._id), taskType: 'restaurant', cafeInquiry: true, amount: cafePricing.amount,
+    commission: cafePricing.serviceFee, serviceFee: cafePricing.serviceFee,
+    totalAmount: cafePricing.totalAmount, location: 'Library', status: 'pending',
+  })
+
+  await saveNewOrderWithBonus(order, cafePricing)
+
+  assert.equal(order.serviceFee, 550)
+  assert.equal(order.taskerFee, 550)
+  assert.equal(order.platformFee, 0)
+  assert.equal(order.firstOrderBonusAmount, 100)
+  assert.equal(order.totalAmount, 550)
+})
+
 test('a different active session makes the same customer eligible again', async () => {
   const user = await customer(); const first = draft(String(user._id)); await saveNewOrderWithBonus(first, pricing)
   assert.equal(await firstOrderBonusAvailable(String(user._id)), false)

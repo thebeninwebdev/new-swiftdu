@@ -1,5 +1,6 @@
 import { validateDeliveryRoom } from '@/lib/delivery-policy';
 import { NoActiveAcademicSessionError, saveNewOrderWithBonus } from '@/lib/first-order-bonus';
+import { priceWithOrderDiscounts } from '@/lib/first-order-pricing';
 import { calculateOrderPricing, type PricingResult } from '@/lib/pricing';
 import { getConfiguredServiceFee } from '@/lib/pricing-config';
 import { validateOrderAgainstCommercePolicy } from '@/lib/commerce-policy';
@@ -18,8 +19,6 @@ import {
   getUserLookupConditions,
   hasActiveServiceFeeDiscountReservation,
 } from '@/lib/service-fee-discount';
-import { CAFE_INQUIRY_EXTRA_FEE } from '@/lib/pricing';
-import { splitServiceFee } from '@/lib/order-finance';
 import {
   getCreatedInMode,
   shouldCreateTestOrder,
@@ -131,12 +130,8 @@ export async function POST(
         !hasDiscountReservation &&
         fullServiceFee > 0
     );
-    const normalFees = pricing.pricingModel === 'tiered' ? splitServiceFee(fullServiceFee) : { platformFee: pricing.platformFee || 0, taskerFee: pricing.taskerFee || 0 };
-    const discountCommissionAmount = serviceFeeDiscountApplied
-      ? pricing.pricingModel === 'tiered'
-        ? order.cafeInquiry ? splitServiceFee(fullServiceFee - CAFE_INQUIRY_EXTRA_FEE).taskerFee : normalFees.taskerFee
-        : fullServiceFee
-      : 0;
+    const normalFees = priceWithOrderDiscounts(pricing, { cafeInquiry: order.cafeInquiry });
+    const discountCommissionAmount = serviceFeeDiscountApplied ? normalFees.taskerFee : 0;
 
     try { validateDeliveryRoom(order.location, order.roomNumber); } catch (error) {
       return NextResponse.json({ error: (error as Error).message + ' Create a new order with your room number.' }, { status: 400 });
