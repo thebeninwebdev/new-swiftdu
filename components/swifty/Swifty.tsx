@@ -54,7 +54,7 @@ function SwiftyComponent({ mood, interaction = 'rest', size = 'md', message, com
   }, [interaction, mood, reduced])
 
   useEffect(() => {
-    const preload = mood === 'idle' ? 'thinking' : mood === 'thinking' ? 'searching' : null
+    const preload = mood === 'thinking' ? 'searching' : null
     const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection
     const slowConnection = connection?.saveData === true || connection?.effectiveType === 'slow-2g' || connection?.effectiveType === '2g'
     if (preload && !slowConnection) { const image = new window.Image(); image.src = SWIFTY_ASSETS[preload] }
@@ -80,7 +80,7 @@ function SwiftyComponent({ mood, interaction = 'rest', size = 'md', message, com
             <motion.span aria-hidden="true" className="pointer-events-none absolute inset-[15%] rounded-full border border-indigo-300/60 dark:border-indigo-400/40" initial={{ scale: 0.8, opacity: 0 }} animate={{ scale: [0.8, 1.45], opacity: [0.35, 0] }} transition={{ duration: 3.5, repeat: Infinity, ease: 'easeOut' }} />
           ) : null}
           <motion.div className="relative z-10 h-full w-full" animate={ambientMotion(displayMood, searchPhase, reduced)}>
-            {displayMood === 'idle' ? <SwiftyIdle reducedMotion={reduced} /> : (
+            {displayMood === 'idle' ? <SwiftyIdle /> : (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={SWIFTY_ASSETS[displayMood]} alt={SWIFTY_ALT[displayMood]} draggable={false} className="h-full w-full object-contain" />
             )}

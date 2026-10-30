@@ -106,14 +106,14 @@ test('activation only deletes audited legacy caches and navigation requests bypa
   const hook = sw.config.runtimeCaching[0].handler.plugins[0].requestWillFetch
   assert.equal((await hook({ request })).cache, 'no-store')
 })
-test('mascot media is cache-first while APIs, writes and Socket.IO remain authoritative', () => {
+test('mascot images use the image cache while APIs, writes and Socket.IO remain authoritative', () => {
   const { config } = worker()
   const routes = config.runtimeCaching
-  const mascot = routes.find(route => route.handler.options?.cacheName === 'swiftdu-mascot-media-v1')
+  const mascot = routes.find(route => route.handler.options?.cacheName === 'swiftdu-images-v1')
   assert.ok(mascot)
-  assert.equal(mascot.matcher({ sameOrigin: true, url: new URL('https://swiftdu.test/mascot/idle.webm') }), true)
+  assert.equal(mascot.matcher({ sameOrigin: true, url: new URL('https://swiftdu.test/mascot/idle.webp') }), true)
   assert.equal(mascot.matcher({ sameOrigin: true, url: new URL('https://swiftdu.test/uploads/customer-video.webm') }), false)
-  assert.equal(mascot.handler.options.plugins[1].options.maxEntries, 8)
+  assert.equal(mascot.handler.options.plugins[1].options.maxEntries, 64)
   assert.equal(mascot.handler.options.plugins[1].options.purgeOnQuotaError, true)
 
   const api = routes[1]
