@@ -932,12 +932,13 @@ function ErrandDetailPageContent() {
         )}
         {reportTransferConfirmation}
         {showConfirmModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4">
-            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-900">
-              <h2 className="text-xl font-bold">{showConfirmModal === 'complete' ? (errand.cafeInquiry ? 'Complete this inquiry?' : 'Complete this order?') : 'Cancel this task?'}</h2>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4" role="presentation">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl dark:bg-slate-900" role="dialog" aria-modal="true" aria-labelledby="tasker-confirm-title" aria-describedby="tasker-confirm-description">
+              <h2 id="tasker-confirm-title" className="text-xl font-bold">{showConfirmModal === 'complete' ? (errand.cafeInquiry ? 'Are you sure this inquiry is complete?' : 'Are you sure this order is complete?') : 'Cancel this task?'}</h2>
               {showConfirmModal === 'complete' ? (
                 <div className="mt-3 text-sm text-slate-500">
-                  <p>By completing, you confirm that:</p>
+                  <p id="tasker-confirm-description">Only continue if you are sure. Completing this task will:</p>
+                  {!paymentConfirmed && <p className="mt-2 rounded-xl bg-amber-50 p-3 font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Payment is still pending. Confirming will mark it as paid.</p>}
                   <ul className="mt-2 list-disc space-y-1 pl-5">
                     <li>you have received the customer’s payment</li>
                     <li>{errand.cafeInquiry ? 'you have completed the cafe inquiry' : 'you have delivered the order to the customer'}</li>
@@ -951,7 +952,7 @@ function ErrandDetailPageContent() {
                   Go back
                 </Button>
                 <Button className={`h-11 flex-1 rounded-xl ${showConfirmModal === 'complete' ? 'bg-violet-600' : 'bg-rose-600'}`} disabled={Boolean(actionLoading) || !online} onClick={() => handleAction(showConfirmModal)}>
-                  {showConfirmModal === 'complete' ? (errand.cafeInquiry ? 'Yes, payment received & inquiry complete' : 'Yes, payment received & delivered') : 'Cancel task'}
+                  {showConfirmModal === 'complete' ? 'Yes, complete this task' : 'Cancel task'}
                 </Button>
               </div>
             </div>
@@ -1276,13 +1277,14 @@ function ErrandDetailPageContent() {
       {/* ─── Confirm Modal ─── */}
       {reportTransferConfirmation}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4 backdrop-blur-sm" role="presentation">
+          <div className="w-full max-w-sm rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl border border-slate-200 dark:border-slate-800" role="dialog" aria-modal="true" aria-labelledby="tasker-unassigned-confirm-title" aria-describedby="tasker-unassigned-confirm-description">
             <div className={`w-12 h-12 rounded-2xl flex items-center justify-center ${showConfirmModal === 'complete' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400' : 'bg-rose-100 text-rose-600 dark:bg-rose-950/50 dark:text-rose-400'}`}>{showConfirmModal === 'complete' ? <CheckCircle2 className="h-6 w-6" /> : <XCircle className="h-6 w-6" />}</div>
-            <h2 className="mt-4 text-xl font-bold text-slate-900 dark:text-white">{showConfirmModal === 'complete' ? (errand.cafeInquiry ? 'Complete this inquiry?' : 'Complete this order?') : 'Cancel this task?'}</h2>
+            <h2 id="tasker-unassigned-confirm-title" className="mt-4 text-xl font-bold text-slate-900 dark:text-white">{showConfirmModal === 'complete' ? (errand.cafeInquiry ? 'Are you sure this inquiry is complete?' : 'Are you sure this order is complete?') : 'Cancel this task?'}</h2>
             {showConfirmModal === 'complete' ? (
               <div className="mt-3 text-sm text-slate-500 dark:text-slate-400">
-                <p>By completing, you confirm that:</p>
+                <p id="tasker-unassigned-confirm-description">Only continue if you are sure. Completing this task will:</p>
+                {!paymentConfirmed && <p className="mt-2 rounded-xl bg-amber-50 p-3 font-semibold text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">Payment is still pending. Confirming will mark it as paid.</p>}
                 <ul className="mt-2 list-disc space-y-1 pl-5">
                   <li>you have received the customer&apos;s payment</li>
                   <li>{errand.cafeInquiry ? 'you have completed the cafe inquiry' : 'you have delivered the order to the customer'}</li>
@@ -1296,7 +1298,7 @@ function ErrandDetailPageContent() {
                 Go back
               </Button>
               <Button onClick={() => handleAction(showConfirmModal)} disabled={Boolean(actionLoading) || !online} className={`h-11 flex-1 rounded-xl text-white font-bold ${showConfirmModal === 'complete' ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-rose-600 hover:bg-rose-700'}`}>
-                {showConfirmModal === 'complete' ? (errand.cafeInquiry ? 'Yes, payment received & inquiry complete' : 'Yes, payment received & delivered') : 'Yes, cancel task'}
+                {showConfirmModal === 'complete' ? 'Yes, complete this task' : 'Yes, cancel task'}
               </Button>
             </div>
           </div>
