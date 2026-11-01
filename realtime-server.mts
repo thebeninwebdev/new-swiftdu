@@ -1,13 +1,9 @@
 import { createServer } from "node:http";
 import { Server as SocketIOServer } from "socket.io";
-import giveawaySocketModule from "./lib/giveaway-socket";
 import giveawayRealtimeConfig from "./lib/giveaway-realtime-config";
 
 const { getGiveawayAllowedOrigins, isGiveawayOriginAllowed } =
   giveawayRealtimeConfig;
-const { installGiveawaySocket } = giveawaySocketModule as unknown as {
-  installGiveawaySocket: typeof giveawaySocketModule;
-};
 
 const hostname = "0.0.0.0";
 const port = Number(process.env.PORT || 3000);
@@ -43,8 +39,11 @@ const io = new SocketIOServer(httpServer, {
   transports: ["websocket", "polling"],
 });
 
-installGiveawaySocket(io);
-
 httpServer.listen(port, hostname, () => {
   console.log(`> SwiftDU realtime ready on http://${hostname}:${port}`);
+  void import("./lib/giveaway-socket")
+    .then(({ default: installGiveawaySocket }) => installGiveawaySocket(io))
+    .catch((error) => {
+      console.error("Failed to load giveaway socket handlers.", error);
+    });
 });
