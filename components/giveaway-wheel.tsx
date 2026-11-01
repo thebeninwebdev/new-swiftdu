@@ -76,9 +76,6 @@ const money = (amount: number | null) =>
   amount == null ? "—" : `₦${amount.toLocaleString("en-NG")}`;
 const SLICE_HOLD_DURATION = 2200;
 const SLICE_EXIT_DURATION = 1400;
-const endpoint =
-  process.env.NEXT_PUBLIC_SOCKET_URL ||
-  (typeof window !== "undefined" ? window.location.origin : "");
 function sectorPath(index: number, count: number) {
   const a = (index / count) * Math.PI * 2 - Math.PI / 2;
   const b = ((index + 1) / count) * Math.PI * 2 - Math.PI / 2;
@@ -492,7 +489,57 @@ async function token() {
   return (await response.json()).token as string | undefined;
 }
 
-type ConnectionStatus = "connecting" | "live" | "reconnecting" | "unavailable";
+type ConnectionStatus =
+  | "connecting"
+  | "waking"
+  | "live"
+  | "reconnecting"
+  | "offline"
+  | "misconfigured";
+type GiveawaySocketError = { message: string; code?: string };
+
+function parseSocketError(value: unknown): GiveawaySocketError {
+  if (typeof value === "string") return { message: value };
+  if (value && typeof value === "object") {
+    const candidate = value as { message?: unknown; code?: unknown };
+    if (typeof candidate.message === "string")
+      return {
+        message: candidate.message,
+        code: typeof candidate.code === "string" ? candidate.code : undefined,
+      };
+  }
+  return { message: "Live giveaway state is temporarily unavailable." };
+}
+
+function validateSocketUrl(value: unknown) {
+  if (typeof value !== "string" || !value) return null;
+  try {
+    const url = new URL(value);
+    const developmentLocalhost =
+      process.env.NODE_ENV !== "production" &&
+      url.protocol === "http:" &&
+      ["localhost", "127.0.0.1"].includes(url.hostname);
+    if (url.protocol !== "https:" && !developmentLocalhost) return null;
+    if (url.pathname !== "/" || url.search || url.hash) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+async function socketConfig(signal: AbortSignal) {
+  const response = await fetch("/api/giveaway/socket-config", {
+    cache: "no-store",
+    signal,
+  });
+  const payload = (await response.json().catch(() => null)) as {
+    socketUrl?: unknown;
+  } | null;
+  const socketUrl = validateSocketUrl(payload?.socketUrl);
+  if (!response.ok || !socketUrl)
+    throw new Error("Realtime server is not configured.");
+  return socketUrl;
+}
 
 function logTiming(label: string) {
   if (process.env.NODE_ENV !== "production")
@@ -505,9 +552,11 @@ export function GiveawayExperience({ admin = false }: { admin?: boolean }) {
     useState<ConnectionStatus>("connecting");
   const [watching, setWatching] = useState(0);
   const [error, setError] = useState("");
+  const [realtimeStateError, setRealtimeStateError] = useState("");
   const [names, setNames] = useState("");
   const [help, setHelp] = useState(false);
   const [socket, setSocket] = useState<Socket | null>(null);
+  const [adminSocketAuthorized, setAdminSocketAuthorized] = useState(!admin);
   const [grandPrizeReveal, setGrandPrizeReveal] =
     useState<State["lastResult"]>(null);
   const stateFingerprintRef = useRef("");
@@ -545,37 +594,73 @@ export function GiveawayExperience({ admin = false }: { admin?: boolean }) {
   useEffect(() => {
     let disposed = false;
     let next: Socket | undefined;
+    let wakeTimer: ReturnType<typeof setTimeout> | undefined;
+    let reconnectAttempt = 0;
+    const controller = new AbortController();
     void (async () => {
-      const authToken = admin ? await token() : undefined;
+      let socketUrl: string;
+      let authToken: string | undefined;
+      try {
+        [socketUrl, authToken] = await Promise.all([
+          socketConfig(controller.signal),
+          admin ? token().catch(() => undefined) : Promise.resolve(undefined),
+        ]);
+      } catch (issue) {
+        if (disposed || controller.signal.aborted) return;
+        setConnectionStatus("misconfigured");
+        if (process.env.NODE_ENV !== "production")
+          console.debug(
+            `[giveaway] socket config error: ${issue instanceof Error ? issue.message : "unknown error"}`,
+          );
+        return;
+      }
       if (disposed) return;
-      next = io(`${endpoint}/giveaway`, {
+      setAdminSocketAuthorized(!admin || Boolean(authToken));
+      if (admin && !authToken)
+        setError("Admin realtime authorization is unavailable.");
+      logTiming("socket config resolved");
+      next = io(`${socketUrl}/giveaway`, {
         auth: authToken ? { token: authToken } : {},
         transports: ["websocket", "polling"],
         reconnection: true,
+        reconnectionAttempts: Infinity,
+        reconnectionDelay: 1000,
+        reconnectionDelayMax: 5000,
+        randomizationFactor: 0.5,
+        timeout: 20000,
         autoConnect: false,
       });
       next.on("connect", () => {
         connectedOnceRef.current = true;
+        reconnectAttempt = 0;
+        if (wakeTimer) clearTimeout(wakeTimer);
         setConnectionStatus("live");
         logTiming("socket connected");
       });
-      next.on("disconnect", () => setConnectionStatus("reconnecting"));
-      next.on("connect_error", () =>
+      next.on("disconnect", (reason) => {
         setConnectionStatus(
-          connectedOnceRef.current ? "reconnecting" : "unavailable",
-        ),
-      );
-      next.on("giveaway:error", (message: unknown) => {
-        setConnectionStatus("unavailable");
-        if (admin)
-          setError(
-            typeof message === "string"
-              ? message
-              : "Live connection unavailable.",
-          );
+          connectedOnceRef.current ? "reconnecting" : "waking",
+        );
+        if (process.env.NODE_ENV !== "production")
+          console.debug(`[giveaway] socket disconnected: ${reason}`);
+      });
+      next.on("connect_error", (issue) => {
+        setConnectionStatus(
+          connectedOnceRef.current
+            ? "reconnecting"
+            : reconnectAttempt >= 6
+              ? "offline"
+              : "waking",
+        );
+        if (process.env.NODE_ENV !== "production")
+          console.debug(`[giveaway] socket connect_error: ${issue.message}`);
+      });
+      next.on("giveaway:error", (payload: unknown) => {
+        setRealtimeStateError(parseSocketError(payload).message);
       });
       next.on("giveaway:state", (value: unknown) => {
         receivedRealtimeRef.current = true;
+        setRealtimeStateError("");
         if (!firstRealtimeStateRef.current) {
           firstRealtimeStateRef.current = true;
           logTiming("first realtime state received");
@@ -585,14 +670,50 @@ export function GiveawayExperience({ admin = false }: { admin?: boolean }) {
       next.on("giveaway:presence", (value: unknown) =>
         setWatching(Number(value) || 0),
       );
+      next.io.on("reconnect_attempt", (attempt) => {
+        reconnectAttempt = attempt;
+        setConnectionStatus(
+          connectedOnceRef.current
+            ? "reconnecting"
+            : attempt >= 6
+              ? "offline"
+              : "waking",
+        );
+        if (process.env.NODE_ENV !== "production")
+          console.debug(`[giveaway] socket reconnect attempt: ${attempt}`);
+      });
+      next.io.on("reconnect", () => {
+        reconnectAttempt = 0;
+        setConnectionStatus("live");
+      });
+      next.io.on("reconnect_error", (issue) => {
+        if (reconnectAttempt >= 6) setConnectionStatus("offline");
+        if (process.env.NODE_ENV !== "production")
+          console.debug(`[giveaway] socket reconnect_error: ${issue.message}`);
+      });
       setSocket(next);
       setConnectionStatus("connecting");
       logTiming("socket client ready");
       logTiming("socket connecting");
+      wakeTimer = setTimeout(() => {
+        if (!disposed && !next?.connected) setConnectionStatus("waking");
+      }, 2500);
+      void fetch(`${socketUrl}/health`, {
+        cache: "no-store",
+        signal: controller.signal,
+      })
+        .then(() => {
+          if (!disposed && !next?.connected) setConnectionStatus("waking");
+        })
+        .catch(() => {
+          if (!disposed && !next?.connected) setConnectionStatus("waking");
+        });
       next.connect();
     })();
     return () => {
       disposed = true;
+      controller.abort();
+      if (wakeTimer) clearTimeout(wakeTimer);
       next?.disconnect();
     };
   }, [admin, applyState]);
@@ -651,14 +772,19 @@ export function GiveawayExperience({ admin = false }: { admin?: boolean }) {
       });
     });
   const connected = connectionStatus === "live";
+  const controlsConnected = connected && adminSocketAuthorized;
   const connectionLabel =
     connectionStatus === "live"
       ? "Live"
       : connectionStatus === "connecting"
         ? "Connecting to live draw..."
-        : connectionStatus === "unavailable"
-          ? "Live connection unavailable. Trying to reconnect..."
-          : "Reconnecting...";
+        : connectionStatus === "waking"
+          ? "Waking live server..."
+          : connectionStatus === "reconnecting"
+            ? "Reconnecting..."
+            : connectionStatus === "misconfigured"
+              ? "Realtime server is not configured."
+              : "Realtime connection is unavailable.";
   if (!state)
     return (
       <main className="flex min-h-screen items-center justify-center bg-[#faf8ff] text-violet-950">
@@ -690,10 +816,18 @@ export function GiveawayExperience({ admin = false }: { admin?: boolean }) {
           <span
             className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-bold ${connected ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}
           >
-            <span>●</span>
+            {connected && <span>●</span>}
             {connectionLabel}
           </span>
         </header>
+        {realtimeStateError && (
+          <p
+            className="mt-3 rounded-xl bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700"
+            role="status"
+          >
+            {realtimeStateError}
+          </p>
+        )}
         <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
           <section className="rounded-[2rem] border border-violet-100 bg-white p-4 shadow-[0_20px_70px_-45px_rgba(76,29,149,.55)] sm:p-8">
             <div className="text-center">
@@ -844,6 +978,7 @@ export function GiveawayExperience({ admin = false }: { admin?: boolean }) {
             setNames={setNames}
             action={adminAction}
             error={error}
+            connected={controlsConnected}
           />
         )}
       </div>
@@ -857,157 +992,170 @@ function AdminControls({
   setNames,
   action,
   error,
+  connected,
 }: {
   state: State;
   names: string;
   setNames: (v: string) => void;
   action: (event: string, payload?: unknown) => Promise<void>;
   error: string;
+  connected: boolean;
 }) {
   const [confirm, setConfirm] = useState(false);
   return (
     <section className="mt-5 grid gap-5 lg:grid-cols-2">
-      <Card className="p-5">
-        <div className="flex items-center gap-2">
-          <Settings2 className="text-violet-600" />
-          <h2 className="font-extrabold">Control room</h2>
-        </div>
-        {error && (
-          <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-semibold text-rose-700">
-            {error}
-          </p>
-        )}
-        <div className="mt-4 grid grid-cols-2 gap-2">
-          <Button
-            disabled={state.status === "spinning" || state.status === "waiting"}
-            onClick={() => void action("giveaway:admin-spin")}
-            className="col-span-2 h-14 bg-violet-700 text-base hover:bg-violet-800"
-          >
-            {state.status === "spinning" ? "Spinning…" : "SPIN THE WHEEL 🎡"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => void action("giveaway:admin-start")}
-            disabled={state.status !== "waiting"}
-          >
-            Start Giveaway
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => void action("giveaway:admin-finish")}
-            disabled={state.status === "finished"}
-          >
-            Finish Giveaway
-          </Button>
-        </div>
-        <div className="mt-5 grid gap-2 sm:grid-cols-2">
-          <label className="text-sm font-bold">
-            Game mode
-            <select
-              value={state.mode}
-              onChange={(e) =>
-                void action("giveaway:admin-set-mode", { mode: e.target.value })
+      {!connected && (
+        <p className="rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-800 lg:col-span-2">
+          Live controls will be available when the connection is restored.
+        </p>
+      )}
+      <fieldset disabled={!connected} className="contents">
+        <Card className="p-5">
+          <div className="flex items-center gap-2">
+            <Settings2 className="text-violet-600" />
+            <h2 className="font-extrabold">Control room</h2>
+          </div>
+          {error && (
+            <p className="mt-3 rounded-xl bg-rose-50 p-3 text-sm font-semibold text-rose-700">
+              {error}
+            </p>
+          )}
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <Button
+              disabled={
+                state.status === "spinning" || state.status === "waiting"
               }
-              className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3"
+              onClick={() => void action("giveaway:admin-spin")}
+              className="col-span-2 h-14 bg-violet-700 text-base hover:bg-violet-800"
             >
-              <option value="elimination">Last Swifter Standing</option>
-              <option value="winner">Winner Draw</option>
-            </select>
-          </label>
-          <label className="text-sm font-bold">
-            Current prize
-            <select
-              value={state.currentPrize ?? ""}
-              onChange={(e) =>
-                void action("giveaway:admin-set-prize", {
-                  amount: Number(e.target.value),
-                  index: state.winners.length,
+              {state.status === "spinning" ? "Spinning…" : "SPIN THE WHEEL 🎡"}
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void action("giveaway:admin-start")}
+              disabled={state.status !== "waiting"}
+            >
+              Start Giveaway
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => void action("giveaway:admin-finish")}
+              disabled={state.status === "finished"}
+            >
+              Finish Giveaway
+            </Button>
+          </div>
+          <div className="mt-5 grid gap-2 sm:grid-cols-2">
+            <label className="text-sm font-bold">
+              Game mode
+              <select
+                value={state.mode}
+                onChange={(e) =>
+                  void action("giveaway:admin-set-mode", {
+                    mode: e.target.value,
+                  })
+                }
+                className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3"
+              >
+                <option value="elimination">Last Swifter Standing</option>
+                <option value="winner">Winner Draw</option>
+              </select>
+            </label>
+            <label className="text-sm font-bold">
+              Current prize
+              <select
+                value={state.currentPrize ?? ""}
+                onChange={(e) =>
+                  void action("giveaway:admin-set-prize", {
+                    amount: Number(e.target.value),
+                    index: state.winners.length,
+                  })
+                }
+                className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3"
+              >
+                <option value="1500">₦1,500</option>
+                <option value="2500">₦2,500</option>
+                <option value="4000">₦4,000</option>
+              </select>
+            </label>
+          </div>
+          <div className="mt-5 rounded-2xl bg-slate-50 p-4">
+            <p className="text-sm font-bold">Contestants (one per line)</p>
+            <textarea
+              value={names}
+              onChange={(e) => setNames(e.target.value)}
+              placeholder="Precious&#10;David&#10;Sarah"
+              className="mt-2 min-h-28 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm"
+              disabled={state.status !== "waiting"}
+            />
+            <Button
+              variant="outline"
+              className="mt-2"
+              disabled={state.status !== "waiting" || !names.trim()}
+              onClick={() =>
+                void action("giveaway:admin-update-contestants", {
+                  names: names.split("\n"),
                 })
               }
-              className="mt-1 h-11 w-full rounded-xl border border-slate-200 bg-white px-3"
             >
-              <option value="1500">₦1,500</option>
-              <option value="2500">₦2,500</option>
-              <option value="4000">₦4,000</option>
-            </select>
-          </label>
-        </div>
-        <div className="mt-5 rounded-2xl bg-slate-50 p-4">
-          <p className="text-sm font-bold">Contestants (one per line)</p>
-          <textarea
-            value={names}
-            onChange={(e) => setNames(e.target.value)}
-            placeholder="Precious&#10;David&#10;Sarah"
-            className="mt-2 min-h-28 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm"
-            disabled={state.status !== "waiting"}
-          />
-          <Button
-            variant="outline"
-            className="mt-2"
-            disabled={state.status !== "waiting" || !names.trim()}
-            onClick={() =>
-              void action("giveaway:admin-update-contestants", {
-                names: names.split("\n"),
-              })
-            }
-          >
-            Save contestants
-          </Button>
-        </div>
-        <div className="mt-4 flex items-center justify-between">
-          <span className="text-sm text-slate-500">Danger zone</span>
-          {confirm ? (
-            <span className="flex gap-2">
-              <Button variant="outline" onClick={() => setConfirm(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  setConfirm(false);
-                  void action("giveaway:admin-reset");
-                }}
-              >
-                Reset Giveaway
-              </Button>
-            </span>
-          ) : (
-            <Button variant="outline" onClick={() => setConfirm(true)}>
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Reset
+              Save contestants
             </Button>
-          )}
-        </div>
-      </Card>
-      <Card className="p-5">
-        <h2 className="font-extrabold">Contestant recovery</h2>
-        <div className="mt-3 space-y-2">
-          {state.contestants.map((contestant) => (
-            <div
-              key={contestant.id}
-              className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 p-3"
-            >
-              <span
-                className={`text-sm font-semibold ${contestant.active ? "text-slate-800" : "text-slate-400 line-through"}`}
-              >
-                {contestant.name}
+          </div>
+          <div className="mt-4 flex items-center justify-between">
+            <span className="text-sm text-slate-500">Danger zone</span>
+            {confirm ? (
+              <span className="flex gap-2">
+                <Button variant="outline" onClick={() => setConfirm(false)}>
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => {
+                    setConfirm(false);
+                    void action("giveaway:admin-reset");
+                  }}
+                >
+                  Reset Giveaway
+                </Button>
               </span>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  void action(
-                    `giveaway:admin-${contestant.active ? "remove" : "restore"}-contestant`,
-                    { contestantId: contestant.id },
-                  )
-                }
-              >
-                {contestant.active ? "Remove" : "Restore"}
+            ) : (
+              <Button variant="outline" onClick={() => setConfirm(true)}>
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Reset
               </Button>
-            </div>
-          ))}
-        </div>
-      </Card>
+            )}
+          </div>
+        </Card>
+        <Card className="p-5">
+          <h2 className="font-extrabold">Contestant recovery</h2>
+          <div className="mt-3 space-y-2">
+            {state.contestants.map((contestant) => (
+              <div
+                key={contestant.id}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 p-3"
+              >
+                <span
+                  className={`text-sm font-semibold ${contestant.active ? "text-slate-800" : "text-slate-400 line-through"}`}
+                >
+                  {contestant.name}
+                </span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    void action(
+                      `giveaway:admin-${contestant.active ? "remove" : "restore"}-contestant`,
+                      { contestantId: contestant.id },
+                    )
+                  }
+                >
+                  {contestant.active ? "Remove" : "Restore"}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </fieldset>
     </section>
   );
 }
