@@ -1,5 +1,9 @@
 This is the SwiftDU Next.js application.
 
+## SwiftDU Live Giveaway
+
+The live giveaway uses the custom Node server (`npm run start`) with Socket.IO and MongoDB persistence. Deploy that process on the existing Render service (or a small persistent Render service), then set the same `GIVEAWAY_SOCKET_SECRET` on Render and Vercel. Set Vercel's `NEXT_PUBLIC_SOCKET_URL` to the Render service URL. The public event is `/giveaway`; authorized admins use `/admin/giveaway`.
+
 ## Getting Started
 
 First, run the development server:

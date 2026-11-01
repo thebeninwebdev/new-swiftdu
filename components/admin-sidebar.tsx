@@ -14,6 +14,7 @@ import {
   ShoppingBag,
   ShieldCheck,
   SlidersHorizontal,
+  Gift,
   Store,
   Truck,
   RadioTower,
@@ -63,6 +64,12 @@ const adminNavigation = [
     href: '/admin/operations',
     icon: SlidersHorizontal,
     description: 'Hours, periods & finances',
+  },
+  {
+    label: 'Giveaway',
+    href: '/admin/giveaway',
+    icon: Gift,
+    description: 'Run the live wheel event',
   },
 ]
 

@@ -16,6 +16,7 @@ const PUBLIC_ROUTES = [
   '/signup',
   '/complete-profile',
   '/tasker-signup',
+  '/giveaway',
   '/terms',
 ];
 
@@ -28,6 +29,7 @@ const SUSPENSION_EXEMPT_ROUTES = [
   '/signup',
   '/complete-profile',
   '/tasker-signup',
+  '/giveaway',
   '/offline',
   '/suspended',
 ];

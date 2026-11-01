@@ -7,6 +7,7 @@ export const HIDDEN_CHROME_PREFIXES = [
   "/offline",
   "/suspended",
   "/admin",
+  "/giveaway",
   "/cfo-dashboard",
   "/cmo-dashboard",
   "/coo-dashboard",
