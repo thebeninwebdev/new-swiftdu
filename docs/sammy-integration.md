@@ -42,6 +42,26 @@ customer-scoped idempotency index.
 An authenticated SwiftDU administrator approves or revokes a numeric Telegram
 ID with `PATCH /api/admin/users/:id/telegram`.
 
+## Self-service Telegram linking
+
+Only an identity not already present in SwiftDU can receive a self-service
+challenge. Sammy calls POST /api/internal/sammy/telegram/link/start with the
+numeric Telegram identity and chat ID. SwiftDU returns a 256-bit random token,
+stores only its SHA-256 hash, invalidates earlier outstanding challenges for
+that Telegram user, and expires it after 10 minutes.
+
+The browser opens /telegram/connect?token=.... SwiftDU preserves that internal
+path through Better Auth, previews the signed-in SwiftDU account and Telegram
+snapshot, and requires an explicit confirmation. Confirmation is same-origin,
+rate-limited, and uses a MongoDB transaction to link the user and consume the
+challenge together. Only active administrators and EXCO accounts are eligible.
+
+POST /api/internal/sammy/telegram/link/status powers the bot's Check Connection
+button. Explicitly revoked, suspended, and insufficient-privilege accounts
+receive distinct blocked states and never receive a fresh challenge. The
+existing administrator route remains the explicit replacement and revocation
+mechanism.
+
 ## Authentication
 
 Every request below is `POST`, uses `Content-Type: application/json`, and must include:

@@ -51,6 +51,8 @@ export interface IUser extends Document {
   telegramFirstName?: string;
   telegramLastName?: string;
   telegramEnabled?: boolean;
+  telegramLinkedAt?: Date;
+  telegramRevokedAt?: Date;
 }
 
 const UserPhoneSchema = new Schema<IUserPhone>(
@@ -122,6 +124,8 @@ const UserSchema = new Schema<IUser>(
     telegramFirstName: { type: String, required: false, trim: true },
     telegramLastName: { type: String, required: false, trim: true },
     telegramEnabled: { type: Boolean, default: false, index: true },
+    telegramLinkedAt: { type: Date, required: false },
+    telegramRevokedAt: { type: Date, required: false },
     location: {
       type: String,
       required: false,
@@ -216,6 +220,7 @@ if (
   models.user &&
   (!models.user.schema.path('firstOrderBonusOrderId') ||
     !models.user.schema.path('telegramUserId') ||
+    !models.user.schema.path('telegramRevokedAt') ||
     !models.user.schema.path('phones'))
 ) {
   // Mongoose clears both its global registry and default connection registry.

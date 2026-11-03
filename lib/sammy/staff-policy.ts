@@ -9,6 +9,7 @@ export function normalizeCustomerPhone(value?: string | null) {
 export function isApprovedTelegramStaffAccount<T extends {
     telegramUserId?: string | null
     telegramEnabled?: boolean
+    telegramRevokedAt?: Date | null
     isSuspended?: boolean
     role?: string | null
     isExco?: boolean
@@ -21,6 +22,7 @@ export function isApprovedTelegramStaffAccount<T extends {
     /^\d+$/.test(telegramUserId) &&
     staff.telegramUserId === telegramUserId &&
     staff.telegramEnabled === true &&
+    !staff.telegramRevokedAt &&
     staff.isSuspended !== true &&
     (staff.role === 'admin' || staff.isExco === true)
   )

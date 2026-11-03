@@ -27,6 +27,7 @@ export type SammyStaff = {
   telegramFirstName?: string
   telegramLastName?: string
   telegramEnabled?: boolean
+  telegramRevokedAt?: Date
   isSuspended?: boolean
 }
 
@@ -57,12 +58,13 @@ export async function resolveSammyStaff(identity: TelegramIdentity) {
 
   await connectDB()
   const staff = await User.findOne({ telegramUserId })
-    .select('_id name email role isExco isSuspended telegramUserId telegramEnabled telegramFirstName telegramLastName')
+    .select('_id name email role isExco isSuspended telegramUserId telegramEnabled telegramRevokedAt telegramFirstName telegramLastName')
     .lean<SammyStaff>()
 
-  if (!isApprovedTelegramStaffAccount(staff, telegramUserId)) {
-    throw new SammyApiError(403, 'STAFF_NOT_APPROVED', 'Sammy is only available to approved SwiftDU staff.')
-  }
+  if (!staff) throw new SammyApiError(403, 'TELEGRAM_NOT_LINKED', 'Connect your SwiftDU account to continue.')
+  if (staff.isSuspended) throw new SammyApiError(403, 'STAFF_ACCOUNT_SUSPENDED', 'This SwiftDU account is suspended.')
+  if (staff.role !== 'admin' && !staff.isExco) throw new SammyApiError(403, 'STAFF_INSUFFICIENT_PRIVILEGES', 'This account does not have staff access.')
+  if (!isApprovedTelegramStaffAccount(staff, telegramUserId)) throw new SammyApiError(403, 'TELEGRAM_ACCESS_DISABLED', 'Telegram access is disabled for this account.')
 
   const snapshot: Record<string, string> = {}
   if (identity.username) snapshot.telegramUsername = identity.username

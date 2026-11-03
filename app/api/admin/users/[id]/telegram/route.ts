@@ -27,14 +27,14 @@ export async function PATCH(
       return NextResponse.json({ error: 'Only an admin or EXCO account can be approved for Sammy.' }, { status: 400 })
     }
     if (body.enabled === false) {
-      await User.updateOne({ _id: user._id }, { $set: { telegramEnabled: false } })
+      await User.updateOne({ _id: user._id }, { $set: { telegramEnabled: false, telegramRevokedAt: new Date() } })
       return NextResponse.json({ approved: false, userId: String(user._id) })
     }
     const duplicate = await User.exists({ _id: { $ne: user._id }, telegramUserId })
     if (duplicate) return NextResponse.json({ error: 'That Telegram user ID is already linked.' }, { status: 409 })
     await User.updateOne(
       { _id: user._id },
-      { $set: { telegramUserId, telegramEnabled: true } }
+      { $set: { telegramUserId, telegramEnabled: true, telegramLinkedAt: new Date() }, $unset: { telegramRevokedAt: 1 } }
     )
     return NextResponse.json({ approved: true, userId: String(user._id), telegramUserId })
   } catch (error) {
