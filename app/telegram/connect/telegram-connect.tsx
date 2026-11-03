@@ -33,6 +33,7 @@ export function TelegramConnect() {
   const { data: session, isPending } = authClient.useSession()
   const [state, setState] = useState<ViewState>({ kind: 'loading' })
   const [confirming, setConfirming] = useState(false)
+  const [switching, setSwitching] = useState(false)
   const signInPath = useMemo(() => {
     const next = '/telegram/connect?token=' + encodeURIComponent(token)
     return '/auth?next=' + encodeURIComponent(next)
@@ -82,6 +83,12 @@ export function TelegramConnect() {
     }
   }
 
+  async function switchAccount() {
+    setSwitching(true)
+    // /auth redirects an existing session, so clear it while retaining token.
+    await authClient.signOut().catch(() => undefined)
+    window.location.assign(signInPath)
+  }
   if (isPending) {
     return <Card><div className='flex min-h-64 items-center justify-center'>
       <Loader2 className='h-7 w-7 animate-spin text-indigo-600' aria-label='Loading' />
@@ -116,6 +123,10 @@ export function TelegramConnect() {
       <TriangleAlert className='h-12 w-12 text-rose-500' />
       <h1 className='mt-5 text-2xl font-semibold text-slate-950'>Connection unavailable</h1>
       <p className='mt-3 leading-7 text-slate-600'>{state.message}</p>
+      {session?.user && <p className='mt-3 text-sm text-slate-500'>Signed in as <span className='font-medium text-slate-700'>{session.user.email || session.user.name || 'your current SwiftDU account'}</span>.</p>}
+      {(state.message.includes('not eligible') || state.message.includes('Sign in')) && <button type='button' onClick={() => void switchAccount()} disabled={switching} className='mt-6 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-indigo-200 px-4 font-semibold text-indigo-700 disabled:opacity-60'>
+        {switching && <Loader2 className='h-4 w-4 animate-spin' />} Switch SwiftDU Account
+      </button>}
       <p className='mt-3 text-sm text-slate-500'>If you believe this is a mistake, contact a SwiftDU administrator.</p>
     </Card>
   }

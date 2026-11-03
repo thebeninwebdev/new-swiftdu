@@ -17,6 +17,10 @@ const ONE_DAY_IN_SECONDS = 60 * 60 * 24;
 const authBaseUrl = getAuthBaseUrl();
 const trustedOrigins = getTrustedOrigins();
 const appURL = new URL(authBaseUrl);
+// Share the production session between apex and www SwiftDU hosts.
+const shareProductionSessionCookie =
+  process.env.NODE_ENV === "production" &&
+  (appURL.hostname === "swiftdu.org" || appURL.hostname === "www.swiftdu.org");
 
 if (process.env.VERCEL_ENV === "preview") {
   console.info("[auth:preview-config]", {
@@ -149,6 +153,9 @@ export const auth = betterAuth({
     expiresIn: THIRTY_DAYS_IN_SECONDS,
     updateAge: ONE_DAY_IN_SECONDS,
   },
+  advanced: shareProductionSessionCookie
+    ? { crossSubDomainCookies: { enabled: true, domain: "swiftdu.org" } }
+    : undefined,
   emailVerification: {
     sendVerificationEmail: async ({ user, url }) => {
       const [{ default: verifyEmail }, { sendTransactionalEmail }] =

@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     rateLimitTelegramConfirmation(session.user.id)
     const body = await request.json().catch(() => ({})) as { token?: unknown }
     const token = typeof body.token === 'string' ? body.token : ''
-    const result = await consumeTelegramLink(token, session.user.id)
+    const result = await consumeTelegramLink(token, { id: session.user.id, email: session.user.email })
     if (!result) {
       return NextResponse.json({
         error: 'This connection link has expired.',

@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   try {
     const session = await requireTelegramLinkSession(request)
     const token = request.nextUrl.searchParams.get('token') || ''
-    const preview = await previewTelegramLink(token, session.user.id)
+    const preview = await previewTelegramLink(token, { id: session.user.id, email: session.user.email })
     if (!preview) {
       return NextResponse.json({
         error: 'This connection link has expired.',

@@ -106,3 +106,13 @@ test('concurrent confirmation links a Telegram identity to exactly one account',
     consumedAt: { $exists: true },
   }), 1)
 })
+test('a legacy or stale session id resolves the authoritative account by normalized email', async () => {
+  const admin = await account('staff@example.invalid')
+  const token = await challenge('40001', new Date(Date.now() + 60_000))
+  const session = { id: 'legacy-session-id', email: ' STAFF@example.invalid ' }
+  const preview = await linking.previewTelegramLink(token, session)
+  assert.equal(preview?.account.email, 'staff@example.invalid')
+  assert.deepEqual(await linking.consumeTelegramLink(token, session), { botUsername: undefined })
+  const saved = await User.findById(admin._id).lean()
+  assert.equal(saved?.telegramUserId, '40001')
+})
