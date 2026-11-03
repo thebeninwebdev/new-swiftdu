@@ -20,7 +20,13 @@ const httpServer = createServer((request, response) => {
       "Content-Type": "application/json",
       "Cache-Control": "no-store",
     });
-    response.end(JSON.stringify({ ok: true, service: "swiftdu-realtime" }));
+    response.end(
+      JSON.stringify({
+        ok: true,
+        service: "swiftdu-realtime",
+        timestamp: new Date().toISOString(),
+      }),
+    );
     return;
   }
 

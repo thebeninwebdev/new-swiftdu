@@ -19,6 +19,19 @@ export const INDOMIE_TASK_TYPE = 'indomie'
 export const COPY_NOTES_SMALL_PRICE_PER_TWO_PAGES = 250
 export const COPY_NOTES_BIG_PRICE_PER_TWO_PAGES = 450
 
+/**
+ * Fixed shopping delivery adjustments, based only on the item purchase budget.
+ * The existing vendor/location service fee remains the base fee.
+ */
+export const SHOPPING_BASKET_PRICING_TIERS = [
+  { maximumAmount: 5_000, surcharge: 0 },
+  { maximumAmount: 10_000, surcharge: 100 },
+  { maximumAmount: 15_000, surcharge: 200 },
+  { maximumAmount: 20_000, surcharge: 300 },
+  { maximumAmount: 30_000, surcharge: 500 },
+  { maximumAmount: Number.POSITIVE_INFINITY, surcharge: 700 },
+] as const
+
 export const WATER_DESCRIPTION_PATTERN = /\bbag(?:s)?\s+of\s+water\b/i
 
 
@@ -72,6 +85,13 @@ export function normalizePrintingServiceType(value?: string): PrintingServiceTyp
   if (value === 'printing') return 'printing'
   if (value === 'photocopying' || value === 'photocopy') return 'photocopying'
   return undefined
+}
+
+export function getShoppingBasketSurcharge(value: number) {
+  const amount = Number(value)
+  if (!Number.isFinite(amount) || amount <= 0) return 0
+
+  return SHOPPING_BASKET_PRICING_TIERS.find(tier => amount <= tier.maximumAmount)?.surcharge ?? 0
 }
 
 export function calculatePrintingPrice(input: {
@@ -249,10 +269,13 @@ export function calculateOrderPricing(input: {
   }
 
   if (input.taskType === 'shopping') {
+    const shoppingBasketSurcharge = getShoppingBasketSurcharge(amount)
+    const shoppingServiceFee = roundNaira(configuredServiceFee + shoppingBasketSurcharge)
+
     return {
       amount,
-      serviceFee: configuredServiceFee,
-      totalAmount: roundNaira(amount + configuredServiceFee),
+      serviceFee: shoppingServiceFee,
+      totalAmount: roundNaira(amount + shoppingServiceFee),
       pricingModel: 'tiered' as const,
       waterFee: 0,
     } satisfies PricingResult
