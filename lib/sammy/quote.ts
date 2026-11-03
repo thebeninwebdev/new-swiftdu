@@ -1,7 +1,7 @@
 import { Types } from 'mongoose'
 
 import { validateOrderAgainstCommercePolicy } from '@/lib/commerce-policy'
-import { firstOrderBonusEligibility } from '@/lib/first-order-bonus'
+import { firstOrderBonusEligibility, NoActiveAcademicSessionError } from '@/lib/first-order-bonus'
 import { priceWithOrderDiscounts } from '@/lib/first-order-pricing'
 import { canCreateOrder } from '@/lib/operations'
 import { getOperationsSettings, getOperationsStatus } from '@/lib/operations-settings'
@@ -29,10 +29,14 @@ type SammyQuoteUser = {
   serviceFeeDiscountRemainingOrders?: number
 }
 
-export async function quoteSammyDraft(user: SammyQuoteUser, draft: SammyOrderDraft) {
+export async function quoteSammyDraft(
+  user: SammyQuoteUser,
+  draft: SammyOrderDraft,
+  options: { allowIncompleteProfile?: boolean } = {}
+) {
   if (!SAMMY_TASK_TYPES.includes(draft.taskType)) throw new SammyApiError(400, 'INVALID_TASK_TYPE', 'Choose a supported service.')
   if (!draft.location?.trim()) throw new SammyApiError(400, 'INVALID_DESTINATION', 'Choose a delivery destination.')
-  if (!isProfileComplete(user)) throw new SammyApiError(403, 'PROFILE_INCOMPLETE', 'Complete your SwiftDU profile before placing an order.')
+  if (!options.allowIncompleteProfile && !isProfileComplete(user)) throw new SammyApiError(403, 'PROFILE_INCOMPLETE', 'Complete your SwiftDU profile before placing an order.')
   const policy = validateOrderAgainstCommercePolicy({ taskType: draft.taskType, description: String(draft.description || ''), vendorName: draft.store })
   if (!policy.allowed) throw new SammyApiError(400, 'RESTRICTED_ITEM', policy.reason || 'This request is restricted.')
   const description = String(draft.description || '').trim()
@@ -48,6 +52,7 @@ export async function quoteSammyDraft(user: SammyQuoteUser, draft: SammyOrderDra
   if (cafeInquiry && (!draft.store?.trim() || !draft.location?.trim())) throw new SammyApiError(400, 'INVALID_CAFE_INQUIRY', 'Choose a cafe and delivery location.')
   if (draft.taskType === 'water' && (!Number.isInteger(Number(draft.waterBags)) || Number(draft.waterBags) <= 0)) throw new SammyApiError(400, 'INVALID_WATER_BAGS', 'Enter the number of water bags.')
   if (draft.taskType === 'printing' && (!normalizePrintingServiceType(draft.printingServiceType) || !Number.isInteger(Number(draft.numberOfPages)) || Number(draft.numberOfPages) < 1)) throw new SammyApiError(400, 'INVALID_PRINTING_ORDER', 'Choose printing or photocopying and enter the number of pages.')
+  if (draft.taskType === 'indomie' && (!Number.isInteger(Number(draft.indomiePacks)) || Number(draft.indomiePacks) < 1 || !Number.isInteger(Number(draft.eggCount)) || Number(draft.eggCount) < 0 || !Number.isFinite(amount) || amount <= 0)) throw new SammyApiError(400, 'INVALID_INDOMIE_ORDER', 'Enter valid Indomie packs, eggs and budget.')
   if (!draft.parentLocationId || !Types.ObjectId.isValid(draft.parentLocationId)) throw new SammyApiError(400, 'INVALID_DESTINATION', 'Choose a valid delivery destination.')
   const parent = await CampusLocation.findOne({ _id: draft.parentLocationId, parentLocationId: null, active: true }).select('_id name type deliveryPolicy').lean()
   if (!parent) throw new SammyApiError(400, 'INVALID_DESTINATION', 'Choose an active delivery destination.')
@@ -64,7 +69,8 @@ export async function quoteSammyDraft(user: SammyQuoteUser, draft: SammyOrderDra
   const selectedVendorId = draft.vendorId || ''
   const pricingVendorId = selectedVendorId || (isAnywhere ? draft.deliveryPricingVendorId || '' : '')
   let configuredServiceFee: number | null = null
-  if (draft.taskType !== 'water') {
+  const vendorBacked = draft.taskType === 'restaurant' || draft.taskType === 'shopping' || draft.taskType === 'printing'
+  if (vendorBacked) {
     if (!pricingVendorId) throw new SammyApiError(400, 'VENDOR_NOT_FOUND', 'Choose a vendor and delivery location.')
     try {
       const resolved = await resolveVendorDeliveryPricing({ vendorId: pricingVendorId, dropoffParentLocationId: String(parent._id), expectedServiceType: draft.taskType })
@@ -88,6 +94,8 @@ export async function quoteSammyDraft(user: SammyQuoteUser, draft: SammyOrderDra
     numberOfPages: draft.numberOfPages,
     printingServiceType: normalizePrintingServiceType(draft.printingServiceType),
     printingNeedsEditing: draft.printingNeedsEditing,
+    indomiePacks: draft.indomiePacks,
+    eggCount: draft.eggCount,
     serviceFee: configuredServiceFee ?? undefined,
   })
   if (!Number.isFinite(pricing.totalAmount) || pricing.totalAmount < 0) throw new SammyApiError(400, 'INVALID_AMOUNT', 'Enter valid order details.')
@@ -97,7 +105,15 @@ export async function quoteSammyDraft(user: SammyQuoteUser, draft: SammyOrderDra
   if (!isTestOrder && !operations.open) throw new SammyApiError(409, 'OUTSIDE_OPERATING_HOURS', 'SwiftDU is closed for today.')
 
   const serviceFeeDiscount = Boolean(user.serviceFeeDiscountEnabled && Number(user.serviceFeeDiscountRemainingOrders || 0) > 0 && !(await hasActiveServiceFeeDiscountReservation(String(user._id))) && pricing.serviceFee > 0)
-  const firstOrder = isTestOrder ? false : (await firstOrderBonusEligibility(String(user._id))).eligible
+  let firstOrder = false
+  try {
+    firstOrder = isTestOrder ? false : (await firstOrderBonusEligibility(String(user._id))).eligible
+  } catch (error) {
+    if (error instanceof NoActiveAcademicSessionError) {
+      throw new SammyApiError(409, 'NO_ACTIVE_SESSION', error.message)
+    }
+    throw error
+  }
   const adjusted = priceWithOrderDiscounts(pricing, { firstOrderBonus: firstOrder, serviceFeeDiscount, cafeInquiry })
   return {
     amount: pricing.amount,

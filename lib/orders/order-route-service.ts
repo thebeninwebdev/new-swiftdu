@@ -66,9 +66,13 @@ export type OrderCreationPrincipal = {
 
 export type OrderCreationChannel = {
   principal: OrderCreationPrincipal
-  source: 'website' | 'whatsapp'
+  source: 'website' | 'whatsapp' | 'telegram_staff'
   customerPhone?: string
   customerName?: string
+  customerContactMethod?: 'website' | 'whatsapp' | 'phone' | 'telegram_staff'
+  createdByStaffId?: string
+  createdByStaffTelegramId?: string
+  createdByStaffName?: string
 }
 
 export async function createOrderResponse(request: NextRequest, channel?: OrderCreationChannel) {
@@ -115,7 +119,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
 
     // Customer operational details are required to place an order, not to authenticate.
     // Privileged/test-order behavior remains governed by the existing authorization below.
-    if (session.user.role === 'user') {
+    if (session.user.role === 'user' && channel?.source !== 'telegram_staff') {
       const profile = await User.findById(session.user.id)
         .select('name gender phone location defaultLocation')
         .lean();
@@ -221,7 +225,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
     });
     if (!commercePolicy.allowed) {
       return NextResponse.json(
-        channel?.source === 'whatsapp'
+        channel?.source === 'whatsapp' || channel?.source === 'telegram_staff'
           ? { error: commercePolicy.reason, code: 'RESTRICTED_ITEM' }
           : { error: commercePolicy.reason },
         { status: 400 }
@@ -577,9 +581,13 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
       userId: session.user.id,
       idempotencyKey,
       source: channel?.source || 'website',
-      trackingToken: channel?.source === 'whatsapp' ? randomUUID() : undefined,
-      customerPhone: channel?.source === 'whatsapp' ? channel.customerPhone : undefined,
-      customerName: channel?.source === 'whatsapp' ? channel.customerName : undefined,
+      trackingToken: channel && channel.source !== 'website' ? randomUUID() : undefined,
+      customerPhone: channel && channel.source !== 'website' ? channel.customerPhone : undefined,
+      customerName: channel && channel.source !== 'website' ? channel.customerName : undefined,
+      customerContactMethod: channel?.customerContactMethod,
+      createdByStaffId: channel?.createdByStaffId,
+      createdByStaffTelegramId: channel?.createdByStaffTelegramId,
+      createdByStaffName: channel?.createdByStaffName,
       taskType: normalizedTaskType,
       description: isCafeInquiry ? 'Text me what is in cafe' : normalizedDescription,
       amount: pricing.amount,

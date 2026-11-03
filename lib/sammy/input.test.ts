@@ -34,8 +34,8 @@ describe('Sammy order request boundary', () => {
     assert.throws(() => assertSammyOrderRequest({ ...valid(), idempotencyKey: 'x'.repeat(201) }), hasCode('INVALID_IDEMPOTENCY_KEY'))
   })
 
-  it('does not expose Indomie as a Sammy service', () => {
+  it('accepts Indomie because supported services are owned by SwiftDU', () => {
     const body = valid(); Object.assign(body.order, { taskType: 'indomie' })
-    assert.throws(() => assertSammyOrderRequest(body), hasCode('INVALID_TASK_TYPE'))
+    assert.equal(assertSammyOrderRequest(body).order.taskType, 'indomie')
   })
 })

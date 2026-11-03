@@ -2,6 +2,14 @@ import { Schema, Document, models, model, deleteModel } from "mongoose";
 
 export type ExcoRole = "CFO" | "CMO" | "COO" | "CTO";
 export type Gender = "male" | "female" | "other" | "prefer_not_to_say";
+export type CustomerPhoneType = "primary" | "whatsapp" | "alternate";
+
+export interface IUserPhone {
+  number: string;
+  normalizedNumber: string;
+  type: CustomerPhoneType;
+  verified?: boolean;
+}
 
 export interface IUser extends Document {
   name?: string;
@@ -35,7 +43,25 @@ export interface IUser extends Document {
   serviceFeeDiscountGrantedByPhone?: string;
   serviceFeeDiscountGrantedAt?: Date;
   serviceFeeDiscountRemainingOrders?: number;
+  phones?: IUserPhone[];
+  customerSource?: "website" | "staff_whatsapp";
+  createdByStaffId?: string;
+  telegramUserId?: string;
+  telegramUsername?: string;
+  telegramFirstName?: string;
+  telegramLastName?: string;
+  telegramEnabled?: boolean;
 }
+
+const UserPhoneSchema = new Schema<IUserPhone>(
+  {
+    number: { type: String, required: true, trim: true },
+    normalizedNumber: { type: String, required: true, trim: true, index: true },
+    type: { type: String, enum: ["primary", "whatsapp", "alternate"], required: true },
+    verified: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
 
 const UserSchema = new Schema<IUser>(
   {
@@ -80,6 +106,22 @@ const UserSchema = new Schema<IUser>(
       type: String,
       required: false,
     },
+    phones: {
+      type: [UserPhoneSchema],
+      default: undefined,
+    },
+    customerSource: {
+      type: String,
+      enum: ["website", "staff_whatsapp"],
+      default: "website",
+      index: true,
+    },
+    createdByStaffId: { type: String, required: false, index: true },
+    telegramUserId: { type: String, required: false, unique: true, sparse: true, index: true },
+    telegramUsername: { type: String, required: false, trim: true },
+    telegramFirstName: { type: String, required: false, trim: true },
+    telegramLastName: { type: String, required: false, trim: true },
+    telegramEnabled: { type: Boolean, default: false, index: true },
     location: {
       type: String,
       required: false,
@@ -166,9 +208,16 @@ const UserSchema = new Schema<IUser>(
   }
 );
 
+UserSchema.index({ "phones.normalizedNumber": 1 });
+
 
 // Refresh the development model after adding bonus fields.
-if (models.user && !models.user.schema.path('firstOrderBonusOrderId')) {
+if (
+  models.user &&
+  (!models.user.schema.path('firstOrderBonusOrderId') ||
+    !models.user.schema.path('telegramUserId') ||
+    !models.user.schema.path('phones'))
+) {
   // Mongoose clears both its global registry and default connection registry.
   deleteModel('user');
 }

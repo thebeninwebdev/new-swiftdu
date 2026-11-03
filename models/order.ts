@@ -6,9 +6,13 @@ export interface IOrder extends Document, CafeInquiryFields {
   userId: string;
   idempotencyKey?: string;
   trackingToken?: string;
-  source?: 'website' | 'whatsapp';
+  source?: 'website' | 'whatsapp' | 'telegram_staff';
   customerPhone?: string;
   customerName?: string;
+  customerContactMethod?: 'website' | 'whatsapp' | 'phone' | 'telegram_staff';
+  createdByStaffId?: string;
+  createdByStaffTelegramId?: string;
+  createdByStaffName?: string;
   taskType: string;
   description?: string;
   amount: number;
@@ -169,7 +173,7 @@ const orderSchema = new Schema<IOrder>(
     },
     source: {
       type: String,
-      enum: ['website', 'whatsapp'],
+      enum: ['website', 'whatsapp', 'telegram_staff'],
       default: 'website',
       index: true,
     },
@@ -178,6 +182,13 @@ const orderSchema = new Schema<IOrder>(
       index: true,
     },
     customerName: String,
+    customerContactMethod: {
+      type: String,
+      enum: ['website', 'whatsapp', 'phone', 'telegram_staff'],
+    },
+    createdByStaffId: { type: String, index: true },
+    createdByStaffTelegramId: { type: String, index: true },
+    createdByStaffName: String,
     taskType: {
       type: String,
       required: true,
@@ -571,7 +582,7 @@ const existingTaskTypePath = existingOrderModel?.schema.path('taskType') as
 if (
   existingOrderModel &&
   existingTaskTypePath?.enumValues &&
-  (!existingTaskTypePath.enumValues.includes('indomie') || !existingOrderModel.schema.path('cafeInquiryStatus') || !existingOrderModel.schema.path('firstOrderBonusApplied') || !existingOrderModel.schema.path('firstOrderBonusSessionId') || !existingOrderModel.schema.path('sessionId') || !existingOrderModel.schema.path('taskerGenderRestriction') || !existingOrderModel.schema.path('roomNumber'))
+  (!existingTaskTypePath.enumValues.includes('indomie') || !existingOrderModel.schema.path('cafeInquiryStatus') || !existingOrderModel.schema.path('firstOrderBonusApplied') || !existingOrderModel.schema.path('firstOrderBonusSessionId') || !existingOrderModel.schema.path('sessionId') || !existingOrderModel.schema.path('taskerGenderRestriction') || !existingOrderModel.schema.path('roomNumber') || !existingOrderModel.schema.path('createdByStaffTelegramId'))
 ) {
   const mutableModels = mongoose.models as unknown as Record<string, Model<IOrder> | undefined>;
   const mutableConnectionModels = mongoose.connection.models as unknown as Record<

@@ -1,6 +1,46 @@
 # Sammy ↔ SwiftDU internal integration
 
-SwiftDU is the business-system source of truth. Sammy remains a separate Render service and owns the Meta inbound webhook, signature verification, conversational state, and WhatsApp message rendering. Meta must continue sending inbound traffic to `https://sammy.swiftdu.org/whatsapp/webhook`; SwiftDU's legacy webhook route remains disabled.
+SwiftDU is the business-system source of truth. Sammy remains a separate Render
+service and owns Telegram/Meta inbound webhook handling, signature or webhook
+secret verification, conversational state, and message rendering. The WhatsApp
+conversation route is retained as legacy handoff/registration infrastructure;
+staff operations use Telegram.
+
+## Staff Telegram API
+
+The staff integration lives under `/api/internal/sammy/staff`. Every request
+requires the existing Bearer shared secret and a `telegram` object containing
+the numeric Telegram user ID. SwiftDU resolves that ID to an active admin or
+EXCO user with `telegramEnabled: true`; caller-supplied staff user IDs are never
+trusted.
+
+Endpoints:
+
+- `POST /auth`
+- `POST /customers/search`
+- `POST /customers/create`
+- `POST /customers/:id`
+- `POST /catalog`
+- `POST /locations`
+- `POST /quote`
+- `POST /orders`
+- `POST /orders/search`
+- `POST /orders/:id/cancel`
+
+Customer search covers the main phone, structured primary/WhatsApp/alternate
+phones, linked WhatsApp registrations, email, customer ID, and name.
+Staff-created lightweight customers are marked `customerSource:
+"staff_whatsapp"` and `createdByStaffId`; duplicate contact details return the
+existing customer choices instead of creating another record.
+
+The quote endpoint invokes SwiftDU pricing and validation. The order endpoint
+invokes the same `createOrderResponse` service used by website orders and
+recalculates all server-owned amounts. It records `source: "telegram_staff"`,
+the responsible staff user and numeric Telegram ID, and uses the existing
+customer-scoped idempotency index.
+
+An authenticated SwiftDU administrator approves or revokes a numeric Telegram
+ID with `PATCH /api/admin/users/:id/telegram`.
 
 ## Authentication
 

@@ -1,4 +1,4 @@
-export const SAMMY_TASK_TYPES = ['restaurant', 'shopping', 'printing', 'water'] as const
+export const SAMMY_TASK_TYPES = ['restaurant', 'shopping', 'printing', 'water', 'indomie'] as const
 export type SammyTaskType = (typeof SAMMY_TASK_TYPES)[number]
 
 export type SammyPhoneRequest = { phone: string }
@@ -23,6 +23,9 @@ export type SammyOrderDraft = {
   numberOfPages?: number
   printingServiceType?: string
   printingNeedsEditing?: boolean
+  indomiePacks?: number
+  eggCount?: number
+  expectedIndomieMode?: string
 }
 
 export type SammyOrderRequest = SammyPhoneRequest & {
