@@ -55,11 +55,11 @@ test('valid challenges preview once and are consumed with the account link', asy
     botUsername: 'SwiftDUOpsBot',
   })
   const preview = await linking.previewTelegramLink(issued.token, String(admin._id))
-  assert.equal(preview?.telegram.name, 'Ada')
+  assert.equal(preview?.telegram?.name, 'Ada')
   assert.deepEqual(await linking.consumeTelegramLink(issued.token, String(admin._id)), {
     botUsername: 'SwiftDUOpsBot',
   })
-  assert.equal(await linking.consumeTelegramLink(issued.token, String(admin._id)), null)
+  assert.deepEqual(await linking.consumeTelegramLink(issued.token, String(admin._id)), { botUsername: 'SwiftDUOpsBot' })
   const saved = await User.findById(admin._id).lean()
   assert.equal(saved?.telegramUserId, '10001')
   assert.equal(saved?.telegramEnabled, true)
@@ -111,8 +111,15 @@ test('a legacy or stale session id resolves the authoritative account by normali
   const token = await challenge('40001', new Date(Date.now() + 60_000))
   const session = { id: 'legacy-session-id', email: ' STAFF@example.invalid ' }
   const preview = await linking.previewTelegramLink(token, session)
-  assert.equal(preview?.account.email, 'staff@example.invalid')
+  assert.equal(preview?.account?.email, 'staff@example.invalid')
   assert.deepEqual(await linking.consumeTelegramLink(token, session), { botUsername: undefined })
   const saved = await User.findById(admin._id).lean()
   assert.equal(saved?.telegramUserId, '40001')
+})
+
+test('a consumed challenge cannot be retried by a different SwiftDU account', async () => {
+  const [owner, other] = await Promise.all([account('owner@example.invalid'), account('other@example.invalid')])
+  const token = await challenge('50001', new Date(Date.now() + 60_000))
+  assert.deepEqual(await linking.consumeTelegramLink(token, String(owner._id)), { botUsername: undefined })
+  assert.equal(await linking.consumeTelegramLink(token, String(other._id)), null)
 })

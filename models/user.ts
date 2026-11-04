@@ -212,7 +212,7 @@ const UserSchema = new Schema<IUser>(
   }
 );
 
-UserSchema.index({ "phones.normalizedNumber": 1 });
+UserSchema.index({ "phones.normalizedNumber": 1 }, { unique: true, sparse: true });
 
 
 // Refresh the development model after adding bonus fields.

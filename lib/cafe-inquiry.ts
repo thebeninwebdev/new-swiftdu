@@ -29,3 +29,14 @@ export const CAFE_OPTIONS = [
   { value: 'golley', label: 'Golley Shop' },
 ]
 export const getCafeLabel = (store?: string) => CAFE_OPTIONS.find(option => option.value === store)?.label || store || 'Cafe'
+
+export const CAFE_INQUIRY_TASKER_INSTRUCTION = 'Contact the customer on WhatsApp to discuss available options before making any purchases.'
+
+export function buildCafeInquiryDescription(details?: unknown) {
+  const normalized = typeof details === 'string'
+    ? details.trim().replace(/\s+/g, ' ').slice(0, 1000)
+    : ''
+  return normalized
+    ? `${CAFE_INQUIRY_TASKER_INSTRUCTION} ${normalized}`
+    : CAFE_INQUIRY_TASKER_INSTRUCTION
+}

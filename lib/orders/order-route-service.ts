@@ -53,6 +53,7 @@ import { persistThenScheduleOrderCreation, type OrderCreationBackgroundJob } fro
 import { validateOrderAgainstCommercePolicy } from '@/lib/commerce-policy';
 import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError, serializeOrderSession } from '@/lib/orders/order-session-scope';
 import { CUSTOMER_ORDER_CARD_FIELDS, parseOrderPagination } from '@/lib/orders/order-list-fields';
+import { buildCafeInquiryDescription } from '@/lib/cafe-inquiry';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
 
@@ -589,7 +590,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
       createdByStaffTelegramId: channel?.createdByStaffTelegramId,
       createdByStaffName: channel?.createdByStaffName,
       taskType: normalizedTaskType,
-      description: isCafeInquiry ? 'Text me what is in cafe' : normalizedDescription,
+      description: isCafeInquiry ? buildCafeInquiryDescription(normalizedDescription) : normalizedDescription,
       amount: pricing.amount,
       commission: settlement.serviceFee,
       platformFee: settlement.platformFee,

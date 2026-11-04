@@ -5,6 +5,7 @@ import { connectDB } from '@/lib/db'
 import { Order } from '@/models/order'
 import { User } from '@/models/user'
 import { WhatsAppRegistration } from '@/models/whatsapp-registration'
+import { SammyPhoneAudit, fingerprintSammyPhone } from '@/models/sammy-phone-audit'
 import { SammyApiError } from './server'
 import { isApprovedTelegramStaffAccount, normalizeCustomerPhone } from './staff-policy'
 
@@ -148,7 +149,7 @@ export async function searchStaffCustomers(rawQuery: unknown, limit = 8) {
     const lastTen = normalizedPhone.slice(-10)
     const phonePattern = lastTen.split('').join('\\D*')
     conditions.push({ phone: { $regex: phonePattern } })
-    conditions.push({ 'phones.normalizedNumber': { $in: [normalizedPhone, lastTen, '0' + lastTen] } })
+    conditions.push({ phones: { $elemMatch: { normalizedNumber: { $in: [normalizedPhone, lastTen, '0' + lastTen] }, verified: true } } })
     const registrations = await WhatsAppRegistration.find({
       status: 'linked',
       userId: { $exists: true, $ne: '' },
@@ -236,4 +237,34 @@ export async function createStaffCustomer(input: {
     createdByStaffId: String(staff._id),
   })
   return { created: true as const, customer: await getStaffCustomer(String(customer._id)) }
+}
+
+export type SammyPhoneType = 'alternate' | 'whatsapp'
+function phoneOwnershipConditions(number: string) { const lastTen = number.slice(-10); return [{ phone: { $regex: escapeRegex(lastTen) + '$' } }, { 'phones.normalizedNumber': number }] }
+export async function getStaffCustomerPhones(customerId: string) {
+  const user = await getStaffCustomerRecord(customerId) as { phones?: Array<{ number: string; type: string; verified?: boolean }> }
+  return (Array.isArray(user.phones) ? user.phones : []).filter(phone => phone.type !== 'primary').map(phone => ({ number: phone.number, type: phone.type, verified: Boolean(phone.verified) }))
+}
+export async function checkStaffCustomerPhone(customerId: string, rawNumber: unknown, type: unknown) {
+  const number = normalizeCustomerPhone(String(rawNumber || ''))
+  if (!number || number.length !== 13) throw new SammyApiError(400, 'INVALID_PHONE', 'Enter a valid Nigerian phone number.')
+  if (type !== 'alternate' && type !== 'whatsapp') throw new SammyApiError(400, 'INVALID_PHONE_TYPE', 'Choose Alternate Number or WhatsApp Number.')
+  const customer = await getStaffCustomerRecord(customerId) as { _id: Types.ObjectId; phone?: string; phones?: Array<{ normalizedNumber?: string }> }
+  const owner = await User.findOne({ $or: phoneOwnershipConditions(number) }).select('_id').lean()
+  if (owner && String(owner._id) !== String(customer._id)) return { status: 'conflict' as const, normalizedNumber: number }
+  const registration = await WhatsAppRegistration.findOne({ phone: number, status: 'linked', userId: { $exists: true, $ne: '' } }).select('userId').lean()
+  if (registration?.userId && String(registration.userId) !== String(customer._id)) return { status: 'conflict' as const, normalizedNumber: number }
+  if (String(customer.phone || '').replace(/\D/g, '').endsWith(number.slice(-10)) || (customer.phones || []).some(phone => phone.normalizedNumber === number)) return { status: 'already_saved' as const, normalizedNumber: number }
+  return { status: 'available' as const, normalizedNumber: number }
+}
+export async function addStaffCustomerPhone(customerId: string, rawNumber: unknown, type: unknown, staff: SammyStaff) {
+  const checked = await checkStaffCustomerPhone(customerId, rawNumber, type)
+  if (checked.status !== 'available') return checked
+  const customer = await getStaffCustomerRecord(customerId) as { _id: Types.ObjectId }
+  try {
+    const updated = await User.findOneAndUpdate({ _id: customer._id, 'phones.normalizedNumber': { $ne: checked.normalizedNumber } }, { $addToSet: { phones: { number: checked.normalizedNumber, normalizedNumber: checked.normalizedNumber, type, verified: false } } }, { new: true })
+    if (!updated) return { status: 'already_saved' as const, normalizedNumber: checked.normalizedNumber }
+  } catch (error) { if ((error as { code?: number }).code === 11000) return { status: 'conflict' as const, normalizedNumber: checked.normalizedNumber }; throw error }
+  await SammyPhoneAudit.create({ customerId: String(customer._id), staffId: String(staff._id), phoneFingerprint: fingerprintSammyPhone(checked.normalizedNumber), phoneType: type, verified: false, action: 'phone_added' })
+  return { status: 'added' as const, normalizedNumber: checked.normalizedNumber, verified: false }
 }

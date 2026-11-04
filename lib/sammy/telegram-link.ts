@@ -135,7 +135,14 @@ export async function previewTelegramLink(token: string, identity: string | Tele
     }).lean(),
     findTelegramLinkAccount(identity),
   ])
-  if (!challenge) return null
+  if (!challenge) {
+    const consumed = await TelegramLinkChallenge.findOne({ tokenHash: hashTelegramLinkToken(token) }).lean()
+    if (consumed?.consumedAt && !consumed.invalidatedAt && consumed.expiresAt > now && account && isTelegramLinkEligible(account) &&
+      String(consumed.consumedByUserId || '') === String(account._id) && account.telegramUserId === consumed.telegramUserId && account.telegramEnabled === true) {
+      return { alreadyConnected: true as const, returnUrl: consumed.botUsername ? 'https://t.me/' + encodeURIComponent(consumed.botUsername) : 'https://t.me' }
+    }
+    return null
+  }
   if (!account || !isTelegramLinkEligible(account)) {
     throw new SammyApiError(403, account?.isSuspended ? 'ACCOUNT_SUSPENDED' : 'STAFF_NOT_ELIGIBLE', 'This account is not eligible for Telegram staff access.')
   }
@@ -166,8 +173,6 @@ export async function consumeTelegramLink(token: string, identity: string | Tele
         invalidatedAt: { $exists: false },
         active: true,
       }).session(dbSession)
-      if (!challenge) return null
-
       const lookup = telegramLinkAccountLookup(identity)
       const account = lookup.length ? await User.findOne({ $or: lookup })
         .select('_id role isExco isSuspended telegramUserId telegramEnabled telegramRevokedAt')
@@ -175,6 +180,20 @@ export async function consumeTelegramLink(token: string, identity: string | Tele
       if (!account || !isTelegramLinkEligible(account)) {
         throw new SammyApiError(403, account?.isSuspended ? 'ACCOUNT_SUSPENDED' : 'STAFF_NOT_ELIGIBLE', 'This account is not eligible for Telegram staff access.')
       }
+
+      if (!challenge) {
+        const consumed = await TelegramLinkChallenge.findOne({ tokenHash: hashTelegramLinkToken(token) }).session(dbSession)
+        const safeRetry = consumed && consumed.consumedAt && !consumed.invalidatedAt && consumed.expiresAt > now &&
+          String(consumed.consumedByUserId || '') === String(account._id) &&
+          account.telegramUserId === consumed.telegramUserId && account.telegramEnabled === true && !account.telegramRevokedAt
+        if (safeRetry) {
+          console.info('[Telegram link]', { event: 'safe_repeated_confirmation', challengeId: String(consumed._id) })
+          return { botUsername: consumed.botUsername }
+        }
+        console.info('[Telegram link]', { event: consumed?.consumedAt ? 'already_consumed_rejected' : consumed?.invalidatedAt ? 'invalidated_rejected' : 'expired_or_invalid_rejected', challengeId: consumed ? String(consumed._id) : undefined })
+        return null
+      }
+
       if (account.telegramUserId) {
         throw new SammyApiError(409, account.telegramEnabled ? 'ACCOUNT_ALREADY_LINKED' : 'TELEGRAM_DISABLED', 'This SwiftDU account cannot create a new Telegram connection.')
       }
@@ -210,6 +229,7 @@ export async function consumeTelegramLink(token: string, identity: string | Tele
       if (consumed.modifiedCount !== 1) {
         throw new SammyApiError(409, 'LINK_ALREADY_USED', 'This connection link is no longer valid.')
       }
+      console.info('[Telegram link]', { event: 'connection_completed', challengeId: String(challenge._id) })
       return { botUsername: challenge.botUsername }
     })
   } catch (error) {

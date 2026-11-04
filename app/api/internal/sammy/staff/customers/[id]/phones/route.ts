@@ -1,0 +1,4 @@
+import { type NextRequest } from 'next/server'
+import { getStaffCustomerPhones, addStaffCustomerPhone, resolveSammyStaff, type TelegramIdentity } from '@/lib/sammy/staff'
+import { readSammyBody, withSammy } from '@/lib/sammy/server'
+export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) { return withSammy(request, async () => { const body = await readSammyBody<{ telegram?: TelegramIdentity; number?: unknown; type?: unknown; action?: string }>(request); const staff = await resolveSammyStaff(body.telegram || { id: '' }); const { id } = await context.params; if (body.action === 'list') return { phones: await getStaffCustomerPhones(id) }; return addStaffCustomerPhone(id, body.number, body.type, staff) }) }

@@ -4,10 +4,12 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { CheckCircle2, Loader2, ShieldCheck, TriangleAlert } from 'lucide-react'
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { authClient } from '@/lib/auth-client'
 
 type Preview = {
+  alreadyConnected?: boolean
+  returnUrl?: string
   account: { name: string; email: string }
   telegram: { name: string; username?: string }
 }
@@ -17,6 +19,7 @@ type ViewState =
   | { kind: 'invalid' }
   | { kind: 'blocked'; message: string }
   | { kind: 'success'; returnUrl: string }
+  | { kind: 'alreadyConnected'; returnUrl: string }
 
 function Card({ children }: { children: React.ReactNode }) {
   return <main className='flex min-h-screen items-center justify-center bg-slate-50 px-4 py-8'>
@@ -34,6 +37,8 @@ export function TelegramConnect() {
   const [state, setState] = useState<ViewState>({ kind: 'loading' })
   const [confirming, setConfirming] = useState(false)
   const [switching, setSwitching] = useState(false)
+  const confirmInFlight = useRef(false)
+  const confirmationSucceeded = useRef(false)
   const signInPath = useMemo(() => {
     const next = '/telegram/connect?token=' + encodeURIComponent(token)
     return '/auth?next=' + encodeURIComponent(next)
@@ -50,7 +55,9 @@ export function TelegramConnect() {
       credentials: 'same-origin', cache: 'no-store', signal: controller.signal,
     }).then(async response => {
       const body = await response.json().catch(() => ({})) as Preview & { error?: string }
-      if (response.ok) setState({ kind: 'preview', data: body })
+      if (confirmationSucceeded.current) return
+      if (response.ok && body.alreadyConnected) setState({ kind: 'alreadyConnected', returnUrl: body.returnUrl || 'https://t.me' })
+      else if (response.ok) setState({ kind: 'preview', data: body })
       else if (response.status === 410) setState({ kind: 'invalid' })
       else setState({ kind: 'blocked', message: body.error || 'This account cannot be connected to Telegram.' })
     }).catch(error => {
@@ -60,6 +67,8 @@ export function TelegramConnect() {
   }, [isPending, session?.user, token])
 
   async function confirm() {
+    if (confirmInFlight.current || confirmationSucceeded.current) return
+    confirmInFlight.current = true
     setConfirming(true)
     const response = await fetch('/api/telegram/link/confirm', {
       method: 'POST',
@@ -73,7 +82,9 @@ export function TelegramConnect() {
       error?: string
     }
     setConfirming(false)
+    confirmInFlight.current = false
     if (response.ok && body.connected) {
+      confirmationSucceeded.current = true
       window.history.replaceState({}, '', '/telegram/connect')
       setState({ kind: 'success', returnUrl: body.returnUrl || 'https://t.me' })
     } else if (response.status === 410) {
@@ -130,6 +141,7 @@ export function TelegramConnect() {
       <p className='mt-3 text-sm text-slate-500'>If you believe this is a mistake, contact a SwiftDU administrator.</p>
     </Card>
   }
+  if (state.kind === 'alreadyConnected') return <Card><CheckCircle2 className='h-12 w-12 text-emerald-600' /><h1 className='mt-5 text-2xl font-semibold text-slate-950'>Telegram Already Connected</h1><p className='mt-3 leading-7 text-slate-600'>This SwiftDU account is already connected to this Telegram account.</p><a href={state.returnUrl} rel='noreferrer' className='mt-7 flex h-12 w-full items-center justify-center rounded-xl bg-indigo-600 px-5 font-semibold text-white'>Return to Telegram</a></Card>
   if (state.kind === 'success') {
     return <Card>
       <CheckCircle2 className='h-12 w-12 text-emerald-600' />

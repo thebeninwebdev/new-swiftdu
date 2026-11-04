@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { canPayCafeInquiry } from './cafe-inquiry'
+import { buildCafeInquiryDescription, canPayCafeInquiry, CAFE_INQUIRY_TASKER_INSTRUCTION } from './cafe-inquiry'
 import { calculateOrderPricing, CAFE_INQUIRY_EXTRA_FEE } from './pricing'
 import { toOrderSocketPayload } from './socket'
 import { getTaskerOrderModeFilter } from './test-orders'
@@ -36,4 +36,12 @@ test('realtime keeps cafe state and training visibility', () => {
   assert.equal(payload.isTestOrder, true)
   assert.deepEqual(getTaskerOrderModeFilter({ taskerMode: 'training' }), { isTestOrder: true })
   assert.notDeepEqual(getTaskerOrderModeFilter({ taskerMode: 'live' }), { isTestOrder: true })
+})
+
+test('inquiry descriptions always tell the tasker to contact the customer before buying', () => {
+  assert.equal(buildCafeInquiryDescription(), CAFE_INQUIRY_TASKER_INSTRUCTION)
+  assert.equal(
+    buildCafeInquiryDescription('  Prefers rice.   No spicy food.  '),
+    `${CAFE_INQUIRY_TASKER_INSTRUCTION} Prefers rice. No spicy food.`
+  )
 })
