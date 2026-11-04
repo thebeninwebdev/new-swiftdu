@@ -45,7 +45,8 @@ export async function quoteSammyDraft(
   const amount = cafeInquiry || draft.taskType === 'water' ? 0 : Number(draft.amount)
   if (draft.taskType === 'shopping' && description.length < 5) throw new SammyApiError(400, 'INVALID_DESCRIPTION', 'Describe the items you want.')
   if ((draft.taskType === 'shopping' || (draft.taskType === 'restaurant' && !cafeInquiry)) && (!Number.isFinite(amount) || amount < 0 || (draft.taskType === 'shopping' && amount <= 0))) throw new SammyApiError(400, 'INVALID_AMOUNT', 'Enter a valid task amount.')
-  const people = cafeInquiry ? 1 : Number(draft.restaurantPeopleCount || 1)
+  // Cafe inquiries use the same 1–3 order quantity as restaurant pricing.
+  const people = Number(draft.restaurantPeopleCount || 1)
   const takeaway = cafeInquiry ? 0 : Number(draft.restaurantTakeawayCount || 0)
   if (draft.taskType === 'restaurant' && (!Number.isInteger(people) || people < 1 || people > RESTAURANT_MAX_PEOPLE)) throw new SammyApiError(400, 'INVALID_PEOPLE_COUNT', `Restaurant orders can only be for 1 to ${RESTAURANT_MAX_PEOPLE} people.`)
   if (draft.taskType === 'restaurant' && (!Number.isInteger(takeaway) || takeaway < 0 || takeaway > people)) throw new SammyApiError(400, 'INVALID_TAKEAWAY_COUNT', 'Choose how many orders need takeaway packs.')

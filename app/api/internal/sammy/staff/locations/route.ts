@@ -2,13 +2,16 @@ import { type NextRequest } from 'next/server'
 import { Types } from 'mongoose'
 
 import { readSammyBody, SammyApiError, withSammy } from '@/lib/sammy/server'
-import { resolveSammyStaff, type TelegramIdentity } from '@/lib/sammy/staff'
+import { listStaffRegistrationHostels, resolveSammyStaff, type TelegramIdentity } from '@/lib/sammy/staff'
 import CampusLocation from '@/models/campus-location'
 
 export async function POST(request: NextRequest) {
   return withSammy(request, async () => {
     const body = await readSammyBody<{ telegram?: TelegramIdentity; parentLocationId?: string }>(request)
     await resolveSammyStaff(body.telegram || { id: '' })
+    if (!body.parentLocationId) {
+      return { locations: await listStaffRegistrationHostels() }
+    }
     if (!body.parentLocationId || !Types.ObjectId.isValid(body.parentLocationId)) {
       throw new SammyApiError(400, 'INVALID_PARENT_LOCATION', 'Choose a valid parent location.')
     }

@@ -50,3 +50,18 @@ test('non-shopping pricing does not receive a shopping basket surcharge', () => 
   assert.equal(pricing.serviceFee, 600)
   assert.equal(pricing.totalAmount, 9_600)
 })
+
+test('cafe inquiry service fee follows the 1–3 order schedule', () => {
+  for (const [orders, fee] of [[1, 650], [2, 850], [3, 1050]] as const) {
+    const pricing = calculateOrderPricing({
+      taskType: 'restaurant',
+      amount: 0,
+      cafeInquiry: true,
+      restaurantPeopleCount: orders,
+      restaurantTakeawayCount: 0,
+      serviceFee: 600,
+    })
+    assert.equal(pricing.serviceFee, fee)
+    assert.equal(pricing.totalAmount, fee)
+  }
+})

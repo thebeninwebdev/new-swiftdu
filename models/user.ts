@@ -20,6 +20,8 @@ export interface IUser extends Document {
   phone?: string;
   location?: string;
   defaultLocation?: string;
+  defaultLocationId?: string;
+  defaultRoomNumber?: string;
   profileImage?: string;
   profileImagePublicId?: string;
   gender?: Gender;
@@ -44,7 +46,7 @@ export interface IUser extends Document {
   serviceFeeDiscountGrantedAt?: Date;
   serviceFeeDiscountRemainingOrders?: number;
   phones?: IUserPhone[];
-  customerSource?: "website" | "staff_whatsapp";
+  customerSource?: "website" | "staff_whatsapp" | "staff_telegram";
   createdByStaffId?: string;
   telegramUserId?: string;
   telegramUsername?: string;
@@ -114,7 +116,7 @@ const UserSchema = new Schema<IUser>(
     },
     customerSource: {
       type: String,
-      enum: ["website", "staff_whatsapp"],
+      enum: ["website", "staff_whatsapp", "staff_telegram"],
       default: "website",
       index: true,
     },
@@ -134,6 +136,8 @@ const UserSchema = new Schema<IUser>(
       type: String,
       required: false,
     },
+    defaultLocationId: { type: String, required: false },
+    defaultRoomNumber: { type: String, required: false, trim: true, maxlength: 40 },
     profileImage: {
       type: String,
       required: false,

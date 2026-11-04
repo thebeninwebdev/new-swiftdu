@@ -5,7 +5,9 @@ import { connectDB } from '@/lib/db'
 import { Order } from '@/models/order'
 import { User } from '@/models/user'
 import { WhatsAppRegistration } from '@/models/whatsapp-registration'
+import CampusLocation from '@/models/campus-location'
 import { SammyPhoneAudit, fingerprintSammyPhone } from '@/models/sammy-phone-audit'
+import { SammyCustomerRegistrationAudit, fingerprintSammyRegistrationValue } from '@/models/sammy-customer-registration-audit'
 import { SammyApiError } from './server'
 import { isApprovedTelegramStaffAccount, normalizeCustomerPhone } from './staff-policy'
 
@@ -40,6 +42,9 @@ export type StaffCustomer = {
   email?: string
   orderCount: number
   lastOrderAt?: Date
+  defaultLocation?: string
+  defaultLocationId?: string
+  defaultRoomNumber?: string
 }
 
 function escapeRegex(value: string) {
@@ -107,11 +112,14 @@ async function toCustomerCards(users: Array<Record<string, unknown>>): Promise<S
       email: publicEmail(String(user.email || '')),
       orderCount: stats.get(id)?.orderCount || 0,
       lastOrderAt: stats.get(id)?.lastOrderAt,
+      defaultLocation: String(user.defaultLocation || user.location || '') || undefined,
+      defaultLocationId: String(user.defaultLocationId || '') || undefined,
+      defaultRoomNumber: String(user.defaultRoomNumber || '') || undefined,
     }
   })
 }
 
-const CUSTOMER_FIELDS = '_id name email phone phones'
+const CUSTOMER_FIELDS = '_id name email phone phones location defaultLocation defaultLocationId defaultRoomNumber'
 
 export async function getStaffCustomer(customerId: string) {
   if (!Types.ObjectId.isValid(customerId)) {
@@ -177,68 +185,83 @@ export async function searchStaffCustomers(rawQuery: unknown, limit = 8) {
 }
 
 export async function createStaffCustomer(input: {
-  name?: unknown
   phone?: unknown
-  whatsapp?: unknown
   email?: unknown
+  parentLocationId?: unknown
+  roomNumber?: unknown
+  idempotencyKey?: unknown
 }, staff: SammyStaff) {
-  const name = String(input.name || '').trim().replace(/\s+/g, ' ')
   const phone = normalizeCustomerPhone(String(input.phone || ''))
-  const whatsapp = normalizeCustomerPhone(String(input.whatsapp || ''))
-  const suppliedEmail = String(input.email || '').trim().toLowerCase()
-  if (name.length < 2 || name.length > 120) {
-    throw new SammyApiError(400, 'INVALID_CUSTOMER_NAME', 'Enter the customer’s name.')
-  }
-  if (!phone || phone.length < 10) {
-    throw new SammyApiError(400, 'INVALID_PHONE', 'Enter a valid primary phone number.')
-  }
-  if (suppliedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(suppliedEmail)) {
-    throw new SammyApiError(400, 'INVALID_EMAIL', 'Enter a valid email address or skip it.')
-  }
+  const email = String(input.email || '').trim().toLowerCase()
+  const parentLocationId = String(input.parentLocationId || '').trim()
+  const roomNumber = String(input.roomNumber || '').trim().replace(/\s+/g, ' ')
+  const idempotencyKey = String(input.idempotencyKey || '').trim()
+  if (!/^234[789]\d{9}$/.test(phone)) throw new SammyApiError(400, 'INVALID_PHONE', 'Enter a valid Nigerian phone number.')
+  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new SammyApiError(400, 'INVALID_EMAIL', 'Enter a valid email address.')
+  if (!Types.ObjectId.isValid(parentLocationId)) throw new SammyApiError(400, 'INVALID_HOSTEL', 'Choose a valid hostel.')
+  if (!roomNumber || roomNumber.length > 40) throw new SammyApiError(400, 'INVALID_ROOM_NUMBER', 'Enter a valid room number.')
+  if (idempotencyKey.length < 12 || idempotencyKey.length > 200) throw new SammyApiError(400, 'INVALID_IDEMPOTENCY_KEY', 'A stable confirmation ID is required.')
 
-  const contactNumbers = [...new Set([phone, whatsapp].filter(Boolean))]
-  const duplicateConditions: Record<string, unknown>[] = [
-    { phone: { $regex: escapeRegex(phone.slice(-10)) + '$' } },
-    { 'phones.normalizedNumber': { $in: contactNumbers } },
-  ]
-  if (suppliedEmail) duplicateConditions.push({ email: suppliedEmail })
-  const linkedRegistrations = await WhatsAppRegistration.find({
-    status: 'linked',
-    userId: { $exists: true, $ne: '' },
-    $or: contactNumbers.map(number => ({
-      phone: { $regex: escapeRegex(number.slice(-10)) + '$' },
-    })),
-  }).select('userId').lean()
-  const linkedUserIds = linkedRegistrations
-    .map(item => String(item.userId))
-    .filter(id => Types.ObjectId.isValid(id))
-    .map(id => new Types.ObjectId(id))
-  if (linkedUserIds.length) duplicateConditions.push({ _id: { $in: linkedUserIds } })
-  const duplicates = await User.find({ $or: duplicateConditions }).select(CUSTOMER_FIELDS).limit(5).lean()
-  if (duplicates.length) {
-    return { created: false as const, duplicates: await toCustomerCards(duplicates as unknown as Array<Record<string, unknown>>) }
-  }
+  const previous = await SammyCustomerRegistrationAudit.findOne({ idempotencyKey, staffId: String(staff._id) }).select('customerId').lean()
+  if (previous?.customerId) return { created: true as const, customer: await getStaffCustomer(String(previous.customerId)) }
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000)
+  const recentCreations = await SammyCustomerRegistrationAudit.countDocuments({ staffId: String(staff._id), createdAt: { $gte: hourAgo } })
+  if (recentCreations >= 20) throw new SammyApiError(429, 'CUSTOMER_CREATION_RATE_LIMITED', 'Too many customers have been created. Try again later.')
+  const hostel = await CampusLocation.findOne({ _id: parentLocationId, parentLocationId: null, active: true, type: 'hostel' }).select('_id name').lean()
+  if (!hostel) throw new SammyApiError(400, 'INVALID_HOSTEL', 'Choose an active hostel.')
 
-  const email = suppliedEmail || 'staff-' + randomUUID() + '@customer.swiftdu.invalid'
-  const phones = [
-    { number: String(input.phone || '').trim(), normalizedNumber: phone, type: 'primary' as const, verified: false },
-    ...(whatsapp
-      ? [{ number: String(input.whatsapp || input.phone || '').trim(), normalizedNumber: whatsapp, type: 'whatsapp' as const, verified: false }]
-      : []),
-  ]
-  const customer = await User.create({
-    name,
-    email,
-    emailVerified: false,
-    role: 'user',
-    phone: String(input.phone || '').trim(),
-    phones,
-    customerSource: 'staff_whatsapp',
-    createdByStaffId: String(staff._id),
-  })
-  return { created: true as const, customer: await getStaffCustomer(String(customer._id)) }
+  const lastTen = phone.slice(-10)
+  const linkedRegistrations = await WhatsAppRegistration.find({ userId: { $exists: true, $ne: '' }, phone: { $regex: escapeRegex(lastTen) + '$' } }).select('userId').lean()
+  const linkedUserIds = linkedRegistrations.map(item => String(item.userId)).filter(id => Types.ObjectId.isValid(id)).map(id => new Types.ObjectId(id))
+  const duplicates = await User.find({ $or: [
+    { phone: { $regex: escapeRegex(lastTen) + '$' } },
+    { 'phones.normalizedNumber': phone },
+    { email },
+    ...(linkedUserIds.length ? [{ _id: { $in: linkedUserIds } }] : []),
+  ] }).select(CUSTOMER_FIELDS).limit(5).lean()
+  if (duplicates.length) return { created: false as const, duplicates: await toCustomerCards(duplicates as unknown as Array<Record<string, unknown>>) }
+
+  try {
+    const customer = await User.create({
+      email,
+      emailVerified: false,
+      role: 'user',
+      phone,
+      phones: [{ number: phone, normalizedNumber: phone, type: 'primary' as const, verified: false }],
+      location: hostel.name,
+      defaultLocation: hostel.name,
+      defaultLocationId: String(hostel._id),
+      defaultRoomNumber: roomNumber,
+      customerSource: 'staff_telegram',
+      createdByStaffId: String(staff._id),
+    })
+    await SammyCustomerRegistrationAudit.create({
+      staffId: String(staff._id), customerId: String(customer._id), idempotencyKey,
+      phoneFingerprint: fingerprintSammyRegistrationValue(phone),
+      emailFingerprint: fingerprintSammyRegistrationValue(email),
+      hostelId: String(hostel._id), action: 'customer_created',
+    })
+    return { created: true as const, customer: await getStaffCustomer(String(customer._id)) }
+  } catch (error) {
+    if ((error as { code?: number }).code === 11000) {
+      const duplicates = await User.find({ $or: [{ email }, { 'phones.normalizedNumber': phone }] }).select(CUSTOMER_FIELDS).limit(5).lean()
+      return { created: false as const, duplicates: await toCustomerCards(duplicates as unknown as Array<Record<string, unknown>>) }
+    }
+    throw error
+  }
 }
 
+export async function listStaffRegistrationHostels() {
+  await connectDB()
+  const hostels = await CampusLocation.find({
+    parentLocationId: null, active: true, type: 'hostel',
+    'deliveryPolicy.enabled': { $ne: false },
+  }).select('_id name type deliveryPolicy').sort({ name: 1 }).lean()
+  return hostels.map(hostel => ({
+    parentLocationId: String(hostel._id), name: hostel.name, type: hostel.type,
+    requiresRoomNumber: hostel.deliveryPolicy?.requiresRoomNumber ?? true,
+  }))
+}
 export type SammyPhoneType = 'alternate' | 'whatsapp'
 function phoneOwnershipConditions(number: string) { const lastTen = number.slice(-10); return [{ phone: { $regex: escapeRegex(lastTen) + '$' } }, { 'phones.normalizedNumber': number }] }
 export async function getStaffCustomerPhones(customerId: string) {

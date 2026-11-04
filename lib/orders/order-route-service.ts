@@ -238,7 +238,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
       return NextResponse.json({ error: 'Choose a cafe and delivery location.' }, { status: 400 });
     }
     const parsedRestaurantPeopleCount =
-      normalizedTaskType === 'restaurant' ? Number(isCafeInquiry ? 1 : restaurantPeopleCount || 1) : undefined;
+      normalizedTaskType === 'restaurant' ? Number(restaurantPeopleCount || 1) : undefined;
     const normalizedRestaurantPeopleCount =
       normalizedTaskType === 'restaurant'
         ? normalizeRestaurantPeopleCount(parsedRestaurantPeopleCount)

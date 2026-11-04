@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
   return withSammy(request, async () => {
     const body = await readSammyBody<{
       telegram?: TelegramIdentity
-      customer?: { name?: unknown; phone?: unknown; whatsapp?: unknown; email?: unknown }
+      customer?: { phone?: unknown; email?: unknown; parentLocationId?: unknown; roomNumber?: unknown; idempotencyKey?: unknown }
     }>(request)
     const staff = await resolveSammyStaff(body.telegram || { id: '' })
     return createStaffCustomer(body.customer || {}, staff)
