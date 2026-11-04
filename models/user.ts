@@ -60,7 +60,7 @@ export interface IUser extends Document {
 const UserPhoneSchema = new Schema<IUserPhone>(
   {
     number: { type: String, required: true, trim: true },
-    normalizedNumber: { type: String, required: true, trim: true, index: true },
+    normalizedNumber: { type: String, required: true, trim: true },
     type: { type: String, enum: ["primary", "whatsapp", "alternate"], required: true },
     verified: { type: Boolean, default: false },
   },

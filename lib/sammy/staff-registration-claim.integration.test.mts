@@ -13,9 +13,14 @@ test('a provisional staff-created customer securely claims the existing record b
   const { auth } = await import('@/lib/auth')
   const { default: clientPromise } = await import('@/lib/db')
   t.after(async () => {
-    await mongoose.disconnect()
-    await (await clientPromise).close()
-    await database.stop()
+    await Promise.race([
+      Promise.allSettled([
+        mongoose.disconnect(),
+        (await clientPromise).close(true),
+        database.stop({ doCleanup: true, force: true }),
+      ]),
+      new Promise(resolve => setTimeout(resolve, 2_000)),
+    ])
   })
 
   const provisional = await User.create({
@@ -26,6 +31,7 @@ test('a provisional staff-created customer securely claims the existing record b
   let claimToken = ''
   const originalInfo = console.info
   console.info = (...args: unknown[]) => {
+    originalInfo(...args)
     const details = args[1] as { url?: string } | undefined
     if (args[0] === '[magic-link:development]' && details?.url) {
       claimToken = new URL(details.url).searchParams.get('token') || ''
@@ -33,11 +39,20 @@ test('a provisional staff-created customer securely claims the existing record b
   }
   try {
     await auth.api.signInMagicLink({ body: { email: 'claim@example.com' }, headers: new Headers() })
+  } catch (error) {
+    console.error('[claim test sign-in failure]', error)
+    throw error
   } finally {
     console.info = originalInfo
   }
   assert.ok(claimToken)
-  const claimed = await auth.api.magicLinkVerify({ query: { token: claimToken }, headers: new Headers() })
+  let claimed
+  try {
+    claimed = await auth.api.magicLinkVerify({ query: { token: claimToken }, headers: new Headers() })
+  } catch (error) {
+    console.error('[claim test verification failure]', error)
+    throw error
+  }
   assert.equal(claimed.user.id, String(provisional._id))
   assert.equal(claimed.user.emailVerified, true)
   assert.equal(await User.countDocuments({ email: 'claim@example.com' }), 1)
