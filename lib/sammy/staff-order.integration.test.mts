@@ -46,6 +46,8 @@ test('authorized Telegram staff can create an order for an unverified provisiona
   const { AcademicSession } = await import('@/models/academic-session')
   const { OperationsSettings } = await import('@/models/operations-settings')
   const { default: CampusLocation } = await import('@/models/campus-location')
+  const { Vendor } = await import('@/models/vendor')
+  const { VendorDeliveryRule } = await import('@/models/vendor-delivery-rule')
   const { POST } = await import('@/app/api/internal/sammy/staff/orders/route')
   const { default: clientPromise } = await import('@/lib/db')
   closeDatabaseClient = async () => { await (await clientPromise).close() }
@@ -134,4 +136,44 @@ test('authorized Telegram staff can create an order for an unverified provisiona
   assert.equal(stillProvisional?.emailVerified, false)
   assert.equal(stillProvisional?.phones?.[0]?.verified, false)
   assert.equal(stillProvisional?.password, undefined)
+
+  // The same confirmation key must be a read-after-timeout recovery, not a
+  // second order. This mimics a caller retrying after persistence completed.
+  const retry = await POST(new NextRequest('https://swiftdu.test/api/internal/sammy/staff/orders', {
+    method: 'POST', headers: { authorization: 'Bearer staff-order-test-secret', 'content-type': 'application/json' },
+    body: JSON.stringify({
+      telegram: { id: '12345', firstName: 'Authorized' }, customerId: String(customer._id),
+      idempotencyKey: 'staff-order-provisional-0001', contactMethod: 'whatsapp',
+      order: { taskType: 'water', description: 'Deliver one bag', location: hostel.name, parentLocationId: String(hostel._id), roomNumber: 'B12', waterBags: 1 },
+    }),
+  }))
+  assert.equal(retry.status, 200, await retry.text())
+  assert.equal(await Order.countDocuments({ userId: String(customer._id), idempotencyKey: 'staff-order-provisional-0001' }), 1)
+
+  const pickup = await CampusLocation.create({
+    name: 'Campus Cafe', normalizedName: 'campus cafe', type: 'cafeteria', active: true,
+    coordinates: { latitude: 6.11, longitude: 7.21, capturedAt: now }, createdBy: String(staff._id),
+  })
+  const cafe = await Vendor.create({
+    name: 'Campus Cafe', normalizedName: 'campus-cafe-vendor', serviceType: 'restaurant',
+    active: true, pickupParentLocationId: pickup._id, createdBy: String(staff._id),
+  })
+  await VendorDeliveryRule.create({ vendorId: cafe._id, dropoffParentLocationId: hostel._id, serviceFee: 650, enabled: true })
+  const inquiry = await POST(new NextRequest('https://swiftdu.test/api/internal/sammy/staff/orders', {
+    method: 'POST', headers: { authorization: 'Bearer staff-order-test-secret', 'content-type': 'application/json' },
+    body: JSON.stringify({
+      telegram: { id: '12345', firstName: 'Authorized' }, customerId: String(customer._id),
+      idempotencyKey: 'staff-cafe-inquiry-0001', contactMethod: 'whatsapp',
+      order: {
+        taskType: 'restaurant', cafeInquiry: true, store: cafe.name, vendorId: String(cafe._id),
+        location: hostel.name, parentLocationId: String(hostel._id), roomNumber: 'B12', restaurantPeopleCount: 2,
+      },
+    }),
+  }))
+  assert.equal(inquiry.status, 201, await inquiry.text())
+  const inquiryOrder = await Order.findOne({ userId: String(customer._id), idempotencyKey: 'staff-cafe-inquiry-0001' }).lean()
+  assert.ok(inquiryOrder)
+  assert.equal(inquiryOrder.cafeInquiry, true)
+  assert.equal(inquiryOrder.amount, 0)
+  assert.equal(inquiryOrder.restaurantPeopleCount, 2)
 })

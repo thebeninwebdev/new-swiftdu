@@ -72,7 +72,12 @@ export type OrderCreationChannel = {
 
 export async function createOrderResponse(request: NextRequest, channel?: OrderCreationChannel) {
   const orderCreateStartedAt = performance.now()
+  const requestedCorrelationId = request.headers.get('X-SwiftDU-Correlation-Id') || ''
+  const correlationId = /^[a-f0-9-]{16,64}$/i.test(requestedCorrelationId)
+    ? requestedCorrelationId
+    : randomUUID()
   const idempotencyKey = request.headers.get('Idempotency-Key')?.trim() || undefined
+  console.info('[Order create]', { correlationId, checkpoint: 'request_received', source: channel?.source || 'website' })
   const compactResponse = request.headers.get('X-SwiftDU-Compact-Response') === '1'
   const respondWithOrder = (order: {
     _id: unknown
@@ -94,6 +99,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
   }
   try {
     await connectDB();
+    console.info('[Order create]', { correlationId, checkpoint: 'database_connected', durationMs: Math.round(performance.now() - orderCreateStartedAt) });
 
     const session = channel
       ? { user: channel.principal }
@@ -103,11 +109,13 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const authCompletedAt = performance.now()
+    console.info('[Order create]', { correlationId, checkpoint: 'principal_authorized', durationMs: Math.round(authCompletedAt - orderCreateStartedAt) })
 
     // A retry must only ever see its own original order.
     if (idempotencyKey) {
       const existingOrder = await Order.findOne({ userId: session.user.id, idempotencyKey }).lean()
       if (existingOrder) {
+        console.info('[Order create]', { correlationId, checkpoint: 'existing_order_returned' })
         return respondWithOrder(existingOrder)
       }
     }
@@ -428,6 +436,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
     }
 
     const validationCompletedAt = performance.now()
+    console.info('[Order create]', { correlationId, checkpoint: 'payload_validated', taskType: normalizedTaskType, cafeInquiry: isCafeInquiry, durationMs: Math.round(validationCompletedAt - orderCreateStartedAt) })
     const vendorBacked = normalizedTaskType === 'shopping' || normalizedTaskType === 'restaurant' || normalizedTaskType === PRINTING_TASK_TYPE
     const selectedVendorId = typeof vendorId === 'string' && vendorId ? vendorId : ''
     // A restaurant bought "from anywhere" has no actual vendor. The client may
@@ -563,6 +572,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
     const discountCommissionAmount = serviceFeeDiscountApplied ? normalSettlement.taskerFee : 0;
     const totalAmount = settlement.totalAmount;
     const pricingCompletedAt = performance.now()
+    console.info('[Order create]', { correlationId, checkpoint: 'pricing_calculated', taskType: normalizedTaskType, cafeInquiry: isCafeInquiry, durationMs: Math.round(pricingCompletedAt - orderCreateStartedAt) })
 
     const bookedAt = new Date();
     const isScheduledIndomie = normalizedTaskType === INDOMIE_TASK_TYPE && indomieMode === 'batching'
@@ -677,6 +687,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
 
     let dbCommitStartedAt = performance.now()
     let dbCommitCompletedAt = dbCommitStartedAt
+    console.info('[Order create]', { correlationId, checkpoint: 'transaction_started', taskType: normalizedTaskType, cafeInquiry: isCafeInquiry })
     try {
       await persistThenScheduleOrderCreation({
         persist: async () => {
@@ -790,6 +801,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
     }
 
     const responseReadyAt = performance.now()
+    console.info('[Order create]', { correlationId, checkpoint: 'transaction_committed', orderId: order._id.toString(), durationMs: Math.round(dbCommitCompletedAt - dbCommitStartedAt) })
     console.info('[Orders POST Timing]', {
       orderId: order._id.toString(),
       ORDER_CREATE_AUTH_MS: Math.round((authCompletedAt - orderCreateStartedAt) * 100) / 100,
@@ -799,6 +811,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
       ORDER_CREATE_TOTAL_RESPONSE_MS: Math.round((responseReadyAt - orderCreateStartedAt) * 100) / 100,
     })
 
+    console.info('[Order create]', { correlationId, checkpoint: 'response_returned', orderId: order._id.toString(), durationMs: Math.round(responseReadyAt - orderCreateStartedAt) })
     return respondWithOrder(order, 201);
   } catch (error) {
     if (error instanceof NoActiveAcademicSessionError) return NextResponse.json({ error: error.message, code: 'NO_ACTIVE_SESSION' }, { status: 409 })
@@ -812,7 +825,12 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
         if (existingOrder) return respondWithOrder(existingOrder)
       }
     }
-    console.error('[Orders POST Error]:', error);
+    console.error('[Order create failed]', {
+      correlationId,
+      code: (error as { code?: number }).code,
+      name: error instanceof Error ? error.name : 'UnknownError',
+      message: error instanceof Error ? error.message : 'Unknown error',
+    });
     return NextResponse.json(
       { error: 'Failed to create order' },
       { status: 500 }
