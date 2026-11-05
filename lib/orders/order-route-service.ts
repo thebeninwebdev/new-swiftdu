@@ -8,7 +8,6 @@ import { Order } from '@/models/order';
 import CampusLocation from '@/models/campus-location';
 import { Types } from 'mongoose';
 import { User } from '@/models/user';
-import { auth } from '@/lib/auth';
 import { Review } from '@/models/review';
 import { ACTIVE_ORDER_STATUSES } from '@/lib/order-status';
 import { emitOrderUpdated, publishOrderUpdated } from '@/lib/socket';
@@ -37,14 +36,9 @@ import {
   getUserLookupConditions,
   hasActiveServiceFeeDiscountReservation,
 } from '@/lib/service-fee-discount';
-import {
-  formatPushTaskType,
-  sendPushNotification,
-} from '@/lib/push-notifications';
 import { isProfileComplete } from '@/lib/profile-completion';
 import { canCreateOrder, OPERATIONS_SUSPENDED } from '@/lib/operations';
 import { batchingMetadata } from '@/lib/indomie-batch-release';
-import { reserveIndomieCapacity } from '@/lib/indomie-capacity';
 import { getNextAvailableIndomieRun, getNextTrainingIndomieRun, isRunStillBookable } from '@/lib/indomie-runs';
 import { randomUUID } from 'node:crypto';
 import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings';
@@ -103,7 +97,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
 
     const session = channel
       ? { user: channel.principal }
-      : await auth.api.getSession({ headers: request.headers });
+      : await (await import('@/lib/auth')).auth.api.getSession({ headers: request.headers });
 
     if (!session || !session.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -689,6 +683,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
           dbCommitStartedAt = performance.now()
           try {
             if (isScheduledIndomie) {
+              const { reserveIndomieCapacity } = await import('@/lib/indomie-capacity')
               await reserveIndomieCapacity({
                 location,
                 isTestOrder,
@@ -730,6 +725,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
             jobs.push({
               channel: 'push',
               run: async () => {
+                const { formatPushTaskType, sendPushNotification } = await import('@/lib/push-notifications')
                 const result = await sendPushNotification({
                   audience: { roles: ['tasker'], taskerGenderRestriction: persistedOrder.taskerGenderRestriction || null, taskerMode: persistedOrder.isTestOrder ? 'training' : 'live' },
                   title: persistedOrder.isTestOrder ? '[Training] New Task Available' : 'New Task Available',
@@ -810,7 +806,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
     if (idempotencyKey && (error as { code?: number }).code === 11000) {
       const session = channel
         ? { user: channel.principal }
-        : await auth.api.getSession({ headers: request.headers })
+        : await (await import('@/lib/auth')).auth.api.getSession({ headers: request.headers })
       if (session?.user?.id) {
         const existingOrder = await Order.findOne({ userId: session.user.id, idempotencyKey }).lean()
         if (existingOrder) return respondWithOrder(existingOrder)
@@ -829,7 +825,7 @@ export async function GET(request: NextRequest) {
 
     await connectDB();
 
-    const session = await auth.api.getSession({
+    const session = await (await import('@/lib/auth')).auth.api.getSession({
       headers: request.headers,
     });
 

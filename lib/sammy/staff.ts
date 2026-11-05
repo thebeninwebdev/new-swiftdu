@@ -185,17 +185,20 @@ export async function searchStaffCustomers(rawQuery: unknown, limit = 8) {
 }
 
 export async function createStaffCustomer(input: {
+  name?: unknown
   phone?: unknown
   email?: unknown
   parentLocationId?: unknown
   roomNumber?: unknown
   idempotencyKey?: unknown
 }, staff: SammyStaff) {
+  const name = String(input.name || '').trim().replace(/\s+/g, ' ')
   const phone = normalizeCustomerPhone(String(input.phone || ''))
   const email = String(input.email || '').trim().toLowerCase()
   const parentLocationId = String(input.parentLocationId || '').trim()
   const roomNumber = String(input.roomNumber || '').trim().replace(/\s+/g, ' ')
   const idempotencyKey = String(input.idempotencyKey || '').trim()
+  if (name.length < 3 || name.length > 120 || name.split(' ').length < 2) throw new SammyApiError(400, 'INVALID_NAME', "Enter the customer's full name.")
   if (!/^234[789]\d{9}$/.test(phone)) throw new SammyApiError(400, 'INVALID_PHONE', 'Enter a valid Nigerian phone number.')
   if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new SammyApiError(400, 'INVALID_EMAIL', 'Enter a valid email address.')
   if (!Types.ObjectId.isValid(parentLocationId)) throw new SammyApiError(400, 'INVALID_HOSTEL', 'Choose a valid hostel.')
@@ -223,6 +226,7 @@ export async function createStaffCustomer(input: {
 
   try {
     const customer = await User.create({
+      name,
       email,
       emailVerified: false,
       role: 'user',

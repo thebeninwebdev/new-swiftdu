@@ -33,6 +33,7 @@ test('staff registration validates, prevents duplicates, persists location, and 
   assert.deepEqual((await listStaffRegistrationHostels()).map(item => item.name), ['Unity Hostel'])
 
   const base = {
+    name: ' Ada   Nwosu ',
     phone: '0801 234 5678', email: ' NEW.Customer@Example.com ',
     parentLocationId: String(hostel._id), roomNumber: ' B12 ', idempotencyKey: 'registration-attempt-0001',
   }
@@ -40,6 +41,8 @@ test('staff registration validates, prevents duplicates, persists location, and 
   assert.equal(created.created, true)
   if (!created.created) return
   const saved = await User.findById(created.customer.id).lean()
+  assert.equal(saved?.name, 'Ada Nwosu')
+  assert.equal(created.customer.name, 'Ada Nwosu')
   assert.equal(saved?.phone, '2348012345678')
   assert.equal(saved?.email, 'new.customer@example.com')
   assert.equal(saved?.emailVerified, false)
@@ -50,6 +53,11 @@ test('staff registration validates, prevents duplicates, persists location, and 
   assert.equal(saved?.defaultRoomNumber, 'B12')
   assert.equal(saved?.createdByStaffId, String(staffId))
   assert.equal(saved?.phones?.[0]?.verified, false)
+
+  const { searchStaffCustomers } = await import('./staff')
+  const byName = await searchStaffCustomers('ada nwosu')
+  assert.equal(byName[0]?.id, created.customer.id)
+  assert.equal(byName[0]?.name, 'Ada Nwosu')
 
   const repeated = await createStaffCustomer(base, staff as never)
   assert.equal(repeated.created, true)
@@ -72,6 +80,10 @@ test('staff registration validates, prevents duplicates, persists location, and 
   }, staff as never)
   assert.equal(duplicateWhatsapp.created, false)
 
+  await assert.rejects(
+    createStaffCustomer({ ...base, name: 'Ada', idempotencyKey: 'registration-attempt-name' }, staff as never),
+    (error: unknown) => (error as { code?: string }).code === 'INVALID_NAME'
+  )
   await assert.rejects(
     createStaffCustomer({ ...base, phone: '123', idempotencyKey: 'registration-attempt-0005' }, staff as never),
     (error: unknown) => (error as { code?: string }).code === 'INVALID_PHONE'
