@@ -47,13 +47,20 @@ export type StaffCustomer = {
   defaultRoomNumber?: string
 }
 
+export function isSyntheticCustomerEmail(value?: string | null) {
+  return String(value || '').trim().toLowerCase().endsWith('@customer.swiftdu.invalid')
+}
+
+function syntheticCustomerEmail() {
+  return `staff-${randomUUID()}@customer.swiftdu.invalid`
+}
 function escapeRegex(value: string) {
   return value.replace(/[.*+?^{}$()|[\]\\]/g, '\\$&')
 }
 
 function publicEmail(value?: string | null) {
   const email = String(value || '').trim().toLowerCase()
-  return email.endsWith('@customer.swiftdu.invalid') ? undefined : email || undefined
+  return isSyntheticCustomerEmail(email) ? undefined : email || undefined
 }
 
 export async function resolveSammyStaff(identity: TelegramIdentity) {
@@ -200,9 +207,9 @@ export async function createStaffCustomer(input: {
   const idempotencyKey = String(input.idempotencyKey || '').trim()
   if (name.length < 3 || name.length > 120 || name.split(' ').length < 2) throw new SammyApiError(400, 'INVALID_NAME', "Enter the customer's full name.")
   if (!/^234[789]\d{9}$/.test(phone)) throw new SammyApiError(400, 'INVALID_PHONE', 'Enter a valid Nigerian phone number.')
-  if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new SammyApiError(400, 'INVALID_EMAIL', 'Enter a valid email address.')
+  if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new SammyApiError(400, 'INVALID_EMAIL', 'Enter a valid email address.')
   if (!Types.ObjectId.isValid(parentLocationId)) throw new SammyApiError(400, 'INVALID_HOSTEL', 'Choose a valid hostel.')
-  if (!roomNumber || roomNumber.length > 40) throw new SammyApiError(400, 'INVALID_ROOM_NUMBER', 'Enter a valid room number.')
+  if (roomNumber.length > 40) throw new SammyApiError(400, 'INVALID_ROOM_NUMBER', 'Enter a valid room number.')
   if (idempotencyKey.length < 12 || idempotencyKey.length > 200) throw new SammyApiError(400, 'INVALID_IDEMPOTENCY_KEY', 'A stable confirmation ID is required.')
 
   const previous = await SammyCustomerRegistrationAudit.findOne({ idempotencyKey, staffId: String(staff._id) }).select('customerId').lean()
@@ -219,7 +226,7 @@ export async function createStaffCustomer(input: {
   const duplicates = await User.find({ $or: [
     { phone: { $regex: escapeRegex(lastTen) + '$' } },
     { 'phones.normalizedNumber': phone },
-    { email },
+    ...(email ? [{ email }] : []),
     ...(linkedUserIds.length ? [{ _id: { $in: linkedUserIds } }] : []),
   ] }).select(CUSTOMER_FIELDS).limit(5).lean()
   if (duplicates.length) return { created: false as const, duplicates: await toCustomerCards(duplicates as unknown as Array<Record<string, unknown>>) }
@@ -227,7 +234,7 @@ export async function createStaffCustomer(input: {
   try {
     const customer = await User.create({
       name,
-      email,
+      email: email || syntheticCustomerEmail(),
       emailVerified: false,
       role: 'user',
       phone,
@@ -235,14 +242,14 @@ export async function createStaffCustomer(input: {
       location: hostel.name,
       defaultLocation: hostel.name,
       defaultLocationId: String(hostel._id),
-      defaultRoomNumber: roomNumber,
+      ...(roomNumber ? { defaultRoomNumber: roomNumber } : {}),
       customerSource: 'staff_telegram',
       createdByStaffId: String(staff._id),
     })
     await SammyCustomerRegistrationAudit.create({
       staffId: String(staff._id), customerId: String(customer._id), idempotencyKey,
       phoneFingerprint: fingerprintSammyRegistrationValue(phone),
-      emailFingerprint: fingerprintSammyRegistrationValue(email),
+      emailFingerprint: fingerprintSammyRegistrationValue(email || 'not-provided'),
       hostelId: String(hostel._id), action: 'customer_created',
     })
     return { created: true as const, customer: await getStaffCustomer(String(customer._id)) }
@@ -255,6 +262,26 @@ export async function createStaffCustomer(input: {
   }
 }
 
+export async function updateStaffCustomer(customerId: string, input: { email?: unknown; roomNumber?: unknown; clearRoomNumber?: unknown }, staff: SammyStaff) {
+  const fields = Object.keys(input).filter(field => input[field as keyof typeof input] !== undefined)
+  if (!fields.length || (fields.includes('email') && fields.length !== 1) || (!fields.includes('email') && fields.some(field => !['roomNumber', 'clearRoomNumber'].includes(field)))) throw new SammyApiError(400, 'INVALID_CUSTOMER_UPDATE', 'Choose one supported customer detail to update.')
+  const customer = await getStaffCustomerRecord(customerId) as { _id: Types.ObjectId; email?: string }
+  if (fields.includes('email')) {
+    const email = String(input.email || '').trim().toLowerCase()
+    if (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || isSyntheticCustomerEmail(email)) throw new SammyApiError(400, 'INVALID_EMAIL', 'Enter a valid customer email address.')
+    if (!isSyntheticCustomerEmail(customer.email)) throw new SammyApiError(409, 'EMAIL_CHANGE_REQUIRES_CUSTOMER_CONFIRMATION', 'An existing email can only be changed through the customer’s secure account email-change flow.')
+    const owner = await User.findOne({ email }).select('_id').lean()
+    if (owner && String(owner._id) !== String(customer._id)) throw new SammyApiError(409, 'EMAIL_ALREADY_REGISTERED', 'That email already belongs to another account.')
+    try { await User.updateOne({ _id: customer._id, email: customer.email, emailVerified: false }, { $set: { email, emailVerified: false } }) } catch (error) { if ((error as { code?: number }).code === 11000) throw new SammyApiError(409, 'EMAIL_ALREADY_REGISTERED', 'That email already belongs to another account.'); throw error }
+    await SammyCustomerRegistrationAudit.create({ staffId: String(staff._id), customerId: String(customer._id), idempotencyKey: `update-email-${randomUUID()}`, phoneFingerprint: fingerprintSammyRegistrationValue('unchanged'), emailFingerprint: fingerprintSammyRegistrationValue(email), hostelId: 'unchanged', action: 'customer_email_added' })
+  } else {
+    const clear = input.clearRoomNumber === true; const roomNumber = String(input.roomNumber || '').trim().replace(/\s+/g, ' ')
+    if (!clear && (!roomNumber || roomNumber.length > 40)) throw new SammyApiError(400, 'INVALID_ROOM_NUMBER', 'Enter a valid room number.')
+    await User.updateOne({ _id: customer._id, isSuspended: { $ne: true } }, clear ? { $unset: { defaultRoomNumber: 1 } } : { $set: { defaultRoomNumber: roomNumber } })
+    await SammyCustomerRegistrationAudit.create({ staffId: String(staff._id), customerId: String(customer._id), idempotencyKey: `update-room-${randomUUID()}`, phoneFingerprint: fingerprintSammyRegistrationValue('unchanged'), emailFingerprint: fingerprintSammyRegistrationValue('unchanged'), hostelId: 'unchanged', action: clear ? 'customer_room_cleared' : 'customer_room_updated' })
+  }
+  return { customer: await getStaffCustomer(customerId) }
+}
 export async function listStaffRegistrationHostels() {
   await connectDB()
   const hostels = await CampusLocation.find({

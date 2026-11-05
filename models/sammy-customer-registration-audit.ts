@@ -12,7 +12,7 @@ const schema = new Schema({
   phoneFingerprint: { type: String, required: true },
   emailFingerprint: { type: String, required: true },
   hostelId: { type: String, required: true },
-  action: { type: String, enum: ['customer_created'], required: true },
+  action: { type: String, enum: ['customer_created', 'customer_email_added', 'customer_room_updated', 'customer_room_cleared'], required: true },
 }, { timestamps: true })
 
 export const SammyCustomerRegistrationAudit = models.SammyCustomerRegistrationAudit ||

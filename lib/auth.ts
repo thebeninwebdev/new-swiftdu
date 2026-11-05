@@ -84,6 +84,9 @@ const magicLinkEmailGuard = (): BetterAuthPlugin => ({
       handler: createAuthMiddleware(async (ctx) => {
         const email = typeof ctx.body?.email === "string" ? ctx.body.email.trim().toLowerCase() : "";
         if (!email) return;
+        if (email.endsWith('@customer.swiftdu.invalid')) {
+          throw APIError.from('BAD_REQUEST', { code: 'PROVISIONAL_EMAIL', message: 'Add and verify a real email address before signing in.' });
+        }
 
         await connectDB();
         const now = new Date();
