@@ -42,10 +42,25 @@ function forwardHeaders(request: IncomingMessage) {
   return headers
 }
 
-export function assertMongoTransactionSupport() {
-  const topologyType = mongoose.connection.getClient().topology?.description.type
-  if (topologyType !== 'ReplicaSetWithPrimary' && topologyType !== 'Sharded') {
-    throw new Error('MongoDB transactions are unavailable; configure a replica set or sharded cluster before starting the order API.')
+export async function assertMongoTransactionSupport() {
+  const db = mongoose.connection.db
+
+  if (!db) {
+    throw new Error('MongoDB connection is not initialized.')
+  }
+
+  const hello = await db.admin().command({ hello: 1 })
+
+  const isReplicaSetPrimary =
+    typeof hello.setName === 'string' &&
+    hello.isWritablePrimary === true
+
+  const isSharded = hello.msg === 'isdbgrid'
+
+  if (!isReplicaSetPrimary && !isSharded) {
+    throw new Error(
+      'MongoDB transactions are unavailable; configure a replica set or sharded cluster before starting the order API.'
+    )
   }
 }
 
@@ -113,7 +128,7 @@ export async function startOrderApiServer(port = Number(process.env.PORT || 1000
   if (!Number.isInteger(port) || port < 0 || port > 65_535) throw new Error('PORT must be a valid TCP port.')
 
   await connectDB()
-  assertMongoTransactionSupport()
+  await assertMongoTransactionSupport()
 
   const service = createOrderApiServer()
   await new Promise<void>((resolve, reject) => {
