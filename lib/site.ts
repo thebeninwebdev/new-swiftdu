@@ -13,7 +13,8 @@ function normalizeUrl(value?: string | null) {
 }
 
 function getConfiguredUrl() {
-  return normalizeUrl(process.env.NEXT_PUBLIC_BASE_URL) ||
+  return normalizeUrl(process.env.SWIFTDU_BASE_URL) ||
+    normalizeUrl(process.env.NEXT_PUBLIC_BASE_URL) ||
     normalizeUrl(process.env.BASE_URL) ||
     normalizeUrl(process.env.NEXT_PUBLIC_SITE_URL) ||
     normalizeUrl(process.env.BETTER_AUTH_URL);

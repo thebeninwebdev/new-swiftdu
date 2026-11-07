@@ -48,7 +48,10 @@ export async function resolveSammyCustomer(phone: unknown) {
 
 export function sammyErrorResponse(error: unknown) {
   if (error instanceof SammyApiError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status })
-  console.error('[Internal Sammy API Error]', error)
+  console.error('[Internal Sammy API Error]', {
+    name: error instanceof Error ? error.name : 'UnknownError',
+    code: typeof error === 'object' && error && 'code' in error ? (error as { code?: unknown }).code : undefined,
+  })
   return NextResponse.json({ error: 'The request could not be completed.', code: 'INTERNAL_ERROR' }, { status: 500 })
 }
 

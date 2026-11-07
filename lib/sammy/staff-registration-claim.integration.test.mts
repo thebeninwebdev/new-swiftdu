@@ -11,12 +11,12 @@ test('a provisional staff-created customer securely claims the existing record b
   await mongoose.connect(process.env.MONGODB_URI)
   const { User } = await import('@/models/user')
   const { auth } = await import('@/lib/auth')
-  const { default: clientPromise } = await import('@/lib/db')
+  const { closeMongoClient } = await import('@/lib/db')
   t.after(async () => {
     await Promise.race([
       Promise.allSettled([
         mongoose.disconnect(),
-        (await clientPromise).close(true),
+        closeMongoClient(),
         database.stop({ doCleanup: true, force: true }),
       ]),
       new Promise(resolve => setTimeout(resolve, 2_000)),

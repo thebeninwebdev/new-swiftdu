@@ -44,6 +44,7 @@ import { randomUUID } from 'node:crypto';
 import { getIndomieBatchSettings } from '@/lib/indomie-batch-settings';
 import { formatMinute, getIndomieServiceMode, getNextOpeningTime, getOperationsSettings, getOperationsStatus } from '@/lib/operations-settings';
 import { persistThenScheduleOrderCreation, type OrderCreationBackgroundJob } from '@/lib/order-creation-background';
+import type { BackgroundScheduler } from '@/lib/order-creation-background';
 import { validateOrderAgainstCommercePolicy } from '@/lib/commerce-policy';
 import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError, serializeOrderSession } from '@/lib/orders/order-session-scope';
 import { CUSTOMER_ORDER_CARD_FIELDS, parseOrderPagination } from '@/lib/orders/order-list-fields';
@@ -68,6 +69,7 @@ export type OrderCreationChannel = {
   createdByStaffId?: string
   createdByStaffTelegramId?: string
   createdByStaffName?: string
+  scheduleBackground?: BackgroundScheduler
 }
 
 export async function createOrderResponse(request: NextRequest, channel?: OrderCreationChannel) {
@@ -690,6 +692,7 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
     console.info('[Order create]', { correlationId, checkpoint: 'transaction_started', taskType: normalizedTaskType, cafeInquiry: isCafeInquiry })
     try {
       await persistThenScheduleOrderCreation({
+        schedule: channel?.scheduleBackground,
         persist: async () => {
           dbCommitStartedAt = performance.now()
           try {
@@ -829,7 +832,6 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
       correlationId,
       code: (error as { code?: number }).code,
       name: error instanceof Error ? error.name : 'UnknownError',
-      message: error instanceof Error ? error.message : 'Unknown error',
     });
     return NextResponse.json(
       { error: 'Failed to create order' },

@@ -1,0 +1,45 @@
+services:
+  - type: web
+    name: swiftdu-order-api
+    runtime: node
+    region: frankfurt
+    plan: starter
+    rootDir: .
+    buildCommand: npm ci
+    startCommand: npm run start:order-api
+    healthCheckPath: /health
+    autoDeploy: false
+    numInstances: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: NODE_ENV
+        value: production
+      - key: OPERATIONS_ENABLED
+        value: "false"
+      - key: SWIFTDU_BASE_URL
+        value: https://swiftdu.org
+      - key: MONGODB_URI
+        sync: false
+      - key: SAMMY_SWIFTDU_INTERNAL_SECRET
+        sync: false
+      - key: ABLY_API_KEY
+        sync: false
+      - key: NEXT_PUBLIC_VAPID_PUBLIC_KEY
+        sync: false
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        sync: false
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_BOT_API_TOKEN
+        sync: false
+      - key: TELEGRAM_GIRLS_ORDERS_CHAT_ID
+        sync: false
+      - key: TELEGRAM_BOYS_ORDERS_CHAT_ID
+        sync: false
+      - key: TELEGRAM_TRAINING_ORDERS_CHAT_ID
+        sync: false
+      - key: TELEGRAM_ALERTS_ENABLED
+        sync: false

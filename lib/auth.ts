@@ -1,7 +1,7 @@
 import { betterAuth, type BetterAuthPlugin } from "better-auth";
 import { APIError, createAuthMiddleware } from "better-auth/api";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
-import clientPromise, { connectDB } from "./db";
+import { connectDB, getMongoClient } from "./db";
 import { User } from "@/models/user";
 import { twoFactor } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
@@ -10,7 +10,7 @@ import { AuthEmailRateLimit } from "@/models/auth-email-rate-limit";
 import { getAuthBaseUrl, getTrustedOrigins } from "@/lib/site";
 import { reconcileTaskerIdentityForUser } from "@/lib/tasker-onboarding";
 
-const client = await clientPromise;
+const client = await getMongoClient();
 const db = client.db();
 const THIRTY_DAYS_IN_SECONDS = 60 * 60 * 24 * 30;
 const ONE_DAY_IN_SECONDS = 60 * 60 * 24;

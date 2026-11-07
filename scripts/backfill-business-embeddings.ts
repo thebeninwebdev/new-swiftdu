@@ -5,7 +5,7 @@ async function main() {
   loadEnvConfig(process.cwd());
   if (!process.env.GEMINI_API_KEY)
     throw new Error("Set GEMINI_API_KEY before running the backfill.");
-  const { connectDB, default: clientPromise } = await import("../lib/db");
+  const { closeMongoClient, connectDB } = await import("../lib/db");
   try {
     const { default: Business } = await import("../models/business");
     const {
@@ -57,7 +57,7 @@ async function main() {
     if (failed) process.exitCode = 1;
   } finally {
     await mongoose.disconnect();
-    await (await clientPromise).close();
+    await closeMongoClient();
   }
 }
 main().catch(() => {

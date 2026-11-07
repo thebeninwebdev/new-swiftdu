@@ -8,7 +8,7 @@ export type OrderCreationBackgroundJob = {
 }
 
 type BackgroundLogger = Pick<Console, 'info' | 'error'>
-type BackgroundScheduler = (promise: Promise<unknown>) => void | undefined
+export type BackgroundScheduler = (promise: Promise<unknown>) => void | undefined
 
 type PersistThenScheduleInput<T> = {
   persist: () => Promise<T>
@@ -23,8 +23,8 @@ function elapsedMs(startedAt: number, now: () => number) {
   return Math.round((now() - startedAt) * 100) / 100
 }
 
-function conciseError(error: unknown) {
-  return error instanceof Error ? error.message : String(error)
+function safeErrorName(error: unknown) {
+  return error instanceof Error ? error.name : 'UnknownError'
 }
 
 export async function runOrderCreationBackgroundJobs({
@@ -58,7 +58,7 @@ export async function runOrderCreationBackgroundJobs({
       logger.error('[Orders POST Notification Error]', {
         orderId,
         channel: jobs[index].channel,
-        error: conciseError(result.reason),
+        errorName: safeErrorName(result.reason),
       })
     }
   })
@@ -91,7 +91,7 @@ export async function persistThenScheduleOrderCreation<T>({
     // Scheduling must never rewrite a successful database outcome as a 500.
     logger.error('[Orders POST Notification Scheduling Error]', {
       orderId,
-      error: conciseError(error),
+      errorName: safeErrorName(error),
     })
   }
 

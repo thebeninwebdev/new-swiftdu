@@ -19,12 +19,10 @@ test(
     process.env.OPERATIONS_ENABLED = "false";
     const { default: Business } = await import("../models/business");
     const { GET, POST } = await import("../app/api/businesses/route");
-    const { default: clientPromise } = await import("./db");
     const realFetch = globalThis.fetch;
     t.after(async () => {
       globalThis.fetch = realFetch;
       await mongoose.disconnect();
-      await (await clientPromise).close();
       await mongo.stop();
     });
     let mode = "approve",

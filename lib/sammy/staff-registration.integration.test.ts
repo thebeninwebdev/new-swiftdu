@@ -12,10 +12,8 @@ test('staff registration validates, prevents duplicates, persists location, and 
   const { WhatsAppRegistration } = await import('@/models/whatsapp-registration')
   const { SammyCustomerRegistrationAudit } = await import('@/models/sammy-customer-registration-audit')
   const { createStaffCustomer, listStaffRegistrationHostels, resolveSammyStaff } = await import('./staff')
-  const { default: clientPromise } = await import('@/lib/db')
   t.after(async () => {
     await mongoose.disconnect()
-    await (await clientPromise).close()
     await database.stop()
   })
 

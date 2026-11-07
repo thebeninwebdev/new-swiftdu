@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb'
 import { NextRequest, NextResponse } from 'next/server'
 
-import clientPromise from '@/lib/db'
+import { getMongoClient } from '@/lib/db'
 import { auth } from '@/lib/auth'
 
 export async function GET(request: NextRequest) {
@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const client = await clientPromise
+    const client = await getMongoClient()
     const db = client.db()
     const passwordExistsQuery = { $exists: true, $nin: [null, ''] }
     const accountLookupConditions: Record<string, unknown>[] = [

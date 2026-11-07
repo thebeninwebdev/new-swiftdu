@@ -1,5 +1,3 @@
-import 'server-only'
-
 import { AcademicSession } from '@/models/academic-session'
 import type { OrderSessionWindow } from './order-session-filter'
 

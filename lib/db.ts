@@ -1,10 +1,8 @@
 import { MongoClient } from "mongodb";
 
-const uri = process.env.MONGODB_URI!;
 const options = {};
 
-let client: MongoClient;
-let clientPromise: Promise<MongoClient>;
+let nativeClientPromise: Promise<MongoClient> | undefined;
 
 declare global {
   var _mongoClientPromise: Promise<MongoClient> | undefined;
@@ -55,21 +53,34 @@ export async function connectDB() {
   cached.conn = await cached.promise;
   return cached.conn;
 }
+
+export function getMongoClient() {
+  if (process.env.NODE_ENV === "development") {
+    if (!global._mongoClientPromise) {
+      global._mongoClientPromise = new MongoClient(MONGODB_URI, options).connect();
+    }
+    return global._mongoClientPromise;
+  }
+
+  if (!nativeClientPromise) {
+    nativeClientPromise = new MongoClient(MONGODB_URI, options).connect();
+  }
+  return nativeClientPromise;
+}
+
+export async function closeMongoClient() {
+  const pendingClient = process.env.NODE_ENV === "development"
+    ? global._mongoClientPromise
+    : nativeClientPromise;
+  if (!pendingClient) return;
+
+  try {
+    await (await pendingClient).close();
+  } finally {
+    if (process.env.NODE_ENV === "development") global._mongoClientPromise = undefined;
+    else nativeClientPromise = undefined;
+  }
+}
 if (!process.env.MONGODB_URI) {
   throw new Error("Please add MONGODB_URI to your environment variables");
 }
-
-if (process.env.NODE_ENV === "development") {
-  // In development use a global variable so connection isn't recreated on hot reload
-  if (!global._mongoClientPromise) {
-    client = new MongoClient(uri, options);
-    global._mongoClientPromise = client.connect();
-  }
-  clientPromise = global._mongoClientPromise;
-} else {
-  // In production just create a new client
-  client = new MongoClient(uri, options);
-  clientPromise = client.connect();
-}
-
-export default clientPromise;

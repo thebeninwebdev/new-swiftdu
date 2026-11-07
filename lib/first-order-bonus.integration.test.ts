@@ -55,6 +55,62 @@ test('duplicate submissions with one idempotency key return the committed order'
   assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 1)
 })
 
+test('transient transaction errors retry and still commit one order and bonus claim', async () => {
+  const user = await customer()
+  const order = draft(String(user._id))
+  const originalUpdateOne = User.updateOne
+  let updateAttempts = 0
+  User.updateOne = (async (...args: Parameters<typeof User.updateOne>) => {
+    updateAttempts++
+    if (updateAttempts === 1) throw Object.assign(new Error('transient write conflict'), { code: 112 })
+    return originalUpdateOne.apply(User, args)
+  }) as typeof User.updateOne
+
+  try {
+    await saveNewOrderWithBonus(order, pricing)
+  } finally {
+    User.updateOne = originalUpdateOne
+  }
+
+  assert.equal(updateAttempts, 2)
+  assert.equal(await Order.countDocuments({ _id: order._id }), 1)
+  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 1)
+  assert.equal(order.firstOrderBonusApplied, true)
+})
+
+test('an uncertain commit is resolved from the committed order without duplicating it', async () => {
+  const user = await customer()
+  const order = draft(String(user._id))
+  const originalStartSession = mongoose.connection.startSession
+  let commitAttempts = 0
+  mongoose.connection.startSession = (async (...args: Parameters<typeof mongoose.connection.startSession>) => {
+    const session = await originalStartSession.apply(mongoose.connection, args)
+    const commit = session.commitTransaction.bind(session)
+    session.commitTransaction = (async () => {
+      const result = await commit()
+      commitAttempts++
+      if (commitAttempts === 1) {
+        throw Object.assign(new Error('commit reply was lost'), {
+          hasErrorLabel: (label: string) => label === 'UnknownTransactionCommitResult',
+        })
+      }
+      return result
+    }) as typeof session.commitTransaction
+    return session
+  }) as typeof mongoose.connection.startSession
+
+  try {
+    await saveNewOrderWithBonus(order, pricing)
+  } finally {
+    mongoose.connection.startSession = originalStartSession
+  }
+
+  assert.equal(commitAttempts, 1)
+  assert.equal(await Order.countDocuments({ _id: order._id }), 1)
+  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 1)
+  assert.equal(order.firstOrderBonusApplied, true)
+})
+
 test('simultaneous creations reserve exactly one bonus; transaction failure rolls back the claim', async () => {
   const user = await customer()
   const bad = draft(String(user._id)); bad.location = ''
