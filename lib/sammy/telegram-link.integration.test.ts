@@ -19,7 +19,7 @@ before(async () => {
   process.env.MONGODB_URI = database.getUri()
   await mongoose.connect(database.getUri(), { dbName: 'telegram-link-tests' })
   const databaseModule = await import('../db')
-  nativeClient = await databaseModule.default
+nativeClient = await databaseModule.getMongoClient()
   linking = await import('./telegram-link')
   await Promise.all([User.init(), TelegramLinkChallenge.init()])
 })

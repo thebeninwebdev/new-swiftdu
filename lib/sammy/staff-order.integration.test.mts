@@ -82,7 +82,7 @@ test('authorized Telegram staff can create an order for an unverified provisiona
     emailVerified: false,
     role: 'user',
     isExco: true,
-    excoRole: 'finance',
+    excoRole: 'CFO',
     testOrderMode: true,
     phone: '2348012345678',
     phones: [{ number: '2348012345678', normalizedNumber: '2348012345678', type: 'primary', verified: false }],
