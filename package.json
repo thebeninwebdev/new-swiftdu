@@ -14,7 +14,8 @@
     "test:businesses": "tsx --test lib/business-directory.test.ts lib/business-api.test.ts lib/business-search.test.ts",
     "test:giveaway": "tsx --test lib/giveaway-wheel-math.test.ts lib/giveaway-realtime-config.test.ts",
     "businesses:backfill-embeddings": "tsx scripts/backfill-business-embeddings.ts",
-    "backfill:order-sessions": "tsx scripts/backfill-order-sessions.ts"
+    "backfill:order-sessions": "tsx scripts/backfill-order-sessions.ts",
+    "migrate:order-idempotency-index": "tsx scripts/migrate-order-idempotency-index.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1037.0",

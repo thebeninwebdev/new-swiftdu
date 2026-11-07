@@ -709,12 +709,12 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
                   order.status = 'in_progress'
                   order.batchStatus = 'booked'
                   order.batchId = `indomie:${order.indomieRunAt?.toISOString()}:${taskerId}:${order.deliveryDestinationKey || 'campus'}`
-                  await saveNewOrderWithBonus(order, pricing)
+                  await saveNewOrderWithBonus(order, pricing, { correlationId })
                   return order
                 },
               })
             } else {
-              await saveNewOrderWithBonus(order, pricing)
+              await saveNewOrderWithBonus(order, pricing, { correlationId })
             }
             return order
           } finally {

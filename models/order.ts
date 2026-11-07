@@ -555,7 +555,10 @@ orderSchema.pre('validate', function () {
 orderSchema.index({ deliveryDestinationKey: 1, roomNumber: 1, status: 1 });
 orderSchema.index({ createdAt: -1 });
 // Returns the original order when a mobile client retries one submission.
-orderSchema.index({ userId: 1, idempotencyKey: 1 }, { unique: true, sparse: true });
+orderSchema.index(
+  { userId: 1, idempotencyKey: 1 },
+  { unique: true, partialFilterExpression: { idempotencyKey: { $type: 'string' } } }
+);
 orderSchema.index({ status: 1, createdAt: -1 });
 orderSchema.index({ userId: 1, isTestOrder: 1, status: 1 });
 orderSchema.index({ userId: 1, sessionId: 1, isTestOrder: 1 });

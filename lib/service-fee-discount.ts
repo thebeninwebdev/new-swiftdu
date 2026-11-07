@@ -61,7 +61,7 @@ export async function consumeServiceFeeDiscountForCompletedOrder(order: {
     },
     { $inc: { serviceFeeDiscountRemainingOrders: -1 } },
     {
-      new: true,
+      returnDocument: 'after',
       projection: 'serviceFeeDiscountRemainingOrders',
     }
   ).lean()

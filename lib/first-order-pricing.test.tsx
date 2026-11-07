@@ -20,7 +20,7 @@ test('first orders remit none of the applicable service fee to the platform', ()
   ]
   for (const input of inputs) {
     const normal = calculateOrderPricing(input)
-    const fees = priceWithOrderDiscounts(normal)
+    const fees = priceWithOrderDiscounts(normal, { cafeInquiry: input.cafeInquiry })
     const bonus = priceWithOrderDiscounts(normal, { firstOrderBonus: true, cafeInquiry: input.cafeInquiry })
     assert.equal(bonus.taskerFee, fees.taskerFee)
     assert.equal(taskerEarnings(bonus), fees.taskerFee)

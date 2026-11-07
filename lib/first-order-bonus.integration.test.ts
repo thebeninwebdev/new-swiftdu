@@ -8,6 +8,7 @@ import { WhatsAppRegistration } from '../models/whatsapp-registration'
 import { AcademicSession } from '../models/academic-session'
 import { FirstOrderBonusClaim } from '../models/first-order-bonus-claim'
 import { calculateOrderPricing } from './pricing'
+import { priceWithOrderDiscounts } from './first-order-pricing'
 import { clearZeroFeeSettlement, firstOrderBonusAvailable, NoActiveAcademicSessionError, OrderChangedError, releaseCancelledBonus, saveNewOrderWithBonus, saveOrderLifecycle } from './first-order-bonus'
 import { verifyAndMarkOrderSettlementPaid } from './settlement-payment'
 import { getOutstandingSettlementOrders, syncTaskerSettlementStatus } from './tasker-settlement'
@@ -22,10 +23,37 @@ after(async () => { await mongoose.disconnect(); await database?.stop() })
 beforeEach(async () => { await Promise.all([Order.deleteMany({}), User.deleteMany({}), WhatsAppRegistration.deleteMany({}), AcademicSession.deleteMany({}), FirstOrderBonusClaim.deleteMany({})]); await AcademicSession.create({ name: '2026/2027', startDate: new Date('2026-01-01'), endDate: new Date('2026-12-31'), isActive: true }) })
 const pricing = calculateOrderPricing({ taskType: 'restaurant', amount: 2000 })
 async function customer() { return User.create({ email: 'test@example.invalid' }) }
-function draft(userId: string, isTestOrder = false) {
+function draft(userId: string, isTestOrder = false, idempotencyKey?: string) {
   return new Order({ userId, taskType: 'restaurant', amount: pricing.amount, commission: pricing.serviceFee,
-    serviceFee: pricing.serviceFee, totalAmount: pricing.totalAmount, location: 'Library', status: 'pending', isTestOrder })
+    serviceFee: pricing.serviceFee, totalAmount: pricing.totalAmount, location: 'Library', status: 'pending', isTestOrder, idempotencyKey })
 }
+
+test('first, second, and third orders save with only the first-order platform fee waiver', async () => {
+  const user = await customer()
+  const orders = [draft(String(user._id)), draft(String(user._id)), draft(String(user._id))]
+
+  for (const order of orders) await saveNewOrderWithBonus(order, pricing)
+
+  assert.deepEqual(orders.map(order => order.firstOrderBonusApplied), [true, false, false])
+  assert.equal(orders[0].taskerFee, orders[1].taskerFee)
+  assert.equal(orders[1].platformFee, priceWithOrderDiscounts(pricing).platformFee)
+  assert.equal(orders[0].platformFee, 0)
+  assert.equal(await Order.countDocuments({ userId: String(user._id) }), 3)
+  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 1)
+})
+
+test('duplicate submissions with one idempotency key return the committed order', async () => {
+  const user = await customer()
+  const key = 'sammy-confirmation-12345'
+  const first = draft(String(user._id), false, key)
+  const retry = draft(String(user._id), false, key)
+
+  await Promise.all([saveNewOrderWithBonus(first, pricing), saveNewOrderWithBonus(retry, pricing)])
+
+  assert.equal(first._id.toString(), retry._id.toString())
+  assert.equal(await Order.countDocuments({ userId: String(user._id), idempotencyKey: key }), 1)
+  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 1)
+})
 
 test('simultaneous creations reserve exactly one bonus; transaction failure rolls back the claim', async () => {
   const user = await customer()
@@ -34,7 +62,9 @@ test('simultaneous creations reserve exactly one bonus; transaction failure roll
   assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
   const orders = Array.from({ length: 6 }, () => draft(String(user._id)))
   await Promise.all(orders.map(order => saveNewOrderWithBonus(order, pricing)))
+  assert.equal(await Order.countDocuments({ userId: String(user._id) }), 6)
   assert.equal(await Order.countDocuments({ firstOrderBonusApplied: true }), 1)
+  assert.equal(orders.filter(order => !order.firstOrderBonusApplied).length, 5)
   const reserved = await FirstOrderBonusClaim.findOne({ userId: String(user._id) }).orFail()
   assert.equal(orders.find(order => order.firstOrderBonusApplied)!._id.toString(), reserved.orderId)
   assert.equal(await firstOrderBonusAvailable(String(user._id)), false)
