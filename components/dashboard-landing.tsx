@@ -26,51 +26,6 @@ const services: Service[] = [
   { value: 'water', label: 'Bag of Water', description: 'Per bag', icon: Droplets, image: taskWaterImage },
 ]
 
-
-type DashboardRequestError = Error & {
-  status?: number;
-};
-
-async function fetchDashboardData(path: string) {
-  for (let attempt = 0; attempt < 3; attempt++) {
-    try {
-      const response = await fetch(path, {
-        cache: "no-store",
-        credentials: "same-origin",
-      });
-
-      if (!response.ok) {
-        const error = new Error(
-          `${path} failed with ${response.status}`
-        ) as DashboardRequestError;
-
-        error.status = response.status;
-        throw error;
-      }
-
-      return await response.json();
-    } catch (error) {
-      const status =
-        (error as DashboardRequestError).status;
-
-      // Authentication and other client errors
-      // should not be blindly retried.
-      if (
-        attempt === 2 ||
-        (status &&
-          status < 500 &&
-          status !== 429)
-      ) {
-        throw error;
-      }
-
-      await new Promise((resolve) =>
-        setTimeout(resolve, 800 * (attempt + 1))
-      );
-    }
-  }
-}
-
 export function DashboardLanding({ userName, initialTrainingMode }: { userName: string; initialTrainingMode: boolean }) {
   const router = useRouter()
   const canApplyAsTasker = useTaskerEligibility()
@@ -80,7 +35,6 @@ export function DashboardLanding({ userName, initialTrainingMode }: { userName: 
   const [criticalReady, setCriticalReady] = useState(false)
   const [criticalFailed, setCriticalFailed] = useState(false)
   const [trainingMode, setTrainingMode] = useState(initialTrainingMode)
-  const [retryKey, setRetryKey] = useState(0);
 
   useEffect(() => {
     const updateMode = (event: Event) => {
@@ -93,29 +47,13 @@ export function DashboardLanding({ userName, initialTrainingMode }: { userName: 
   useEffect(() => {
     let active = true
     const load = () => void Promise.all([
-  fetchDashboardData("/api/orders?current=true"),
-  fetchDashboardData("/api/operations/status"),
-]).then(([order, status]) => {
+      fetch('/api/orders?current=true', { cache: 'no-store' }).then((response) => response.ok ? response.json() : Promise.reject()),
+      fetch('/api/operations/status', { cache: 'no-store' }).then((response) => response.ok ? response.json() : Promise.reject()),
+    ]).then(([order, status]) => {
       if (!active) return
       setActiveOrder(order || null); setOperations(status); setCriticalFailed(false)
       performance.mark?.('dashboard-critical-ready')
-    })
-.catch((error: DashboardRequestError) => {
-  if (!active) return;
-
-  console.error(
-    "[Dashboard availability check]",
-    error
-  );
-
-  if (error.status === 401) {
-    router.replace("/auth?next=%2Fdashboard");
-    return;
-  }
-
-  setCriticalFailed(true);
-})
-
+    }).catch(() => { if (active) setCriticalFailed(true) }).finally(() => { if (active) setCriticalReady(true) })
     const refreshVisible = () => { if (document.visibilityState === 'visible') load() }
     load()
     const interval = window.setInterval(refreshVisible, 60_000)
@@ -123,7 +61,7 @@ export function DashboardLanding({ userName, initialTrainingMode }: { userName: 
     document.addEventListener('visibilitychange', refreshVisible)
     performance.mark?.('dashboard-shell-rendered')
     return () => { active = false; window.clearInterval(interval); window.removeEventListener('focus', load); document.removeEventListener('visibilitychange', refreshVisible) }
-  }, [retryKey, router])
+  }, [])
 
   useEffect(() => {
     if (!activeOrder?._id) return
@@ -169,31 +107,7 @@ export function DashboardLanding({ userName, initialTrainingMode }: { userName: 
           <h1 className="text-2xl font-black text-slate-950">Choose a service</h1><p className="mt-1 text-sm text-slate-500">Select the errand you need help with.</p>
           <div className="mt-5 grid grid-cols-2 gap-3 sm:gap-4">{services.map((service) => { const Icon = service.icon; return <button key={service.value} type="button" disabled={!criticalReady || criticalFailed || Boolean(activeOrder) || unavailable} onClick={() => openService(service.value)} className="group overflow-hidden rounded-2xl border border-slate-200 bg-white text-left shadow-sm transition hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md disabled:cursor-wait disabled:opacity-70"><div className="relative aspect-[16/9] overflow-hidden bg-slate-100"><Image src={service.image} alt="" fill sizes="(max-width: 640px) 45vw, 340px" className="object-cover transition-transform duration-300 group-hover:scale-[1.03]" /></div><div className="flex items-start gap-3 p-3 sm:p-4"><span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700"><Icon className="h-4 w-4" /></span><span><strong className="block text-sm text-slate-950 sm:text-base">{service.label}</strong><span className="mt-0.5 block text-xs text-slate-500 sm:text-sm">{service.description}</span></span></div></button> })}</div>
           {!criticalReady ? <p role="status" className="mt-4 flex items-center justify-center gap-2 text-xs text-slate-500"><Loader2 className="h-3.5 w-3.5 animate-spin" />Checking your current orders and availability…</p> : null}
-          
-{criticalFailed && (
-  <div
-    role="alert"
-    className="mt-4 text-center"
-  >
-    <p className="text-sm text-amber-700">
-      We couldn't confirm ordering availability.
-      Please check your connection.
-    </p>
-
-    <button
-      type="button"
-      onClick={() => {
-        setCriticalReady(false);
-        setCriticalFailed(false);
-        setRetryKey((value) => value + 1);
-      }}
-      className="mt-3 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white"
-    >
-      Try again
-    </button>
-  </div>
-)}
-
+          {criticalFailed ? <p role="alert" className="mt-4 text-center text-sm text-amber-700">We couldn’t verify ordering availability. Refresh to try again.</p> : null}
         </div>
       </section>
       {canApplyAsTasker ? <section className="mt-6 flex flex-col gap-4 rounded-2xl border border-indigo-200 bg-white/80 p-5 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-lg font-bold text-slate-950">Earn by helping on campus</h2><p className="mt-1 text-sm text-slate-600">Become a SwiftDU tasker and earn by helping other students.</p></div><a href="/tasker-signup/signup" className="inline-flex min-h-11 shrink-0 items-center justify-center rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white">Apply to be a tasker</a></section> : null}
