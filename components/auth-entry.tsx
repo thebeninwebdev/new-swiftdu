@@ -27,6 +27,7 @@ export function AuthEntry() {
   const requestedPath = getSafeNextPath(searchParams.get("next") ?? searchParams.get("callbackUrl") ?? searchParams.get("callbackURL") ?? searchParams.get("redirect"));
   const callbackURL = buildAuthContinuePath(requestedPath);
   const newUserCallbackURL = buildCompleteProfilePath(requestedPath);
+  const [resettingLogin, setResettingLogin] = useState(false);
 
   useEffect(() => {
     if (!sessionPending && session?.user) router.replace(getPostAuthRedirect(session.user, requestedPath));
@@ -74,6 +75,30 @@ export function AuthEntry() {
     setSentTo(normalized);
     setSeconds(COOLDOWN);
   }
+
+  
+async function resetSwiftDULogin() {
+  setResettingLogin(true);
+
+  try {
+    const response = await fetch("/api/auth/recover", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+
+    if (!response.ok) {
+      throw new Error("Recovery failed");
+    }
+
+    window.location.replace("/auth");
+  } catch {
+    setError(
+      "Unable to reset sign-in. Please try again."
+    );
+    setResettingLogin(false);
+  }
+}
 
   async function google() {
     setGoogleLoading(true);
@@ -225,6 +250,18 @@ export function AuthEntry() {
                     )}
                     Continue with Google
                   </button>
+                    
+<button
+  type="button"
+  onClick={() => void resetSwiftDULogin()}
+  disabled={resettingLogin}
+  className="mt-4 w-full text-center text-sm font-medium text-indigo-600 underline underline-offset-4 disabled:opacity-50"
+>
+  {resettingLogin
+    ? "Resetting sign-in..."
+    : "Having trouble signing in? Reset SwiftDU login"}
+</button>
+
 
                   <p className="mt-8 text-sm leading-6 text-slate-500">
                     By continuing, you agree to SwiftDU&apos;s{" "}
