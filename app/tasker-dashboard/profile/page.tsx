@@ -7,6 +7,8 @@ import { Input } from '@/components/ui/input'
 import { getTaskerId } from '@/lib/utils'
 import { BankDetailsForm } from '@/components/tasker/BankDetailsForm'
 import { LowDataModeControl } from '@/components/LowDataModeControl'
+import { OrderAlertsToggle } from '@/components/tasker/OrderAlertsToggle'
+import { WhatsAppPreferenceControl } from '@/components/tasker/WhatsAppPreferenceControl'
 
 interface TaskerProfile {
   _id: string
@@ -300,6 +302,12 @@ export default function ProfilePage() {
             </div>
           )}
         </Card>
+
+        {/* Order Alerts Preference */}
+        <OrderAlertsToggle />
+
+        {/* WhatsApp Application Preference */}
+        <WhatsAppPreferenceControl />
 
         {/* Bank Details */}
         <Card className="p-6">

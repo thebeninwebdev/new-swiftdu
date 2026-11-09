@@ -4,10 +4,29 @@ export const CUSTOMER_ORDER_CARD_FIELDS = [
   'platformFeeBeforeFirstOrderBonus', 'pricingModel', 'createdAt', 'updatedAt',
 ].join(' ')
 
+export const CUSTOMER_ACTIVE_ORDER_FIELDS = [
+  '_id', 'taskType', 'description', 'status', 'location', 'roomNumber', 'store',
+  'totalAmount', 'createdAt', 'updatedAt', 'hasPaid', 'isDeclinedTask',
+  'declinedMessage', 'taskerId', 'taskerName', 'batchingStatus', 'scheduledFor',
+  'cafeInquiry', 'isTestOrder', 'completionTimerStartedAt', 'completionDueAt',
+  'completionWindowMinutes', 'completionExtensionMinutes', 'paidAt',
+  'paymentVerifiedAt', 'customerTransferredAt', 'paymentStatus',
+].join(' ')
+
+export const ORDER_NOTIFICATION_SUMMARY_FIELDS = [
+  '_id', 'status', 'isDeclinedTask', 'taskerId', 'hasPaid',
+].join(' ')
+
 export const TASKER_AVAILABLE_ORDER_FIELDS = [
   '_id', 'userId', 'taskType', 'description', 'status', 'amount', 'totalAmount',
   'commission', 'taskerFee', 'location', 'deliveryLocation', 'roomNumber', 'store',
   'taskerGenderRestriction', 'cafeInquiry', 'isTestOrder', 'createdAt', 'updatedAt',
+].join(' ')
+
+export const TASKER_HISTORY_FIELDS = [
+  '_id', 'userId', 'taskType', 'description', 'status', 'location',
+  'dueDate', 'deadline', 'deadlineDate', 'deadlineValue', 'deadlineUnit',
+  'taskerFee', 'amount', 'totalAmount', 'createdAt', 'acceptedAt',
 ].join(' ')
 
 export const DEFAULT_ORDER_PAGE_LIMIT = 20

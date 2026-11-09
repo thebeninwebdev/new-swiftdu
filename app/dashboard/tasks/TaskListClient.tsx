@@ -198,12 +198,25 @@ export default function TaskListClient() {
           limit: '20',
         })
         if (searchQuery.trim()) params.set('search', searchQuery.trim())
-        const response = await fetch(`/api/orders?${params.toString()}`, {
-          cache: 'no-store',
-        })
+        const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+        const timeout = setTimeout(() => controller?.abort(), 12_000)
+        let response: Response
+        try {
+          response = await fetch(`/api/orders?${params.toString()}`, {
+            cache: 'no-store',
+            signal: controller?.signal,
+          })
+        } finally {
+          clearTimeout(timeout)
+        }
 
         if (response.status === 401) {
           router.push('/auth')
+          return
+        }
+
+        if (response.status === 409) {
+          setError('No active academic session is currently configured.')
           return
         }
 

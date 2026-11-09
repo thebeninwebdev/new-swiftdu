@@ -11,6 +11,8 @@ import { TaskerSwifty } from './Swifty'
 import { activeTime, useTaskerWork, workButton, workCard } from './WorkProvider'
 import { categoryLabels, TaskCard, type TaskCardData } from './TaskCards'
 import { ConnectionNotice } from '@/components/ConnectionNotice'
+import { OrderAlertsToggle } from './OrderAlertsToggle'
+import { TaskerPwaPrompt } from './TaskerPwaPrompt'
 
 export function WorkStats({ period = 'today' }: { period?: 'today' | 'week' | 'month' }) {
   const { data } = useTaskerWork()
@@ -73,6 +75,8 @@ export function TaskerHome({ name, errands, accepted, loading, refreshing, error
         </div>
       ) : (
         <>
+          <TaskerPwaPrompt className="mb-4" />
+          <OrderAlertsToggle className="mb-5" />
           {work.data?.checkedIn && (
             <div className="mb-6 flex items-center justify-between gap-3 rounded-2xl bg-emerald-50 px-4 py-3 text-emerald-900">
               <div>

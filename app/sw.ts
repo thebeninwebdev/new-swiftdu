@@ -120,8 +120,15 @@ self.addEventListener('activate', (event) => {
 })
 
 type PushPayload = {
-  title?: string; body?: string; icon?: string; badge?: string
-  image?: string; tag?: string; url?: string
+  title?: string
+  body?: string
+  icon?: string
+  badge?: string
+  image?: string
+  tag?: string
+  url?: string
+  orderId?: string
+  vibrate?: number[]
 }
 function notificationTarget(value?: string, tag?: string) {
   try {
@@ -146,7 +153,12 @@ function showSwiftDUNotification(payload: PushPayload) {
     badge: asset(payload.badge || '/pwa-192x192.png?v=swiftdu-symbol-v1'),
     image: asset(payload.image || '/logo.png?v=swiftdu-symbol-v1'),
     tag: payload.tag || 'swiftdu-update',
-    data: { url: notificationTarget(payload.url, payload.tag) },
+    renotify: true,
+    data: {
+      url: notificationTarget(payload.url, payload.tag),
+      orderId: payload.orderId,
+    },
+    vibrate: Array.isArray(payload.vibrate) && payload.vibrate.length > 0 ? payload.vibrate : [200, 100, 200],
   }
   return self.registration.showNotification(payload.title || 'SwiftDU', options)
 }
@@ -155,8 +167,18 @@ self.addEventListener('push', (event) => {
   try {
     const data: unknown = event.data?.json()
     if (data && typeof data === 'object') {
-      // Ignore non-string fields rather than dropping the notification.
-      payload = Object.fromEntries(Object.entries(data).filter(([, value]) => typeof value === 'string'))
+      const candidate = data as Record<string, unknown>
+      payload = {
+        title: typeof candidate.title === 'string' ? candidate.title : undefined,
+        body: typeof candidate.body === 'string' ? candidate.body : undefined,
+        icon: typeof candidate.icon === 'string' ? candidate.icon : undefined,
+        badge: typeof candidate.badge === 'string' ? candidate.badge : undefined,
+        image: typeof candidate.image === 'string' ? candidate.image : undefined,
+        tag: typeof candidate.tag === 'string' ? candidate.tag : undefined,
+        url: typeof candidate.url === 'string' ? candidate.url : undefined,
+        orderId: typeof candidate.orderId === 'string' ? candidate.orderId : undefined,
+        vibrate: Array.isArray(candidate.vibrate) ? (candidate.vibrate as number[]) : undefined,
+      }
     }
   } catch { /* A malformed push still gets a visible default notification. */ }
   event.waitUntil(showSwiftDUNotification(payload))
@@ -175,7 +197,26 @@ self.addEventListener('notificationclick', (event) => {
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
     const exact = windows.find((client) => client.url === target)
-    if (exact) { await exact.focus(); return }
+    if (exact && 'focus' in exact) {
+      await exact.focus()
+      return
+    }
+
+    // Reuse existing matching application window if one is open on the same origin
+    const matchingOrigin = windows.find((client) => {
+      try {
+        return new URL(client.url).origin === self.location.origin
+      } catch {
+        return false
+      }
+    })
+
+    if (matchingOrigin && 'navigate' in matchingOrigin && 'focus' in matchingOrigin) {
+      await matchingOrigin.navigate(target)
+      await matchingOrigin.focus()
+      return
+    }
+
     await self.clients.openWindow(target)
   })())
 })

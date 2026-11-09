@@ -222,6 +222,9 @@ export async function POST(
         ).toLocaleString()}`,
         url: `/tasker-dashboard/${retriedOrder._id.toString()}?preview=true`,
         tag: `new-task-${retriedOrder._id.toString()}`,
+        orderId: retriedOrder._id.toString(),
+        urgency: 'high',
+        category: 'new_order',
       });
 
       if (

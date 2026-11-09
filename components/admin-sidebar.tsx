@@ -18,6 +18,7 @@ import {
   Store,
   Truck,
   RadioTower,
+  MessageSquareQuote,
   Users,
   X,
 } from 'lucide-react'
@@ -64,6 +65,12 @@ const adminNavigation = [
     href: '/admin/operations',
     icon: SlidersHorizontal,
     description: 'Hours, periods & finances',
+  },
+  {
+    label: 'Message Templates',
+    href: '/admin/message-templates',
+    icon: MessageSquareQuote,
+    description: 'Customer WhatsApp templates',
   },
   {
     label: 'Giveaway',

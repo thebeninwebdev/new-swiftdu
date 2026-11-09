@@ -118,6 +118,7 @@ export function createOrderApiServer() {
 
   return {
     server,
+    scheduleBackground,
     drainBackgroundWork,
   }
 }
@@ -140,10 +141,22 @@ export async function startOrderApiServer(port = Number(process.env.PORT || 1000
     })
   })
 
+  // Start periodic unaccepted order escalation processor
+  const { processDueOrderEscalations } = await import('@/lib/orders/order-escalation')
+  const escalationInterval = setInterval(() => {
+    service.scheduleBackground(
+      processDueOrderEscalations().catch((error) => {
+        console.error('[Order API] escalation processing error', safeErrorFields(error))
+      })
+    )
+  }, 20_000)
+  escalationInterval.unref?.()
+
   console.info('[Order API] listening', { port })
   return {
     server: service.server,
     async close() {
+      clearInterval(escalationInterval)
       await new Promise<void>((resolve, reject) => {
         service.server.close((error) => error ? reject(error) : resolve())
         service.server.closeIdleConnections()

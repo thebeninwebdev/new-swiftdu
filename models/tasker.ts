@@ -24,6 +24,8 @@ export interface ITasker extends Document {
   workMutationExpiresAt?: Date;
   isRejected?: boolean;
   taskerMode?: "training" | "live";
+  orderAlertsEnabled?: boolean;
+  whatsappAppPreference?: 'whatsapp' | 'whatsapp_business' | 'ask_every_time';
   onboardingTokenHash?: string;
   onboardingTokenExpiresAt?: Date;
   onboardingEmailSentAt?: Date;
@@ -144,6 +146,18 @@ const TaskerSchema = new Schema<ITasker>(
       type: String,
       enum: ["training", "live"],
       index: true,
+    },
+
+    orderAlertsEnabled: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    whatsappAppPreference: {
+      type: String,
+      enum: ['whatsapp', 'whatsapp_business', 'ask_every_time'],
+      default: 'ask_every_time',
     },
 
     onboardingTokenHash: {

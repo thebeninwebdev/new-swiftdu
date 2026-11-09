@@ -2,6 +2,7 @@
 import { PaymentReviewActions } from '@/components/tasker/PaymentReviewActions'
 import { FirstOrderBonusNotice } from '@/components/first-order-bonus'
 import { CafeInquiryPanel } from '@/components/cafe-inquiry'
+import { MessageCustomerSheet } from '@/components/tasker/MessageCustomerSheet'
 import type { CafeInquiryFields } from '@/lib/cafe-inquiry'
 
 import { captureDeliveryPosition } from '@/lib/delivery-coordinates'
@@ -262,6 +263,7 @@ function ErrandDetailPageContent() {
   const [nowMs, setNowMs] = useState(() => Date.now())
   const [showConfirmModal, setShowConfirmModal] = useState<'complete' | 'cancel' | null>(null)
   const [showReportConfirmation, setShowReportConfirmation] = useState(false)
+  const [messageSheetOpen, setMessageSheetOpen] = useState(false)
 
   const previousSnapshotRef = useRef<{
     status: ErrandDetail['status']
@@ -820,10 +822,15 @@ function ErrandDetailPageContent() {
                     <a aria-label="Call customer" href={`tel:${userInfo.phone}`} className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-white">
                       <Phone className="h-5 w-5" />
                     </a>
-                    {whatsappLink && (
-                      <a aria-label="Message customer on WhatsApp" href={whatsappLink} target="_blank" rel="noreferrer" className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white">
+                    {userInfo?.phone && (
+                      <button
+                        type="button"
+                        aria-label="Message customer on WhatsApp"
+                        onClick={() => setMessageSheetOpen(true)}
+                        className="flex h-11 w-11 items-center justify-center rounded-full bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
+                      >
                         <MessageCircle className="h-5 w-5" />
-                      </a>
+                      </button>
                     )}
                   </div>
                 </section>
@@ -835,6 +842,7 @@ function ErrandDetailPageContent() {
                     order={errand}
                     tasker
                     whatsappHref={whatsappLink}
+                    onMessageCustomer={() => setMessageSheetOpen(true)}
                     onUpdated={() => {
                       void loadErrand(false)
                     }}
@@ -992,6 +1000,7 @@ function ErrandDetailPageContent() {
             order={errand}
             tasker
             whatsappHref={whatsappLink}
+            onMessageCustomer={() => setMessageSheetOpen(true)}
             onUpdated={() => {
               void loadErrand(false)
             }}
@@ -1051,11 +1060,15 @@ function ErrandDetailPageContent() {
             {/* WhatsApp Chat Button */}
             {errand.taskerId &&
               isActive &&
-              (whatsappLink ? (
-                <a href={whatsappLink} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98]">
+              (userInfo?.phone ? (
+                <button
+                  type="button"
+                  onClick={() => setMessageSheetOpen(true)}
+                  className="flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white font-bold shadow-lg shadow-emerald-500/20 transition-all active:scale-[0.98]"
+                >
                   <MessageCircle className="h-5 w-5" />
-                  Chat with Customer on WhatsApp
-                </a>
+                  Message Customer
+                </button>
               ) : (
                 <div className="flex items-center justify-center gap-2 w-full h-12 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-400 font-bold">Customer WhatsApp contact is unavailable</div>
               ))}
@@ -1125,11 +1138,15 @@ function ErrandDetailPageContent() {
                 <Phone className="h-4 w-4" />
                 Call
               </a>
-              {whatsappLink ? (
-                <a href={whatsappLink} target="_blank" rel="noreferrer" className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-bold text-white">
+              {userInfo?.phone ? (
+                <button
+                  type="button"
+                  onClick={() => setMessageSheetOpen(true)}
+                  className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-500 text-sm font-bold text-white hover:bg-emerald-600 transition-colors"
+                >
                   <MessageCircle className="h-4 w-4" />
-                  WhatsApp
-                </a>
+                  Message Customer
+                </button>
               ) : (
                 <p className="flex items-center justify-center text-sm text-slate-500">WhatsApp unavailable</p>
               )}
@@ -1304,6 +1321,15 @@ function ErrandDetailPageContent() {
           </div>
         </div>
       )}
+
+      {/* ─── Premium Message Customer Bottom Sheet ─── */}
+      <MessageCustomerSheet
+        orderId={errand._id}
+        isOpen={messageSheetOpen}
+        onClose={() => setMessageSheetOpen(false)}
+        initialPhone={userInfo?.phone}
+        initialCustomerName={userInfo?.name}
+      />
     </div>
   )
 }

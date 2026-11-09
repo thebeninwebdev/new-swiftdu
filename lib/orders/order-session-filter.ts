@@ -1,4 +1,4 @@
-import type { QueryFilter } from 'mongoose'
+import { Types, type QueryFilter } from 'mongoose'
 
 import type { IOrder } from '@/models/order'
 
@@ -11,9 +11,14 @@ export type OrderSessionWindow = {
 export function buildCurrentSessionOrderFilter(
   session: OrderSessionWindow
 ): QueryFilter<IOrder> {
+  const sessionObjectId = Types.ObjectId.isValid(session.id) ? new Types.ObjectId(session.id) : null
+  const sessionMatch = sessionObjectId
+    ? { sessionId: { $in: [session.id, sessionObjectId] } }
+    : { sessionId: session.id }
+
   return {
     $or: [
-      { sessionId: session.id },
+      sessionMatch,
       {
         $and: [
           { $or: [{ sessionId: { $exists: false } }, { sessionId: null }] },

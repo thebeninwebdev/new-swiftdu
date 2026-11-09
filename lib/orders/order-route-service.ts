@@ -47,7 +47,12 @@ import { persistThenScheduleOrderCreation, type OrderCreationBackgroundJob } fro
 import type { BackgroundScheduler } from '@/lib/order-creation-background';
 import { validateOrderAgainstCommercePolicy } from '@/lib/commerce-policy';
 import { applyCurrentSessionOrderScope, getActiveAcademicSession, NoActiveOrderSessionError, serializeOrderSession } from '@/lib/orders/order-session-scope';
-import { CUSTOMER_ORDER_CARD_FIELDS, parseOrderPagination } from '@/lib/orders/order-list-fields';
+import {
+  CUSTOMER_ACTIVE_ORDER_FIELDS,
+  CUSTOMER_ORDER_CARD_FIELDS,
+  ORDER_NOTIFICATION_SUMMARY_FIELDS,
+  parseOrderPagination,
+} from '@/lib/orders/order-list-fields';
 import { buildCafeInquiryDescription } from '@/lib/cafe-inquiry';
 
 const ALLOWED_CUSTOMER_TASK_TYPES = new Set(['restaurant', 'printing', 'shopping', 'water', INDOMIE_TASK_TYPE]);
@@ -748,6 +753,9 @@ export async function createOrderResponse(request: NextRequest, channel?: OrderC
                     : `${formatPushTaskType(normalizedTaskType)} in ${location} - NGN ${totalAmount.toLocaleString()}`,
                   url: `/tasker-dashboard/${persistedOrder._id.toString()}?preview=true`,
                   tag: `new-task-${persistedOrder._id.toString()}`,
+                  orderId: persistedOrder._id.toString(),
+                  urgency: 'high',
+                  category: 'new_order',
                 })
 
                 if (result.skipped || result.deliveredCount + (result.expiredCount || 0) < result.recipientCount) {
@@ -855,6 +863,7 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams;
     const currentOnly = searchParams.get('current') === 'true';
+    const summary = searchParams.get('summary') === 'true';
     const needsReview = searchParams.get('needsReview') === 'true';
     const taskTypeUsage = searchParams.get('taskTypeUsage') === 'true';
     const paginated = searchParams.get('paginated') === 'true';
@@ -926,12 +935,26 @@ export async function GET(request: NextRequest) {
     }
 
     if (currentOnly) {
-      const order = await Order.findOne(query).sort({
-        createdAt: -1,
-      });
+      const order = await Order.findOne(query)
+        .select(CUSTOMER_ACTIVE_ORDER_FIELDS)
+        .sort({
+          createdAt: -1,
+        });
       if (order && ensureCompletionTimer(order)) {
         await order.save();
         emitOrderUpdated(order);
+      }
+      if (!order) return NextResponse.json(null);
+      if (summary) {
+        return NextResponse.json({
+          _id: order._id,
+          taskType: order.taskType,
+          status: order.status,
+          isDeclinedTask: order.isDeclinedTask,
+          taskerId: order.taskerId,
+          hasPaid: order.hasPaid,
+          createdAt: order.createdAt,
+        });
       }
       return NextResponse.json(order);
     }
@@ -940,8 +963,12 @@ export async function GET(request: NextRequest) {
       query = { $and: [query, { status: 'completed' }] };
     }
 
+    const selectFields = summary
+      ? (needsReview ? '_id' : ORDER_NOTIFICATION_SUMMARY_FIELDS)
+      : CUSTOMER_ORDER_CARD_FIELDS;
+
     let ordersQuery = Order.find(query)
-      .select(CUSTOMER_ORDER_CARD_FIELDS)
+      .select(selectFields)
       .sort({
       createdAt: -1,
     });
@@ -975,10 +1002,15 @@ export async function GET(request: NextRequest) {
       orders = orders.filter(
         (order) => !reviewedOrderIds.has(order._id.toString())
       );
+      if (summary) {
+        return NextResponse.json(orders.map(order => ({ _id: order._id })));
+      }
     }
 
     if (paginated) {
-      const totalItems = await Order.countDocuments(query);
+      const totalItems = (skip === 0 && orders.length < limit)
+        ? orders.length
+        : await Order.countDocuments(query);
       const payload = {
         orders,
         pagination: {

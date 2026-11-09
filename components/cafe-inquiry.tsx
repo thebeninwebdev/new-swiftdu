@@ -30,7 +30,7 @@ export function CafeInquiryReview({ cafe, location, serviceFee, discounted }: { 
 }
 
 type CafeOrder = CafeInquiryFields & { _id: string; store?: string; status: string; hasPaid?: boolean }
-export function CafeInquiryPanel({ order, tasker = false, onUpdated, whatsappHref, onOpenPayment }: { order: CafeOrder; tasker?: boolean; onUpdated: () => void; whatsappHref?: string | null; onOpenPayment?: () => void }) {
+export function CafeInquiryPanel({ order, tasker = false, onUpdated, whatsappHref, onOpenPayment, onMessageCustomer }: { order: CafeOrder; tasker?: boolean; onUpdated: () => void; whatsappHref?: string | null; onOpenPayment?: () => void; onMessageCustomer?: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const state = order.cafeInquiryStatus
@@ -58,7 +58,7 @@ export function CafeInquiryPanel({ order, tasker = false, onUpdated, whatsappHre
     <OrderMascot mood={error ? 'error' : order.status === 'cancelled' ? 'warning' : order.status === 'completed' ? 'success' : atCafe ? 'matched' : 'searching'} message={message} size="sm" />
     {active && tasker && state === 'tasker_assigned' && <button className={button} disabled={busy} onClick={() => void markArrival()}>I&apos;m at the cafe</button>}
     {active && atCafe && <p className="text-sm">{tasker ? 'Customer notified. Continue the cafe inquiry with the customer on WhatsApp.' : `Your Tasker is at ${getCafeLabel(order.store)}. They’re checking what’s available. Continue the conversation with them on WhatsApp.`}</p>}
-    {active && atCafe && (whatsappHref ? <a href={whatsappHref} target="_blank" rel="noreferrer" className={`inline-block ${button}`}>{tasker ? 'Chat with Customer on WhatsApp' : 'Chat with Tasker on WhatsApp'}</a> : <p className="text-sm text-slate-600">WhatsApp contact is not available yet.</p>)}
+    {active && atCafe && (onMessageCustomer && tasker ? <button type="button" onClick={onMessageCustomer} className={`inline-block ${button}`}>Chat with Customer on WhatsApp</button> : whatsappHref ? <a href={whatsappHref} target="_blank" rel="noreferrer" className={`inline-block ${button}`}>{tasker ? 'Chat with Customer on WhatsApp' : 'Chat with Tasker on WhatsApp'}</a> : <p className="text-sm text-slate-600">WhatsApp contact is not available yet.</p>)}
     {active && atCafe && !tasker && !order.hasPaid && <div className="space-y-2"><p className="text-sm">The inquiry service charge is ready for transfer. Food purchases are arranged separately with your Tasker.</p>{onOpenPayment && <button className={button} onClick={onOpenPayment}>Pay inquiry charge</button>}</div>}
     {active && atCafe && tasker && !order.hasPaid && <p className="text-sm">Complete inquiry becomes available after the customer confirms the inquiry service charge.</p>}
     {error && <p role="alert" className="text-sm text-red-700">{error}</p>}

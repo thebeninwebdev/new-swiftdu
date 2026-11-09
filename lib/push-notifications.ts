@@ -1,3 +1,4 @@
+import { Types } from 'mongoose'
 import { User } from '@/models/user'
 import type { TaskerGenderRestriction } from '@/lib/delivery-policy'
 import webpush, {
@@ -13,21 +14,29 @@ import {
 } from '@/lib/tasker-push-subscriptions'
 import { PushSubscription } from '@/models/push-subscription'
 import Tasker from '@/models/tasker'
-import { TaskerWorkSession } from '@/models/tasker-work-session'
+import { Order } from '@/models/order'
 
-type PushAudience =
+export type PushAudience =
   | { userIds: string[] }
-  | { roles: Array<'user' | 'admin' | 'tasker'>; taskerGenderRestriction?: TaskerGenderRestriction | null; taskerMode?: 'training' | 'live' }
+  | {
+      roles: Array<'user' | 'admin' | 'tasker'>
+      taskerGenderRestriction?: TaskerGenderRestriction | null
+      taskerMode?: 'training' | 'live'
+    }
 
-interface SendPushNotificationInput {
+export interface SendPushNotificationInput {
   audience: PushAudience
   title: string
   body: string
   url: string
   tag?: string
+  orderId?: string
+  urgency?: 'very-low' | 'low' | 'normal' | 'high'
+  ttl?: number
+  category?: 'new_order' | 'escalation_reminder' | 'indomie_batch' | 'admin_test' | 'general'
 }
 
-interface SendPushNotificationResult {
+export interface SendPushNotificationResult {
   recipientCount: number
   deliveredCount: number
   expiredCount?: number
@@ -59,6 +68,11 @@ interface PushPayloadInput {
   body: string
   url: string
   tag?: string
+  orderId?: string
+  icon?: string
+  badge?: string
+  image?: string
+  vibrate?: number[]
 }
 
 interface SendToSubscriptionsOptions {
@@ -165,23 +179,56 @@ function createPushPayload(input: PushPayloadInput) {
     body: input.body,
     url: normalizeUrl(input.url),
     tag: input.tag,
+    orderId: input.orderId,
+    icon: input.icon || '/pwa-512x512.png?v=swiftdu-symbol-v1',
+    badge: input.badge || '/pwa-192x192.png?v=swiftdu-symbol-v1',
+    image: input.image || '/logo.png?v=swiftdu-symbol-v1',
+    vibrate: input.vibrate || [200, 100, 200],
   })
 }
 
-async function getApprovedTaskerUserIds(taskerMode?: 'training' | 'live') {
-  const checkedInIds = await TaskerWorkSession.distinct('taskerId', { open: true })
+/**
+ * Retrieve user IDs of approved taskers who are eligible to receive order alerts.
+ * Criteria:
+ * 1. Verified and not rejected
+ * 2. Not settlement suspended
+ * 3. Opted in to order alerts (orderAlertsEnabled === true)
+ * 4. Linked to a user account
+ * 5. Matching taskerMode ('training' or 'live')
+ * 6. Not currently busy on an active errand (one-active-errand-per-tasker rule)
+ * Note: An active work session is NOT required to receive alerts.
+ */
+export async function getApprovedTaskerUserIds(taskerMode?: 'training' | 'live') {
+  // Query taskers with active errands to respect the one-active-errand-per-tasker rule
+  const busyTaskerIds = await Order.distinct('taskerId', {
+    status: { $in: ['in_progress', 'paid'] },
+    taskerId: { $exists: true, $nin: [null, ''] },
+  })
+
+  const busyObjectIds = busyTaskerIds
+    .filter((id): id is string => typeof id === 'string' && Types.ObjectId.isValid(id))
+    .map((id) => new Types.ObjectId(id))
+
+  const modeFilter =
+    taskerMode === 'training'
+      ? { taskerMode: 'training' }
+      : taskerMode === 'live'
+        ? { $or: [{ taskerMode: 'live' }, { taskerMode: { $exists: false } }, { taskerMode: null }] }
+        : {}
+
   const taskers = await Tasker.find({
-    _id: { $in: checkedInIds },
-    isSettlementSuspended: { $ne: true },
     isVerified: true,
     isRejected: { $ne: true },
+    isSettlementSuspended: { $ne: true },
+    orderAlertsEnabled: true,
     userId: { $exists: true, $ne: null },
-    ...(taskerMode ? { taskerMode } : {}),
+    ...(busyObjectIds.length > 0 ? { _id: { $nin: busyObjectIds } } : {}),
+    ...modeFilter,
   })
     .select('userId')
     .lean<Array<{ userId: { toString(): string } }>>()
 
-  return taskers.flatMap((tasker) => tasker.userId ? [tasker.userId.toString()] : [])
+  return taskers.flatMap((tasker) => (tasker.userId ? [tasker.userId.toString()] : []))
 }
 
 async function getSubscriptionsForAudience(audience: PushAudience) {
@@ -192,8 +239,10 @@ async function getSubscriptionsForAudience(audience: PushAudience) {
     if ('roles' in audience && audience.taskerGenderRestriction !== undefined) {
       if (!audience.taskerGenderRestriction) return []
       if (audience.taskerGenderRestriction !== 'any') {
-        const eligible = await User.find({ _id: { $in: userIds }, gender: audience.taskerGenderRestriction }).select('_id').lean()
-        userIds = eligible.map(user => String(user._id))
+        const eligible = await User.find({ _id: { $in: userIds }, gender: audience.taskerGenderRestriction })
+          .select('_id')
+          .lean()
+        userIds = eligible.map((user) => String(user._id))
       }
     }
   } else if (isUserIdAudience(audience)) {
@@ -219,7 +268,8 @@ async function removeExpiredSubscription(endpoint: string) {
 async function sendOneWebPush(
   subscription: StoredPushSubscription,
   payload: string,
-  options?: SendToSubscriptionsOptions
+  options?: SendToSubscriptionsOptions,
+  requestOptions?: webpush.RequestOptions
 ): Promise<SendOneWebPushResult> {
   const webPushSubscription: WebPushSubscription = toWebPushSubscription(subscription)
   const endpointHost = getEndpointHost(subscription.endpoint)
@@ -234,7 +284,8 @@ async function sendOneWebPush(
 
     const result: SendResult = await webpush.sendNotification(
       webPushSubscription,
-      payload
+      payload,
+      requestOptions
     )
 
     console.info(`${options?.logPrefix || '[SwiftDU Push]'} push sent successfully`, {
@@ -286,11 +337,34 @@ async function sendOneWebPush(
 
 async function sendPushPayloadToSubscriptions(
   subscriptions: StoredPushSubscription[],
-  payloadInput: PushPayloadInput,
+  payloadInput: SendPushNotificationInput,
   options: SendToSubscriptionsOptions
 ): Promise<SendPushNotificationResult> {
-  console.info(`${options.logPrefix} subscriptions fetched`, {
-    count: subscriptions.length,
+  const category =
+    payloadInput.category ||
+    (payloadInput.tag?.startsWith('new-task-')
+      ? 'new_order'
+      : payloadInput.tag?.startsWith('order-reminder-')
+        ? 'escalation_reminder'
+        : payloadInput.tag?.startsWith('indomie-batch-')
+          ? 'indomie_batch'
+          : 'general')
+
+  const urgency =
+    payloadInput.urgency ||
+    (category === 'new_order' || category === 'escalation_reminder' || category === 'indomie_batch'
+      ? 'high'
+      : 'normal')
+
+  const ttl = payloadInput.ttl ?? (urgency === 'high' ? 300 : undefined)
+
+  console.info(`${options.logPrefix} dispatching`, {
+    category,
+    orderId: payloadInput.orderId,
+    tag: payloadInput.tag,
+    subscriptionCount: subscriptions.length,
+    urgency,
+    ttl,
   })
 
   if (subscriptions.length === 0) {
@@ -303,10 +377,14 @@ async function sendPushPayloadToSubscriptions(
   }
 
   const payload = createPushPayload(payloadInput)
+  const requestOptions: webpush.RequestOptions = {
+    urgency,
+    TTL: ttl,
+  }
 
   const results = await Promise.all(
     subscriptions.map((subscription) =>
-      sendOneWebPush(subscription, payload, options)
+      sendOneWebPush(subscription, payload, options, requestOptions)
     )
   )
 
@@ -320,6 +398,17 @@ async function sendPushPayloadToSubscriptions(
         .filter((reason): reason is string => Boolean(reason))
     )
   )
+
+  console.info(`${options.logPrefix} dispatch summary`, {
+    category,
+    orderId: payloadInput.orderId,
+    tag: payloadInput.tag,
+    recipientCount: subscriptions.length,
+    deliveredCount,
+    expiredCount,
+    skipped: false,
+    failures: failureReasons.length ? failureReasons : undefined,
+  })
 
   return {
     recipientCount: subscriptions.length,
@@ -367,27 +456,38 @@ export async function sendTestPushToUser(userId: string) {
     body: 'Your tasker push notifications are connected.',
     url: '/tasker-dashboard',
     tag: `push-test-${Date.now()}`,
+    category: 'admin_test',
+    urgency: 'high',
   })
 }
 
-export async function sendTaskerTestPush() {
+export async function sendTaskerTestPush(targetUserId?: string) {
+  if (targetUserId) {
+    return sendTestPushToUser(targetUserId)
+  }
+
   const skippedResult = await preparePushSend()
 
   if (skippedResult) {
     return skippedResult
   }
 
+  // If no target provided, safely check for subscriptions without broadcasting to unverified users
   const subscriptions = await PushSubscription.find({ role: 'tasker' })
+    .limit(1)
     .select('userId endpoint expirationTime keys')
     .lean<StoredPushSubscription[]>()
 
   return sendPushPayloadToSubscriptions(
     subscriptions,
     {
+      audience: { roles: ['tasker'] },
       title: 'Swift DU Test',
       body: 'This is a test push notification.',
       url: '/tasker-dashboard',
       tag: `swiftdu-test-${Date.now()}`,
+      category: 'admin_test',
+      urgency: 'normal',
     },
     {
       logPrefix: '[SwiftDU Push Test]',

@@ -58,6 +58,8 @@ export interface IOrder extends Document, CafeInquiryFields {
   batchStatus?: 'booked' | 'waiting' | 'assigned' | 'dispatched' | 'at_vendor' | 'on_the_way' | 'completed' | 'cancelled';
   batchingStatus?: 'waiting' | 'batched' | 'released_single';
   taskerSearchStartedAt?: Date;
+  escalationReminderSentAt?: Date;
+  escalationAdminAlertSentAt?: Date;
   deliveryCoordinates?: { latitude: number; longitude: number; accuracy?: number; capturedAt: Date };
   taskerGenderRestriction?: TaskerGenderRestriction;
   deliveryLocation?: string;
@@ -286,6 +288,8 @@ const orderSchema = new Schema<IOrder>(
     batchStatus: { type: String, enum: ['booked', 'waiting', 'assigned', 'dispatched', 'at_vendor', 'on_the_way', 'completed', 'cancelled'], index: true },
     batchingStatus: { type: String, enum: ['waiting', 'batched', 'released_single'], index: true },
     taskerSearchStartedAt: { type: Date, index: true },
+    escalationReminderSentAt: { type: Date, index: true },
+    escalationAdminAlertSentAt: { type: Date, index: true },
     deliveryCoordinates: {
       type: new Schema({
         latitude: { type: Number, required: true, min: -90, max: 90 },
@@ -565,6 +569,9 @@ orderSchema.index({ userId: 1, sessionId: 1, isTestOrder: 1 });
 orderSchema.index({ userId: 1, sessionId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ taskerId: 1, status: 1, createdAt: -1 });
 orderSchema.index({ taskerId: 1, sessionId: 1, status: 1, acceptedAt: -1 });
+orderSchema.index({ taskerId: 1, sessionId: 1, acceptedAt: -1 });
+orderSchema.index({ userId: 1, createdAt: -1 });
+orderSchema.index({ userId: 1, sessionId: 1, createdAt: -1 });
 orderSchema.index({ taskType: 1, status: 1, createdAt: -1 });
 orderSchema.index({ isTestOrder: 1, status: 1, createdAt: -1 });
 orderSchema.index({ sessionId: 1, isTestOrder: 1, status: 1, createdAt: -1 });

@@ -154,6 +154,8 @@ export async function POST(
         body: `${formatPushTaskType(order.taskType)} task in ${order.location} is ready to verify.`,
         url: `/tasker-dashboard/${order._id.toString()}`,
         tag: `order-paid-${order._id.toString()}`,
+        orderId: order._id.toString(),
+        urgency: 'high',
       })
 
       if (

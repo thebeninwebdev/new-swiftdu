@@ -126,8 +126,8 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
     async function fetchNotifications() {
       try {
         const [activeRes, reviewsRes] = await Promise.all([
-          fetch('/api/orders?status=pending,in_progress,paid&limit=12'),
-          fetch('/api/orders?status=completed&needsReview=true&limit=12'),
+          fetch('/api/orders?status=pending,in_progress,paid&summary=true&limit=6'),
+          fetch('/api/orders?status=completed&needsReview=true&summary=true&limit=6'),
         ])
 
         const activeOrders: DashboardOrder[] = activeRes.ok

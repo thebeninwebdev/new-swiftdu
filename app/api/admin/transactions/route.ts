@@ -61,45 +61,53 @@ export async function GET(request: NextRequest) {
     const nonTestQuery = excludeTestOrders({ ...query, ...periodMatch });
 
     const orders = await Order.find(nonTestQuery)
+      .select('_id totalAmount commission taskerFee serviceFeeDiscountApplied discountCommissionAmount platformFee description taskType userId taskerId taskerName createdAt status')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(limit)
       .lean();
 
-    // Fetch user and tasker details and enrich orders
-    const transactions = await Promise.all(
-      orders.map(async (order: TransactionOrder) => {
-        const user = await User.findById(order.userId).select('name email').lean();
-        const tasker = order.taskerId ? await Tasker.findById(order.taskerId).select('name email').lean() : null;
-        const effectivePlatformFee = getEffectivePlatformFee(order);
+    // Batch-fetch user and tasker details to eliminate N+1 queries
+    const userIds = [...new Set(orders.map((o: TransactionOrder) => o.userId).filter(Boolean))];
+    const taskerIds = [...new Set(orders.map((o: TransactionOrder) => o.taskerId).filter(Boolean))];
+    const [users, taskers] = await Promise.all([
+      userIds.length ? User.find({ _id: { $in: userIds } }).select('_id name email').lean() : [],
+      taskerIds.length ? Tasker.find({ _id: { $in: taskerIds } }).select('_id name email').lean() : [],
+    ]);
+    const userMap = new Map(users.map((u: { _id: unknown; name?: string; email?: string }) => [String(u._id), u]));
+    const taskerMap = new Map(taskers.map((t: { _id: unknown; name?: string; email?: string }) => [String(t._id), t]));
 
-        return {
-          _id: order._id,
-          type: 'order_payment' as const,
-          amount: order.totalAmount,
-          commission: order.commission,
-          platformFee: effectivePlatformFee,
-          paystackSettlementFee: calculatePaystackSettlementFee(effectivePlatformFee),
-          netPlatformProfit: calculateNetPlatformProfit(effectivePlatformFee),
-          taskerFee: order.taskerFee,
-          description: order.description,
-          taskType: order.taskType,
-          userId: order.userId,
-          userName: user?.name || 'Unknown',
-          userEmail: user?.email || 'Unknown',
-          taskerId: order.taskerId,
-          taskerName: tasker?.name || order.taskerName || 'Unassigned',
-          taskerEmail: tasker?.email || '',
-          orderId: order._id,
-          timestamp: order.createdAt,
-          status: order.status,
-        };
-      })
-    );
+    const transactions = orders.map((order: TransactionOrder) => {
+      const user = userMap.get(String(order.userId));
+      const tasker = order.taskerId ? taskerMap.get(String(order.taskerId)) : null;
+      const effectivePlatformFee = getEffectivePlatformFee(order);
+
+      return {
+        _id: order._id,
+        type: 'order_payment' as const,
+        amount: order.totalAmount,
+        commission: order.commission,
+        platformFee: effectivePlatformFee,
+        paystackSettlementFee: calculatePaystackSettlementFee(effectivePlatformFee),
+        netPlatformProfit: calculateNetPlatformProfit(effectivePlatformFee),
+        taskerFee: order.taskerFee,
+        description: order.description,
+        taskType: order.taskType,
+        userId: order.userId,
+        userName: user?.name || 'Unknown',
+        userEmail: user?.email || 'Unknown',
+        taskerId: order.taskerId,
+        taskerName: tasker?.name || order.taskerName || 'Unassigned',
+        taskerEmail: tasker?.email || '',
+        orderId: order._id,
+        timestamp: order.createdAt,
+        status: order.status,
+      };
+    });
 
     // Calculate stats
     const [financeOrders, totalOrdersForQuery] = await Promise.all([
-      Order.find(excludeCancelledOrders(periodMatch)).lean(),
+      Order.find(excludeCancelledOrders(periodMatch)).select('totalAmount taskerFee platformFee serviceFeeDiscountApplied discountCommissionAmount').lean(),
       Order.countDocuments(nonTestQuery),
     ]);
     const totalVolume = financeOrders.reduce((sum, order: TransactionOrder) => sum + (order.totalAmount || 0), 0);

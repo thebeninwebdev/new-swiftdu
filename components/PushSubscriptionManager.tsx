@@ -5,6 +5,9 @@ import { Bell, X } from 'lucide-react'
 
 import { authClient } from '@/lib/auth-client'
 
+const DISMISSAL_KEY = 'swiftdu_push_prompt_dismissed_at'
+const DISMISSAL_DURATION_MS = 3 * 24 * 60 * 60 * 1000 // 3 days
+
 function urlBase64ToUint8Array(base64String: string) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4)
   const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/')
@@ -34,20 +37,24 @@ function arrayBufferEquals(left: ArrayBuffer | null, right: Uint8Array) {
   return true
 }
 
-async function getVapidPublicKey() {
-  const response = await fetch('/api/push/public-key', {
-    cache: 'no-store',
-  })
+export async function getVapidPublicKey() {
+  try {
+    const response = await fetch('/api/push/public-key', {
+      cache: 'no-store',
+    })
 
-  if (!response.ok) {
+    if (!response.ok) {
+      return null
+    }
+
+    const payload = (await response.json()) as { publicKey?: string }
+    return payload.publicKey || null
+  } catch {
     return null
   }
-
-  const payload = (await response.json()) as { publicKey?: string }
-  return payload.publicKey || null
 }
 
-async function getReadyServiceWorkerRegistration() {
+export async function getReadyServiceWorkerRegistration() {
   const expectedWorkerPath = '/sw.js'
   const expectedWorkerUrl = new URL(expectedWorkerPath, window.location.origin).href
   let existingRegistration = await navigator.serviceWorker.getRegistration()
@@ -87,7 +94,7 @@ async function getReadyServiceWorkerRegistration() {
   }
 
   if (existingRegistration) {
-    await existingRegistration.update()
+    await existingRegistration.update().catch(() => {})
   }
 
   const readyRegistration = await Promise.race([
@@ -107,13 +114,89 @@ async function getReadyServiceWorkerRegistration() {
   return readyRegistration
 }
 
+/**
+ * Synchronize or renew current browser push subscription with SwiftDU backend.
+ */
+export async function syncPushSubscriptionWithBackend(requestPermission = false): Promise<boolean> {
+  if (
+    typeof window === 'undefined' ||
+    !('serviceWorker' in navigator) ||
+    !('PushManager' in window) ||
+    !('Notification' in window)
+  ) {
+    return false
+  }
+
+  try {
+    const publicKey = await getVapidPublicKey()
+    if (!publicKey) {
+      console.warn('[SwiftDU Push] VAPID public key unavailable')
+      return false
+    }
+
+    let permission = Notification.permission
+    if (permission === 'default' && requestPermission) {
+      permission = await Notification.requestPermission()
+    }
+
+    if (permission !== 'granted') {
+      return false
+    }
+
+    const registration = await getReadyServiceWorkerRegistration()
+    const applicationServerKey = urlBase64ToUint8Array(publicKey)
+    let existingSubscription = await registration.pushManager.getSubscription()
+
+    // If subscription exists but key is different or near expiration, renew
+    if (
+      existingSubscription &&
+      !arrayBufferEquals(
+        existingSubscription.options.applicationServerKey,
+        applicationServerKey
+      )
+    ) {
+      await existingSubscription.unsubscribe().catch(() => {})
+      existingSubscription = null
+    }
+
+    const subscription =
+      existingSubscription &&
+      arrayBufferEquals(
+        existingSubscription.options.applicationServerKey,
+        applicationServerKey
+      )
+        ? existingSubscription
+        : await registration.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey,
+          })
+
+    // Synchronize with backend (restoring missing backend record if deleted or renewing)
+    const response = await fetch('/api/push/save-subscription', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(subscription),
+    })
+
+    if (!response.ok) {
+      throw new Error(`Failed to save push subscription: ${response.status}`)
+    }
+
+    console.info('[SwiftDU Push] subscription synchronized with backend')
+    return true
+  } catch (error) {
+    console.warn('[SwiftDU Push Sync Error]:', error)
+    return false
+  }
+}
+
 export function PushSubscriptionManager() {
   const { data: session, isPending } = authClient.useSession()
   const [showPrompt, setShowPrompt] = useState(false)
   const [isEnabling, setIsEnabling] = useState(false)
 
-  const subscribeToPush = useCallback(async (requestPermission: boolean) => {
-    if (process.env.NODE_ENV !== 'production') return
+  const checkAndSync = useCallback(async () => {
+    if (isPending || !session?.user?.id) return
     if (
       !('serviceWorker' in navigator) ||
       !('PushManager' in window) ||
@@ -122,117 +205,66 @@ export function PushSubscriptionManager() {
       return
     }
 
-    try {
-      const publicKey = await getVapidPublicKey()
+    const permission = Notification.permission
 
-      if (!publicKey) {
-        console.warn('[SwiftDU Push] VAPID public key unavailable')
-        return
-      }
-
-      let permission = Notification.permission
-
-      if (permission === 'default' && requestPermission) {
-        permission = await Notification.requestPermission()
-      }
-
-      console.info('[SwiftDU Push] notification permission', { permission })
-
-      if (permission === 'default') {
-        setShowPrompt(true)
-        return
-      }
-
-      if (permission !== 'granted') {
-        setShowPrompt(false)
-        return
-      }
-
-      console.info('[SwiftDU Push] notification permission granted')
-
-      const registration = await getReadyServiceWorkerRegistration()
-      const applicationServerKey = urlBase64ToUint8Array(publicKey)
-      const existingSubscription =
-        await registration.pushManager.getSubscription()
-
-      if (
-        existingSubscription &&
-        !arrayBufferEquals(
-          existingSubscription.options.applicationServerKey,
-          applicationServerKey
-        )
-      ) {
-        await existingSubscription.unsubscribe()
-      }
-
-      const subscription =
-        existingSubscription &&
-        arrayBufferEquals(
-          existingSubscription.options.applicationServerKey,
-          applicationServerKey
-        )
-          ? existingSubscription
-          :
-        (await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey,
-        }))
-
-      const response = await fetch('/api/push/save-subscription', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(subscription),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to save push subscription.')
-      }
-
-      console.info('[SwiftDU Push] subscription saved', {
-        endpointHost: new URL(subscription.endpoint).host,
-      })
-
+    if (permission === 'denied') {
       setShowPrompt(false)
-    } catch (error) {
-      console.warn('[Push Subscription Manager]:', error)
+      return
+    }
 
-      if (Notification.permission === 'granted') {
+    if (permission === 'granted') {
+      setShowPrompt(false)
+      void syncPushSubscriptionWithBackend(false)
+      return
+    }
+
+    // Permission is 'default' - check if user recently dismissed
+    const dismissedAt = localStorage.getItem(DISMISSAL_KEY)
+    if (dismissedAt) {
+      const elapsed = Date.now() - Number(dismissedAt)
+      if (elapsed < DISMISSAL_DURATION_MS) {
         setShowPrompt(false)
+        return
       }
     }
-  }, [])
+
+    setShowPrompt(true)
+  }, [isPending, session?.user?.id])
 
   useEffect(() => {
-    if (process.env.NODE_ENV !== 'production' || isPending || !session?.user?.id) {
-      return
+    void checkAndSync()
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        void checkAndSync()
+      }
     }
 
-    if (
-      !('serviceWorker' in navigator) ||
-      !('PushManager' in window) ||
-      !('Notification' in window)
-    ) {
-      return
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
     }
-
-    if (Notification.permission === 'default') {
-      setShowPrompt(true)
-      return
-    }
-
-    if (Notification.permission === 'granted') {
-      void subscribeToPush(false)
-    }
-  }, [isPending, session?.user?.id, subscribeToPush])
+  }, [checkAndSync])
 
   const handleEnableNotifications = async () => {
     setIsEnabling(true)
-
     try {
-      await subscribeToPush(true)
+      const ok = await syncPushSubscriptionWithBackend(true)
+      if (ok) {
+        setShowPrompt(false)
+      }
     } finally {
       setIsEnabling(false)
     }
+  }
+
+  const handleDismiss = () => {
+    try {
+      localStorage.setItem(DISMISSAL_KEY, Date.now().toString())
+    } catch {
+      // Ignore storage errors
+    }
+    setShowPrompt(false)
   }
 
   if (!showPrompt) {
@@ -248,14 +280,14 @@ export function PushSubscriptionManager() {
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <h2 className="text-sm font-semibold">Turn on notifications</h2>
+              <h2 className="text-sm font-semibold">Turn on tasker notifications</h2>
               <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
-                Get new SwiftDU task alerts instantly on this device.
+                Get new SwiftDU task alerts instantly on this device, even when the browser is closed.
               </p>
             </div>
             <button
               type="button"
-              onClick={() => setShowPrompt(false)}
+              onClick={handleDismiss}
               className="rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-900 dark:hover:text-slate-200"
               aria-label="Dismiss notification prompt"
             >
@@ -273,7 +305,7 @@ export function PushSubscriptionManager() {
             </button>
             <button
               type="button"
-              onClick={() => setShowPrompt(false)}
+              onClick={handleDismiss}
               className="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 px-3 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-900"
             >
               Not now
