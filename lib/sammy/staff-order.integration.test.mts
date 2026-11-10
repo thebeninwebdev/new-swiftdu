@@ -177,4 +177,74 @@ test('authorized Telegram staff can create an order for an unverified provisiona
   assert.equal(inquiryOrder.cafeInquiry, true)
   assert.equal(inquiryOrder.amount, 0)
   assert.equal(inquiryOrder.restaurantPeopleCount, 2)
+  assert.equal(inquiryOrder.paymentStatus, 'unpaid')
+  assert.equal(inquiryOrder.paymentProvider, 'manual_transfer')
+  assert.equal(inquiryOrder.source, 'telegram_staff')
+
+  // Validation tests
+  const missingCustomer = await sendOrder({ ...orderBody, customerId: '' })
+  assert.equal(missingCustomer.status, 400)
+  assert.equal((await missingCustomer.json()).code, 'INVALID_DRAFT')
+
+  const shortKey = await sendOrder({ ...orderBody, idempotencyKey: 'short' })
+  assert.equal(shortKey.status, 400)
+  assert.equal((await shortKey.json()).code, 'INVALID_IDEMPOTENCY_KEY')
+
+  const forgedPricing = await sendOrder({
+    ...orderBody,
+    idempotencyKey: 'staff-order-forged-0001',
+    order: { ...orderBody.order, serviceFee: 10, totalAmount: 10 },
+  })
+  assert.equal(forgedPricing.status, 400)
+  assert.equal((await forgedPricing.json()).code, 'SERVER_OWNED_FIELD')
+
+  // Concurrent confirmations with same idempotency key
+  const concurrentKey = 'staff-order-concurrent-0001'
+  const concurrentBody = {
+    ...orderBody,
+    idempotencyKey: concurrentKey,
+  }
+  const [res1, res2] = await Promise.all([
+    sendOrder(concurrentBody),
+    sendOrder(concurrentBody),
+  ])
+  assert.ok([200, 201].includes(res1.status))
+  assert.ok([200, 201].includes(res2.status))
+  assert.equal(
+    await Order.countDocuments({ userId: String(customer._id), idempotencyKey: concurrentKey }),
+    1,
+  )
+
+  // Verify website / Vercel order creation parity
+  await User.findByIdAndUpdate(customer._id, { gender: 'female' })
+  const { createOrderResponse } = await import('@/lib/orders/order-route-service')
+  const { NextRequest } = await import('next/server')
+  const vercelReq = new NextRequest('https://swiftdu.test/api/orders', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'idempotency-key': 'vercel-order-0001',
+    },
+    body: JSON.stringify({
+      taskType: 'water',
+      description: 'Deliver one bag via website',
+      location: hostel.name,
+      parentLocationId: String(hostel._id),
+      roomNumber: 'B12',
+      waterBags: 1,
+    }),
+  })
+  const vercelRes = await createOrderResponse(vercelReq, {
+    principal: {
+      id: String(customer._id),
+      name: customer.name,
+      email: customer.email,
+      role: customer.role,
+    },
+    source: 'website',
+  })
+  assert.equal(vercelRes.status, 201)
+  const vercelOrder = await Order.findOne({ userId: String(customer._id), idempotencyKey: 'vercel-order-0001' }).lean()
+  assert.ok(vercelOrder)
+  assert.equal(vercelOrder.source, 'website')
 })

@@ -14,14 +14,14 @@ Use the Render Blueprint because the repository includes `render.yaml`.
    containing the Phase 1 changes. For a pre-merge test, select the reviewed
    feature branch instead.
 3. Keep the root directory as `.` (the repository root).
-4. Review the Blueprint service named `swiftdu-order-api` and create it. The
+4. Review the Blueprint service named `swiftdu-orders` and create it. The
    Blueprint sets `autoDeploy: false`; deployments remain manual.
 
 The exact settings are:
 
 - Runtime: Node
 - Root directory: `.`
-- Build command: `npm ci`
+- Build command: `npm ci --include=dev`
 - Start command: `npm run start:order-api`
 - Health-check path: `/health`
 - Instances: one, to avoid running another copy of post-commit notification
@@ -124,7 +124,7 @@ uses the optional `SWIFTDU_ORDER_API_URL` base URL:
 - Unset `SWIFTDU_ORDER_API_URL` by default and retain the bot's current Vercel
   URL selection as the fallback.
 - For an explicitly approved test, set it to the Render service origin, for
-  example `https://swiftdu-order-api.onrender.com`.
+  example `https://swiftdu-orders.onrender.com`.
 - Apply it only when calling
   `POST /api/internal/sammy/staff/orders`. Leave staff auth, customer lookup,
   search, catalog, locations, quote, order search, cancellation, and tracking

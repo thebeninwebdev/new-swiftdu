@@ -1,7 +1,6 @@
 import type { PushSubscription as WebPushSubscription } from 'web-push'
 
 import { connectDB } from '@/lib/db'
-import { auth } from '@/lib/auth'
 import { PushSubscription } from '@/models/push-subscription'
 import Tasker from '@/models/tasker'
 import type { NextRequest } from 'next/server'
@@ -50,6 +49,7 @@ export function toWebPushSubscription(
 export async function requireApprovedTasker(request: NextRequest) {
   await connectDB()
 
+  const { auth } = await import('@/lib/auth')
   const session = await auth.api.getSession({
     headers: request.headers,
   })

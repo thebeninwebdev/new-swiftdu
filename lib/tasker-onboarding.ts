@@ -1,5 +1,3 @@
-import "server-only";
-
 import { createElement } from "react";
 import { Types } from "mongoose";
 

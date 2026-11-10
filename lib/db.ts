@@ -1,23 +1,27 @@
-import { MongoClient } from "mongodb";
+import { MongoClient, type Db } from "mongodb";
 
 const options = {};
 
+let nativeClient: MongoClient | undefined;
 let nativeClientPromise: Promise<MongoClient> | undefined;
 
 declare global {
+  var _mongoClient: MongoClient | undefined;
   var _mongoClientPromise: Promise<MongoClient> | undefined;
 }
 import mongoose from "mongoose";
 
-const MONGODB_URI = process.env.MONGODB_URI!;
+function getMongoUri(): string {
+  const uri = process.env.MONGODB_URI;
+  if (!uri) {
+    throw new Error("Please define the MONGODB_URI environment variable");
+  }
+  return uri;
+}
 
 function positiveInteger(value: string | undefined, fallback: number) {
   const parsed = Number.parseInt(value || '', 10)
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
-}
-
-if (!MONGODB_URI) {
-  throw new Error("Please define the MONGODB_URI environment variable");
 }
 
 // Prevent multiple connections in development (hot reload issue)
@@ -31,12 +35,14 @@ if (!cached) {
 }
 
 export async function connectDB() {
-  if (cached.conn) {
+  if (cached.conn && mongoose.connection.readyState === 1) {
     return cached.conn;
   }
 
-  if (!cached.promise) {
-    cached.promise = mongoose.connect(MONGODB_URI, {
+  const uri = getMongoUri();
+
+  if (!cached.promise || mongoose.connection.readyState === 0) {
+    cached.promise = mongoose.connect(uri, {
       bufferCommands: false,
       // Each Fluid Compute instance has its own pool. Keep this deliberately
       // conservative and let deployments tune it to their Atlas tier.
@@ -54,33 +60,56 @@ export async function connectDB() {
   return cached.conn;
 }
 
-export function getMongoClient() {
+export function getMongoClientInstance(): MongoClient {
+  const uri = getMongoUri();
+  if (process.env.NODE_ENV === "development") {
+    if (!global._mongoClient) {
+      global._mongoClient = new MongoClient(uri, options);
+    }
+    return global._mongoClient;
+  }
+
+  if (!nativeClient) {
+    nativeClient = new MongoClient(uri, options);
+  }
+  return nativeClient;
+}
+
+export function getMongoDb(): Db {
+  return getMongoClientInstance().db();
+}
+
+export function getMongoClient(): Promise<MongoClient> {
+  const client = getMongoClientInstance();
   if (process.env.NODE_ENV === "development") {
     if (!global._mongoClientPromise) {
-      global._mongoClientPromise = new MongoClient(MONGODB_URI, options).connect();
+      global._mongoClientPromise = client.connect();
     }
     return global._mongoClientPromise;
   }
 
   if (!nativeClientPromise) {
-    nativeClientPromise = new MongoClient(MONGODB_URI, options).connect();
+    nativeClientPromise = client.connect();
   }
   return nativeClientPromise;
 }
 
 export async function closeMongoClient() {
-  const pendingClient = process.env.NODE_ENV === "development"
-    ? global._mongoClientPromise
-    : nativeClientPromise;
-  if (!pendingClient) return;
+  const client = process.env.NODE_ENV === "development"
+    ? global._mongoClient
+    : nativeClient;
+  if (!client) return;
 
   try {
-    await (await pendingClient).close();
+    await client.close();
   } finally {
-    if (process.env.NODE_ENV === "development") global._mongoClientPromise = undefined;
-    else nativeClientPromise = undefined;
+    if (process.env.NODE_ENV === "development") {
+      global._mongoClient = undefined;
+      global._mongoClientPromise = undefined;
+    } else {
+      nativeClient = undefined;
+      nativeClientPromise = undefined;
+    }
   }
 }
-if (!process.env.MONGODB_URI) {
-  throw new Error("Please add MONGODB_URI to your environment variables");
-}
+

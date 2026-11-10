@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
+import { randomUUID } from 'node:crypto'
 import { pathToFileURL } from 'node:url'
 import mongoose from 'mongoose'
 import { NextRequest } from 'next/server'
@@ -9,10 +10,63 @@ const { handleSammyStaffOrder } = await import('@/lib/sammy/staff-order-service'
 const STAFF_ORDERS_PATH = '/api/internal/sammy/staff/orders'
 const MAX_BODY_BYTES = 1_048_576
 
-function safeErrorFields(error: unknown) {
+function sanitizeSensitiveText(text: string): string {
+  return text
+    .replace(/(mongodb(?:\+srv)?:\/\/)[^:]+:[^@]+@/gi, '$1***:***@')
+    .replace(/(Bearer\s+)[A-Za-z0-9_.-]+/gi, '$1[REDACTED]')
+    .replace(/(secret|token|password|key)=([^\s&]+)/gi, '$1=[REDACTED]')
+}
+
+export function safeErrorFields(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    const errorWithExtras = error as Error & {
+      code?: unknown
+      status?: unknown
+      errors?: Array<{ text?: string; location?: unknown }>
+      loc?: unknown
+    }
+    const sanitizedMessage = sanitizeSensitiveText(error.message)
+    const sanitizedStack = error.stack ? sanitizeSensitiveText(error.stack) : undefined
+    const base: Record<string, unknown> = {
+      name: error.name || 'Error',
+      message: sanitizedMessage,
+    }
+    if (errorWithExtras.code !== undefined) {
+      base.code = errorWithExtras.code
+    }
+    if (errorWithExtras.status !== undefined) {
+      base.status = errorWithExtras.status
+    }
+    if (errorWithExtras.loc !== undefined) {
+      base.loc = errorWithExtras.loc
+    }
+    if (Array.isArray(errorWithExtras.errors) && errorWithExtras.errors.length > 0) {
+      base.errors = errorWithExtras.errors.map((item) => {
+        if (typeof item === 'object' && item !== null) {
+          return {
+            text: typeof item.text === 'string' ? sanitizeSensitiveText(item.text) : undefined,
+            location: item.location,
+          }
+        }
+        return String(item)
+      })
+    }
+    if (sanitizedStack) {
+      base.stack = sanitizedStack
+    }
+    return base
+  }
+  if (typeof error === 'object' && error !== null) {
+    const obj = error as Record<string, unknown>
+    return {
+      name: typeof obj.name === 'string' ? obj.name : 'UnknownError',
+      message: typeof obj.message === 'string' ? sanitizeSensitiveText(String(obj.message)) : undefined,
+      code: obj.code,
+    }
+  }
   return {
-    name: error instanceof Error ? error.name : 'UnknownError',
-    code: typeof error === 'object' && error && 'code' in error ? (error as { code?: unknown }).code : undefined,
+    name: 'UnknownError',
+    message: sanitizeSensitiveText(String(error)),
   }
 }
 
@@ -35,7 +89,7 @@ async function readBody(request: IncomingMessage) {
 
 function forwardHeaders(request: IncomingMessage) {
   const headers = new Headers()
-  for (const name of ['authorization', 'content-type', 'x-swiftdu-correlation-id']) {
+  for (const name of ['authorization', 'content-type', 'x-swiftdu-correlation-id', 'idempotency-key']) {
     const value = request.headers[name]
     if (typeof value === 'string') headers.set(name, value)
   }
@@ -78,6 +132,12 @@ export function createOrderApiServer() {
 
   const server = createServer(async (request, response) => {
     const pathname = new URL(request.url || '/', 'http://localhost').pathname
+    const requestedCorrelation = request.headers['x-swiftdu-correlation-id']
+    const correlationId = typeof requestedCorrelation === 'string' && /^[a-f0-9-]{16,64}$/i.test(requestedCorrelation)
+      ? requestedCorrelation
+      : randomUUID()
+    const startedAt = performance.now()
+
     if (request.method === 'GET' && pathname === '/health') {
       const connected = mongoose.connection.readyState === 1
       return sendJson(response, connected ? 200 : 503, { status: connected ? 'ok' : 'unavailable' })
@@ -92,9 +152,14 @@ export function createOrderApiServer() {
     try {
       const body = await readBody(request)
       const baseUrl = process.env.SWIFTDU_BASE_URL?.trim() || 'https://swiftdu.org'
+      const headers = forwardHeaders(request)
+      if (!headers.has('x-swiftdu-correlation-id')) {
+        headers.set('x-swiftdu-correlation-id', correlationId)
+      }
+
       const nextRequest = new NextRequest(new URL(STAFF_ORDERS_PATH, baseUrl), {
         method: 'POST',
-        headers: forwardHeaders(request),
+        headers,
         body,
       })
       const result = await handleSammyStaffOrder(nextRequest, scheduleBackground)
@@ -106,9 +171,19 @@ export function createOrderApiServer() {
     } catch (error) {
       const status = typeof error === 'object' && error && 'status' in error && typeof error.status === 'number'
         ? error.status
-        : 500
-      if (status >= 500) console.error('[Order API] request failed', safeErrorFields(error))
-      sendJson(response, status, { error: status === 413 ? 'Request body is too large.' : 'The request could not be completed.' })
+        : (error instanceof SyntaxError ? 400 : 500)
+      const durationMs = Math.round(performance.now() - startedAt)
+      if (status >= 500) {
+        console.error('[Order API] request failed', {
+          correlationId,
+          status,
+          durationMs,
+          ...safeErrorFields(error),
+        })
+      }
+      sendJson(response, status, {
+        error: status === 413 ? 'Request body is too large.' : (status === 400 ? 'Invalid request payload.' : 'The request could not be completed.'),
+      })
     }
   })
 
@@ -120,6 +195,47 @@ export function createOrderApiServer() {
     server,
     scheduleBackground,
     drainBackgroundWork,
+  }
+}
+
+function startEscalationWorker(service: { scheduleBackground: (p: Promise<unknown>) => void }) {
+  let interval: NodeJS.Timeout | undefined
+  let running = false
+
+  const runEscalation = async () => {
+    if (running) return
+    running = true
+    try {
+      const { processDueOrderEscalations } = await import('@/lib/orders/order-escalation')
+      const result = await processDueOrderEscalations()
+      if (result.remindersSent > 0 || result.adminAlertsSent > 0 || result.errors.length > 0) {
+        console.info('[Order API] escalation processed', {
+          ordersChecked: result.ordersChecked,
+          remindersSent: result.remindersSent,
+          adminAlertsSent: result.adminAlertsSent,
+          errorCount: result.errors.length,
+        })
+      }
+    } catch (error) {
+      console.error('[Order API] escalation processing error', safeErrorFields(error))
+    } finally {
+      running = false
+    }
+  }
+
+  const initialTimer = setTimeout(() => {
+    service.scheduleBackground(runEscalation())
+  }, 5_000)
+  initialTimer.unref?.()
+
+  interval = setInterval(() => {
+    service.scheduleBackground(runEscalation())
+  }, 20_000)
+  interval.unref?.()
+
+  return () => {
+    clearTimeout(initialTimer)
+    if (interval) clearInterval(interval)
   }
 }
 
@@ -141,24 +257,16 @@ export async function startOrderApiServer(port = Number(process.env.PORT || 1000
     })
   })
 
-  // Start periodic unaccepted order escalation processor
-  const { processDueOrderEscalations } = await import('@/lib/orders/order-escalation')
-  const escalationInterval = setInterval(() => {
-    service.scheduleBackground(
-      processDueOrderEscalations().catch((error) => {
-        console.error('[Order API] escalation processing error', safeErrorFields(error))
-      })
-    )
-  }, 20_000)
-  escalationInterval.unref?.()
+  // Start periodic unaccepted order escalation processor in an isolated, supervised background routine
+  const stopEscalation = startEscalationWorker(service)
 
   console.info('[Order API] listening', { port })
   return {
     server: service.server,
     async close() {
-      clearInterval(escalationInterval)
+      stopEscalation()
       await new Promise<void>((resolve, reject) => {
-        service.server.close((error) => error ? reject(error) : resolve())
+        service.server.close((error) => (error ? reject(error) : resolve()))
         service.server.closeIdleConnections()
       })
       await service.drainBackgroundWork()

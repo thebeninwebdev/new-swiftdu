@@ -1,11 +1,11 @@
 services:
   - type: web
-    name: swiftdu-order-api
+    name: swiftdu-orders
     runtime: node
     region: frankfurt
     plan: starter
     rootDir: .
-    buildCommand: npm ci
+    buildCommand: npm ci --include=dev
     startCommand: npm run start:order-api
     healthCheckPath: /health
     autoDeploy: false

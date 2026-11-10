@@ -23,8 +23,16 @@ export function isRunStillBookable(runAt: Date, now = new Date(), settings: Indo
 
 export function getNextAvailableIndomieRun(now = new Date(), settings: IndomieBatchSettingsValue = DEFAULT_INDOMIE_BATCH_SETTINGS) {
   let run = getNextIndomieRun(now, settings)
-  while (run && !isRunStillBookable(run, now, settings)) run = new Date(run.getTime() + settings.runIntervalMinutes * 60_000)
-  return run && getLagosDateParts(run).minute <= settings.endMinute ? run : null
+  const nowDay = getLagosDateParts(now).day
+  while (run && !isRunStillBookable(run, now, settings)) {
+    const next = new Date(run.getTime() + settings.runIntervalMinutes * 60_000)
+    if (getLagosDateParts(next).day !== nowDay || getLagosDateParts(next).minute > settings.endMinute) {
+      run = null
+      break
+    }
+    run = next
+  }
+  return run && isRunStillBookable(run, now, settings) ? run : null
 }
 
 // Training retains the real interval and booking-cutoff rules but uses a server
