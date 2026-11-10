@@ -815,13 +815,17 @@ export default function DashboardOrderWizard({ initialTaskType, onClose }: { ini
     isRealtimePaused,
   ])
 
+  const stepRef = useRef(step)
+  stepRef.current = step
+
   useEffect(() => {
     const handleWizardBack = () => {
-      setStep((previous) => {
-        if (previous <= 2) { onClose(); return previous }
-        return previous - 1
-      })
       setErrors({})
+      if (stepRef.current <= 2) {
+        onClose()
+      } else {
+        setStep((previous) => previous - 1)
+      }
     }
 
     window.addEventListener('swiftdu-wizard-back', handleWizardBack)
