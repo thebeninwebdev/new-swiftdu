@@ -34,48 +34,65 @@ export function OrderAlertsToggle({ className = '' }: { className?: string }) {
   const handleToggle = async () => {
     if (updating || alertsEnabled === null) return
 
-    const nextState = !alertsEnabled
+    const previousState = alertsEnabled
+    const nextState = !previousState
+    let sentPreferenceUpdate = false
+
+    // Give immediate feedback, but treat browser permission + server response as authoritative.
+    setAlertsEnabled(nextState)
     setUpdating(true)
 
     try {
       if (nextState) {
-        // Turning ON: sync or request browser push permission
-        if (typeof window !== 'undefined' && 'Notification' in window) {
-          if (Notification.permission === 'denied') {
-            toast.error(
-              'Notification permission is blocked in your browser settings. Please allow notifications for SwiftDU to receive alerts.'
-            )
-            setUpdating(false)
-            return
-          }
+        const supported = typeof window !== 'undefined' &&
+          'Notification' in window &&
+          'PushManager' in window &&
+          'serviceWorker' in navigator
+
+        if (!supported) {
+          const isIos = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/i.test(navigator.userAgent)
+          throw new Error(isIos
+            ? 'On iPhone, open SwiftDU in Safari, add it to your Home Screen, and enable notifications from the installed app.'
+            : 'This browser cannot receive SwiftDU push notifications. Open SwiftDU in a supported browser.')
         }
 
-        // Attempt push registration/sync
-        await syncPushSubscriptionWithBackend(true)
+        if (Notification.permission === 'denied') {
+          throw new Error('Notifications are blocked. Allow SwiftDU notifications in your browser or device settings, then try again.')
+        }
+
+        // Permission is requested synchronously from this click before network awaits.
+        const subscribed = await syncPushSubscriptionWithBackend(true)
+        if (!subscribed) {
+          throw new Error(Notification.permission !== 'granted'
+            ? 'Notifications were not permitted. Enable notifications for SwiftDU and try again.'
+            : 'SwiftDU could not activate push notifications on this device. Please try again.')
+        }
       }
 
+      sentPreferenceUpdate = true
       const response = await fetch('/api/taskers/preferences', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderAlertsEnabled: nextState }),
       })
-
-      const data = await response.json().catch(() => ({}))
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update alert preference.')
+      const data = await response.json().catch(() => ({})) as {
+        error?: string
+        orderAlertsEnabled?: boolean
+      }
+      if (!response.ok) throw new Error(data.error || 'Failed to update alert preference.')
+      if (data.orderAlertsEnabled !== nextState) {
+        throw new Error('SwiftDU did not confirm the new alert setting. Please try again.')
       }
 
-      setAlertsEnabled(nextState)
-      toast.success(
-        nextState
-          ? "You are now available for order alerts. You'll receive push notifications when new tasks arrive."
-          : 'Order alerts paused. You will not receive general new-order notifications.'
-      )
+      setAlertsEnabled(data.orderAlertsEnabled)
+      toast.success(nextState
+        ? 'Order alerts enabled. You can receive notifications for eligible tasks.'
+        : 'Order alerts paused. You will not receive general new-order notifications.')
     } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : 'Could not update alert preferences.'
-      )
+      setAlertsEnabled(previousState)
+      toast.error(error instanceof Error ? error.message : 'Could not update alert preferences.')
+      // A timed-out write could have reached the server. Reconcile with the source of truth.
+      if (sentPreferenceUpdate) void fetchPreferences()
     } finally {
       setUpdating(false)
     }
@@ -119,13 +136,15 @@ export function OrderAlertsToggle({ className = '' }: { className?: string }) {
                     : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400'
                 }`}
               >
-                {alertsEnabled ? 'ON' : 'OFF'}
+                {updating ? (alertsEnabled ? 'ENABLING...' : 'DISABLING...') : alertsEnabled ? 'ON' : 'OFF'}
               </span>
             </div>
             <p className="mt-1 text-xs text-slate-600 dark:text-slate-300">
-              {alertsEnabled
-                ? 'Receive eligible order notifications, even when the website is closed.'
-                : 'Do not receive general new-order push notifications.'}
+              {updating
+                ? 'Saving your notification preference...'
+                : alertsEnabled
+                  ? 'Receive eligible order notifications, even when the website is closed.'
+                  : 'Do not receive general new-order push notifications.'}
             </p>
           </div>
         </div>
@@ -136,8 +155,9 @@ export function OrderAlertsToggle({ className = '' }: { className?: string }) {
           role="switch"
           aria-checked={Boolean(alertsEnabled)}
           aria-label="Toggle availability for order alerts"
+          aria-busy={updating}
           onClick={handleToggle}
-          disabled={updating}
+          disabled={updating || alertsEnabled === null}
           className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-600 disabled:opacity-50 ${
             alertsEnabled ? 'bg-violet-600' : 'bg-slate-300 dark:bg-slate-700'
           }`}
