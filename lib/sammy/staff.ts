@@ -30,6 +30,7 @@ export type SammyStaff = {
   excoRole?: string
   " excoRole"?: string
   telegramUserId: string
+  telegramUsername?: string
   telegramFirstName?: string
   telegramLastName?: string
   telegramEnabled?: boolean
@@ -74,7 +75,7 @@ export async function resolveSammyStaff(identity: TelegramIdentity) {
 
   await connectDB()
   const staff = await User.findOne({ telegramUserId })
-    .select({ _id: 1, name: 1, email: 1, role: 1, isExco: 1, excoRole: 1, " excoRole": 1, isSuspended: 1, telegramUserId: 1, telegramEnabled: 1, telegramRevokedAt: 1, telegramFirstName: 1, telegramLastName: 1 })
+    .select({ _id: 1, name: 1, email: 1, role: 1, isExco: 1, excoRole: 1, " excoRole": 1, isSuspended: 1, telegramUserId: 1, telegramEnabled: 1, telegramRevokedAt: 1, telegramUsername: 1, telegramFirstName: 1, telegramLastName: 1 })
     .lean<SammyStaff>()
 
   if (!staff) throw new SammyApiError(403, 'TELEGRAM_NOT_LINKED', 'Connect your SwiftDU account to continue.')
@@ -82,10 +83,19 @@ export async function resolveSammyStaff(identity: TelegramIdentity) {
   if (!hasTelegramStaffPrivilege(staff)) throw new SammyApiError(403, 'STAFF_INSUFFICIENT_PRIVILEGES', 'This account does not have staff access.')
   if (!isApprovedTelegramStaffAccount(staff, telegramUserId)) throw new SammyApiError(403, 'TELEGRAM_ACCESS_DISABLED', 'Telegram access is disabled for this account.')
 
+  // Telegram sends the same profile snapshot on nearly every message.
+  // Avoid a MongoDB write on every auth check; permissions are still checked
+  // against the authoritative account for each incoming request.
   const snapshot: Record<string, string> = {}
-  if (identity.username) snapshot.telegramUsername = identity.username
-  if (identity.firstName) snapshot.telegramFirstName = identity.firstName
-  if (identity.lastName) snapshot.telegramLastName = identity.lastName
+  const values = [
+    ['telegramUsername', identity.username],
+    ['telegramFirstName', identity.firstName],
+    ['telegramLastName', identity.lastName],
+  ] as const
+  for (const [field, raw] of values) {
+    const next = typeof raw === 'string' ? raw.trim().slice(0, 128) : ''
+    if (next && next !== staff[field]) snapshot[field] = next
+  }
   if (Object.keys(snapshot).length) {
     await User.updateOne({ _id: staff._id }, { $set: snapshot })
   }
