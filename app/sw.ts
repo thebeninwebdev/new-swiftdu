@@ -147,7 +147,7 @@ function notificationTarget(value?: string, tag?: string) {
 }
 function showSwiftDUNotification(payload: PushPayload) {
   const asset = (value: string) => new URL(value, self.location.origin).href
-  const options: NotificationOptions & { image: string } = {
+  const options: NotificationOptions & { image: string; renotify: boolean; vibrate: number[] } = {
     body: payload.body || 'You have a new update.',
     icon: asset(payload.icon || '/pwa-512x512.png?v=swiftdu-symbol-v1'),
     badge: asset(payload.badge || '/pwa-192x192.png?v=swiftdu-symbol-v1'),
