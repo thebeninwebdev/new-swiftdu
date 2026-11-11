@@ -3,7 +3,8 @@
 import {useState, useEffect, useSyncExternalStore, type ReactNode} from 'react'
 import {useRouter, usePathname} from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import {ChevronLeft, LogOut, PlusCircle, ListTodo, User, Bell, Star, BriefcaseBusiness, Menu, X} from 'lucide-react'
+import {ChevronLeft, LogOut, PlusCircle, ListTodo, User, Bell, Star, BriefcaseBusiness, Bike, Menu, X} from 'lucide-react'
+import InstallPwaButton from '@/components/InstallPwaButton'
 import { useIdleEffect } from '@/hooks/use-idle-effect'
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 import { toast } from 'sonner'
@@ -46,6 +47,12 @@ const navigationItems = [
     href: '/tasker-signup/signup',
     icon: BriefcaseBusiness,
     description: 'Apply to earn on campus',
+  },
+  {
+    label: 'Tasker Dashboard',
+    href: '/tasker-dashboard',
+    icon: Bike,
+    description: 'Switch to your tasker workspace',
   },
   {
     label: 'Account',
@@ -115,7 +122,9 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
   const sessionUserId = session?.user?.id
   const canApplyAsTasker = useTaskerEligibility()
   const visibleNavigationItems = navigationItems.filter(
-    (item) => item.href !== '/tasker-signup/signup' || canApplyAsTasker
+    (item) =>
+      (item.href !== '/tasker-signup/signup' || canApplyAsTasker) &&
+      (item.href !== '/tasker-dashboard' || session?.user?.role === 'tasker')
   )
   const mobilePageTitle = getDashboardPageTitle(pathname, pageTitle)
   const userName = headerProfile?.name || session?.user?.name || 'SwiftDU user'
@@ -390,6 +399,8 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
             )
           })}
 
+          <InstallPwaButton variant="menu" />
+
           {excoDashboard ? (
             <>
               <button
@@ -558,6 +569,8 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
                       </button>
                     )
                   })}
+
+                  <InstallPwaButton variant="menu" />
 
                   {excoDashboard ? (
                     <>
