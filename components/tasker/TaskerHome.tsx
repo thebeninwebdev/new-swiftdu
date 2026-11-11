@@ -225,7 +225,7 @@ export function TaskerHome({ name, errands, accepted, loading, refreshing, error
                       ) : errands.filter((t) => t.status === 'pending').length ? (
                         <div className={`space-y-3 ${online ? '' : 'pointer-events-none opacity-60'}`}>
                           {(all ? errands : errands.filter((t) => t.status === 'pending').slice(0, 3)).map((task) => (
-                            <TaskCard task={task} key={task._id} now={now} onAccept={onAcceptTask} accepting={acceptingTaskId === task._id} />
+                            <TaskCard task={task} key={task._id} now={now} onAccept={onAcceptTask} accepting={acceptingTaskId === (task.isBatch ? `batch:${task.batchId}` : task._id)} />
                           ))}
                         </div>
                       ) : (

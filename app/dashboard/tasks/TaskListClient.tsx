@@ -1,7 +1,7 @@
 'use client'
 import { FirstOrderBonusNotice } from '@/components/first-order-bonus'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertCircle,
@@ -19,6 +19,7 @@ import { toast } from 'sonner'
 
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ClientMutationCoordinator, mergeUniqueById } from '@/lib/client-mutation'
 
 type OrderStatus = 'pending' | 'in_progress' | 'paid' | 'completed' | 'cancelled'
 type TaskTab = 'in_progress' | 'completed' | 'cancelled'
@@ -166,15 +167,17 @@ function EmptyState({ tab }: { tab: TaskTab }) {
 
 export default function TaskListClient() {
   const router = useRouter()
-  const [orders, setOrders] = useState<Order[]>([])
+  const [ordersByTab, setOrdersByTab] = useState<Record<TaskTab, Order[]>>({ in_progress: [], completed: [], cancelled: [] })
   const [activeTab, setActiveTab] = useState<TaskTab>('in_progress')
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [retryingOrderId, setRetryingOrderId] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
-  const [page, setPage] = useState(1)
-  const [hasMore, setHasMore] = useState(false)
+  const [pageByTab, setPageByTab] = useState<Record<TaskTab, number>>({ in_progress: 1, completed: 1, cancelled: 1 })
+  const [hasMoreByTab, setHasMoreByTab] = useState<Record<TaskTab, boolean>>({ in_progress: false, completed: false, cancelled: false })
+  const requestsRef = useRef(new ClientMutationCoordinator())
+  const loadedTabsRef = useRef(new Set<TaskTab>())
 
   const statusesForTab = useCallback((tab: TaskTab) => {
     if (tab === 'in_progress') return 'pending,in_progress,paid'
@@ -183,21 +186,22 @@ export default function TaskListClient() {
 
   const loadOrders = useCallback(
     async (initial = false, requestedPage = 1) => {
-      if (initial) {
-        setLoading(true)
-      } else {
-        setRefreshing(true)
-      }
+      const requestedTab = activeTab
+      const requestedSearch = searchQuery.trim()
+      const ticket = requestsRef.current.begin(`orders:${requestedTab}`, { replace: true })
+      if (!ticket) return
+      if (initial && loadedTabsRef.current.size === 0) setLoading(true)
+      else setRefreshing(true)
 
       try {
         setError(null)
         const params = new URLSearchParams({
           paginated: 'true',
-          status: statusesForTab(activeTab),
+          status: statusesForTab(requestedTab),
           page: String(requestedPage),
           limit: '20',
         })
-        if (searchQuery.trim()) params.set('search', searchQuery.trim())
+        if (requestedSearch) params.set('search', requestedSearch)
         const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
         const timeout = setTimeout(() => controller?.abort(), 12_000)
         let response: Response
@@ -220,23 +224,30 @@ export default function TaskListClient() {
           return
         }
 
-        if (!response.ok) {
-          throw new Error('Failed to load your tasks.')
-        }
+        if (!response.ok) throw new Error('Failed to load your tasks.')
 
         const data = (await response.json()) as {
           orders: Order[]
           pagination: { page: number; hasMore: boolean }
         }
-        setOrders((previous) => requestedPage === 1 ? data.orders : [...previous, ...data.orders])
-        setPage(data.pagination.page)
-        setHasMore(data.pagination.hasMore)
+        if (!requestsRef.current.isCurrent(ticket)) return
+        loadedTabsRef.current.add(requestedTab)
+        setOrdersByTab((previous) => ({
+          ...previous,
+          [requestedTab]: requestedPage === 1 ? data.orders : mergeUniqueById(previous[requestedTab], data.orders),
+        }))
+        setPageByTab((previous) => ({ ...previous, [requestedTab]: data.pagination.page }))
+        setHasMoreByTab((previous) => ({ ...previous, [requestedTab]: data.pagination.hasMore }))
       } catch (loadError) {
+        if (!requestsRef.current.isCurrent(ticket)) return
         console.error(loadError)
-        setError('Could not load your tasks right now.')
+        setError('Could not load your tasks right now. Your last results are still shown.')
       } finally {
-        setLoading(false)
-        setRefreshing(false)
+        if (requestsRef.current.isCurrent(ticket)) {
+          setLoading(false)
+          setRefreshing(false)
+        }
+        requestsRef.current.finish(ticket)
       }
     },
     [activeTab, router, searchQuery, statusesForTab]
@@ -247,16 +258,10 @@ export default function TaskListClient() {
     return () => window.clearTimeout(timer)
   }, [loadOrders, searchQuery])
 
-  const groupedOrders = useMemo(
-    () => ({
-      in_progress: activeTab === 'in_progress' ? orders : [],
-      completed: activeTab === 'completed' ? orders : [],
-      cancelled: activeTab === 'cancelled' ? orders : [],
-    }),
-    [activeTab, orders]
-  )
-
+  const groupedOrders = useMemo(() => ordersByTab, [ordersByTab])
   const filteredOrders = groupedOrders[activeTab]
+  const page = pageByTab[activeTab]
+  const hasMore = hasMoreByTab[activeTab]
 
   const retryOrder = async (order: Order) => {
     if (retryingOrderId || order.taskType === 'copy_notes') return
@@ -515,6 +520,11 @@ export default function TaskListClient() {
                     </Button>
                   </div>
                 ) : null}
+              </div>
+            ) : refreshing && tab === activeTab ? (
+              <div className="flex min-h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900" role="status" aria-live="polite">
+                <Loader2 className="mr-2 h-5 w-5 animate-spin text-sky-600" />
+                <span className="text-sm text-slate-500">Updating tasks...</span>
               </div>
             ) : (
               <EmptyState tab={tab} />

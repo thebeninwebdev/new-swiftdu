@@ -37,3 +37,14 @@ export interface WorkSnapshot {
   serverNow: string
   summaries: Record<'today' | 'week' | 'month', WorkSummary>
 }
+export type WorkAvailabilityAction = 'check-in' | 'check-out'
+
+export function optimisticWorkSnapshot(snapshot: WorkSnapshot, action: WorkAvailabilityAction, now = new Date()): WorkSnapshot {
+  const checkedIn = action === 'check-in'
+  return {
+    ...snapshot,
+    checkedIn,
+    checkedInAt: checkedIn ? snapshot.checkedInAt || now.toISOString() : null,
+    status: getWorkStatus(checkedIn, snapshot.activeTasks),
+  }
+}

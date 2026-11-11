@@ -13,6 +13,7 @@ import { Building2, ShieldCheck } from 'lucide-react'
 import { BankDetailsForm } from '@/components/tasker/BankDetailsForm'
 import { useNetworkState } from '@/hooks/use-network-state'
 import { fetchWithTimeout } from '@/lib/client-fetch'
+import { ClientMutationCoordinator, mergeUniqueById } from '@/lib/client-mutation'
 
 const REALTIME_REVALIDATE_DELAY_MS = 1200
 const HEALTHY_SOCKET_RECONCILE_INTERVAL_MS = 60_000
@@ -208,6 +209,7 @@ export default function TaskerDashboardPage() {
   const hasDashboardDataRef = useRef(false)
   const observedSocketConnectionRef = useRef(false)
   const loadDashboardRef = useRef<(initial?: boolean, options?: { silent?: boolean }) => Promise<void>>(async () => {})
+  const mutationsRef = useRef(new ClientMutationCoordinator())
 
   const taskerName = session?.user?.name || 'Anonymous'
   const needsBankDetails = Boolean(taskerProfile && !taskerProfile.bankDetails?.accountNumber)
@@ -443,12 +445,15 @@ export default function TaskerDashboardPage() {
 
   const acceptTaskFromCard = useCallback(
     async (orderId: string) => {
-      if (acceptingTaskId) return
+      const ticket = mutationsRef.current.begin('accept-task')
+      if (!ticket) return
       if (!online) {
+        mutationsRef.current.finish(ticket)
         toast.error('You are offline. Reconnect before accepting this task.')
         return
       }
       setAcceptingTaskId(orderId)
+      setError(null)
       try {
         const response = await fetch('/api/errands', {
           method: 'POST',
@@ -456,17 +461,30 @@ export default function TaskerDashboardPage() {
           body: JSON.stringify({ orderId }),
         })
         const order = await response.json()
-        if (!response.ok) throw new Error(order.error || 'This task is no longer available.')
+        if (!response.ok) {
+          const message = response.status === 409
+            ? 'Another tasker accepted this task first. The available list has been refreshed.'
+            : order.error || 'This task is no longer available.'
+          throw new Error(message)
+        }
+        if (!mutationsRef.current.isCurrent(ticket)) return
+        const acceptedOrder = order as Errand
+        setErrands((previous) => previous.filter((item) => item._id !== acceptedOrder._id))
+        setAcceptedErrands((previous) => sortErrands(mergeUniqueById(previous, [acceptedOrder])))
         window.dispatchEvent(new Event('swiftdu-work-updated'))
-        router.push(`/tasker-dashboard/${order._id}`)
-      } catch (error) {
-        setError(error instanceof Error ? error.message : 'Could not accept this task. Please try again.')
+        router.push(`/tasker-dashboard/${acceptedOrder._id}`)
+      } catch (acceptError) {
+        if (!mutationsRef.current.isCurrent(ticket)) return
+        const message = acceptError instanceof Error ? acceptError.message : 'Could not accept this task. Please try again.'
+        setError(message)
+        toast.error(message)
         void loadDashboardRef.current(false)
       } finally {
-        setAcceptingTaskId(null)
+        if (mutationsRef.current.isCurrent(ticket)) setAcceptingTaskId(null)
+        mutationsRef.current.finish(ticket)
       }
     },
-    [acceptingTaskId, online, router],
+    [online, router],
   )
   useEffect(() => {
     if (sessionPending || loadingTaskerProfile) {

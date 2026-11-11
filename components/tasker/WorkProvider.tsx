@@ -5,7 +5,7 @@ import { usePathname } from 'next/navigation'
 import { toast } from 'sonner'
 import { MotionConfig } from 'framer-motion'
 import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
-import type { WorkSnapshot } from '@/lib/tasker-work'
+import { optimisticWorkSnapshot, type WorkSnapshot } from '@/lib/tasker-work'
 import { TaskerSwifty } from './Swifty'
 import { WorkDialog } from './WorkDialog'
 import { convertToNaira } from '@/lib/utils'
@@ -72,21 +72,29 @@ export function TaskerWorkProvider({ children }: { children: ReactNode }) {
   const change = async (action: 'check-in' | 'check-out') => {
     if (mutation.current) return
     if (!online) { toast.error('You are offline. Reconnect before changing your work status.'); return }
+    const snapshot = data
     mutation.current = true
     ++sequence.current
     setSaving(true); setError(null); setCheckingIn(action === 'check-in')
+    // Availability is reversible UI state. Show the requested state now, then
+    // replace it with the server snapshot or roll back on rejection.
+    if (snapshot) {
+      setData(optimisticWorkSnapshot(snapshot, action))
+    }
     try {
       const response = await fetch('/api/taskers/availability', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action }) })
       const payload = await response.json()
       if (!response.ok) throw new Error(payload.error || 'Could not change your work status.')
       setData(payload); setCheckout(false)
+      window.dispatchEvent(new Event('swiftdu-work-updated'))
       toast.success(action === 'check-in' ? "You're all set! Let's get to work." : "You're checked out. See you soon!")
     } catch (error) {
+      if (snapshot) setData(snapshot)
       const message = error instanceof Error ? error.message : 'Check your connection and retry.'
       setError(message); toast.error(message)
     } finally {
       mutation.current = false; setSaving(false); setCheckingIn(false); setLoading(false)
-      // Reconcile a response lost after the server committed the change.
+      // A lost response may still have committed, so the server always wins.
       void refresh()
     }
   }
