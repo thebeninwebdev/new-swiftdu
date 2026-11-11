@@ -12,6 +12,7 @@ import taskFoodImage from '@/public/dashboard/tasks/task-food.webp'
 import taskStoreShoppingImage from '@/public/dashboard/tasks/task-store-shopping.webp'
 import taskPrintingImage from '@/public/dashboard/tasks/task-printing.webp'
 import taskWaterImage from '@/public/dashboard/tasks/task-water.webp'
+import InstallPwaButton from '@/components/InstallPwaButton'
 
 const DashboardOrderWizard = dynamic(() => import('@/components/dashboard-order-wizard'), {
   ssr: false,
@@ -181,6 +182,10 @@ export function DashboardLanding({ userName, initialTrainingMode }: { userName: 
             </div>
           </div>
         ) : null}
+
+        <div className="mb-5 flex justify-center sm:justify-end">
+          <InstallPwaButton />
+        </div>
 
         <section className="overflow-hidden rounded-[2rem] border border-indigo-100 bg-white shadow-[0_28px_80px_-36px_rgba(79,70,229,0.3)]">
           <div className="bg-linear-to-r from-[#f7f5ff] to-[#f4f7ff] px-5 py-6 text-center sm:px-8">
