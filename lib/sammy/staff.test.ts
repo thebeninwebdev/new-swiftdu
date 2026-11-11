@@ -17,6 +17,15 @@ test('approved Telegram staff account can access Sammy', () => {
   }, '123456'), true)
 })
 
+test('a canonical EXCO role grants staff access without the legacy flag', () => {
+  assert.equal(isApprovedTelegramStaffAccount({
+    telegramUserId: '654321',
+    telegramEnabled: true,
+    role: 'user',
+    excoRole: 'CFO',
+    isExco: false,
+  }, '654321'), true)
+})
 test('unknown or disabled Telegram identities cannot access Sammy', () => {
   assert.equal(isApprovedTelegramStaffAccount(undefined, '123456'), false)
   assert.equal(isApprovedTelegramStaffAccount({

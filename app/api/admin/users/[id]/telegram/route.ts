@@ -4,6 +4,7 @@ import { Types } from 'mongoose'
 import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { connectDB } from '@/lib/db'
 import { User } from '@/models/user'
+import { hasTelegramStaffPrivilege } from '@/lib/sammy/telegram-link-policy'
 
 export async function PATCH(
   request: NextRequest,
@@ -21,9 +22,9 @@ export async function PATCH(
     }
 
     await connectDB()
-    const user = await User.findById(id).select('_id name role isExco')
+    const user = await User.findById(id).select({ _id: 1, name: 1, role: 1, isExco: 1, excoRole: 1, " excoRole": 1, isSuspended: 1, telegramRevokedAt: 1 })
     if (!user) return NextResponse.json({ error: 'User not found.' }, { status: 404 })
-    if (user.role !== 'admin' && !user.isExco) {
+    if (user.isSuspended || !hasTelegramStaffPrivilege(user)) {
       return NextResponse.json({ error: 'Only an admin or EXCO account can be approved for Sammy.' }, { status: 400 })
     }
     if (body.enabled === false) {

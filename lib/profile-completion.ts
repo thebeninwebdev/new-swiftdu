@@ -1,7 +1,7 @@
 import { normalizeExcoRole } from "@/lib/exco-constants";
 
 export type RequiredProfileField = "name" | "gender" | "phone" | "defaultLocation";
-export type AuthProfileUser = { role?: string | null; excoRole?: string | null; name?: string | null; email?: string | null; phone?: string | null; location?: string | null; defaultLocation?: string | null; profileImage?: string | null; gender?: string | null; birthdayDay?: number | null; birthdayMonth?: number | null; dateOfBirth?: string | Date | null; taskerId?: string | null };
+export type AuthProfileUser = { role?: string | null; excoRole?: string | null; isExco?: boolean | null; name?: string | null; email?: string | null; phone?: string | null; location?: string | null; defaultLocation?: string | null; profileImage?: string | null; gender?: string | null; birthdayDay?: number | null; birthdayMonth?: number | null; dateOfBirth?: string | Date | null; taskerId?: string | null };
 export const LOCATIONS = ["Amnesty", "Girls Hostel", "Staff Quarters"] as const;
 export const COMPLETE_PROFILE_PATH = "/complete-profile";
 const hasText = (value?: string | null) => Boolean(value?.trim());
@@ -43,6 +43,6 @@ export function getSafeNextPath(nextPath?: string | null) {
 }
 export function buildCompleteProfilePath(nextPath?: string | null) { const safe = getSafeNextPath(nextPath); return safe ? `${COMPLETE_PROFILE_PATH}?next=${encodeURIComponent(safe)}` : COMPLETE_PROFILE_PATH; }
 export function getPostProfileCompletionPath(user?: AuthProfileUser | null, nextPath?: string | null) { return getSafeNextPath(nextPath) ?? getSignedInDestination(user); }
-export function getPostAuthRedirect(user?: AuthProfileUser | null, nextPath?: string | null) { if (!user) return "/auth"; if (user.role === "admin" || user.role === "tasker" || normalizeExcoRole(user.excoRole)) return getPostProfileCompletionPath(user, nextPath); return "/"; }
+export function getPostAuthRedirect(user?: AuthProfileUser | null, nextPath?: string | null) { if (!user) return "/auth"; return getPostProfileCompletionPath(user, nextPath); }
 export function normalizePhoneNumber(_dialCode: string, rawPhone: string) { const digits = rawPhone.replace(/\D/g, "").replace(/^0+/, ""); if (!digits) return ""; return digits.startsWith("234") ? `+${digits}` : `+234${digits}`; }
 export function isValidBirthday(day?: number | null, month?: number | null) { if (day == null && month == null) return true; if (!Number.isInteger(day) || !Number.isInteger(month) || !day || !month) return false; return day <= new Date(Date.UTC(2024, month, 0)).getUTCDate(); }

@@ -7,6 +7,7 @@ test('a provisional staff-created customer securely claims the existing record b
   const database = await MongoMemoryServer.create()
   process.env.MONGODB_URI = database.getUri('sammy-staff-claim')
   process.env.AUTH_SEND_REAL_EMAILS = 'false'
+  process.env.NODE_ENV = 'test'
   process.env.BETTER_AUTH_SECRET = 'staff-registration-test-secret-at-least-32-characters'
   await mongoose.connect(process.env.MONGODB_URI)
   const { User } = await import('@/models/user')
@@ -29,13 +30,9 @@ test('a provisional staff-created customer securely claims the existing record b
     customerSource: 'staff_telegram', createdByStaffId: new mongoose.Types.ObjectId().toString(),
   })
   let claimToken = ''
-  const originalInfo = console.info
-  console.info = (...args: unknown[]) => {
-    originalInfo(...args)
-    const details = args[1] as { url?: string } | undefined
-    if (args[0] === '[magic-link:development]' && details?.url) {
-      claimToken = new URL(details.url).searchParams.get('token') || ''
-    }
+  const testGlobal = globalThis as typeof globalThis & { __captureSwiftDUMagicLink?: (url: string) => void }
+  testGlobal.__captureSwiftDUMagicLink = (url) => {
+    claimToken = new URL(url).searchParams.get('token') || ''
   }
   try {
     await auth.api.signInMagicLink({ body: { email: 'claim@example.com' }, headers: new Headers() })
@@ -43,7 +40,7 @@ test('a provisional staff-created customer securely claims the existing record b
     console.error('[claim test sign-in failure]', error)
     throw error
   } finally {
-    console.info = originalInfo
+    delete testGlobal.__captureSwiftDUMagicLink
   }
   assert.ok(claimToken)
   let claimed

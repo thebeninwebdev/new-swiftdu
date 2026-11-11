@@ -3,7 +3,7 @@ import { APIError, createAuthMiddleware } from "better-auth/api";
 import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { connectDB, getMongoDb } from "./db";
 import { User } from "@/models/user";
-import { twoFactor } from "better-auth/plugins";
+import { emailOTP, twoFactor } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 import { magicLink } from "better-auth/plugins";
 import { AuthEmailRateLimit } from "@/models/auth-email-rate-limit";
@@ -13,7 +13,7 @@ import { reconcileTaskerIdentityForUser } from "@/lib/tasker-onboarding";
 const db = new Proxy({} as import("mongodb").Db, {
   get(_target, prop) {
     const realDb = getMongoDb();
-    const value = (realDb as any)[prop];
+    const value = Reflect.get(realDb, prop);
     return typeof value === "function" ? value.bind(realDb) : value;
   },
 });
@@ -51,7 +51,8 @@ const suspendedUserGuard = (): BetterAuthPlugin => ({
     before: [
       {
         matcher: (ctx) =>
-          ctx.path === "/sign-in/email" || ctx.path === "/sign-in/magic-link",
+          ctx.path === "/sign-in/email" || ctx.path === "/sign-in/magic-link" ||
+          ctx.path === "/sign-in/email-otp" || ctx.path === "/email-otp/send-verification-otp",
         handler: createAuthMiddleware(async (ctx) => {
           const email =
             typeof ctx.body?.email === "string"
@@ -81,11 +82,12 @@ const suspendedUserGuard = (): BetterAuthPlugin => ({
   },
 });
 
-const magicLinkEmailGuard = (): BetterAuthPlugin => ({
-  id: "magic-link-email-guard",
+const authEmailRequestGuard = (): BetterAuthPlugin => ({
+  id: "auth-email-request-guard",
   hooks: {
     before: [{
-      matcher: (ctx) => ctx.path === "/sign-in/magic-link",
+      matcher: (ctx) => ctx.path === "/sign-in/magic-link" ||
+        (ctx.path === "/email-otp/send-verification-otp" && ctx.body?.type === "sign-in"),
       handler: createAuthMiddleware(async (ctx) => {
         const email = typeof ctx.body?.email === "string" ? ctx.body.email.trim().toLowerCase() : "";
         if (!email) return;
@@ -161,9 +163,17 @@ export const auth = betterAuth({
     expiresIn: THIRTY_DAYS_IN_SECONDS,
     updateAge: ONE_DAY_IN_SECONDS,
   },
-  advanced: shareProductionSessionCookie
-    ? { crossSubDomainCookies: { enabled: true, domain: "swiftdu.org" } }
-    : undefined,
+  advanced: {
+    defaultCookieAttributes: {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+    },
+    ...(shareProductionSessionCookie
+      ? { crossSubDomainCookies: { enabled: true, domain: "swiftdu.org" } }
+      : {}),
+  },
   emailVerification: {
     sendVerificationEmail: async ({ user, url }) => {
       const [{ default: verifyEmail }, { sendTransactionalEmail }] =
@@ -322,14 +332,52 @@ export const auth = betterAuth({
     },
   },
   plugins: [
+    emailOTP({
+      expiresIn: 5 * 60,
+      allowedAttempts: 5,
+      storeOTP: "hashed",
+      rateLimit: { window: 60, max: 5 },
+      sendVerificationOTP: async ({ email, otp, type }) => {
+        if (type !== "sign-in") return;
+        if (process.env.NODE_ENV === "test") {
+          const capture = (globalThis as { __captureSwiftDUEmailOtp?: (otp: string) => void }).__captureSwiftDUEmailOtp;
+          if (capture) {
+            capture(otp);
+            return;
+          }
+        }
+        if (process.env.AUTH_SEND_REAL_EMAILS === "false") {
+          if (process.env.NODE_ENV === "production") throw new Error("AUTH_SEND_REAL_EMAILS=false is not allowed in production.");
+          console.info("[email-otp:development]", { email, deliverySuppressed: true });
+          return;
+        }
+        const [{ default: EmailOtpEmail }, { sendTransactionalEmail }] = await Promise.all([
+          import("@/emails/emailOtpEmail"),
+          import("./email"),
+        ]);
+        await sendTransactionalEmail({
+          to: email,
+          subject: "Your SwiftDU sign-in code",
+          react: EmailOtpEmail({ otp }),
+          tags: [{ name: "email_type", value: "email_otp" }, { name: "auth_flow", value: "sign_in" }],
+        });
+      },
+    }),
     magicLink({
       expiresIn: 15 * 60,
       storeToken: "hashed",
       rateLimit: { window: 60, max: 5 },
       sendMagicLink: async ({ email, url }) => {
+        if (process.env.NODE_ENV === "test") {
+          const capture = (globalThis as { __captureSwiftDUMagicLink?: (url: string) => void }).__captureSwiftDUMagicLink;
+          if (capture) {
+            capture(url);
+            return;
+          }
+        }
         if (process.env.AUTH_SEND_REAL_EMAILS === "false") {
           if (process.env.NODE_ENV === "production") throw new Error("AUTH_SEND_REAL_EMAILS=false is not allowed in production.");
-          console.info("[magic-link:development]", { email, url });
+          console.info("[magic-link:development]", { email, deliverySuppressed: true });
           return;
         }
         const [{ default: MagicLinkEmail }, { sendTransactionalEmail }] = await Promise.all([
@@ -351,7 +399,7 @@ export const auth = betterAuth({
     }),
     twoFactor(),
     suspendedUserGuard(),
-    magicLinkEmailGuard(),
+    authEmailRequestGuard(),
     requiredSignupDetailsGuard(),
   ],
 });

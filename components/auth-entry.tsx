@@ -6,7 +6,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Mail, CheckCircle2 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
-import { buildCompleteProfilePath, getPostAuthRedirect, getSafeNextPath } from "@/lib/profile-completion";
+import { buildCompleteProfilePath, getPostAuthRedirect, getSafeNextPath, isProfileComplete } from "@/lib/profile-completion";
 
 const COOLDOWN = 60;
 
@@ -16,13 +16,11 @@ export function AuthEntry() {
   const { data: session, isPending: sessionPending } = authClient.useSession();
   const [email, setEmail] = useState("");
   const [sentTo, setSentTo] = useState("");
+  const [emailMethod, setEmailMethod] = useState<"magic" | "otp">("magic");
+  const [otp, setOtp] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
-  const [error, setError] = useState(() =>
-    searchParams.has("magicLinkError") || searchParams.has("error")
-      ? "We could not complete authentication. Please try again."
-      : ""
-  );
+  const [error, setError] = useState(() => getAuthErrorMessage(searchParams));
   const [seconds, setSeconds] = useState(0);
   const requestedPath = getSafeNextPath(searchParams.get("next") ?? searchParams.get("callbackUrl") ?? searchParams.get("callbackURL") ?? searchParams.get("redirect"));
   const callbackURL = buildAuthContinuePath(requestedPath);
@@ -76,6 +74,56 @@ export function AuthEntry() {
     setSeconds(COOLDOWN);
   }
 
+
+  async function sendCode(event?: FormEvent) {
+    event?.preventDefault();
+    const normalized = email.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
+      setError("Enter a valid email address.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const { error: authError } = await authClient.emailOtp.sendVerificationOtp({
+      email: normalized,
+      type: "sign-in",
+    });
+    setLoading(false);
+    if (authError) {
+      setError(authError.message || "We could not send the code. Please try again.");
+      return;
+    }
+    setEmailMethod("otp");
+    setSentTo(normalized);
+    setSeconds(COOLDOWN);
+  }
+
+  async function verifyCode(event: FormEvent) {
+    event.preventDefault();
+    const code = otp.replace(/\D/g, "");
+    if (code.length !== 6) {
+      setError("Enter the 6-digit code from your email.");
+      return;
+    }
+    setLoading(true);
+    setError("");
+    const { data, error: authError } = await authClient.signIn.emailOtp({
+      email: sentTo,
+      otp: code,
+    });
+    if (authError) {
+      setLoading(false);
+      setError(authError.code === "OTP_EXPIRED"
+        ? "That code has expired. Request a new code below."
+        : authError.code === "TOO_MANY_ATTEMPTS"
+          ? "Too many incorrect attempts. Request a new code."
+          : "That code is invalid or has already been used.");
+      return;
+    }
+    window.location.replace(data?.user && !isProfileComplete(data.user)
+      ? buildCompleteProfilePath(requestedPath)
+      : callbackURL);
+  }
   
 async function resetSwiftDULogin() {
   setResettingLogin(true);
@@ -187,7 +235,7 @@ async function resetSwiftDULogin() {
                     </p>
                   </div>
 
-                  <form onSubmit={sendLink} className="mt-8">
+                  <form onSubmit={emailMethod === "otp" ? sendCode : sendLink} className="mt-8">
                     <label
                       htmlFor="email"
                       className="mb-2.5 block text-sm font-semibold text-slate-700"
@@ -225,9 +273,22 @@ async function resetSwiftDULogin() {
                       {loading && (
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                       )}
-                      Continue with email
+                      {emailMethod === "otp" ? "Email me a sign-in code" : "Email me a sign-in link"}
                     </button>
                   </form>
+
+                  <button
+                    type="button"
+                    onClick={() => { setEmailMethod((value) => value === "otp" ? "magic" : "otp"); setError(""); }}
+                    className="mt-4 w-full text-center text-sm font-semibold text-indigo-700 underline underline-offset-4"
+                  >
+                    {emailMethod === "otp" ? "Use a secure email link instead" : "Use a one-time code in this browser"}
+                  </button>
+                  {emailMethod === "otp" && (
+                    <p className="mt-3 text-center text-xs leading-5 text-slate-500">
+                      Best for Telegram, Safari, or an installed app: enter the code in this same browser.
+                    </p>
+                  )}
 
                   <div className="my-6 flex items-center gap-4">
                     <div className="h-px flex-1 bg-slate-200" />
@@ -288,11 +349,11 @@ async function resetSwiftDULogin() {
                   </div>
 
                   <h1 className="mt-6 text-3xl font-bold tracking-tight text-slate-950">
-                    Check your email
+                    {emailMethod === "otp" ? "Enter your sign-in code" : "Check your email"}
                   </h1>
 
                   <p className="mt-4 text-base leading-7 text-slate-500">
-                    We sent a secure sign-in link to
+                    We sent {emailMethod === "otp" ? "a 6-digit code" : "a secure sign-in link"} to
                   </p>
 
                   <p className="mt-1 break-all font-semibold text-slate-900">
@@ -300,8 +361,29 @@ async function resetSwiftDULogin() {
                   </p>
 
                   <p className="mt-4 text-sm leading-6 text-slate-500">
-                    Open the link to continue to SwiftDU.
+                    {emailMethod === "otp"
+                      ? "Return here and enter the code below. It expires in 5 minutes."
+                      : "Open the link to continue. If your email app opens another browser, use a one-time code here instead."}
                   </p>
+
+                  {emailMethod === "otp" && (
+                    <form onSubmit={verifyCode} className="mt-6">
+                      <label htmlFor="otp" className="mb-2 block text-sm font-semibold text-slate-700">One-time code</label>
+                      <input
+                        id="otp"
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        maxLength={6}
+                        value={otp}
+                        onChange={(event) => { setOtp(event.target.value.replace(/\D/g, "").slice(0, 6)); setError(""); }}
+                        className="h-14 w-full rounded-xl border border-slate-300 px-4 text-center text-2xl font-semibold tracking-[0.35em] text-slate-900 outline-none focus:border-indigo-600 focus:ring-4 focus:ring-indigo-600/10"
+                      />
+                      <button type="submit" disabled={loading} className="mt-4 flex h-14 w-full items-center justify-center rounded-xl bg-indigo-600 px-5 font-semibold text-white disabled:opacity-50">
+                        {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                        Sign in with code
+                      </button>
+                    </form>
+                  )}
 
                   {error && (
                     <div className="mt-6 rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-700">
@@ -311,7 +393,7 @@ async function resetSwiftDULogin() {
 
                   <button
                     type="button"
-                    onClick={() => void sendLink()}
+                    onClick={() => void (emailMethod === "otp" ? sendCode() : sendLink())}
                     disabled={loading || seconds > 0}
                     className="mt-8 flex h-14 w-full items-center justify-center rounded-xl bg-indigo-600 px-5 font-semibold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -321,16 +403,27 @@ async function resetSwiftDULogin() {
                         Sending...
                       </>
                     ) : seconds > 0 ? (
-                      `Resend link in ${seconds}s`
+                      `Resend ${emailMethod === "otp" ? "code" : "link"} in ${seconds}s`
                     ) : (
-                      "Resend link"
+                      emailMethod === "otp" ? "Resend code" : "Resend link"
                     )}
                   </button>
+
+                  {emailMethod === "magic" && (
+                    <button
+                      type="button"
+                      onClick={() => { setSentTo(""); setEmailMethod("otp"); setError(""); setSeconds(0); }}
+                      className="mt-5 block text-sm font-semibold text-indigo-600 transition hover:text-indigo-700"
+                    >
+                      Use a code in this browser instead
+                    </button>
+                  )}
 
                   <button
                     type="button"
                     onClick={() => {
                       setSentTo("");
+                      setOtp("");
                       setError("");
                       setSeconds(0);
                     }}
@@ -381,4 +474,12 @@ function GoogleIcon() {
       />
     </svg>
   );
+}
+
+function getAuthErrorMessage(searchParams: { get(name: string): string | null; has(name: string): boolean }) {
+  if (!searchParams.has("magicLinkError") && !searchParams.has("error")) return "";
+  const code = searchParams.get("error") || searchParams.get("magicLinkError") || "";
+  if (/expired/i.test(code)) return "That sign-in link has expired. Request a new link or use a one-time code below.";
+  if (/used|invalid|token/i.test(code)) return "That sign-in link is invalid or has already been used. Request a new one or use a one-time code.";
+  return "We could not complete sign-in. Request a new link or use a one-time code in this browser.";
 }

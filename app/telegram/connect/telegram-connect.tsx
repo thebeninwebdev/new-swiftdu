@@ -47,7 +47,7 @@ export function TelegramConnect() {
   useEffect(() => {
     if (isPending || !session?.user) return
     if (!/^[A-Za-z0-9_-]{43}$/.test(token)) {
-      setState({ kind: 'invalid' })
+      queueMicrotask(() => setState({ kind: 'invalid' }))
       return
     }
     const controller = new AbortController()
@@ -125,8 +125,8 @@ export function TelegramConnect() {
     return <Card>
       <TriangleAlert className='h-12 w-12 text-amber-500' />
       <h1 className='mt-5 text-2xl font-semibold text-slate-950'>This connection link has expired</h1>
-      <p className='mt-3 leading-7 text-slate-600'>For security, Telegram connection links are valid for 10 minutes.</p>
-      <p className='mt-3 leading-7 text-slate-600'>Please return to the bot and request a new link.</p>
+      <p className='mt-3 leading-7 text-slate-600'>For security, Telegram connection links are valid for 20 minutes.</p>
+      <p className='mt-3 leading-7 text-slate-600'>Return to the bot, send /start, and request a fresh link. Expired links never become valid again.</p>
     </Card>
   }
   if (state.kind === 'blocked') {

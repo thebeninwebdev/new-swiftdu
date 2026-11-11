@@ -20,6 +20,11 @@ test('link tokens use 256 random bits and only their hashes need storage', () =>
 test('only active admins and EXCO members are eligible to self-link', () => {
   assert.equal(isTelegramLinkEligible({ role: 'admin' }), true)
   assert.equal(isTelegramLinkEligible({ role: 'user', isExco: true }), true)
+  for (const excoRole of ['CFO', 'CMO', 'COO', 'CTO']) {
+    assert.equal(isTelegramLinkEligible({ role: 'user', excoRole, isExco: false }), true)
+  }
+  assert.equal(isTelegramLinkEligible({ role: 'user', " excoRole": 'CFO', isExco: false }), true)
+  assert.equal(isTelegramLinkEligible({ role: 'user', excoRole: 'customer' }), false)
   assert.equal(isTelegramLinkEligible({ role: 'user' }), false)
   assert.equal(isTelegramLinkEligible({ role: 'tasker' }), false)
   assert.equal(isTelegramLinkEligible({ role: 'admin', isSuspended: true }), false)

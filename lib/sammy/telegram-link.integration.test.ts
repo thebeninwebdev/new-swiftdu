@@ -123,3 +123,27 @@ test('a consumed challenge cannot be retried by a different SwiftDU account', as
   assert.deepEqual(await linking.consumeTelegramLink(token, String(owner._id)), { botUsername: undefined })
   assert.equal(await linking.consumeTelegramLink(token, String(other._id)), null)
 })
+test('canonical EXCO roles can link with the legacy flag disabled and are immediately linked', async () => {
+  for (const [index, excoRole] of ['CFO', 'CMO', 'COO', 'CTO'].entries()) {
+    const exco = await account(`${excoRole.toLowerCase()}@example.invalid`, {
+      role: 'user', excoRole, isExco: false,
+    })
+    const token = await challenge(String(60001 + index), new Date(Date.now() + 60_000))
+    assert.ok(await linking.previewTelegramLink(token, String(exco._id)))
+    await linking.consumeTelegramLink(token, String(exco._id))
+    assert.deepEqual(await linking.getTelegramLinkStatus(String(60001 + index)), { status: 'LINKED' })
+  }
+})
+
+test('a session id and email that identify different accounts cannot link either account', async () => {
+  const [idOwner, emailOwner] = await Promise.all([
+    account('id-owner@example.invalid'),
+    account('email-owner@example.invalid'),
+  ])
+  const token = await challenge('70001', new Date(Date.now() + 60_000))
+  await assert.rejects(
+    linking.consumeTelegramLink(token, { id: String(idOwner._id), email: emailOwner.email }),
+    (error: unknown) => (error as { code?: string }).code === 'AUTH_IDENTITY_MISMATCH'
+  )
+  assert.equal(await User.countDocuments({ telegramUserId: '70001' }), 0)
+})

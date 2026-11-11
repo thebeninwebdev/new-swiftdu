@@ -10,6 +10,7 @@ import { SammyPhoneAudit, fingerprintSammyPhone } from '@/models/sammy-phone-aud
 import { SammyCustomerRegistrationAudit, fingerprintSammyRegistrationValue } from '@/models/sammy-customer-registration-audit'
 import { SammyApiError } from './server'
 import { isApprovedTelegramStaffAccount, normalizeCustomerPhone } from './staff-policy'
+import { hasTelegramStaffPrivilege } from './telegram-link-policy'
 
 export { isApprovedTelegramStaffAccount, normalizeCustomerPhone } from './staff-policy'
 
@@ -26,6 +27,8 @@ export type SammyStaff = {
   email: string
   role: string
   isExco?: boolean
+  excoRole?: string
+  " excoRole"?: string
   telegramUserId: string
   telegramFirstName?: string
   telegramLastName?: string
@@ -71,12 +74,12 @@ export async function resolveSammyStaff(identity: TelegramIdentity) {
 
   await connectDB()
   const staff = await User.findOne({ telegramUserId })
-    .select('_id name email role isExco isSuspended telegramUserId telegramEnabled telegramRevokedAt telegramFirstName telegramLastName')
+    .select({ _id: 1, name: 1, email: 1, role: 1, isExco: 1, excoRole: 1, " excoRole": 1, isSuspended: 1, telegramUserId: 1, telegramEnabled: 1, telegramRevokedAt: 1, telegramFirstName: 1, telegramLastName: 1 })
     .lean<SammyStaff>()
 
   if (!staff) throw new SammyApiError(403, 'TELEGRAM_NOT_LINKED', 'Connect your SwiftDU account to continue.')
   if (staff.isSuspended) throw new SammyApiError(403, 'STAFF_ACCOUNT_SUSPENDED', 'This SwiftDU account is suspended.')
-  if (staff.role !== 'admin' && !staff.isExco) throw new SammyApiError(403, 'STAFF_INSUFFICIENT_PRIVILEGES', 'This account does not have staff access.')
+  if (!hasTelegramStaffPrivilege(staff)) throw new SammyApiError(403, 'STAFF_INSUFFICIENT_PRIVILEGES', 'This account does not have staff access.')
   if (!isApprovedTelegramStaffAccount(staff, telegramUserId)) throw new SammyApiError(403, 'TELEGRAM_ACCESS_DISABLED', 'Telegram access is disabled for this account.')
 
   const snapshot: Record<string, string> = {}

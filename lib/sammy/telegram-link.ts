@@ -1,4 +1,4 @@
-import mongoose, { Types } from 'mongoose'
+import mongoose, { Types, type ClientSession } from 'mongoose'
 
 import { connectDB } from '@/lib/db'
 import { TelegramLinkChallenge } from '@/models/telegram-link-challenge'
@@ -8,11 +8,12 @@ import type { TelegramIdentity } from './staff'
 import {
   createTelegramLinkToken,
   hashTelegramLinkToken,
+  hasTelegramStaffPrivilege,
   isTelegramLinkEligible,
   isValidTelegramLinkToken,
 } from './telegram-link-policy'
 
-const CHALLENGE_LIFETIME_MS = 10 * 60 * 1000
+const CHALLENGE_LIFETIME_MS = 20 * 60 * 1000
 const MAX_CHALLENGES_PER_WINDOW = 5
 
 export type TelegramLinkStatus =
@@ -24,26 +25,43 @@ export type TelegramLinkStatus =
 
 export type TelegramLinkSessionIdentity = { id?: string | null; email?: string | null }
 
-function telegramLinkAccountLookup(identity: string | TelegramLinkSessionIdentity) {
-  const sessionId = typeof identity === 'string' ? identity : identity.id
-  const email = typeof identity === 'string' ? undefined : identity.email
-  const lookup: Record<string, unknown>[] = []
-  if (sessionId) {
-    if (Types.ObjectId.isValid(sessionId)) lookup.push({ _id: new Types.ObjectId(sessionId) })
-    // Legacy Better Auth records may retain the adapter id as `id`.
-    lookup.push({ id: sessionId })
-  }
-  const normalizedEmail = email?.trim().toLowerCase()
-  if (normalizedEmail) lookup.push({ email: normalizedEmail })
-  return lookup
-}
+const TELEGRAM_ACCOUNT_PROJECTION = {
+  _id: 1, name: 1, email: 1, role: 1, isExco: 1, excoRole: 1,
+  " excoRole": 1, isSuspended: 1, telegramUserId: 1,
+  telegramEnabled: 1, telegramRevokedAt: 1,
+} as const
 
-async function findTelegramLinkAccount(identity: string | TelegramLinkSessionIdentity) {
-  const lookup = telegramLinkAccountLookup(identity)
-  if (!lookup.length) return null
-  return User.findOne({ $or: lookup })
-    .select('_id name email role isExco isSuspended telegramUserId telegramEnabled telegramRevokedAt')
-    .lean()
+async function findTelegramLinkAccount(
+  identity: string | TelegramLinkSessionIdentity,
+  dbSession?: ClientSession
+) {
+  const sessionId = typeof identity === 'string' ? identity : identity.id?.trim()
+  const normalizedEmail = typeof identity === 'string'
+    ? undefined
+    : identity.email?.trim().toLowerCase()
+
+  let account = null
+  if (sessionId) {
+    const idLookup: Record<string, unknown>[] = [{ id: sessionId }]
+    if (Types.ObjectId.isValid(sessionId)) idLookup.unshift({ _id: new Types.ObjectId(sessionId) })
+    account = await User.findOne({ $or: idLookup })
+      .select(TELEGRAM_ACCOUNT_PROJECTION)
+      .session(dbSession ?? null)
+      .lean()
+    if (account && normalizedEmail && account.email?.trim().toLowerCase() !== normalizedEmail) {
+      throw new SammyApiError(403, 'AUTH_IDENTITY_MISMATCH', 'Your sign-in session no longer matches this account. Please sign in again.')
+    }
+  }
+
+  // Email fallback exists only for legacy sessions whose adapter id no longer
+  // resolves. It never overrides a conflicting, valid id match.
+  if (!account && normalizedEmail) {
+    account = await User.findOne({ email: normalizedEmail })
+      .select(TELEGRAM_ACCOUNT_PROJECTION)
+      .session(dbSession ?? null)
+      .lean()
+  }
+  return account
 }
 function cleanSnapshot(value: unknown, maxLength = 128) {
   const text = typeof value === 'string' ? value.trim() : ''
@@ -66,11 +84,11 @@ export async function getTelegramLinkStatus(telegramUserIdValue: unknown) {
   }
   await connectDB()
   const account = await User.findOne({ telegramUserId })
-    .select('role isExco isSuspended telegramEnabled telegramRevokedAt')
+    .select({ role: 1, isExco: 1, excoRole: 1, " excoRole": 1, isSuspended: 1, telegramEnabled: 1, telegramRevokedAt: 1 })
     .lean()
   if (!account) return { status: 'NOT_LINKED' as TelegramLinkStatus }
   if (account.isSuspended) return { status: 'ACCOUNT_SUSPENDED' as TelegramLinkStatus }
-  if (account.role !== 'admin' && !account.isExco) {
+  if (!hasTelegramStaffPrivilege(account)) {
     return { status: 'INSUFFICIENT_PRIVILEGES' as TelegramLinkStatus }
   }
   if (account.telegramEnabled !== true || account.telegramRevokedAt) {
@@ -173,10 +191,7 @@ export async function consumeTelegramLink(token: string, identity: string | Tele
         invalidatedAt: { $exists: false },
         active: true,
       }).session(dbSession)
-      const lookup = telegramLinkAccountLookup(identity)
-      const account = lookup.length ? await User.findOne({ $or: lookup })
-        .select('_id role isExco isSuspended telegramUserId telegramEnabled telegramRevokedAt')
-        .session(dbSession) : null
+      const account = await findTelegramLinkAccount(identity, dbSession)
       if (!account || !isTelegramLinkEligible(account)) {
         throw new SammyApiError(403, account?.isSuspended ? 'ACCOUNT_SUSPENDED' : 'STAFF_NOT_ELIGIBLE', 'This account is not eligible for Telegram staff access.')
       }

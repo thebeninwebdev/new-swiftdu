@@ -1,3 +1,5 @@
+import { isTelegramLinkEligible, type TelegramStaffEligibilityAccount } from './telegram-link-policy'
+
 export function normalizeCustomerPhone(value?: string | null) {
   const digits = String(value || '').replace(/\D/g, '')
   if (!digits) return ''
@@ -6,13 +8,9 @@ export function normalizeCustomerPhone(value?: string | null) {
   return digits
 }
 
-export function isApprovedTelegramStaffAccount<T extends {
+export function isApprovedTelegramStaffAccount<T extends TelegramStaffEligibilityAccount & {
     telegramUserId?: string | null
     telegramEnabled?: boolean
-    telegramRevokedAt?: Date | null
-    isSuspended?: boolean
-    role?: string | null
-    isExco?: boolean
   }>(
   staff: T | null | undefined,
   telegramUserId: string
@@ -22,8 +20,6 @@ export function isApprovedTelegramStaffAccount<T extends {
     /^\d+$/.test(telegramUserId) &&
     staff.telegramUserId === telegramUserId &&
     staff.telegramEnabled === true &&
-    !staff.telegramRevokedAt &&
-    staff.isSuspended !== true &&
-    (staff.role === 'admin' || staff.isExco === true)
+    isTelegramLinkEligible(staff)
   )
 }
