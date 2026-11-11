@@ -5,9 +5,8 @@ import mongoose from 'mongoose'
 import { NextRequest } from 'next/server'
 
 const { connectDB } = await import('@/lib/db')
-const { handleSammyStaffOrder } = await import('@/lib/sammy/staff-order-service')
+const { resolveSammyRoute, dispatchSammyRoute } = await import('@/services/order-api/sammy-routes.mts')
 
-const STAFF_ORDERS_PATH = '/api/internal/sammy/staff/orders'
 const MAX_BODY_BYTES = 1_048_576
 
 function sanitizeSensitiveText(text: string): string {
@@ -142,7 +141,9 @@ export function createOrderApiServer() {
       const connected = mongoose.connection.readyState === 1
       return sendJson(response, connected ? 200 : 503, { status: connected ? 'ok' : 'unavailable' })
     }
-    if (request.method !== 'POST' || pathname !== STAFF_ORDERS_PATH) {
+    // Explicitly route only known Sammy staff/link API requests.
+    // Website APIs, auth callbacks and arbitrary HTTP paths are not exposed.
+    if (!resolveSammyRoute(request.method || '', pathname)) {
       return sendJson(response, 404, { error: 'Not found.' })
     }
     if (!/^application\/json(?:\s*;|$)/i.test(request.headers['content-type'] || '')) {
@@ -157,12 +158,20 @@ export function createOrderApiServer() {
         headers.set('x-swiftdu-correlation-id', correlationId)
       }
 
-      const nextRequest = new NextRequest(new URL(STAFF_ORDERS_PATH, baseUrl), {
-        method: 'POST',
+      const nextRequest = new NextRequest(new URL(pathname, baseUrl), {
+        method: request.method,
         headers,
         body,
       })
-      const result = await handleSammyStaffOrder(nextRequest, scheduleBackground)
+      // Direct module dispatch: this NEVER forwards a request to Vercel.
+      const result = await dispatchSammyRoute(nextRequest, scheduleBackground)
+      console.info('[Sammy Render API request]', {
+        route: pathname,
+        method: request.method,
+        correlationId,
+        status: result.status,
+        durationMs: Math.round(performance.now() - startedAt),
+      })
       response.writeHead(result.status, {
         'content-type': result.headers.get('content-type') || 'application/json; charset=utf-8',
         'cache-control': 'no-store',
