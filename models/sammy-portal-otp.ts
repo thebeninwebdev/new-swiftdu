@@ -12,7 +12,7 @@ const schema = new Schema({
   codeHash: { type: String, required: true },
   expiresAt: { type: Date, required: true },
   attempts: { type: Number, default: 0, required: true },
-  sentCount: { type: Number, default: 1, required: true },
+  sentCount: { type: Number, default: 0, required: true },
   lastSentAt: { type: Date, required: true },
   consumedAt: Date,
 }, { timestamps: true, collection: 'sammy_portal_otps' })
