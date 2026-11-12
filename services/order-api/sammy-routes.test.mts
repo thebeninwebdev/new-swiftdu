@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import { resolveSammyRoute } from './sammy-routes.mts'
 import { isSammyPortalRoute } from './sammy-portal.mts'
-import { validatePortalToken } from '@/lib/sammy/portal-linking'
+const { validatePortalToken } = await import('@/lib/sammy/portal-linking')
 
 const cases = [
   ['POST', '/api/internal/sammy/staff/auth', 'staff-auth'],
