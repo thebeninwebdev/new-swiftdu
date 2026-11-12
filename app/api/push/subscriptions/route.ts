@@ -23,9 +23,11 @@ export async function GET(request: NextRequest) {
     .select('endpoint expirationTime createdAt updatedAt')
     .lean<Array<{ endpoint: string; expirationTime?: number; createdAt?: Date; updatedAt?: Date }>>()
 
+  const currentEndpoint = request.headers.get('x-swiftdu-push-endpoint')
   return NextResponse.json({
     count: subscriptions.length,
     hasSubscription: subscriptions.length > 0,
+    hasCurrentSubscription: Boolean(currentEndpoint && subscriptions.some(subscription => subscription.endpoint === currentEndpoint)),
     subscriptions: subscriptions.map(s => {
       let host = ''
       try {

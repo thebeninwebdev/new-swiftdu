@@ -6,6 +6,8 @@ import { useRouter } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { ArrowRight, Clock3, Droplets, FileText, Loader2, ShoppingBag, Store, type LucideIcon } from 'lucide-react'
 import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
+import InstallPwaButton from '@/components/InstallPwaButton'
+import { usePwaInstall } from '@/components/PwaInstallProvider'
 import { formatNextOperationalOpening, getCustomerOperationsState, isCustomerOrderingUnavailable, type CustomerOperationsStatus } from '@/lib/operations-display'
 import { fetchActiveOrderSummary, fetchDashboardOperations, updateActiveOrderCache } from '@/lib/dashboard-client-data'
 import taskFoodImage from '@/public/dashboard/tasks/task-food.webp'
@@ -30,6 +32,7 @@ const services: Service[] = [
 export function DashboardLanding({ userName, initialTrainingMode }: { userName: string; initialTrainingMode: boolean }) {
   const router = useRouter()
   const canApplyAsTasker = useTaskerEligibility()
+  const { isInstalled: isPwaInstalled, isReady: isPwaReady } = usePwaInstall()
   const [selectedService, setSelectedService] = useState<string | null>(null)
   const [activeOrder, setActiveOrder] = useState<ActiveOrder | null>(null)
   const [operations, setOperations] = useState<CustomerOperationsStatus | null>(null)
@@ -232,6 +235,13 @@ export function DashboardLanding({ userName, initialTrainingMode }: { userName: 
             </div>
           </div>
         </section>
+        {isPwaReady && !isPwaInstalled ? (
+          <section className="mt-6 rounded-2xl border border-indigo-100 bg-white/80 p-5">
+            <h2 className="text-base font-bold text-slate-950">Use SwiftDU like an app</h2>
+            <p className="mb-4 mt-1 text-sm text-slate-600">Install SwiftDU for quicker access from this device.</p>
+            <InstallPwaButton />
+          </section>
+        ) : null}
         {canApplyAsTasker ? (
           <section className="mt-6 flex flex-col gap-4 rounded-2xl border border-indigo-200 bg-white/80 p-5 sm:flex-row sm:items-center sm:justify-between">
             <div>

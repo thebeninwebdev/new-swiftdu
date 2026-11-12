@@ -4,14 +4,12 @@ import { useEffect, useState } from 'react'
 import { Download, X } from 'lucide-react'
 
 import { usePwaInstall } from '@/components/PwaInstallProvider'
-import { authClient } from '@/lib/auth-client'
 import {
   CUSTOMER_INSTALL_SUGGESTION_KEY,
   shouldShowCustomerInstallSuggestion,
 } from '@/lib/pwa-install'
 
 export function AppInstallPromptManager() {
-  const { data: session, isPending: sessionPending } = authClient.useSession()
   const {
     fallbackInstructions,
     install,
@@ -22,11 +20,10 @@ export function AppInstallPromptManager() {
   const [showPrompt, setShowPrompt] = useState(false)
   const [showHelp, setShowHelp] = useState(false)
 
-  const isTasker = session?.user?.role === 'tasker'
-  const isEligibleCustomer = isReady && !sessionPending && !isInstalled && !isTasker
+  const isEligible = isReady && !isInstalled
 
   useEffect(() => {
-    if (!isEligibleCustomer) return
+    if (!isEligible) return
 
     let lastShown: string | null = null
     try {
@@ -59,7 +56,7 @@ export function AppInstallPromptManager() {
       window.clearTimeout(timeoutId)
       window.removeEventListener('storage', handleStorage)
     }
-  }, [isEligibleCustomer])
+  }, [isEligible])
 
   const dismiss = () => setShowPrompt(false)
 
@@ -72,7 +69,7 @@ export function AppInstallPromptManager() {
     setShowHelp(true)
   }
 
-  if (!showPrompt || !isEligibleCustomer) return null
+  if (!showPrompt || !isEligible) return null
 
   return (
     <div className="fixed inset-x-3 bottom-4 z-[90] mx-auto max-w-md rounded-xl border border-slate-200 bg-white p-4 text-slate-900 shadow-2xl shadow-slate-900/20 sm:bottom-6 dark:border-slate-800 dark:bg-slate-950 dark:text-white">

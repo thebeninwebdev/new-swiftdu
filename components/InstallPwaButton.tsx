@@ -10,12 +10,13 @@ export default function InstallPwaButton() {
     fallbackInstructions,
     install,
     isInstalled,
+    isReady,
     isInstalling,
     isInstallPromptAvailable,
   } = usePwaInstall()
   const [showHelp, setShowHelp] = useState(false)
 
-  if (isInstalled) return null
+  if (!isReady || isInstalled) return null
 
   const handleInstall = async () => {
     if (!isInstallPromptAvailable) {

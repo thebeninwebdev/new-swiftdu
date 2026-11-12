@@ -76,7 +76,7 @@ export function TaskerHome({ name, errands, accepted, loading, refreshing, error
       ) : (
         <>
           <TaskerPwaPrompt className="mb-4" />
-          <OrderAlertsToggle className="mb-5" />
+          <OrderAlertsToggle className="mb-5" mode="onboarding" />
           {work.data?.checkedIn && (
             <div className="mb-6 flex items-center justify-between gap-3 rounded-2xl bg-emerald-50 px-4 py-3 text-emerald-900">
               <div>

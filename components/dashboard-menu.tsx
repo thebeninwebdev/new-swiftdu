@@ -3,9 +3,9 @@
 import {useState, useEffect, useSyncExternalStore, type ReactNode} from 'react'
 import {useRouter, usePathname} from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
-import {ChevronLeft, LogOut, PlusCircle, ListTodo, User, Bell, Star, BriefcaseBusiness, Menu, X} from 'lucide-react'
+import {ChevronLeft, LogOut, PlusCircle, ListTodo, User, Bell, Star, BriefcaseBusiness, LayoutDashboard, Menu, X} from 'lucide-react'
 import { useIdleEffect } from '@/hooks/use-idle-effect'
-import { useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
+import { useTaskerDashboardAccess, useTaskerEligibility } from '@/hooks/use-tasker-eligibility'
 import { toast } from 'sonner'
 import { fetchDashboardExco, fetchDashboardProfile } from '@/lib/dashboard-client-data'
 
@@ -114,9 +114,19 @@ export default function DashboardMenu({ pageTitle, children }: DashboardMenuProp
   const pathname = usePathname()
   const sessionUserId = session?.user?.id
   const canApplyAsTasker = useTaskerEligibility()
-  const visibleNavigationItems = navigationItems.filter(
-    (item) => item.href !== '/tasker-signup/signup' || canApplyAsTasker
-  )
+  const hasTaskerDashboardAccess = useTaskerDashboardAccess()
+  const visibleNavigationItems = navigationItems.flatMap((item) => {
+    if (item.href !== '/tasker-signup/signup') return [item]
+    if (hasTaskerDashboardAccess) {
+      return [{
+        label: 'Open Tasker Dashboard',
+        href: '/tasker-dashboard',
+        icon: LayoutDashboard,
+        description: 'Manage tasks and availability',
+      }]
+    }
+    return canApplyAsTasker ? [item] : []
+  })
   const mobilePageTitle = getDashboardPageTitle(pathname, pageTitle)
   const userName = headerProfile?.name || session?.user?.name || 'SwiftDU user'
   const userEmail = headerProfile?.email || session?.user?.email || ''

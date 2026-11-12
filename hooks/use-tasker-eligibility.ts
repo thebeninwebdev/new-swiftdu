@@ -3,74 +3,77 @@
 import { useEffect, useState } from 'react'
 import { authClient } from '@/lib/auth-client'
 
-const eligibilityCache = new Map<string, boolean>()
-const eligibilityRequests = new Map<string, Promise<boolean>>()
+type TaskerNavigationStatus = {
+  canApply: boolean
+  hasTaskerAccess: boolean
+}
 
-function loadEligibility(userId: string) {
-  if (eligibilityCache.has(userId)) {
-    return Promise.resolve(eligibilityCache.get(userId)!)
-  }
-  const existing = eligibilityRequests.get(userId)
+const statusCache = new Map<string, TaskerNavigationStatus>()
+const statusRequests = new Map<string, Promise<TaskerNavigationStatus>>()
+const EMPTY_STATUS: TaskerNavigationStatus = { canApply: false, hasTaskerAccess: false }
+
+function loadStatus(userId: string) {
+  const cached = statusCache.get(userId)
+  if (cached) return Promise.resolve(cached)
+  const existing = statusRequests.get(userId)
   if (existing) return existing
+
   const request = fetch('/api/users/me/tasker-eligibility', { cache: 'no-store' })
-    .then(async (response) => response.ok && (await response.json())?.canApply === true)
-    .catch(() => false)
-    .then((canApply) => {
-      eligibilityCache.set(userId, canApply)
-      return canApply
+    .then(async (response) => {
+      if (!response.ok) return EMPTY_STATUS
+      const payload = (await response.json()) as Partial<TaskerNavigationStatus>
+      return {
+        canApply: payload.canApply === true,
+        hasTaskerAccess: payload.hasTaskerAccess === true,
+      }
     })
-    .finally(() => eligibilityRequests.delete(userId))
-  eligibilityRequests.set(userId, request)
+    .catch(() => EMPTY_STATUS)
+    .then((status) => {
+      statusCache.set(userId, status)
+      return status
+    })
+    .finally(() => statusRequests.delete(userId))
+
+  statusRequests.set(userId, request)
   return request
 }
 
-export function useTaskerEligibility() {
+function useTaskerNavigationStatus() {
   const { data: session } = authClient.useSession()
   const userId = session?.user?.id
-  const role = session?.user?.role
-  const taskerId = session?.user?.taskerId
-  const [eligibility, setEligibility] = useState<{ userId: string; canApply: boolean } | null>(
-    () => (userId && eligibilityCache.has(userId) ? { userId, canApply: eligibilityCache.get(userId)! } : null)
+  const [status, setStatus] = useState<{ userId: string; value: TaskerNavigationStatus } | null>(
+    () => userId && statusCache.has(userId) ? { userId, value: statusCache.get(userId)! } : null
   )
 
   useEffect(() => {
-    if (!userId || role !== 'user' || taskerId) return
-    if (eligibilityCache.has(userId)) {
-      setEligibility({ userId, canApply: eligibilityCache.get(userId)! })
-      return
-    }
+    if (!userId) return
 
     let ignore = false
     const currentUserId = userId
-
-    // Defer tasker eligibility fetch until after interactive rendering
-    const hasIdle = typeof window !== 'undefined' && typeof (window as unknown as { requestIdleCallback?: unknown }).requestIdleCallback === 'function'
-    const idleId = hasIdle
-      ? (window as unknown as { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback(() => void fetchEligibility())
-      : null
-    const timeoutId = !hasIdle
-      ? setTimeout(() => void fetchEligibility(), 300)
-      : null
-
-    async function fetchEligibility() {
-      try {
-        const canApply = await loadEligibility(currentUserId)
-        if (!ignore) setEligibility({ userId: currentUserId, canApply })
-      } catch {
-        if (!ignore) setEligibility({ userId: currentUserId, canApply: false })
-      }
+    const run = () => void loadStatus(currentUserId).then((value) => {
+      if (!ignore) setStatus({ userId: currentUserId, value })
+    })
+    const idleWindow = window as typeof window & {
+      requestIdleCallback?: (callback: () => void) => number
+      cancelIdleCallback?: (id: number) => void
     }
+    const idleId = idleWindow.requestIdleCallback?.(run)
+    const timeoutId = idleId === undefined ? window.setTimeout(run, 300) : null
 
     return () => {
       ignore = true
-      if (hasIdle && idleId !== null) {
-        (window as unknown as { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(idleId)
-      }
-      if (timeoutId !== null) {
-        clearTimeout(timeoutId)
-      }
+      if (idleId !== undefined) idleWindow.cancelIdleCallback?.(idleId)
+      if (timeoutId !== null) window.clearTimeout(timeoutId)
     }
-  }, [userId, role, taskerId])
+  }, [userId])
 
-  return Boolean(userId && role === 'user' && !taskerId && eligibility?.userId === userId && eligibility.canApply)
+  return userId && status?.userId === userId ? status.value : EMPTY_STATUS
+}
+
+export function useTaskerEligibility() {
+  return useTaskerNavigationStatus().canApply
+}
+
+export function useTaskerDashboardAccess() {
+  return useTaskerNavigationStatus().hasTaskerAccess
 }
