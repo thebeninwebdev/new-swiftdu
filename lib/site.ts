@@ -1,4 +1,4 @@
-export const DEFAULT_SITE_URL = "https://swiftdu.org";
+export const DEFAULT_SITE_URL = "https://www.swiftdu.org";
 const ADSENSE_PUBLISHER_ID = "4657526411072658";
 
 function normalizeUrl(value?: string | null) {

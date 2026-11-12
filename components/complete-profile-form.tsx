@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Check, Loader2 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
+import { buildAuthContinuationPath } from "@/lib/auth-continuation-paths";
+import { getSafeContinuationReference } from "@/lib/auth-continuation-reference";
 import {
   getPostProfileCompletionPath,
   isValidBirthday,
@@ -53,8 +55,8 @@ export function CompleteProfileForm() {
 
   useEffect(() => {
     if (!isPending && !session?.user) {
-      const next = search.get("next");
-      router.replace(next ? `/auth?next=${encodeURIComponent(next)}` : "/auth");
+      const continuation = getSafeContinuationReference(search.get("continuation"));
+      router.replace(continuation ? `/auth?continuation=${continuation}` : "/auth");
     }
   }, [isPending, router, search, session?.user]);
 
@@ -177,7 +179,11 @@ export function CompleteProfileForm() {
       await authClient.getSession({ query: { disableCookieCache: true } });
       setDirection(1);
       setStep("success");
-      window.setTimeout(() => router.replace(getPostProfileCompletionPath(session?.user, search.get("next"))), reduceMotion ? 500 : 750);
+      const continuation = getSafeContinuationReference(search.get("continuation"));
+      const destination = continuation
+        ? buildAuthContinuationPath(continuation)
+        : getPostProfileCompletionPath(session?.user);
+      window.setTimeout(() => router.replace(destination), reduceMotion ? 500 : 750);
     } catch (error) {
       setServerError(error instanceof Error ? error.message : "We couldn't save your profile. Please try again.");
       setSaving(false);

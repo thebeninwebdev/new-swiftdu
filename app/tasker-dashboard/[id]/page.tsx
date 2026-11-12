@@ -19,6 +19,7 @@ import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
 import { claimCompletionCelebration, getCompletionRecognition } from '@/lib/completion-celebration'
 import { mergeOrderUpdate } from '@/lib/order-sync'
 import { getCompletionWindowMinutes } from '@/lib/completion-timer'
+import { isOutstandingSettlement } from '@/lib/settlement-eligibility'
 import { canTaskerCancelOrder, canTaskerReportTransferIssue, isCustomerPaymentConfirmed } from '@/lib/order-status'
 import { convertToNaira } from '@/lib/utils'
 import { RESTAURANT_MAX_PEOPLE } from '@/lib/pricing'
@@ -465,7 +466,11 @@ function ErrandDetailPageContent() {
       }
       toast.success(action === 'complete' ? 'Errand marked as completed.' : 'Errand cancelled successfully.')
       window.dispatchEvent(new Event('swiftdu-work-updated'))
-      if (action === 'cancel') router.replace('/tasker-dashboard')
+      if (action === 'complete' && wasActive && isOutstandingSettlement(confirmed)) {
+        router.replace(`/tasker-dashboard/payment/${confirmed._id}`)
+      } else if (action === 'cancel') {
+        router.replace('/tasker-dashboard')
+      }
     } catch {
       setError(`Failed to ${action} errand`)
     } finally {

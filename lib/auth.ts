@@ -7,6 +7,7 @@ import { emailOTP, twoFactor } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 import { magicLink } from "better-auth/plugins";
 import { AuthEmailRateLimit } from "@/models/auth-email-rate-limit";
+import { AUTH_SESSION_SETTINGS, getAuthCookieAttributes } from "@/lib/auth-session-config";
 import { getAuthBaseUrl, getTrustedOrigins } from "@/lib/site";
 import { reconcileTaskerIdentityForUser } from "@/lib/tasker-onboarding";
 
@@ -17,8 +18,7 @@ const db = new Proxy({} as import("mongodb").Db, {
     return typeof value === "function" ? value.bind(realDb) : value;
   },
 });
-const THIRTY_DAYS_IN_SECONDS = 60 * 60 * 24 * 30;
-const ONE_DAY_IN_SECONDS = 60 * 60 * 24;
+
 const authBaseUrl = getAuthBaseUrl();
 const trustedOrigins = getTrustedOrigins();
 const appURL = new URL(authBaseUrl);
@@ -159,17 +159,9 @@ export const auth = betterAuth({
   appName: "SwiftDU",
   baseURL: appURL.origin,
   trustedOrigins,
-  session: {
-    expiresIn: THIRTY_DAYS_IN_SECONDS,
-    updateAge: ONE_DAY_IN_SECONDS,
-  },
+  session: AUTH_SESSION_SETTINGS,
   advanced: {
-    defaultCookieAttributes: {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-    },
+    defaultCookieAttributes: getAuthCookieAttributes(),
     ...(shareProductionSessionCookie
       ? { crossSubDomainCookies: { enabled: true, domain: "swiftdu.org" } }
       : {}),

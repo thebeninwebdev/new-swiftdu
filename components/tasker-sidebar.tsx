@@ -41,6 +41,7 @@ interface UnpaidOrder {
     | 'overdue'
   settlementDueAt?: string
   completedAt?: string
+  isTestOrder?: boolean
 }
 
 interface UserType {
@@ -169,9 +170,10 @@ export default function TaskerSidebar() {
 
   const fetchUnpaidOrders = useCallback(async () => {
     try {
-      const unpaidRes = await fetchWithSocketPause(
-        '/api/taskers/unpaid-platform-fees'
-      )
+      const unpaidRes = await fetch('/api/taskers/unpaid-platform-fees', {
+        cache: 'no-store',
+        credentials: 'same-origin',
+      })
 
       if (!unpaidRes.ok) return
 
@@ -280,6 +282,18 @@ export default function TaskerSidebar() {
     fetchUnpaidOrders,
     user?.taskerId,
   ])
+
+  useEffect(() => {
+    const refresh = () => { void fetchUnpaidOrders() }
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+    window.addEventListener('swiftdu-work-updated', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+      window.removeEventListener('swiftdu-work-updated', refresh)
+    }
+  }, [fetchUnpaidOrders])
 
   /*
    * ---------------------------------------------------------
@@ -432,7 +446,7 @@ export default function TaskerSidebar() {
    * ---------------------------------------------------------
    */
 
-  const notificationCount = unpaidOrders.length
+  const notificationCount = unpaidOrders.filter((order) => !order.isTestOrder).length
   const userName = user?.name || 'Tasker'
 
   /*
@@ -482,6 +496,7 @@ export default function TaskerSidebar() {
       <button
         type="button"
         onClick={() => handleNavigation(item.href)}
+        aria-label={isNotifications && notificationCount > 0 ? `Notifications, ${notificationCount} unpaid platform fees.` : item.name}
         className={`
           group flex w-full items-center gap-3
           rounded-xl px-4 py-3
@@ -553,7 +568,7 @@ export default function TaskerSidebar() {
               ${
                 isActive
                   ? 'bg-white/20 text-white'
-                  : 'bg-amber-500 text-white'
+                  : 'bg-red-600 text-white'
               }
             `}
           >

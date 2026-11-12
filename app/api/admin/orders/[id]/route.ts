@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getAdminDashboardAccess } from '@/lib/admin-access'
 import { connectDB } from '@/lib/db'
 import { ensureBookedAt } from '@/lib/order-response-time'
+import { getSettlementDueAt } from '@/lib/order-finance'
+import { hasVerifiedSettlement } from '@/lib/settlement-eligibility'
 import { Order } from '@/models/order'
 import { emitOrderUpdated } from '@/lib/socket'
 import {
@@ -78,6 +80,13 @@ export async function PATCH(
       if (order.cafeInquiryStatus) order.cafeInquiryStatus = 'completed'
       order.status = 'completed'
       order.completedAt = new Date()
+      order.platformFeeWaivedForFastCompletion = false
+      if (order.platformFee > 0 && !hasVerifiedSettlement(order)) {
+        order.taskerHasPaid = false
+        order.settlementStatus = 'pending'
+        order.settlementDueAt = order.settlementDueAt || getSettlementDueAt(order.completedAt)
+        order.settlementFailureReason = undefined
+      }
     } else if (action === 'clear-declined') {
       if (!order.isDeclinedTask) {
         return NextResponse.json(

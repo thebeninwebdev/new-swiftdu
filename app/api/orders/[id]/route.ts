@@ -20,7 +20,7 @@ import { ensureCompletionTimer } from '@/lib/completion-timer';
 import { getSettlementDueAt, splitServiceFee } from '@/lib/order-finance';
 import { ensureBookedAt } from '@/lib/order-response-time';
 import { consumeServiceFeeDiscountForCompletedOrder } from '@/lib/service-fee-discount';
-import { shouldWaivePlatformFeeForFastCompletion } from '@/lib/training-settlement';
+import { hasVerifiedSettlement } from '@/lib/settlement-eligibility';
 import {
   calculateOrderPricing,
   type PricingResult,
@@ -252,12 +252,14 @@ export async function PATCH(
         order.prematureCompletionReportedAt = order.customerReceiptRespondedAt;
         order.platformFeeWaivedForFastCompletion = false;
         order.completedBeforeTimer = false;
-        order.taskerHasPaid = false;
-        order.settlementStatus = 'pending';
-        order.settlementDueAt =
-          order.settlementDueAt || getSettlementDueAt(order.customerReceiptRespondedAt);
-        order.settlementFailureReason =
-          'Customer reported that the order had not been received when the tasker marked it complete.';
+        if (!hasVerifiedSettlement(order)) {
+          order.taskerHasPaid = false;
+          order.settlementStatus = 'pending';
+          order.settlementDueAt =
+            order.settlementDueAt || getSettlementDueAt(order.customerReceiptRespondedAt);
+          order.settlementFailureReason =
+            'Customer reported that the order had not been received when the tasker marked it complete.';
+        }
       }
 
       clearZeroFeeSettlement(order);
@@ -957,10 +959,9 @@ export async function PATCH(
           : false;
 
         order.completedBeforeTimer = completedBeforeTimer;
-        order.platformFeeWaivedForFastCompletion = shouldWaivePlatformFeeForFastCompletion(
-          order,
-          completedBeforeTimer
-        );
+        // Completion speed is a performance metric only. The early return for
+        // completed orders above preserves genuine historical waivers.
+        order.platformFeeWaivedForFastCompletion = false;
         order.customerReceiptConfirmed = undefined;
         order.customerReceiptRespondedAt = undefined;
         order.prematureCompletionReported = false;
@@ -968,13 +969,8 @@ export async function PATCH(
 
         if (order.platformFee <= 0) {
           clearZeroFeeSettlement(order);
-        } else if (order.platformFeeWaivedForFastCompletion) {
-          order.taskerHasPaid = true;
-          order.settlementStatus = 'paid';
-          order.settlementPaidAt = order.completedAt;
-          order.settlementDueAt = undefined;
-          order.settlementFailureReason = undefined;
-        } else if (!order.taskerHasPaid) {
+        } else if (!hasVerifiedSettlement(order)) {
+          order.taskerHasPaid = false;
           order.settlementStatus = 'pending';
           order.settlementDueAt =
             order.settlementDueAt || getSettlementDueAt(order.completedAt);

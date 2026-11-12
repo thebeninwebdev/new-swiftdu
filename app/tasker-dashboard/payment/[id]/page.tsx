@@ -222,6 +222,7 @@ function TaskerPaymentPageContent() {
         setError(null)
         clearStoredPendingReference()
         autoVerifyingReferenceRef.current = null
+        window.dispatchEvent(new Event('swiftdu-work-updated'))
 
         if (showSuccessToast && !payload.noSettlementRequired) {
           toast.success('Platform settlement paid successfully.')
@@ -395,6 +396,7 @@ function TaskerPaymentPageContent() {
         setOrder(payload.order)
         clearStoredPendingReference()
         toast.success('Platform settlement paid successfully.')
+        window.dispatchEvent(new Event('swiftdu-work-updated'))
         return
       }
 
@@ -402,6 +404,7 @@ function TaskerPaymentPageContent() {
         setOrder(payload.order)
         clearStoredPendingReference()
         toast.success('Training settlement completed. No real payment was made.')
+        window.dispatchEvent(new Event('swiftdu-work-updated'))
         if (redirectAfterTrainingSimulation) {
           router.replace('/tasker-dashboard')
         }
@@ -476,7 +479,7 @@ function TaskerPaymentPageContent() {
   const isCompleted = order.status === 'completed'
   const isPaid = Boolean(order.taskerHasPaid || order.settlementStatus === 'paid')
   const isOverdue = !order.isTestOrder && order.settlementStatus === 'overdue'
-  const isAwaitingConfirmation = !order.isTestOrder && order.settlementStatus === 'pending'
+  const isAwaitingConfirmation = !order.isTestOrder && (order.settlementStatus === 'pending' || order.settlementStatus === 'initialized')
   const supportMessage = encodeURIComponent(
     `Hello SwiftDU support, I need help with my Paystack platform settlement for task ${order._id}.`
   )

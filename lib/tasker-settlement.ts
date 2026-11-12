@@ -24,7 +24,7 @@ async function backfillSettlementMetadata(taskerId: string) {
     taskerId,
     status: 'completed',
     platformFee: { $gt: 0 },
-    taskerHasPaid: false,
+    taskerHasPaid: { $ne: true },
     $and: [
       NON_TEST_ORDER_MATCH,
       NON_WAIVED_PLATFORM_FEE_MATCH,
@@ -62,7 +62,7 @@ export async function syncTaskerSettlementStatus(taskerId: string) {
       taskerId,
       status: 'completed',
       platformFee: { $gt: 0 },
-      taskerHasPaid: false,
+      taskerHasPaid: { $ne: true },
       settlementStatus: 'paid',
       $and: [NON_TEST_ORDER_MATCH, NON_WAIVED_PLATFORM_FEE_MATCH],
     },
@@ -83,7 +83,7 @@ export async function syncTaskerSettlementStatus(taskerId: string) {
     taskerId,
     status: 'completed' as const,
     platformFee: { $gt: 0 },
-    taskerHasPaid: false,
+    taskerHasPaid: { $ne: true },
     settlementDueAt: { $lte: now },
     $and: [NON_TEST_ORDER_MATCH, NON_WAIVED_PLATFORM_FEE_MATCH],
   }
@@ -115,8 +115,9 @@ export async function getOutstandingSettlementOrders(taskerId: string) {
     taskerId,
     status: 'completed',
     platformFee: { $gt: 0 },
-    taskerHasPaid: false,
+    taskerHasPaid: { $ne: true },
     settlementStatus: { $in: [...OUTSTANDING_SETTLEMENT_STATUSES] },
+    settlementPaidAt: null,
     $and: [NON_TEST_ORDER_MATCH, NON_WAIVED_PLATFORM_FEE_MATCH],
   })
     .sort({ settlementDueAt: 1, completedAt: -1, createdAt: -1 })
@@ -131,8 +132,9 @@ export async function getOutstandingTrainingSettlementOrders(taskerId: string) {
     status: 'completed',
     isTestOrder: true,
     platformFee: { $gt: 0 },
-    taskerHasPaid: false,
+    taskerHasPaid: { $ne: true },
     settlementStatus: { $in: [...OUTSTANDING_SETTLEMENT_STATUSES] },
+    settlementPaidAt: null,
     $and: [NON_WAIVED_PLATFORM_FEE_MATCH],
   })
     .sort({ completedAt: -1, createdAt: -1 })

@@ -30,19 +30,46 @@ export function getSignedInDestination(user?: AuthProfileUser | null) {
   if (user?.role === "admin") return "/admin";
   return "/";
 }
+const REDIRECT_QUERY_KEYS = /^(?:next|callbackurl|redirect|returnto|url)$/i;
+function hasUnsafeEncoding(value: string) {
+  let decoded = value;
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (/[\\\u0000-\u001f\u007f]/.test(decoded) || decoded.startsWith("//")) return true;
+    let next: string;
+    try {
+      next = decodeURIComponent(decoded);
+    } catch {
+      return true;
+    }
+    if (next === decoded) return false;
+    decoded = next;
+  }
+  return /[\\\u0000-\u001f\u007f]/.test(decoded) || decoded.startsWith("//");
+}
 export function getSafeNextPath(nextPath?: string | null) {
-  if (!nextPath?.startsWith("/") || nextPath.startsWith("//") || nextPath.includes("\\")) return null;
+  if (!nextPath?.startsWith("/") || hasUnsafeEncoding(nextPath)) return null;
   try {
     const url = new URL(nextPath, "https://swiftdu.local");
     if (url.origin !== "https://swiftdu.local") return null;
     if (["/auth", "/login", "/signup"].includes(url.pathname) || url.pathname.startsWith(COMPLETE_PROFILE_PATH)) return null;
+    for (const [key, value] of url.searchParams) {
+      if (REDIRECT_QUERY_KEYS.test(key) && (
+        hasUnsafeEncoding(value) ||
+        /^(?:https?:)?\/\//i.test(value)
+      )) return null;
+    }
     return `${url.pathname}${url.search}${url.hash}`;
   } catch {
     return null;
   }
 }
 export function buildCompleteProfilePath(nextPath?: string | null) { const safe = getSafeNextPath(nextPath); return safe ? `${COMPLETE_PROFILE_PATH}?next=${encodeURIComponent(safe)}` : COMPLETE_PROFILE_PATH; }
-export function getPostProfileCompletionPath(user?: AuthProfileUser | null, nextPath?: string | null) { return getSafeNextPath(nextPath) ?? getSignedInDestination(user); }
+export function getPostProfileCompletionPath(user?: AuthProfileUser | null, nextPath?: string | null) {
+  // A tasker's sign-in/profile-completion landing page is always the tasker
+  // dashboard. Deep links remain available once authentication has finished.
+  if (user?.role === "tasker") return "/tasker-dashboard";
+  return getSafeNextPath(nextPath) ?? getSignedInDestination(user);
+}
 export function getPostAuthRedirect(user?: AuthProfileUser | null, nextPath?: string | null) { if (!user) return "/auth"; return getPostProfileCompletionPath(user, nextPath); }
 export function normalizePhoneNumber(_dialCode: string, rawPhone: string) { const digits = rawPhone.replace(/\D/g, "").replace(/^0+/, ""); if (!digits) return ""; return digits.startsWith("234") ? `+${digits}` : `+234${digits}`; }
 export function isValidBirthday(day?: number | null, month?: number | null) { if (day == null && month == null) return true; if (!Number.isInteger(day) || !Number.isInteger(month) || !day || !month) return false; return day <= new Date(Date.UTC(2024, month, 0)).getUTCDate(); }

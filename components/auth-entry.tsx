@@ -6,6 +6,8 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2, Mail, CheckCircle2 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
+import { buildAuthCallbackPaths, buildAuthContinuationPath } from "@/lib/auth-continuation-paths";
+import { getSafeContinuationReference } from "@/lib/auth-continuation-reference";
 import { buildCompleteProfilePath, getPostAuthRedirect, getSafeNextPath, isProfileComplete } from "@/lib/profile-completion";
 
 const COOLDOWN = 60;
@@ -23,13 +25,23 @@ export function AuthEntry() {
   const [error, setError] = useState(() => getAuthErrorMessage(searchParams));
   const [seconds, setSeconds] = useState(0);
   const requestedPath = getSafeNextPath(searchParams.get("next") ?? searchParams.get("callbackUrl") ?? searchParams.get("callbackURL") ?? searchParams.get("redirect"));
-  const callbackURL = buildAuthContinuePath(requestedPath);
-  const newUserCallbackURL = buildCompleteProfilePath(requestedPath);
+  const incomingContinuation = getSafeContinuationReference(searchParams.get("continuation"));
+  const [continuationReference, setContinuationReference] = useState(incomingContinuation);
   const [resettingLogin, setResettingLogin] = useState(false);
 
   useEffect(() => {
-    if (!sessionPending && session?.user) router.replace(getPostAuthRedirect(session.user, requestedPath));
-  }, [requestedPath, router, session?.user, sessionPending]);
+    if (!sessionPending && session?.user) {
+      if (!isProfileComplete(session.user)) {
+        router.replace(continuationReference
+          ? buildAuthContinuationPath(continuationReference, { newUser: true })
+          : buildCompleteProfilePath(requestedPath));
+        return;
+      }
+      router.replace(continuationReference
+        ? buildAuthContinuationPath(continuationReference)
+        : getPostAuthRedirect(session.user, requestedPath));
+    }
+  }, [continuationReference, requestedPath, router, session?.user, sessionPending]);
 
   useEffect(() => {
     if (seconds <= 0) return;
@@ -40,6 +52,26 @@ export function AuthEntry() {
 
     return () => window.clearInterval(timer);
   }, [seconds]);
+
+  async function ensureContinuation() {
+    if (continuationReference || !requestedPath) return continuationReference;
+
+    const response = await fetch("/api/auth/continuation", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ next: requestedPath }),
+    });
+    const payload = await response.json().catch(() => ({})) as { reference?: string };
+    const reference = getSafeContinuationReference(payload.reference);
+    if (!response.ok || !reference) {
+      throw new Error("We couldn't prepare that sign-in destination. Please try again.");
+    }
+
+    setContinuationReference(reference);
+    return reference;
+  }
 
   async function sendLink(event?: FormEvent) {
     event?.preventDefault();
@@ -54,12 +86,22 @@ export function AuthEntry() {
     setLoading(true);
     setError("");
 
-    const { error: authError } = await authClient.signIn.magicLink({
-      email: normalized,
-      callbackURL,
-      newUserCallbackURL,
-      errorCallbackURL: buildAuthErrorPath(requestedPath, true),
-    });
+    let authError;
+    try {
+      const callbacks = buildAuthCallbackPaths(await ensureContinuation(), {
+        magicLink: true,
+      });
+      ({ error: authError } = await authClient.signIn.magicLink({
+        email: normalized,
+        ...callbacks,
+      }));
+    } catch (requestError) {
+      authError = {
+        message: requestError instanceof Error
+          ? requestError.message
+          : "We could not send the link.",
+      };
+    }
 
     setLoading(false);
 
@@ -84,6 +126,13 @@ export function AuthEntry() {
     }
     setLoading(true);
     setError("");
+    try {
+      await ensureContinuation();
+    } catch (requestError) {
+      setLoading(false);
+      setError(requestError instanceof Error ? requestError.message : "We could not prepare sign-in.");
+      return;
+    }
     const { error: authError } = await authClient.emailOtp.sendVerificationOtp({
       email: normalized,
       type: "sign-in",
@@ -120,9 +169,10 @@ export function AuthEntry() {
           : "That code is invalid or has already been used.");
       return;
     }
+    const callbacks = buildAuthCallbackPaths(continuationReference);
     window.location.replace(data?.user && !isProfileComplete(data.user)
-      ? buildCompleteProfilePath(requestedPath)
-      : callbackURL);
+      ? callbacks.newUserCallbackURL
+      : callbacks.callbackURL);
   }
   
 async function resetSwiftDULogin() {
@@ -152,12 +202,20 @@ async function resetSwiftDULogin() {
     setGoogleLoading(true);
     setError("");
 
-    const { error: authError } = await authClient.signIn.social({
-      provider: "google",
-      callbackURL,
-      newUserCallbackURL,
-      errorCallbackURL: buildAuthErrorPath(requestedPath),
-    });
+    let authError;
+    try {
+      const callbacks = buildAuthCallbackPaths(await ensureContinuation());
+      ({ error: authError } = await authClient.signIn.social({
+        provider: "google",
+        ...callbacks,
+      }));
+    } catch (requestError) {
+      authError = {
+        message: requestError instanceof Error
+          ? requestError.message
+          : "Google sign-in failed.",
+      };
+    }
 
     if (authError) {
       setError(authError.message || "Google sign-in failed.");
@@ -441,17 +499,6 @@ async function resetSwiftDULogin() {
   );
 }
 
-function buildAuthErrorPath(nextPath: string | null, magicLinkError = false) {
-  const params = new URLSearchParams();
-  if (nextPath) params.set("next", nextPath);
-  if (magicLinkError) params.set("magicLinkError", "true");
-  const query = params.toString();
-  return query ? `/auth?${query}` : "/auth";
-}
-
-function buildAuthContinuePath(nextPath: string | null) {
-  return nextPath ? `/auth/continue?next=${encodeURIComponent(nextPath)}` : "/auth/continue";
-}
 
 function GoogleIcon() {
   return (

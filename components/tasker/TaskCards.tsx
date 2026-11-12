@@ -14,7 +14,7 @@ export interface TaskCardData {
   platformFeeBeforeFirstOrderBonus?: number
   pricingModel?: string
   _id: string; taskType: string; description?: string; store?: string; location: string; roomNumber?: string; status: string
-  taskerFee?: number; serviceFeeDiscountApplied?: boolean; discountCommissionAmount?: number
+  taskerFee?: number; platformFee?: number; serviceFeeDiscountApplied?: boolean; discountCommissionAmount?: number
   cafeInquiry?: boolean; cafeInquiryStatus?: string; isTestOrder?: boolean; isDeclinedTask?: boolean
   hasPaid?: boolean; createdAt: string; deadline?: string; dueDate?: string; deadlineDate?: string
   completedAt?: string; customerReceiptConfirmed?: boolean; prematureCompletionReported?: boolean

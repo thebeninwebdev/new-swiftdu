@@ -39,7 +39,7 @@ export default function TaskerNotificationsPage() {
 
   const fetchNotifications = useCallback(async () => {
     try {
-      const response = await fetch('/api/taskers/unpaid-platform-fees')
+      const response = await fetch('/api/taskers/unpaid-platform-fees', { cache: 'no-store' })
       if (!response.ok) {
         throw new Error('Failed to load notifications')
       }
@@ -48,7 +48,6 @@ export default function TaskerNotificationsPage() {
       setOrders(data.orders || [])
       setError(null)
     } catch {
-      setOrders([])
       setError('Failed to load notifications right now.')
     } finally {
       setLoading(false)
@@ -57,6 +56,15 @@ export default function TaskerNotificationsPage() {
 
   useEffect(() => {
     void fetchNotifications()
+    const refresh = () => { void fetchNotifications() }
+    window.addEventListener('focus', refresh)
+    window.addEventListener('online', refresh)
+    window.addEventListener('swiftdu-work-updated', refresh)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      window.removeEventListener('online', refresh)
+      window.removeEventListener('swiftdu-work-updated', refresh)
+    }
   }, [fetchNotifications])
 
   useEffect(() => {
@@ -98,7 +106,7 @@ export default function TaskerNotificationsPage() {
           <div>
             <h1 className="text-lg font-bold text-slate-900 dark:text-white">Notifications</h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              {orders.length > 0 ? `${orders.length} pending` : 'All caught up'}
+              {error ? 'Unable to refresh' : orders.length > 0 ? `${orders.length} pending` : 'All caught up'}
             </p>
           </div>
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
