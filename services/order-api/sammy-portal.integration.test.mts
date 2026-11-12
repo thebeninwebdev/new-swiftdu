@@ -22,7 +22,7 @@ test('Render-only email linking enforces valid OTP, staff eligibility, and Whats
   const { TelegramLinkChallenge } = await import('@/models/telegram-link-challenge')
   const { WhatsAppRegistration } = await import('@/models/whatsapp-registration')
   const { SammyPortalOtp } = await import('@/models/sammy-portal-otp')
-  const { checkPortalChallenge, confirmPortalCode } = await import('@/lib/sammy/portal-linking')
+  const { checkPortalChallenge, confirmPortalCode, sendPortalCode } = await import('@/lib/sammy/portal-linking')
 
   t.after(async () => {
     await mongoose.disconnect()
@@ -41,6 +41,40 @@ test('Render-only email linking enforces valid OTP, staff eligibility, and Whats
       attempts: 0, sentCount: 1, lastSentAt: new Date(),
     })
   }
+
+  await t.test('sending a verification code stores only an HMAC digest and limits repeat sends', async () => {
+    const token = 'f'.repeat(43)
+    const admin = await User.create({
+      name: 'Email Admin', email: 'email-admin@swiftdu.test', emailVerified: true, role: 'admin',
+    })
+    await TelegramLinkChallenge.create({
+      tokenHash: digest(token), telegramUserId: '70006', telegramChatId: '70006',
+      expiresAt: nextTenMinutes(), active: true,
+    })
+    const originalFetch = globalThis.fetch
+    const outgoing: string[] = []
+    globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input)
+      assert.match(url, /^https:\/\/api\.resend\.com\//)
+      outgoing.push(String(init?.body || ''))
+      return new Response(JSON.stringify({ id: 'test-email-id' }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      })
+    }) as typeof fetch
+    try {
+      assert.deepEqual(await sendPortalCode('telegram', token, admin.email), { sent: true })
+      const otp = await SammyPortalOtp.findOne({ tokenHash: digest(token) }).lean()
+      assert.equal(otp?.sentCount, 1)
+      assert.match(String(otp?.codeHash), /^[a-f0-9]{64}$/)
+      assert.equal(outgoing.length, 1)
+      assert.ok(!outgoing[0].includes(SECRET), 'OTP HMAC key must never be sent to the email provider')
+      await assert.rejects(sendPortalCode('telegram', token, admin.email),
+        (error: unknown) => (error as { code?: string }).code === 'RATE_LIMITED')
+      assert.equal(outgoing.length, 1, 'a throttled request must not send another email')
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
 
   await t.test('wrong Telegram verification codes are capped at five guesses', async () => {
     const token = 'a'.repeat(43)
