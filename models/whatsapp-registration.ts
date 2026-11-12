@@ -7,6 +7,7 @@ export interface IWhatsAppRegistration extends Document {
   name?: string;
   userId?: string;
   token: string;
+  tokenIssuedAt?: Date;
   status: WhatsAppRegistrationStatus;
   linkedAt?: Date;
   whatsappConsentAt?: Date;
@@ -40,6 +41,7 @@ const whatsappRegistrationSchema = new Schema<IWhatsAppRegistration>(
       unique: true,
       index: true,
     },
+    tokenIssuedAt: Date,
     status: {
       type: String,
       enum: ['pending', 'linked'],
