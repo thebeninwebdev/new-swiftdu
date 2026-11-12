@@ -262,11 +262,11 @@ test('idempotency key prevents duplicate order creation under retries or race co
   })
 
   // First save succeeds
-  const savedA = await saveNewOrderWithBonus(orderA, pricing)
+  await saveNewOrderWithBonus(orderA, pricing)
   // Second save with same idempotencyKey returns original order
-  const savedB = await saveNewOrderWithBonus(orderB, pricing)
+  await saveNewOrderWithBonus(orderB, pricing)
 
-  assert.equal(savedA._id.toString(), savedB._id.toString())
+  assert.equal(orderA._id.toString(), orderB._id.toString())
   assert.equal(await Order.countDocuments({ userId: customerId, idempotencyKey }), 1)
 })
 

@@ -6,29 +6,26 @@ import mongoose, { Types } from 'mongoose'
 import { MongoMemoryReplSet } from 'mongodb-memory-server'
 import webpush from 'web-push'
 
-import { User } from '../models/user'
-import Tasker from '../models/tasker'
-import { TaskerWorkSession } from '../models/tasker-work-session'
-import { Order } from '../models/order'
-import { PushSubscription } from '../models/push-subscription'
-import { IndomieBatch } from '../models/indomie-batch'
-import { AcademicSession } from '../models/academic-session'
-import {
-  getApprovedTaskerUserIds,
-  sendPushNotification,
-  sendTestPushToUser,
-} from '../lib/push-notifications'
-import { saveTaskerPushSubscription } from '../lib/tasker-push-subscriptions'
-import { releaseDueIndomieBatches } from '../lib/indomie-batch-release'
-import {
-  processDueOrderEscalations,
-  REMINDER_DELAY_MS,
-  ADMIN_ESCALATION_DELAY_MS,
-} from '../lib/orders/order-escalation'
 
 let database: MongoMemoryReplSet
+let AcademicSession: typeof import('../models/academic-session').AcademicSession
+let User: typeof import('../models/user').User
+let Tasker: typeof import('../models/tasker').default
+let TaskerWorkSession: typeof import('../models/tasker-work-session').TaskerWorkSession
+let Order: typeof import('../models/order').Order
+let PushSubscription: typeof import('../models/push-subscription').PushSubscription
+let IndomieBatch: typeof import('../models/indomie-batch').IndomieBatch
+let getApprovedTaskerUserIds: typeof import('../lib/push-notifications').getApprovedTaskerUserIds
+let sendPushNotification: typeof import('../lib/push-notifications').sendPushNotification
+let sendTestPushToUser: typeof import('../lib/push-notifications').sendTestPushToUser
+let saveTaskerPushSubscription: typeof import('../lib/tasker-push-subscriptions').saveTaskerPushSubscription
+let releaseDueIndomieBatches: typeof import('../lib/indomie-batch-release').releaseDueIndomieBatches
+let processDueOrderEscalations: typeof import('../lib/orders/order-escalation').processDueOrderEscalations
+let REMINDER_DELAY_MS: typeof import('../lib/orders/order-escalation').REMINDER_DELAY_MS
+let ADMIN_ESCALATION_DELAY_MS: typeof import('../lib/orders/order-escalation').ADMIN_ESCALATION_DELAY_MS
+
 let sentWebPushes: Array<{
-  subscription: unknown
+  subscription: webpush.PushSubscription
   payload: string
   options?: webpush.RequestOptions
 }> = []
@@ -43,7 +40,24 @@ const originalSendNotification = webpush.sendNotification
 const originalFetch = globalThis.fetch
 
 before(async () => {
+  ;({ User } = await import('../models/user'))
+  ;({ default: Tasker } = await import('../models/tasker'))
+  ;({ TaskerWorkSession } = await import('../models/tasker-work-session'))
+  ;({ Order } = await import('../models/order'))
+  ;({ PushSubscription } = await import('../models/push-subscription'))
+  ;({ IndomieBatch } = await import('../models/indomie-batch'))
+  ;({ AcademicSession } = await import('../models/academic-session'))
   const keys = webpush.generateVAPIDKeys()
+  ;({
+    getApprovedTaskerUserIds,
+    sendPushNotification,
+    sendTestPushToUser,
+  } = await import('../lib/push-notifications'))
+  ;({ saveTaskerPushSubscription } = await import('../lib/tasker-push-subscriptions'))
+  ;({ releaseDueIndomieBatches } = await import('../lib/indomie-batch-release'))
+  ;({ processDueOrderEscalations, REMINDER_DELAY_MS, ADMIN_ESCALATION_DELAY_MS } =
+    await import('../lib/orders/order-escalation'))
+
   process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = keys.publicKey
   process.env.VAPID_PRIVATE_KEY = keys.privateKey
   process.env.VAPID_SUBJECT = 'mailto:test@swiftdu.org'
@@ -70,7 +84,7 @@ before(async () => {
   // Stub webpush.sendNotification
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   ;(webpush as any).sendNotification = async (
-    subscription: any,
+    subscription: webpush.PushSubscription,
     payload: string,
     options?: webpush.RequestOptions
   ) => {
@@ -313,7 +327,7 @@ test('5. Training tasker does not receive live-order alerts, and vice versa', as
     url: '/tasker-dashboard/live-1',
   })
   assert.equal(liveResult.recipientCount, 1)
-  assert.equal(sentWebPushes[0].subscription.userId, String(liveUser._id))
+  assert.equal(sentWebPushes[0].subscription.endpoint, 'https://push.example.com/live')
 
   // Training order push
   sentWebPushes = []
@@ -324,7 +338,7 @@ test('5. Training tasker does not receive live-order alerts, and vice versa', as
     url: '/tasker-dashboard/test-1',
   })
   assert.equal(trainingResult.recipientCount, 1)
-  assert.equal(sentWebPushes[0].subscription.userId, String(trainingUser._id))
+  assert.equal(sentWebPushes[0].subscription.endpoint, 'https://push.example.com/training')
 })
 
 test('6. Gender-restricted orders reach only eligible taskers', async () => {
@@ -380,7 +394,7 @@ test('6. Gender-restricted orders reach only eligible taskers', async () => {
     url: '/tasker-dashboard/f-1',
   })
   assert.equal(femaleOnlyResult.recipientCount, 1)
-  assert.equal(sentWebPushes[0].subscription.userId, String(femaleUser._id))
+  assert.equal(sentWebPushes[0].subscription.endpoint, 'https://push.example.com/female')
 
   // Male-only errand
   sentWebPushes = []
@@ -391,7 +405,7 @@ test('6. Gender-restricted orders reach only eligible taskers', async () => {
     url: '/tasker-dashboard/m-1',
   })
   assert.equal(maleOnlyResult.recipientCount, 1)
-  assert.equal(sentWebPushes[0].subscription.userId, String(maleUser._id))
+  assert.equal(sentWebPushes[0].subscription.endpoint, 'https://push.example.com/male')
 })
 
 test('7. Tasker can receive an alert without an open work session', async () => {

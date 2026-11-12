@@ -7,7 +7,7 @@ test('a provisional staff-created customer securely claims the existing record b
   const database = await MongoMemoryServer.create()
   process.env.MONGODB_URI = database.getUri('sammy-staff-claim')
   process.env.AUTH_SEND_REAL_EMAILS = 'false'
-  process.env.NODE_ENV = 'test'
+  ;(process.env as Record<string, string | undefined>).NODE_ENV = 'test'
   process.env.BETTER_AUTH_SECRET = 'staff-registration-test-secret-at-least-32-characters'
   await mongoose.connect(process.env.MONGODB_URI)
   const { User } = await import('@/models/user')

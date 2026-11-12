@@ -8,7 +8,7 @@ test('same-browser email OTP signs in existing and new accounts once without byp
   process.env.MONGODB_URI = database.getUri('auth-email-otp')
   process.env.AUTH_SEND_REAL_EMAILS = 'false'
   process.env.BETTER_AUTH_SECRET = 'email-otp-test-secret-at-least-32-characters'
-  process.env.NODE_ENV = 'test'
+  ;(process.env as Record<string, string | undefined>).NODE_ENV = 'test'
   await mongoose.connect(process.env.MONGODB_URI)
   const { User } = await import('@/models/user')
   const { auth } = await import('@/lib/auth')
