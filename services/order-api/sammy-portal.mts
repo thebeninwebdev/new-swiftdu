@@ -1,6 +1,21 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { SammyApiError } from '@/lib/sammy/server'
-import { checkPortalChallenge, confirmPortalCode, sendPortalCode, type PortalPurpose } from '@/lib/sammy/portal-linking'
+import type { PortalPurpose } from '@/lib/sammy/portal-linking'
+
+const { checkPortalChallenge, confirmPortalCode, sendPortalCode } =
+  await import('@/lib/sammy/portal-linking')
+
+class PortalError extends Error {
+  constructor(public status: number, public code: string, message: string) {
+    super(message)
+  }
+}
+
+function isPortalError(error: unknown): error is Error & { status: number; code: string } {
+  return error instanceof Error &&
+    'status' in error && typeof error.status === 'number' &&
+    'code' in error && typeof error.code === 'string' &&
+    error.status >= 400 && error.status <= 599
+}
 
 const PORTAL_ROUTES = new Set([
   'GET /telegram/connect',
@@ -63,19 +78,19 @@ function page(purpose: PortalPurpose, token: string, message = '', resultUrl?: s
 async function readForm(request: IncomingMessage) {
   const type = String(request.headers['content-type'] || '')
   if (!type.startsWith('application/x-www-form-urlencoded')) {
-    throw new SammyApiError(415, 'UNSUPPORTED_CONTENT_TYPE', 'Please use the provided connection form.')
+    throw new PortalError(415, 'UNSUPPORTED_CONTENT_TYPE', 'Please use the provided connection form.')
   }
   let size = 0
   const chunks: Buffer[] = []
   for await (const chunk of request) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     size += buffer.length
-    if (size > FORM_MAX_BYTES) throw new SammyApiError(413, 'TOO_LARGE', 'The submitted form is too large.')
+    if (size > FORM_MAX_BYTES) throw new PortalError(413, 'TOO_LARGE', 'The submitted form is too large.')
     chunks.push(buffer)
   }
   const params = new URLSearchParams(Buffer.concat(chunks).toString('utf8'))
   const token = params.get('token') || ''
-  if (token.length > 128) throw new SammyApiError(400, 'BAD_TOKEN', 'Invalid connection link.')
+  if (token.length > 128) throw new PortalError(400, 'BAD_TOKEN', 'Invalid connection link.')
   return { token, email: params.get('email'), code: params.get('code') }
 }
 
@@ -98,7 +113,7 @@ export async function handleSammyPortal(request: IncomingMessage, response: Serv
     const origin = String(request.headers.origin || '')
     const expected = `https://${host}`
     if (process.env.NODE_ENV === 'production' && (!origin || origin !== expected)) {
-      throw new SammyApiError(403, 'INVALID_ORIGIN', 'The connection form was rejected.')
+      throw new PortalError(403, 'INVALID_ORIGIN', 'The connection form was rejected.')
     }
     const form = await readForm(request)
     token = form.token
@@ -113,11 +128,11 @@ export async function handleSammyPortal(request: IncomingMessage, response: Serv
       html(response, 200, page(purpose, token, 'Connection successful.', completed.returnUrl || undefined, true))
       return true
     }
-    throw new SammyApiError(404, 'NOT_FOUND', 'Not found.')
+    throw new PortalError(404, 'NOT_FOUND', 'Not found.')
   } catch (error) {
-    const status = error instanceof SammyApiError ? error.status : 500
-    const message = error instanceof SammyApiError ? error.message : 'Verification is unavailable. Please try again later.'
-    if (!(error instanceof SammyApiError)) {
+    const status = isPortalError(error) ? error.status : 500
+    const message = isPortalError(error) ? error.message : 'Verification is unavailable. Please try again later.'
+    if (!isPortalError(error)) {
       console.error('[Sammy Portal] unexpected error', { purpose, name: error instanceof Error ? error.name : 'Error' })
     }
     html(response, status, page(purpose, token, message))
