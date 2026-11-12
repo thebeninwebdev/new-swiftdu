@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "incremental": false
+  },
+  "include": [
+    "next-env.d.ts",
+    "services/order-api/**/*.mts",
+    "lib/sammy/portal-linking.ts",
+    "models/sammy-portal-otp.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    ".next",
+    "public/sw.js"
+  ]
+}
