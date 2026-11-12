@@ -1,4 +1,10 @@
-# SwiftDU Render Order API: Phase 1
+# SwiftDU Render Order API: Phase 1 (historical deployment guide)
+
+> **Update:** The Render service is now being expanded to serve the entire
+> Telegram staff API. This document describes the original **order-only**
+> migration and remains here as historical rollout context. For the new
+> all-staff-operations migration, follow
+> [sammy-full-render-migration.md](./sammy-full-render-migration.md).
 
 Phase 1 runs the existing Telegram staff order endpoint in a dedicated Node.js
 Web Service. It does not move website order creation: `POST /api/orders` stays

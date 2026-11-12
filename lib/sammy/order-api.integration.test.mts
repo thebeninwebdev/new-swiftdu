@@ -62,6 +62,38 @@ test('order API starts cleanly on replica set, passes health check, and isolates
   assert.equal(healthResponse.status, 200)
   assert.deepEqual(await healthResponse.json(), { status: 'ok' })
 
+  // The full Telegram staff API now runs on Render, with the same server-side
+  // bearer verification as the original SwiftDU routes.
+  const authUrl = `http://127.0.0.1:${address.port}/api/internal/sammy/staff/auth`
+  const rejectedAuth = await fetch(authUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer wrong' },
+    body: JSON.stringify({ telegram: { id: '123456' } }),
+  })
+  assert.equal(rejectedAuth.status, 401)
+  assert.equal((await rejectedAuth.json()).code, 'UNAUTHORIZED')
+
+  const unknownStaff = await fetch(authUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-order-api-secret' },
+    body: JSON.stringify({ telegram: { id: '123456' } }),
+  })
+  assert.equal(unknownStaff.status, 403)
+  assert.equal((await unknownStaff.json()).code, 'TELEGRAM_NOT_LINKED')
+
+  const linkStatus = await fetch(`http://127.0.0.1:${address.port}/api/internal/sammy/telegram/link/status`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer test-order-api-secret' },
+    body: JSON.stringify({ telegramUserId: '123456' }),
+  })
+  assert.equal(linkStatus.status, 200)
+  assert.equal((await linkStatus.json()).status, 'NOT_LINKED')
+
+  const websiteRoute = await fetch(`http://127.0.0.1:${address.port}/api/orders`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}',
+  })
+  assert.equal(websiteRoute.status, 404)
+
   // Verify safeErrorFields sanitizes credentials and tokens
   const sensitiveError = new Error('Failed to connect to mongodb+srv://admin:supersecret@cluster0.abc.mongodb.net with Bearer abc123def456')
   const safeFields = safeErrorFields(sensitiveError)
