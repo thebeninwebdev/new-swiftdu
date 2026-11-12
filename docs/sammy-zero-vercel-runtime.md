@@ -83,6 +83,10 @@ allowlist, NOT a reverse proxy to the Vercel website.
 - Accounts must have `emailVerified: true`; Telegram accounts must retain
   the existing admin/EXCO eligibility checks, suspension controls, revocation,
   unique Telegram ID and MongoDB transaction rules.
+- Accounts marked `twoFactorEnabled: true` are intentionally **not** eligible
+  for email-only linking, because it would bypass their second factor. An
+  administrator must handle those accounts through a separately verified,
+  higher-assurance process; do not disable two-factor automatically.
 - WhatsApp linking preserves the user's opt-out of proactive messages; no
   unsolicited notification consent is inferred from connecting the account.
 - Bot endpoints require the existing bearer secret, and email portal forms
