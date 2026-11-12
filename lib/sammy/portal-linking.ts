@@ -81,10 +81,10 @@ async function getChallenge(purpose: PortalPurpose, token: string) {
   if (!registration) {
     throw new SammyApiError(410, 'LINK_EXPIRED', 'This registration link is no longer valid.')
   }
-  // Legacy WhatsApp registration tokens did not have an expiry. Limit this new
-  // Render email-verification flow to recently initiated registrations.
-  const createdAt = registration.createdAt instanceof Date ? registration.createdAt : new Date(registration.createdAt)
-  if (createdAt.getTime() + 24 * 60 * 60 * 1000 <= now.getTime()) {
+  // Legacy WhatsApp tokens have no database TTL. Sammy rotates pending tokens
+  // after 24 hours, so accept only recently issued/updated registrations.
+  const issuedAt = registration.updatedAt instanceof Date ? registration.updatedAt : new Date(registration.updatedAt)
+  if (issuedAt.getTime() + 24 * 60 * 60 * 1000 <= now.getTime()) {
     throw new SammyApiError(410, 'LINK_EXPIRED', 'Request a fresh connection link in WhatsApp.')
   }
   return { tokenHash, registration }
