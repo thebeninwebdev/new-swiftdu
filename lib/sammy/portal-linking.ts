@@ -81,9 +81,11 @@ async function getChallenge(purpose: PortalPurpose, token: string) {
   if (!registration) {
     throw new SammyApiError(410, 'LINK_EXPIRED', 'This registration link is no longer valid.')
   }
-  // Legacy WhatsApp tokens have no database TTL. Sammy rotates pending tokens
-  // after 24 hours, so accept only recently issued/updated registrations.
-  const issuedAt = registration.updatedAt instanceof Date ? registration.updatedAt : new Date(registration.updatedAt)
+  // Legacy WhatsApp tokens have no database TTL. The bot rotates pending
+  // tokens every 24 hours, using their actual issue timestamp rather than
+  // updatedAt (which can be changed by unrelated profile updates).
+  const timestamp = registration.tokenIssuedAt || registration.createdAt
+  const issuedAt = timestamp instanceof Date ? timestamp : new Date(timestamp)
   if (issuedAt.getTime() + 24 * 60 * 60 * 1000 <= now.getTime()) {
     throw new SammyApiError(410, 'LINK_EXPIRED', 'Request a fresh connection link in WhatsApp.')
   }
