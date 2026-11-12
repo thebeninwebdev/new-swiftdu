@@ -34,15 +34,15 @@ function html(response: ServerResponse, status: number, content: string) {
   response.end(content)
 }
 
-function page(purpose: PortalPurpose, token: string, message = '', resultUrl?: string) {
+function page(purpose: PortalPurpose, token: string, message = '', resultUrl?: string, completed = false) {
   const title = purpose === 'telegram' ? 'Connect Telegram to SwiftDU' : 'Connect WhatsApp to SwiftDU'
   const action = purpose === 'telegram' ? '/telegram/connect' : '/whatsapp/connect'
   const tokenInput = `<input type="hidden" name="token" value="${escapeHtml(token)}">`
   const alert = message
     ? `<p role="status" class="notice">${escapeHtml(message)}</p>`
     : ''
-  const content = resultUrl
-    ? `<p>Your account has been connected. You can return to your chat.</p><p><a href="${escapeHtml(resultUrl)}">Return to Telegram</a></p>`
+  const content = completed
+    ? `<p>Your account has been connected. You can return to your chat.</p>${resultUrl ? `<p><a href="${escapeHtml(resultUrl)}">Return to Telegram</a></p>` : ''}`
     : `<p>Use the verified email address on your existing SwiftDU account to confirm ownership. No Vercel login is required.</p>
       ${alert}
       <form action="${action}/request-code" method="post">
@@ -110,7 +110,7 @@ export async function handleSammyPortal(request: IncomingMessage, response: Serv
     }
     if (pathname === endpoint + '/confirm') {
       const completed = await confirmPortalCode(purpose, token, form.code)
-      html(response, 200, page(purpose, token, 'Connection successful.', completed.returnUrl || undefined))
+      html(response, 200, page(purpose, token, 'Connection successful.', completed.returnUrl || undefined, true))
       return true
     }
     throw new SammyApiError(404, 'NOT_FOUND', 'Not found.')
