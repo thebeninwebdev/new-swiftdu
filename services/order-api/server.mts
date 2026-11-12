@@ -6,6 +6,7 @@ import { NextRequest } from 'next/server'
 
 const { connectDB } = await import('@/lib/db')
 const { resolveSammyRoute, dispatchSammyRoute } = await import('@/services/order-api/sammy-routes.mts')
+const { isSammyPortalRoute, handleSammyPortal } = await import('@/services/order-api/sammy-portal.mts')
 
 const MAX_BODY_BYTES = 1_048_576
 
@@ -141,6 +142,12 @@ export function createOrderApiServer() {
       const connected = mongoose.connection.readyState === 1
       return sendJson(response, connected ? 200 : 503, { status: connected ? 'ok' : 'unavailable' })
     }
+    // Render-hosted account verification pages never call the SwiftDU website.
+    if (isSammyPortalRoute(request.method || '', pathname)) {
+      await handleSammyPortal(request, response)
+      return
+    }
+
     // Explicitly route only known Sammy staff/link API requests.
     // Website APIs, auth callbacks and arbitrary HTTP paths are not exposed.
     if (!resolveSammyRoute(request.method || '', pathname)) {
