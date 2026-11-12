@@ -129,22 +129,42 @@ export async function sendPortalCode(purpose: PortalPurpose, token: string, rawE
 
   const code = String(randomInt(0, 100_000_000)).padStart(8, '0')
   const codeHash = hashCode(secret, tokenHash, String(account._id), code)
-  await SammyPortalOtp.findOneAndUpdate(
-    { tokenHash },
-    {
-      $set: {
-        purpose, userId: account._id, codeHash,
-        expiresAt: new Date(now.getTime() + CODE_TTL_MS),
-        attempts: 0, lastSentAt: now,
+  // Enforce cooldown and maximum sends AT WRITE TIME. Checking these using
+  // only a preliminary read would allow parallel submissions to bypass limits.
+  // The unique tokenHash index rejects any racing upsert.
+  try {
+    await SammyPortalOtp.findOneAndUpdate(
+      {
+        tokenHash,
+        $or: [
+          { sentCount: { $exists: false } },
+          {
+            sentCount: { $lt: MAX_SENDS_PER_TOKEN },
+            lastSentAt: { $lte: new Date(now.getTime() - RESEND_COOLDOWN_MS) },
+          },
+        ],
       },
-      $inc: { sentCount: 1 },
-      // A previous successful code can become consumed if downstream linking
-      // fails. A newly issued code must be usable without changing the token.
-      $unset: { consumedAt: '' },
-      $setOnInsert: { createdAt: now },
-    },
-    { upsert: true },
-  )
+      {
+        $set: {
+          purpose, userId: account._id, codeHash,
+          expiresAt: new Date(now.getTime() + CODE_TTL_MS),
+          attempts: 0, lastSentAt: now,
+        },
+        $inc: { sentCount: 1 },
+        // A prior consumed code may be reissued after downstream linking
+        // fails; a freshly sent code must be usable.
+        $unset: { consumedAt: '' },
+      },
+      // Avoid setDefaultsOnInsert clashing with $inc on sentCount.
+      { upsert: true, setDefaultsOnInsert: false },
+    )
+  } catch (error) {
+    if (typeof error === 'object' && error !== null &&
+        'code' in error && error.code === 11000) {
+      throw new SammyApiError(429, 'RATE_LIMITED', 'Please wait before requesting another code.')
+    }
+    throw error
+  }
 
   const resend = new Resend(key)
   const title = purpose === 'telegram' ? 'Telegram staff connection' : 'WhatsApp account connection'
