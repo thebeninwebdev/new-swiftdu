@@ -22,6 +22,8 @@ type RouteKey =
   | 'staff-orders-cancel'
   | 'telegram-link-start'
   | 'telegram-link-status'
+  | 'whatsapp-current-order'
+  | 'whatsapp-cancel-order'
 
 export type SammyRouteMatch = { key: RouteKey; id?: string }
 
@@ -36,6 +38,8 @@ const STATIC_ROUTES = new Map<string, RouteKey>([
   [`POST ${STAFF}/orders/search`, 'staff-orders-search'],
   [`POST ${ROOT}/telegram/link/start`, 'telegram-link-start'],
   [`POST ${ROOT}/telegram/link/status`, 'telegram-link-status'],
+  [`POST ${ROOT}/orders/current`, 'whatsapp-current-order'],
+  [`POST ${ROOT}/orders/current/cancel`, 'whatsapp-cancel-order'],
 ])
 
 /**
@@ -126,5 +130,9 @@ export async function dispatchSammyRoute(
       return (await import('@/app/api/internal/sammy/telegram/link/start/route')).POST(request)
     case 'telegram-link-status':
       return (await import('@/app/api/internal/sammy/telegram/link/status/route')).POST(request)
+    case 'whatsapp-current-order':
+      return (await import('@/app/api/internal/sammy/orders/current/route')).POST(request)
+    case 'whatsapp-cancel-order':
+      return (await import('@/app/api/internal/sammy/orders/current/cancel/route')).POST(request)
   }
 }
