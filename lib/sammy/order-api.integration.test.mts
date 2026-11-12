@@ -94,6 +94,21 @@ test('order API starts cleanly on replica set, passes health check, and isolates
   })
   assert.equal(websiteRoute.status, 404)
 
+  // Legacy WhatsApp operations also use the Render API, not Vercel.
+  const customerUrl = `http://127.0.0.1:${address.port}/api/internal/sammy/orders/current`
+  const unauthorizedCustomer = await fetch(customerUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Authorization: 'Bearer incorrect' },
+    body: JSON.stringify({ phone: '2348012345678' }),
+  })
+  assert.equal(unauthorizedCustomer.status, 401)
+
+  for (const purpose of ['telegram', 'whatsapp']) {
+    const invalidLinkPage = await fetch(`http://127.0.0.1:${address.port}/${purpose}/connect?token=invalid`)
+    assert.equal(invalidLinkPage.status, 410)
+    assert.match(await invalidLinkPage.text(), /connection link/i)
+  }
+
   // Verify safeErrorFields sanitizes credentials and tokens
   const sensitiveError = new Error('Failed to connect to mongodb+srv://admin:supersecret@cluster0.abc.mongodb.net with Bearer abc123def456')
   const safeFields = safeErrorFields(sensitiveError)
