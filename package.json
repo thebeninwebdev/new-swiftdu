@@ -10,7 +10,7 @@
     "start:realtime": "tsx realtime-server.mts",
     "lint": "eslint",
     "test:first-order": "tsx --test lib/first-order-pricing.test.tsx lib/first-order-bonus.integration.test.ts",
-    "test:render-order-api": "tsx --test services/order-api/sammy-portal.integration.test.mts services/order-api/sammy-routes.test.mts lib/sammy/order-api.integration.test.mts lib/sammy/order-api-connection.integration.test.mts lib/sammy/staff-order.integration.test.mts lib/first-order-pricing.test.tsx lib/first-order-bonus.integration.test.ts",
+    "test:render-order-api": "tsx --test lib/sammy/staff-display-name.test.mts services/order-api/sammy-portal.integration.test.mts services/order-api/sammy-routes.test.mts lib/sammy/order-api.integration.test.mts lib/sammy/order-api-connection.integration.test.mts lib/sammy/staff-order.integration.test.mts lib/first-order-pricing.test.tsx lib/first-order-bonus.integration.test.ts",
     "test:cafe": "tsx --test lib/cafe-inquiry.test.ts lib/order-sync.test.ts lib/order-tracking.test.tsx",
     "test:sammy": "tsx --test lib/sammy/server.test.ts lib/sammy/input.test.ts lib/sammy/staff.test.ts lib/sammy/staff-registration.integration.test.ts lib/sammy/staff-order.integration.test.mts lib/sammy/staff-registration-claim.integration.test.mts lib/sammy/telegram-link-policy.test.ts lib/sammy/telegram-link.integration.test.ts lib/commerce-policy.test.ts lib/delivery-policy.test.ts lib/operations.test.ts lib/operations-settings.test.ts lib/pricing.test.ts lib/pricing-config.test.ts lib/first-order-pricing.test.tsx",
     "test:businesses": "tsx --test lib/business-directory.test.ts lib/business-api.test.ts lib/business-search.test.ts",
