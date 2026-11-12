@@ -147,6 +147,59 @@ test('Render-only email linking enforces valid OTP, staff eligibility, and Whats
     assert.equal(linked?.whatsappNotificationsEnabled, false)
   })
 
+  await t.test('Telegram webview can submit a valid connection form without Origin', async () => {
+    const token = 'g'.repeat(43)
+    await TelegramLinkChallenge.create({
+      tokenHash: digest(token), telegramUserId: '70007',
+      telegramChatId: '70007', expiresAt: nextTenMinutes(), active: true,
+    })
+    const { createOrderApiServer } = await import('./server.mts')
+    const { server } = createOrderApiServer()
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+    const address = server.address()
+    assert.ok(address && typeof address !== 'string')
+    const base = `http://127.0.0.1:${address.port}/telegram/connect`
+    try {
+      const get = await fetch(`${base}?token=${token}`)
+      assert.equal(get.status, 200)
+      const page = await get.text()
+      const proof = /name="csrf" value="([^"]+)"/.exec(page)?.[1]
+      assert.ok(proof, 'GET connection page should issue a signed form proof')
+
+      const payload = new URLSearchParams({
+        token, csrf: proof, email: 'not-a-swiftdu-user@example.invalid',
+      })
+      // Node's fetch does not set Origin on this ordinary URL-encoded form POST,
+      // matching problematic Telegram in-app webviews.
+      const posted = await fetch(`${base}/request-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: payload,
+      })
+      assert.equal(posted.status, 200)
+      assert.match(await posted.text(), /verification code has been emailed/i)
+
+      const forged = await fetch(`${base}/request-code`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          Origin: 'https://attacker.example',
+        },
+        body: payload,
+      })
+      assert.equal(forged.status, 403)
+
+      const missingProof = await fetch(`${base}/request-code`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token, email: 'not-a-swiftdu-user@example.invalid' }),
+      })
+      assert.equal(missingProof.status, 403)
+    } finally {
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    }
+  })
+
   await t.test('expired WhatsApp tokens cannot open a connection page', async () => {
     const token = 'e'.repeat(32)
     await WhatsAppRegistration.create({
