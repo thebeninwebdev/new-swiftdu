@@ -1,5 +1,5 @@
 import type { CafeInquiryFields } from '@/lib/cafe-inquiry'
-import Ably from 'ably'
+import { createHttpClient } from '@ably/pubsub-server'
 
 export type OrderSocketPayload = CafeInquiryFields & {
   _id: string
@@ -232,7 +232,7 @@ async function publishOrderUpdatedPayload(payload: OrderSocketPayload) {
     return
   }
 
-  const client = new Ably.Rest(key)
+  const client = createHttpClient({ key })
   const publications = getOrderRealtimePublications(payload).map(({ channel, event }) =>
     client.channels.get(channel).publish(event, event === 'tasks:updated' ? toTaskDiscoveryPayload(payload) : payload),
   )

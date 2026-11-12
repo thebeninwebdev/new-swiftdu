@@ -20,6 +20,8 @@
     "migrate:order-idempotency-index": "tsx scripts/migrate-order-idempotency-index.ts"
   },
   "dependencies": {
+    "@ably/pubsub-device": "^3.1.0",
+    "@ably/pubsub-server": "^3.1.0",
     "@aws-sdk/client-s3": "^3.1037.0",
     "@base-ui/react": "^1.3.0",
     "@better-auth/passkey": "^1.5.5",
@@ -33,7 +35,6 @@
     "@types/web-push": "^3.6.4",
     "@vercel/analytics": "^2.0.1",
     "@vercel/functions": "^3.4.5",
-    "ably": "^2.11.0",
     "better-auth": "^1.5.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

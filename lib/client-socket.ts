@@ -1,6 +1,10 @@
 'use client'
 
-import Ably from 'ably'
+import {
+  createClient,
+  type PubSubClient,
+  type TokenRequest,
+} from '@ably/pubsub-device'
 import { fetchWithTimeout } from '@/lib/client-fetch'
 
 type Handler = (...args: unknown[]) => void
@@ -13,7 +17,7 @@ export type SharedRealtimeClient = {
 }
 
 class BrowserRealtimeClient implements SharedRealtimeClient {
-  private client: Ably.Realtime | null = null
+  private client: PubSubClient | null = null
   private handlers = new Map<string, Set<Handler>>()
   private ready = false
   get connected() { return this.ready }
@@ -32,13 +36,13 @@ class BrowserRealtimeClient implements SharedRealtimeClient {
       const response = await fetchWithTimeout('/api/realtime/token', { cache: 'no-store' })
       if (!response.ok) throw new Error('Unable to authorize realtime')
       const { channels } = await response.json() as { channels: string[] }
-      this.client = new Ably.Realtime({
+      this.client = createClient({
         // Fetch a fresh, server-authorized token whenever Ably renews credentials.
         authCallback: async (_params, callback) => {
           try {
             const tokenResponse = await fetchWithTimeout('/api/realtime/token', { cache: 'no-store' })
             if (!tokenResponse.ok) throw new Error('Unable to refresh realtime authorization')
-            const { tokenRequest } = await tokenResponse.json() as { tokenRequest: Ably.TokenRequest }
+            const { tokenRequest } = await tokenResponse.json() as { tokenRequest: TokenRequest }
             callback(null, tokenRequest)
           } catch (error) { callback(error instanceof Error ? error.message : 'Unable to refresh realtime authorization', null) }
         },

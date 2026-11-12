@@ -19,7 +19,7 @@ function getMongoUri(): string {
   return uri;
 }
 
-function positiveInteger(value: string | undefined, fallback: number) {
+function positiveInteger(value: string | undefined, fallback: number) { 
   const parsed = Number.parseInt(value || '', 10)
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
 }
