@@ -100,10 +100,10 @@ export async function sendPortalCode(purpose: PortalPurpose, token: string, rawE
   const { tokenHash } = await getChallenge(purpose, token)
   const account = await User.findOne({
     email, emailVerified: true, isSuspended: { $ne: true },
-  }).select('_id name email role isExco excoRole telegramUserId telegramRevokedAt isSuspended').lean()
+  }).select('_id name email role isExco excoRole telegramUserId telegramRevokedAt isSuspended twoFactorEnabled').lean()
 
   // Account existence and eligibility are deliberately not disclosed.
-  if (!account || (purpose === 'telegram' &&
+  if (!account || account.twoFactorEnabled === true || (purpose === 'telegram' &&
       (!isTelegramLinkEligible(account) || Boolean(account.telegramUserId)))) {
     return { sent: true }
   }
@@ -187,9 +187,11 @@ export async function confirmPortalCode(purpose: PortalPurpose, token: string, r
 
   const account = await User.findOne({
     _id: record.userId, emailVerified: true, isSuspended: { $ne: true },
-  }).select('_id email role isExco excoRole telegramUserId telegramRevokedAt isSuspended').lean()
-  if (!account) {
-    throw new SammyApiError(403, 'ACCOUNT_NOT_ELIGIBLE', 'This account cannot be connected.')
+  }).select('_id email role isExco excoRole telegramUserId telegramRevokedAt isSuspended twoFactorEnabled').lean()
+  if (!account || account.twoFactorEnabled === true) {
+    // Email OTP alone must not bypass an existing multi-factor requirement.
+    // Such accounts need an administrator-authorized recovery procedure.
+    throw new SammyApiError(403, 'ACCOUNT_NOT_ELIGIBLE', 'This account cannot be connected by email verification. Contact a SwiftDU administrator.')
   }
 
   if (purpose === 'telegram') {
