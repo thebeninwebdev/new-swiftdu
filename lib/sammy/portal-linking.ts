@@ -138,6 +138,9 @@ export async function sendPortalCode(purpose: PortalPurpose, token: string, rawE
         attempts: 0, lastSentAt: now,
       },
       $inc: { sentCount: 1 },
+      // A previous successful code can become consumed if downstream linking
+      // fails. A newly issued code must be usable without changing the token.
+      $unset: { consumedAt: '' },
       $setOnInsert: { createdAt: now },
     },
     { upsert: true },
