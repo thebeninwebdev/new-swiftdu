@@ -6,6 +6,7 @@ on:
       - 'services/order-api/**'
       - 'lib/sammy/**'
       - 'models/sammy-portal-otp.ts'
+      - 'tsconfig.sammy-render.json'
       - 'package.json'
       - 'package-lock.json'
       - '.github/workflows/sammy-render-isolation.yml'
@@ -28,5 +29,5 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --include=dev
-      - run: npx tsc --noEmit
+      - run: npx tsc --noEmit -p tsconfig.sammy-render.json
       - run: npm run test:render-order-api
