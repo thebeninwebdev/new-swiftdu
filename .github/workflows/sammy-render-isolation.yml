@@ -1,0 +1,32 @@
+name: Sammy Render isolation checks
+
+on:
+  pull_request:
+    paths:
+      - 'services/order-api/**'
+      - 'lib/sammy/**'
+      - 'models/sammy-portal-otp.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/sammy-render-isolation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  render-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      SAMMY_LINK_OTP_SECRET: test-only-secret-at-least-32-characters-long
+      RESEND_API_KEY: re_test_not_used
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --include=dev
+      - run: npx tsc --noEmit
+      - run: npm run test:render-order-api
