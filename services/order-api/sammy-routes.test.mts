@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import { resolveSammyRoute } from './sammy-routes.mts'
-import { isSammyPortalRoute } from './sammy-portal.mts'
+import { isSammyPortalRoute, issuePortalFormProof, assertPortalFormAllowed } from './sammy-portal.mts'
 const { validatePortalToken } = await import('@/lib/sammy/portal-linking')
 
 const cases = [
@@ -76,4 +76,33 @@ test('connection token validation rejects malformed or nonmatching tokens', () =
   assert.throws(() => validatePortalToken('whatsapp', 'a'.repeat(43)))
   assert.match(validatePortalToken('telegram', 'a'.repeat(43)), /^[a-f0-9]{64}$/)
   assert.match(validatePortalToken('whatsapp', 'b'.repeat(32)), /^[a-f0-9]{64}$/)
+})
+
+test('signed portal forms accept legitimate Telegram webviews without Origin, but reject forgeries', () => {
+  const original = process.env.SAMMY_LINK_OTP_SECRET
+  const originalPortal = process.env.SAMMY_PORTAL_ORIGIN
+  process.env.SAMMY_LINK_OTP_SECRET = 'test-signed-form-proof-key-at-least-32-characters'
+  delete process.env.SAMMY_PORTAL_ORIGIN
+  try {
+    const now = Date.now()
+    const token = 'a'.repeat(43)
+    const proof = issuePortalFormProof('telegram', token, now)
+    assert.ok(proof)
+    // Telegram in-app browsers are not guaranteed to attach an Origin header.
+    assert.doesNotThrow(() => assertPortalFormAllowed({}, 'telegram', token, proof, now))
+    assert.doesNotThrow(() => assertPortalFormAllowed({ origin: 'null' }, 'telegram', token, proof, now))
+    assert.doesNotThrow(() => assertPortalFormAllowed({ origin: 'https://swiftdu-orders.onrender.com' }, 'telegram', token, proof, now))
+    assert.throws(() => assertPortalFormAllowed({ origin: 'https://evil.example' }, 'telegram', token, proof, now))
+    assert.throws(() => assertPortalFormAllowed({ 'sec-fetch-site': 'cross-site' }, 'telegram', token, proof, now))
+    assert.throws(() => assertPortalFormAllowed({}, 'telegram', token, null, now))
+    assert.throws(() => assertPortalFormAllowed({}, 'telegram', 'b'.repeat(43), proof, now))
+    assert.throws(() => assertPortalFormAllowed({}, 'whatsapp', token, proof, now))
+    assert.throws(() => assertPortalFormAllowed({}, 'telegram', token, proof, now + 20 * 60_000 + 10))
+    assert.throws(() => assertPortalFormAllowed({}, 'telegram', token, proof.slice(0, -1) + (proof.endsWith('a') ? 'b' : 'a'), now))
+  } finally {
+    if (original === undefined) delete process.env.SAMMY_LINK_OTP_SECRET
+    else process.env.SAMMY_LINK_OTP_SECRET = original
+    if (originalPortal === undefined) delete process.env.SAMMY_PORTAL_ORIGIN
+    else process.env.SAMMY_PORTAL_ORIGIN = originalPortal
+  }
 })
