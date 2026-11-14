@@ -3,7 +3,7 @@ import { Order, type IOrder } from '@/models/order'
 import { User } from '@/models/user'
 import { AcademicSession } from '@/models/academic-session'
 import { FirstOrderBonusClaim } from '@/models/first-order-bonus-claim'
-import { canReleaseFirstOrderReservation, priceWithOrderDiscounts } from './first-order-pricing'
+import { AUTOMATIC_FIRST_ORDER_BONUS_ENABLED, canReleaseFirstOrderReservation, priceWithOrderDiscounts } from './first-order-pricing'
 import type { PricingResult } from './pricing'
 
 export class OrderChangedError extends Error { constructor() { super('Order changed. Refresh and try again.') } }
@@ -15,16 +15,15 @@ async function activeSession(session?: ClientSession) {
   return current
 }
 
-async function canonicalUserId(userId: string, session?: ClientSession) {
-  const user = await User.findById(userId).session(session || null)
-  return user ? String(user._id) : userId
-}
-
 export async function firstOrderBonusEligibility(userId: string) {
+  void userId // Retained for API compatibility; eligibility is globally disabled.
   const current = await activeSession()
-  const customerId = await canonicalUserId(userId)
-  const claim = await FirstOrderBonusClaim.exists({ userId: customerId, sessionId: current._id })
-  return { eligible: !claim, sessionId: String(current._id), sessionName: current.name }
+  return {
+    enabled: AUTOMATIC_FIRST_ORDER_BONUS_ENABLED,
+    eligible: false,
+    sessionId: String(current._id),
+    sessionName: current.name,
+  }
 }
 
 export async function firstOrderBonusAvailable(userId: string) {
@@ -102,22 +101,24 @@ export async function saveNewOrderWithBonus(order: IOrder, pricing: PricingResul
     try {
       session.startTransaction({ maxCommitTimeMS: 5_000 })
       const current = await activeSession(session)
-      const customerId = await lockCustomer(order.userId, session)
-      const existingClaim = await FirstOrderBonusClaim.exists({ userId: customerId, sessionId: current._id }).session(session)
-      log('bonus_eligibility_checked', { retryAttempt: attempt, bonusApplied: !existingClaim })
+      if (AUTOMATIC_FIRST_ORDER_BONUS_ENABLED) {
+        const customerId = await lockCustomer(order.userId, session)
+        const existingClaim = await FirstOrderBonusClaim.exists({ userId: customerId, sessionId: current._id }).session(session)
+        log('bonus_eligibility_checked', { retryAttempt: attempt, bonusApplied: !existingClaim })
 
-      if (existingClaim) {
-        log('bonus_claim_existing', { retryAttempt: attempt, bonusApplied: false })
-      } else {
-        log('bonus_reservation_started', { retryAttempt: attempt, bonusApplied: false })
-        await FirstOrderBonusClaim.create([{
-          userId: customerId,
-          sessionId: current._id,
-          orderId: String(attemptOrder._id),
-          claimedAt: new Date(),
-        }], { session })
-        bonusApplied = true
-        log('bonus_reservation_succeeded', { retryAttempt: attempt, bonusApplied: true })
+        if (existingClaim) {
+          log('bonus_claim_existing', { retryAttempt: attempt, bonusApplied: false })
+        } else {
+          log('bonus_reservation_started', { retryAttempt: attempt, bonusApplied: false })
+          await FirstOrderBonusClaim.create([{
+            userId: customerId,
+            sessionId: current._id,
+            orderId: String(attemptOrder._id),
+            claimedAt: new Date(),
+          }], { session })
+          bonusApplied = true
+          log('bonus_reservation_succeeded', { retryAttempt: attempt, bonusApplied: true })
+        }
       }
 
       attemptOrder.sessionId = current._id

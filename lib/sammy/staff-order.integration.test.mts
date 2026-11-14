@@ -10,9 +10,9 @@ test('authorized Telegram staff can create an order for an unverified provisiona
   process.env.SAMMY_SWIFTDU_INTERNAL_SECRET = 'staff-order-test-secret'
   process.env.OPERATIONS_ENABLED = 'true'
   process.env.SWIFTDU_BASE_URL = 'https://swiftdu.test'
-  let closeService: (() => Promise<void>) | undefined
+  const serviceCleanup: { close?: () => Promise<void> } = {}
   t.after(async () => {
-    await closeService?.()
+    await serviceCleanup.close?.()
     await mongoose.disconnect()
     await database.stop()
     delete process.env.OPERATIONS_ENABLED
@@ -31,7 +31,7 @@ test('authorized Telegram staff can create an order for an unverified provisiona
   const { FirstOrderBonusClaim } = await import('@/models/first-order-bonus-claim')
   const { startOrderApiServer } = await import('../../services/order-api/server.mts')
   const service = await startOrderApiServer(0)
-  closeService = () => service.close()
+  serviceCleanup.close = () => service.close()
   const address = service.server.address() as AddressInfo
   const endpoint = `http://127.0.0.1:${address.port}/api/internal/sammy/staff/orders`
   const sendOrder = (body: unknown, secret = 'staff-order-test-secret') => fetch(endpoint, {
@@ -177,6 +177,9 @@ test('authorized Telegram staff can create an order for an unverified provisiona
   assert.equal(inquiryOrder.cafeInquiry, true)
   assert.equal(inquiryOrder.amount, 0)
   assert.equal(inquiryOrder.restaurantPeopleCount, 2)
+  assert.equal(inquiryOrder.serviceFee, 900)
+  assert.equal(inquiryOrder.totalAmount, 900)
+  assert.equal(inquiryOrder.firstOrderBonusApplied, false)
   assert.equal(inquiryOrder.paymentStatus, 'unpaid')
   assert.equal(inquiryOrder.paymentProvider, 'manual_transfer')
   assert.equal(inquiryOrder.source, 'telegram_staff')

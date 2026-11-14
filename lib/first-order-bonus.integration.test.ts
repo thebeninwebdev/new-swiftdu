@@ -9,9 +9,13 @@ import { AcademicSession } from '../models/academic-session'
 import { FirstOrderBonusClaim } from '../models/first-order-bonus-claim'
 import { calculateOrderPricing } from './pricing'
 import { priceWithOrderDiscounts } from './first-order-pricing'
-import { clearZeroFeeSettlement, firstOrderBonusAvailable, NoActiveAcademicSessionError, OrderChangedError, releaseCancelledBonus, saveNewOrderWithBonus, saveOrderLifecycle } from './first-order-bonus'
-import { verifyAndMarkOrderSettlementPaid } from './settlement-payment'
-import { getOutstandingSettlementOrders, syncTaskerSettlementStatus } from './tasker-settlement'
+import {
+  firstOrderBonusEligibility,
+  NoActiveAcademicSessionError,
+  OrderChangedError,
+  saveNewOrderWithBonus,
+  saveOrderLifecycle,
+} from './first-order-bonus'
 
 let database: MongoMemoryReplSet
 before(async () => {
@@ -20,26 +24,45 @@ before(async () => {
   await Promise.all([Order.init(), User.init(), WhatsAppRegistration.init(), AcademicSession.init(), FirstOrderBonusClaim.init()])
 })
 after(async () => { await mongoose.disconnect(); await database?.stop() })
-beforeEach(async () => { await Promise.all([Order.deleteMany({}), User.deleteMany({}), WhatsAppRegistration.deleteMany({}), AcademicSession.deleteMany({}), FirstOrderBonusClaim.deleteMany({})]); await AcademicSession.create({ name: '2026/2027', startDate: new Date('2026-01-01'), endDate: new Date('2026-12-31'), isActive: true }) })
-const pricing = calculateOrderPricing({ taskType: 'restaurant', amount: 2000 })
-async function customer() { return User.create({ email: 'test@example.invalid' }) }
+beforeEach(async () => {
+  await Promise.all([Order.deleteMany({}), User.deleteMany({}), WhatsAppRegistration.deleteMany({}), AcademicSession.deleteMany({}), FirstOrderBonusClaim.deleteMany({})])
+  await AcademicSession.create({ name: '2026/2027', startDate: new Date('2026-01-01'), endDate: new Date('2026-12-31'), isActive: true })
+})
+
+const pricing = calculateOrderPricing({ taskType: 'restaurant', amount: 2000, serviceFee: 600, restaurantPeopleCount: 3 })
+async function customer() { return User.create({ email: `test-${crypto.randomUUID()}@example.invalid` }) }
 function draft(userId: string, isTestOrder = false, idempotencyKey?: string) {
-  return new Order({ userId, taskType: 'restaurant', amount: pricing.amount, commission: pricing.serviceFee,
-    serviceFee: pricing.serviceFee, totalAmount: pricing.totalAmount, location: 'Library', status: 'pending', isTestOrder, idempotencyKey })
+  return new Order({
+    userId, taskType: 'restaurant', amount: pricing.amount, commission: pricing.serviceFee,
+    serviceFee: pricing.serviceFee, totalAmount: pricing.totalAmount, location: 'Library',
+    status: 'pending', isTestOrder, idempotencyKey,
+  })
 }
 
-test('first, second, and third orders save with only the first-order platform fee waiver', async () => {
+test('automatic first-order promotion is disabled for every new live order', async () => {
   const user = await customer()
   const orders = [draft(String(user._id)), draft(String(user._id)), draft(String(user._id))]
 
   for (const order of orders) await saveNewOrderWithBonus(order, pricing)
 
-  assert.deepEqual(orders.map(order => order.firstOrderBonusApplied), [true, false, false])
-  assert.equal(orders[0].taskerFee, orders[1].taskerFee)
-  assert.equal(orders[1].platformFee, priceWithOrderDiscounts(pricing).platformFee)
-  assert.equal(orders[0].platformFee, 0)
-  assert.equal(await Order.countDocuments({ userId: String(user._id) }), 3)
-  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 1)
+  assert.deepEqual(orders.map(order => order.firstOrderBonusApplied), [false, false, false])
+  for (const order of orders) {
+    assert.equal(order.serviceFee, 1000)
+    assert.equal(order.platformFee, 166)
+    assert.equal(order.taskerFee, 834)
+    assert.equal(order.totalAmount, 3000)
+    assert.equal(order.sessionName, '2026/2027')
+  }
+  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 0)
+})
+
+test('eligibility reports the promotion disabled without creating a claim', async () => {
+  const user = await customer()
+  const eligibility = await firstOrderBonusEligibility(String(user._id))
+  assert.equal(eligibility.enabled, false)
+  assert.equal(eligibility.eligible, false)
+  assert.equal(eligibility.sessionName, '2026/2027')
+  assert.equal(await FirstOrderBonusClaim.countDocuments(), 0)
 })
 
 test('duplicate submissions with one idempotency key return the committed order', async () => {
@@ -52,33 +75,46 @@ test('duplicate submissions with one idempotency key return the committed order'
 
   assert.equal(first._id.toString(), retry._id.toString())
   assert.equal(await Order.countDocuments({ userId: String(user._id), idempotencyKey: key }), 1)
-  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 1)
+  assert.equal(await FirstOrderBonusClaim.countDocuments(), 0)
 })
 
-test('transient transaction errors retry and still commit one order and bonus claim', async () => {
+test('simultaneous new orders never reserve or receive an automatic bonus', async () => {
+  const user = await customer()
+  const orders = Array.from({ length: 6 }, () => draft(String(user._id)))
+
+  await Promise.all(orders.map(order => saveNewOrderWithBonus(order, pricing)))
+
+  assert.equal(await Order.countDocuments({ userId: String(user._id) }), 6)
+  assert.equal(await Order.countDocuments({ firstOrderBonusApplied: true }), 0)
+  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 0)
+  assert.ok(orders.every(order => order.serviceFee === 1000 && order.platformFee === 166 && order.taskerFee === 834))
+})
+
+test('transient transaction errors retry and still commit one normally priced order', async () => {
   const user = await customer()
   const order = draft(String(user._id))
-  const originalUpdateOne = User.updateOne
-  let updateAttempts = 0
-  User.updateOne = (async (...args: Parameters<typeof User.updateOne>) => {
-    updateAttempts++
-    if (updateAttempts === 1) throw Object.assign(new Error('transient write conflict'), { code: 112 })
-    return originalUpdateOne.apply(User, args)
-  }) as typeof User.updateOne
+  const originalSave = Order.prototype.save
+  let saveAttempts = 0
+  Order.prototype.save = (async function (this: InstanceType<typeof Order>, ...args: Parameters<typeof originalSave>) {
+    saveAttempts++
+    if (saveAttempts === 1) throw Object.assign(new Error('transient write conflict'), { code: 112 })
+    return originalSave.apply(this, args)
+  }) as typeof Order.prototype.save
 
   try {
     await saveNewOrderWithBonus(order, pricing)
   } finally {
-    User.updateOne = originalUpdateOne
+    Order.prototype.save = originalSave
   }
 
-  assert.equal(updateAttempts, 2)
+  assert.equal(saveAttempts, 2)
   assert.equal(await Order.countDocuments({ _id: order._id }), 1)
-  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 1)
-  assert.equal(order.firstOrderBonusApplied, true)
+  assert.equal(order.serviceFee, 1000)
+  assert.equal(order.firstOrderBonusApplied, false)
+  assert.equal(await FirstOrderBonusClaim.countDocuments(), 0)
 })
 
-test('an uncertain commit is resolved from the committed order without duplicating it', async () => {
+test('an uncertain commit is resolved from the committed order without duplication', async () => {
   const user = await customer()
   const order = draft(String(user._id))
   const originalStartSession = mongoose.connection.startSession
@@ -107,36 +143,25 @@ test('an uncertain commit is resolved from the committed order without duplicati
 
   assert.equal(commitAttempts, 1)
   assert.equal(await Order.countDocuments({ _id: order._id }), 1)
-  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 1)
-  assert.equal(order.firstOrderBonusApplied, true)
+  assert.equal(order.firstOrderBonusApplied, false)
+  assert.equal(await FirstOrderBonusClaim.countDocuments(), 0)
 })
 
-test('simultaneous creations reserve exactly one bonus; transaction failure rolls back the claim', async () => {
+test('manual service-fee discounts remain separate from the discontinued promotion', async () => {
   const user = await customer()
-  const bad = draft(String(user._id)); bad.location = ''
-  await assert.rejects(saveNewOrderWithBonus(bad, pricing))
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
-  const orders = Array.from({ length: 6 }, () => draft(String(user._id)))
-  await Promise.all(orders.map(order => saveNewOrderWithBonus(order, pricing)))
-  assert.equal(await Order.countDocuments({ userId: String(user._id) }), 6)
-  assert.equal(await Order.countDocuments({ firstOrderBonusApplied: true }), 1)
-  assert.equal(orders.filter(order => !order.firstOrderBonusApplied).length, 5)
-  const reserved = await FirstOrderBonusClaim.findOne({ userId: String(user._id) }).orFail()
-  assert.equal(orders.find(order => order.firstOrderBonusApplied)!._id.toString(), reserved.orderId)
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), false)
+  const order = draft(String(user._id))
+  order.serviceFeeDiscountApplied = true
+  await saveNewOrderWithBonus(order, pricing)
+
+  assert.equal(order.firstOrderBonusApplied, false)
+  assert.equal(order.serviceFee, 0)
+  assert.equal(order.platformFee, 0)
+  assert.equal(order.taskerFee, 0)
+  assert.equal(order.totalAmount, pricing.amount)
+  assert.equal(await FirstOrderBonusClaim.countDocuments(), 0)
 })
 
-test('historical live orders do not exclude customers from a new session', async () => {
-  const user = await customer()
-  const training = draft(String(user._id), true); training.status = 'completed'; await training.save()
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
-  const live = draft(String(user._id)); live.status = 'completed'; await live.save()
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
-  const next = draft(String(user._id)); await saveNewOrderWithBonus(next, pricing)
-  assert.equal(next.firstOrderBonusApplied, true)
-})
-
-test('first cafe inquiry snapshots the tasker-only inquiry fee', async () => {
+test('cafe inquiry pricing retains its tasker-only inquiry fee', async () => {
   const user = await customer()
   const cafePricing = calculateOrderPricing({ taskType: 'restaurant', amount: 0, serviceFee: 600, cafeInquiry: true })
   const order = new Order({
@@ -147,82 +172,56 @@ test('first cafe inquiry snapshots the tasker-only inquiry fee', async () => {
 
   await saveNewOrderWithBonus(order, cafePricing)
 
-  assert.equal(order.serviceFee, 550)
+  assert.equal(order.serviceFee, 650)
   assert.equal(order.taskerFee, 550)
-  assert.equal(order.platformFee, 0)
-  assert.equal(order.firstOrderBonusAmount, 100)
-  assert.equal(order.totalAmount, 550)
+  assert.equal(order.platformFee, 100)
+  assert.equal(order.firstOrderBonusApplied, false)
+  assert.equal(order.totalAmount, 650)
 })
 
-test('a different active session makes the same customer eligible again', async () => {
-  const user = await customer(); const first = draft(String(user._id)); await saveNewOrderWithBonus(first, pricing)
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), false)
+test('test orders use configured pricing and never create bonus claims', async () => {
+  const user = await customer()
+  const training = draft(String(user._id), true)
+  await saveNewOrderWithBonus(training, pricing)
+  assert.equal(training.serviceFee, 1000)
+  assert.equal(training.platformFee, 166)
+  assert.equal(training.taskerFee, 834)
+  assert.equal(training.firstOrderBonusApplied, false)
+  assert.equal(await FirstOrderBonusClaim.countDocuments(), 0)
+})
+
+test('a live order still fails safely when there is no active academic session', async () => {
+  const user = await customer()
   await AcademicSession.updateMany({}, { $set: { isActive: false } })
-  await AcademicSession.create({ name: '2027/2028', startDate: new Date('2027-01-01'), endDate: new Date('2027-12-31'), isActive: true })
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
-})
-
-test('a live order fails safely when there is no active session', async () => {
-  const user = await customer(); await AcademicSession.updateMany({}, { $set: { isActive: false } })
   await assert.rejects(saveNewOrderWithBonus(draft(String(user._id)), pricing), NoActiveAcademicSessionError)
 })
 
-test('completion consumes once and concurrent retries cannot overwrite its timestamp', async () => {
-  const user = await customer(); const order = draft(String(user._id))
-  await saveNewOrderWithBonus(order, pricing)
-  const left = await Order.findById(order._id).orFail(); const right = await Order.findById(order._id).orFail()
+test('historical bonus orders still consume their existing claim on completion', async () => {
+  const user = await customer()
+  const activeSession = await AcademicSession.findOne({ isActive: true }).orFail()
+  const legacyFees = priceWithOrderDiscounts(pricing, { firstOrderBonus: true })
+  const order = await Order.create({
+    userId: String(user._id), sessionId: activeSession._id, sessionName: activeSession.name,
+    firstOrderBonusSessionId: activeSession._id, ...legacyFees,
+    amount: pricing.amount, taskType: 'restaurant', location: 'Library', status: 'pending',
+  })
+  await FirstOrderBonusClaim.create({
+    userId: String(user._id), sessionId: activeSession._id, orderId: String(order._id), claimedAt: new Date(),
+  })
+
+  const left = await Order.findById(order._id).orFail()
+  const right = await Order.findById(order._id).orFail()
   for (const [index, snapshot] of [left, right].entries()) {
-    snapshot.status = 'completed'; snapshot.completedAt = new Date(1_800_000_000_000 + index * 1000)
-    snapshot.hasPaid = true; snapshot.paymentStatus = 'paid'; clearZeroFeeSettlement(snapshot)
+    snapshot.status = 'completed'
+    snapshot.completedAt = new Date(1_800_000_000_000 + index * 1000)
+    snapshot.hasPaid = true
+    snapshot.paymentStatus = 'paid'
   }
   const results = await Promise.allSettled([saveOrderLifecycle(left), saveOrderLifecycle(right)])
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1)
-  const winner = results[0].status === 'fulfilled' ? left : right
   const saved = await Order.findById(order._id).orFail()
-  assert.equal(saved.completedAt!.getTime(), winner.completedAt!.getTime())
+  assert.equal(saved.firstOrderBonusApplied, true)
   assert.ok(saved.firstOrderBonusConsumedAt)
-  assert.equal(saved.settlementStatus, 'not_due')
-  assert.equal(saved.settlementReference, undefined)
-  assert.equal(saved.settlementPaidAt, undefined)
   assert.ok(await FirstOrderBonusClaim.findOne({ orderId: String(order._id), consumedAt: { $exists: true } }))
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), false)
   await assert.rejects(saveOrderLifecycle(saved), OrderChangedError)
-})
-
-test('unpaid cancellation and expiry release only their own reservation; paid/failed transfers retain it', async () => {
-  const user = await customer(); const first = draft(String(user._id)); await saveNewOrderWithBonus(first, pricing)
-  first.status = 'cancelled'; first.paymentStatus = 'cancelled'; await saveOrderLifecycle(first)
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
-  const next = draft(String(user._id)); await saveNewOrderWithBonus(next, pricing)
-  await releaseCancelledBonus(first)
-  assert.equal((await FirstOrderBonusClaim.findOne({ userId: String(user._id) }))!.orderId, String(next._id))
-  // Same atomic terminal update used by expiry, followed by exact-ID release.
-  next.status = 'cancelled'; next.paymentStatus = 'cancelled'; await next.save(); await releaseCancelledBonus(next)
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
-  const paid = draft(String(user._id)); await saveNewOrderWithBonus(paid, pricing)
-  paid.customerTransferredAt = new Date(); paid.paymentStatus = 'failed'; paid.status = 'cancelled'
-  await saveOrderLifecycle(paid)
-  assert.equal((await FirstOrderBonusClaim.findOne({ userId: String(user._id) }))!.orderId, String(paid._id))
-})
-
-test('test orders neither claim nor consume', async () => {
-  const user = await customer(); const training = draft(String(user._id), true)
-  await saveNewOrderWithBonus(training, pricing)
-  training.status = 'completed'; training.completedAt = new Date(); await saveOrderLifecycle(training)
-  assert.equal(training.firstOrderBonusApplied, false)
-  assert.equal(await firstOrderBonusAvailable(String(user._id)), true)
-  assert.equal(await FirstOrderBonusClaim.countDocuments({ userId: String(user._id) }), 0)
-})
-
-test('zero-fee settlement cannot charge, become overdue, or reappear after a receipt report', async () => {
-  const user = await customer(); const order = draft(String(user._id)); await saveNewOrderWithBonus(order, pricing)
-  order.status = 'completed'; order.taskerId = new mongoose.Types.ObjectId().toString(); order.completedAt = new Date()
-  clearZeroFeeSettlement(order); await saveOrderLifecycle(order)
-  await assert.rejects(verifyAndMarkOrderSettlementPaid({ order, reference: 'must-not-call-paystack' }), /No platform settlement/)
-  order.customerReceiptConfirmed = false; order.prematureCompletionReported = true; order.platformFeeWaivedForFastCompletion = false
-  order.settlementStatus = 'pending'; order.settlementDueAt = new Date(0); clearZeroFeeSettlement(order); await order.save()
-  assert.equal(order.platformFee, 0)
-  assert.equal((await syncTaskerSettlementStatus(order.taskerId)).overdueCount, 0)
-  assert.equal((await getOutstandingSettlementOrders(order.taskerId)).length, 0)
-  assert.equal(order.settlementStatus, 'not_due')
 })

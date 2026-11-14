@@ -40,6 +40,7 @@ export async function GET(request: NextRequest) {
 
     const firstOrder = await firstOrderBonusEligibility(session.user.id)
     return NextResponse.json({
+      firstOrderBonusEnabled: firstOrder.enabled,
       firstOrderBonusAvailable: firstOrder.eligible,
       firstOrderEligible: firstOrder.eligible,
       sessionId: firstOrder.sessionId,

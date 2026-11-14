@@ -211,7 +211,14 @@ export function emitOrderUpdated(order: SocketOrderLike) {
   // exported promise below so Vercel can keep the publish alive with waitUntil.
   void publishOrderUpdated(order).catch((error) => {
     const orderId = serializeId(order._id)
-    console.error('[realtime] failed to publish order update', { orderId, error })
+    const candidate = error as { name?: unknown; code?: unknown; statusCode?: unknown }
+    const errorCode = Number(candidate?.code ?? candidate?.statusCode)
+    console.error('[realtime]', {
+      code: 'order_publish_failed',
+      orderId,
+      ...(typeof candidate?.name === 'string' ? { errorName: candidate.name } : {}),
+      ...(Number.isFinite(errorCode) ? { errorCode } : {}),
+    })
   })
 }
 
@@ -237,6 +244,12 @@ async function publishOrderUpdatedPayload(payload: OrderSocketPayload) {
     client.channels.get(channel).publish(event, event === 'tasks:updated' ? toTaskDiscoveryPayload(payload) : payload),
   )
   await Promise.all(publications)
+  console.info('[realtime]', {
+    code: 'order_published',
+    orderId: payload._id,
+    publicationCount: publications.length,
+    taskerMode: payload.isTestOrder ? 'training' : 'live',
+  })
 }
 
 export function getOrderRealtimePublications(payload: Pick<OrderSocketPayload, 'userId' | 'taskerId' | 'isTestOrder'>) {

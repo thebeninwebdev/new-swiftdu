@@ -1,6 +1,11 @@
 import { splitServiceFee } from './order-finance'
 import { CAFE_INQUIRY_EXTRA_FEE, type PricingResult } from './pricing'
 
+// The automatic promotion has been discontinued. Keep the legacy pricing
+// helpers below so historical orders that already contain bonus fields can
+// still be displayed and completed correctly.
+export const AUTOMATIC_FIRST_ORDER_BONUS_ENABLED = false
+
 export type FirstOrderBonusFields = {
   firstOrderBonusApplied?: boolean
   platformFeeBeforeFirstOrderBonus?: number

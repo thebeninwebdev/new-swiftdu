@@ -14,10 +14,9 @@ import { BankDetailsForm } from '@/components/tasker/BankDetailsForm'
 import { useNetworkState } from '@/hooks/use-network-state'
 import { fetchWithTimeout } from '@/lib/client-fetch'
 import { ClientMutationCoordinator, mergeUniqueById } from '@/lib/client-mutation'
+import { getMissedRealtimeOrderIds, getTaskerDashboardPollInterval } from '@/lib/realtime/tasker-dashboard-diagnostics'
 
 const REALTIME_REVALIDATE_DELAY_MS = 1200
-const HEALTHY_SOCKET_RECONCILE_INTERVAL_MS = 60_000
-const UNHEALTHY_SOCKET_POLL_INTERVAL_MS = 30_000
 
 interface Errand extends CafeInquiryFields {
   batchId?: string
@@ -207,12 +206,21 @@ export default function TaskerDashboardPage() {
   const alertTimeoutRef = useRef<number | null>(null)
   const refreshTimeoutRef = useRef<number | null>(null)
   const hasDashboardDataRef = useRef(false)
-  const observedSocketConnectionRef = useRef(false)
+  const realtimeSeenOrderIdsRef = useRef(new Set<string>())
+  const knownAvailableOrderIdsRef = useRef(new Set<string>())
+  const diagnosticKeysRef = useRef(new Set<string>())
   const loadDashboardRef = useRef<(initial?: boolean, options?: { silent?: boolean }) => Promise<void>>(async () => {})
   const mutationsRef = useRef(new ClientMutationCoordinator())
 
   const taskerName = session?.user?.name || 'Anonymous'
   const needsBankDetails = Boolean(taskerProfile && !taskerProfile.bankDetails?.accountNumber)
+
+  const reportDashboardDiagnostic = useCallback((code: string, details: Record<string, unknown> = {}, key = code) => {
+    if (diagnosticKeysRef.current.has(key)) return
+    if (diagnosticKeysRef.current.size >= 200) diagnosticKeysRef.current.clear()
+    diagnosticKeysRef.current.add(key)
+    console.info('[tasker-dashboard]', { code, ...details })
+  }, [])
 
   useEffect(() => {
     const notice = searchParams.get('notice')
@@ -363,6 +371,10 @@ export default function TaskerDashboardPage() {
         params.append('fast', 'true')
         params.append('limit', '80')
 
+        if (!work.data?.checkedIn) {
+          reportDashboardDiagnostic('tasker_not_checked_in', { taskerMode: taskerProfile.taskerMode || 'live' })
+        }
+
         const availableRes = work.data?.checkedIn
           ? await fetchWithTimeout(`/api/errands?${params.toString()}`, {
               cache: 'no-store',
@@ -375,6 +387,32 @@ export default function TaskerDashboardPage() {
 
         const availableErrands: Errand[] = availableRes ? await availableRes.json() : []
         const visibleAvailableErrands = availableErrands.filter((errand) => String(errand.taskerId || '') !== taskerProfile._id)
+
+        if (work.data?.checkedIn) {
+          if (visibleAvailableErrands.length === 0) {
+            reportDashboardDiagnostic('orders_api_no_eligible_tasks', {
+              taskerMode: taskerProfile.taskerMode || 'live',
+              taskTypeFilter,
+              hasLocationFilter: Boolean(locationFilter.trim()),
+            }, `orders_api_no_eligible_tasks:${taskerProfile.taskerMode || 'live'}:${taskTypeFilter}:${locationFilter.trim().toLowerCase()}`)
+          }
+          if (!initial && hasDashboardDataRef.current) {
+            const missedOrderIds = getMissedRealtimeOrderIds(
+              visibleAvailableErrands.map(errand => errand._id),
+              knownAvailableOrderIdsRef.current,
+              realtimeSeenOrderIdsRef.current,
+              true,
+            )
+            if (missedOrderIds.length > 0) {
+              reportDashboardDiagnostic('order_published_but_not_received', {
+                count: missedOrderIds.length,
+                orderIds: missedOrderIds,
+                source: 'api_reconciliation',
+              }, `order_published_but_not_received:${missedOrderIds.join(',')}`)
+            }
+          }
+        }
+        knownAvailableOrderIdsRef.current = new Set(visibleAvailableErrands.map(errand => errand._id))
 
         if (!initial && visibleAvailableErrands.length > prevErrandsCount.current) {
           triggerNewTaskAlert()
@@ -424,7 +462,7 @@ export default function TaskerDashboardPage() {
         }
       }
     },
-    [loadingTaskerProfile, work.data?.checkedIn, locationFilter, router, session?.user?.id, sessionPending, taskerProfile, taskTypeFilter, triggerNewTaskAlert],
+    [loadingTaskerProfile, work.data?.checkedIn, locationFilter, reportDashboardDiagnostic, router, session?.user?.id, sessionPending, taskerProfile, taskTypeFilter, triggerNewTaskAlert],
   )
 
   useEffect(() => {
@@ -510,13 +548,10 @@ export default function TaskerDashboardPage() {
       return
     }
 
-    observedSocketConnectionRef.current = false
     const socket = acquireSharedSocket()
     const handleConnect = () => {
-      const isReconnect = observedSocketConnectionRef.current
-      observedSocketConnectionRef.current = true
       setSocketHealthy(true)
-      if (isReconnect && hasDashboardDataRef.current) void loadDashboardRef.current(false, { silent: true })
+      if (hasDashboardDataRef.current) void loadDashboardRef.current(false, { silent: true })
     }
     const handleDisconnect = () => {
       setSocketHealthy(false)
@@ -527,45 +562,40 @@ export default function TaskerDashboardPage() {
     }
     const handleTaskUpdate = (payload?: RealtimeTaskPayload) => {
       if (payload) {
+        realtimeSeenOrderIdsRef.current.add(payload._id)
+        if (realtimeSeenOrderIdsRef.current.size > 200) {
+          realtimeSeenOrderIdsRef.current = new Set([payload._id])
+        }
         const payloadTaskerId = String(payload.taskerId || '')
         const belongsToCurrentTasker = payloadTaskerId === taskerProfile._id
         const isActiveForCurrentTasker = belongsToCurrentTasker && (payload.status === 'in_progress' || payload.status === 'paid')
         const isPendingAvailable = payload.status === 'pending' && !payload.taskerId
-        const isBeingFulfilled = payload.status === 'in_progress' && payloadTaskerId !== taskerProfile._id
         const payloadMatchesMode = taskerProfile.taskerMode === 'training' ? payload.isTestOrder === true : payload.isTestOrder !== true
-        const shouldShow = payloadMatchesMode && (isPendingAvailable || isBeingFulfilled) && matchesRealtimeFilters(payload, taskTypeFilter, locationFilter)
+        const matchesFilters = matchesRealtimeFilters(payload, taskTypeFilter, locationFilter)
+        const shouldRevalidate = Boolean(work.data?.checkedIn) && payloadMatchesMode && isPendingAvailable && matchesFilters
 
-        if (work.data?.checkedIn && isPendingAvailable && shouldShow) {
-          triggerNewTaskAlert()
+        if (!shouldRevalidate) {
+          const reason = !work.data?.checkedIn
+            ? 'not_checked_in'
+            : !payloadMatchesMode
+              ? 'tasker_mode'
+              : !isPendingAvailable
+                ? 'order_status'
+                : 'dashboard_filter'
+          reportDashboardDiagnostic('order_received_but_filtered_out', {
+            orderId: payload._id,
+            reason,
+            taskerMode: taskerProfile.taskerMode || 'live',
+          }, `order_received_but_filtered_out:${payload._id}:${reason}`)
         }
 
+        // Realtime is an invalidation signal. The API remains authoritative for
+        // check-in, hostel access, academic-session and mode eligibility.
         setErrands((previous) => {
-          const currentIndex = previous.findIndex((item) => item._id === payload._id)
-
-          if (!shouldShow) {
-            if (currentIndex === -1) {
-              prevErrandsCount.current = previous.length
-              return previous
-            }
-
-            const next = previous.filter((item) => item._id !== payload._id)
-            prevErrandsCount.current = next.length
-            return next
-          }
-
-          const nextErrand = toErrand(payload)
-
-          if (currentIndex === -1) {
-            const next = sortErrands([nextErrand, ...previous])
-            prevErrandsCount.current = next.length
-            return next
-          }
-
-          const next = [...previous]
-          next[currentIndex] = { ...next[currentIndex], ...nextErrand }
-          const sorted = sortErrands(next)
-          prevErrandsCount.current = sorted.length
-          return sorted
+          if (isPendingAvailable) return previous
+          const next = previous.filter((item) => item._id !== payload._id)
+          prevErrandsCount.current = next.length
+          return next
         })
 
         setAcceptedErrands((previous) => {
@@ -590,7 +620,7 @@ export default function TaskerDashboardPage() {
           return sortErrands(next)
         })
 
-        scheduleDashboardRefresh()
+        if (shouldRevalidate || !isPendingAvailable || isActiveForCurrentTasker) scheduleDashboardRefresh()
         return
       }
 
@@ -614,11 +644,11 @@ export default function TaskerDashboardPage() {
       socket.off('order:updated', handleTaskUpdate)
       releaseSharedSocket(socket)
     }
-  }, [loadingTaskerProfile, locationFilter, needsBankDetails, router, scheduleDashboardRefresh, sessionPending, taskTypeFilter, taskerProfile?._id, taskerProfile?.taskerMode, triggerNewTaskAlert, work.data?.checkedIn])
+  }, [loadingTaskerProfile, locationFilter, needsBankDetails, reportDashboardDiagnostic, router, scheduleDashboardRefresh, sessionPending, taskTypeFilter, taskerProfile?._id, taskerProfile?.taskerMode, work.data?.checkedIn])
 
   const shouldPollForTasks = !sessionPending && !loadingTaskerProfile && !needsBankDetails && Boolean(taskerProfile?._id) && Boolean(taskerProfile?.isVerified) && !taskerProfile?.isSettlementSuspended
 
-  useVisibleInterval(() => void loadDashboardRef.current(false, { silent: true }), shouldPollForTasks ? (socketHealthy ? HEALTHY_SOCKET_RECONCILE_INTERVAL_MS : UNHEALTHY_SOCKET_POLL_INTERVAL_MS) : null, false)
+  useVisibleInterval(() => void loadDashboardRef.current(false, { silent: true }), shouldPollForTasks ? getTaskerDashboardPollInterval(socketHealthy) : null, false)
 
   useEffect(() => {
     return () => {

@@ -1,7 +1,6 @@
 import { Types } from 'mongoose'
 
 import { validateOrderAgainstCommercePolicy } from '@/lib/commerce-policy'
-import { firstOrderBonusEligibility, NoActiveAcademicSessionError } from '@/lib/first-order-bonus'
 import { priceWithOrderDiscounts } from '@/lib/first-order-pricing'
 import { canCreateOrder } from '@/lib/operations'
 import { getOperationsSettings, getOperationsStatus } from '@/lib/operations-settings'
@@ -106,16 +105,7 @@ export async function quoteSammyDraft(
   if (!isTestOrder && !operations.open) throw new SammyApiError(409, 'OUTSIDE_OPERATING_HOURS', 'SwiftDU is closed for today.')
 
   const serviceFeeDiscount = Boolean(user.serviceFeeDiscountEnabled && Number(user.serviceFeeDiscountRemainingOrders || 0) > 0 && !(await hasActiveServiceFeeDiscountReservation(String(user._id))) && pricing.serviceFee > 0)
-  let firstOrder = false
-  try {
-    firstOrder = isTestOrder ? false : (await firstOrderBonusEligibility(String(user._id))).eligible
-  } catch (error) {
-    if (error instanceof NoActiveAcademicSessionError) {
-      throw new SammyApiError(409, 'NO_ACTIVE_SESSION', error.message)
-    }
-    throw error
-  }
-  const adjusted = priceWithOrderDiscounts(pricing, { firstOrderBonus: firstOrder, serviceFeeDiscount, cafeInquiry })
+  const adjusted = priceWithOrderDiscounts(pricing, { serviceFeeDiscount, cafeInquiry })
   return {
     amount: pricing.amount,
     serviceFee: adjusted.serviceFee,

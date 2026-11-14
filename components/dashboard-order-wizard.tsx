@@ -955,7 +955,6 @@ export default function DashboardOrderWizard({ initialTaskType, onClose }: { ini
       ? 'your next order'
       : `your next ${discountRemainingOrders} orders`
   const bonusPreview = priceWithOrderDiscounts(pricing, {
-    firstOrderBonus: Boolean(serviceFeeDiscount?.firstOrderBonusAvailable && !isExcoTrainingMode),
     serviceFeeDiscount: hasAvailableServiceFeeDiscount, cafeInquiry: isCafeInquiry,
   })
   const previewOrder = { ...bonusPreview, amount: pricing.amount, pricingModel: pricing.pricingModel, serviceFeeDiscountApplied: hasAvailableServiceFeeDiscount }
