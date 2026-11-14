@@ -303,12 +303,14 @@ function formatReadyDate(value?: string) {
 function isLowTaskerAvailabilityWindow(date: Date) {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Africa/Lagos',
+    weekday: 'short',
     hour: 'numeric',
     hourCycle: 'h23',
   }).formatToParts(date)
   const hour = Number(parts.find((part) => part.type === 'hour')?.value)
+  const weekday = parts.find((part) => part.type === 'weekday')?.value
 
-  return hour >= 7 && hour < 15
+  return weekday !== 'Sat' && weekday !== 'Sun' && hour >= 7 && hour < 15
 }
 
 
@@ -2259,7 +2261,7 @@ if (stepNumber === detailsStep) {
       ) : null}
       {showLowTaskerAvailabilityNotice ? (
         <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-100">
-          <p className="font-bold">Taskers are not available right now</p>
+          <p className="font-bold">Taskers might not be available</p>
           <p className="mt-1">Please try again by 3:00 PM.</p>
         </div>
       ) : null}
@@ -2508,7 +2510,7 @@ if (stepNumber === detailsStep) {
               <div className="flex items-start gap-3">
                 <Clock className="mt-0.5 h-5 w-5 shrink-0" />
                 <div>
-                  <p className="text-sm font-semibold">Taskers are not available right now</p>
+                  <p className="text-sm font-semibold">Taskers might not be available</p>
                   <p className="mt-1 text-sm text-amber-900 dark:text-amber-100">
                     Please try again by 3:00 PM.
                   </p>
