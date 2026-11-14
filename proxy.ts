@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { areOperationsEnabled } from '@/lib/operations';
 import { EXCO_DASHBOARD_PATHS, normalizeExcoRole } from '@/lib/exco-constants';
+import { getSignedInDestination } from '@/lib/profile-completion';
 
 const PUBLIC_ROUTES = [
   '/businesses',
@@ -39,26 +40,24 @@ function matchesRoute(pathname: string, route: string) {
 }
 
 const EXCO_DASHBOARD_ROUTES = Object.values(EXCO_DASHBOARD_PATHS);
+type ProxySession = {
+  user?: { id?: string; role?: string | null; excoRole?: string | null } | null;
+} | null;
+
+async function loadProxySession(headers: Headers): Promise<ProxySession> {
+  const { auth } = await import('@/lib/auth');
+  return auth.api.getSession({ headers });
+}
+
 export function getTaskerDashboardRouteForRole(role?: string | null, excoRole?: string | null) {
   if (role === 'tasker') return null;
   if (role === 'admin' || normalizeExcoRole(excoRole)) return '/admin';
   return '/tasker-signup';
 }
-function getDefaultRouteForRole(role?: string | null, excoRole?: string | null) {
-  if (normalizeExcoRole(excoRole)) return '/admin';
-
-  switch (role) {
-    case 'admin':
-      return '/admin';
-    case 'tasker':
-      return '/tasker-dashboard';
-    case 'user':
-    default:
-      return '/';
-  }
-}
-
-export async function proxy(request: NextRequest) {
+export async function handleProxy(
+  request: NextRequest,
+  getSession: (headers: Headers) => Promise<ProxySession>,
+) {
   const { pathname, search } = request.nextUrl;
   const currentPath = `${pathname}${search}`;
 
@@ -95,16 +94,26 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const { auth } = await import('@/lib/auth');
-  const session = await auth.api.getSession({
-    headers: request.headers,
-  });
+  let session;
+  try {
+    session = await getSession(request.headers);
+  } catch (error) {
+    console.error('[auth:proxy]', {
+      code: 'session_verification_unavailable',
+      pathname,
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
+    return new NextResponse('Unable to verify your session. Please retry.', {
+      status: 503,
+      headers: { 'Cache-Control': 'private, no-store', 'Retry-After': '5' },
+    });
+  }
 
   const user = session?.user;
   const role = user?.role ?? 'user';
   const excoRole = (user as { excoRole?: string | null } | undefined)?.excoRole;
   const normalizedExcoRole = normalizeExcoRole(excoRole);
-  const defaultRoute = getDefaultRouteForRole(role, excoRole);
+  const defaultRoute = getSignedInDestination(user);
   const isExcoDashboardRoute = EXCO_DASHBOARD_ROUTES.some((route) =>
     pathname.startsWith(route)
   );
@@ -150,6 +159,10 @@ export async function proxy(request: NextRequest) {
   }
 
   return NextResponse.next();
+}
+
+export async function proxy(request: NextRequest) {
+  return handleProxy(request, loadProxySession);
 }
 
 export const config = {

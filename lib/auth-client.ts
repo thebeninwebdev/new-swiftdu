@@ -5,6 +5,10 @@ import { passkeyClient } from "@better-auth/passkey/client";
 export const authClient = createAuthClient({
   // Browser auth must always target the deployment currently being viewed.
   baseURL: typeof window === "undefined" ? undefined : window.location.origin,
+  sessionOptions: {
+    refetchOnWindowFocus: true,
+    refetchWhenOffline: false,
+  },
   plugins: [
     inferAdditionalFields({
       user: {

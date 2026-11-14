@@ -7,7 +7,7 @@ import { emailOTP, twoFactor } from "better-auth/plugins";
 import { passkey } from "@better-auth/passkey";
 import { magicLink } from "better-auth/plugins";
 import { AuthEmailRateLimit } from "@/models/auth-email-rate-limit";
-import { AUTH_SESSION_SETTINGS, getAuthCookieAttributes } from "@/lib/auth-session-config";
+import { AUTH_SESSION_SETTINGS, getAuthCookieAttributes, getCrossSubdomainCookieConfig } from "@/lib/auth-session-config";
 import { getAuthBaseUrl, getTrustedOrigins } from "@/lib/site";
 import { reconcileTaskerIdentityForUser } from "@/lib/tasker-onboarding";
 
@@ -23,9 +23,7 @@ const authBaseUrl = getAuthBaseUrl();
 const trustedOrigins = getTrustedOrigins();
 const appURL = new URL(authBaseUrl);
 // Share the production session between apex and www SwiftDU hosts.
-const shareProductionSessionCookie =
-  process.env.NODE_ENV === "production" &&
-  (appURL.hostname === "swiftdu.org" || appURL.hostname === "www.swiftdu.org");
+const crossSubdomainCookieConfig = getCrossSubdomainCookieConfig(appURL.origin);
 
 if (process.env.VERCEL_ENV === "preview") {
   console.info("[auth:preview-config]", {
@@ -162,8 +160,8 @@ export const auth = betterAuth({
   session: AUTH_SESSION_SETTINGS,
   advanced: {
     defaultCookieAttributes: getAuthCookieAttributes(),
-    ...(shareProductionSessionCookie
-      ? { crossSubDomainCookies: { enabled: true, domain: "swiftdu.org" } }
+    ...(crossSubdomainCookieConfig
+      ? { crossSubDomainCookies: crossSubdomainCookieConfig }
       : {}),
   },
   emailVerification: {

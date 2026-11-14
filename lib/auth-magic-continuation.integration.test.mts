@@ -70,7 +70,7 @@ test("magic-link verification preserves server-backed destinations across browse
   const existing = await verifyInFreshBrowser(existingLink);
   assert.equal(existing.response.headers.get("location"), `http://localhost:3000/auth/continue?continuation=${existingReference}`);
   const final = await followContinuation(existing.response.headers.get("location")!, existing.cookie);
-  assert.equal(final.headers.get("location"), "http://localhost:3000/tasker-dashboard");
+  assert.equal(final.headers.get("location"), "http://localhost:3000/tasker-dashboard/EXAMPLE_ID?preview=true");
   assert.equal(await resolveAuthContinuation(existingReference), null);
 
   const sessionResponse = await getSession(new NextRequest("http://localhost:3000/api/auth/get-session", {

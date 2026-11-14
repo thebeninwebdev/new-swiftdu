@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { TaskerHome } from '@/components/tasker/TaskerHome'
 import { useTaskerWork } from '@/components/tasker/WorkProvider'
 import { authClient } from '@/lib/auth-client'
+import { getAuthSessionState } from '@/lib/auth-session-state'
 import { acquireSharedSocket, releaseSharedSocket } from '@/lib/client-socket'
 import { useVisibleInterval } from '@/hooks/use-visible-interval'
 import { Building2, ShieldCheck } from 'lucide-react'
@@ -182,7 +183,8 @@ export default function TaskerDashboardPage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const work = useTaskerWork()
-  const { data: session, isPending: sessionPending } = authClient.useSession()
+  const { data: session, isPending: sessionPending, error: sessionError } = authClient.useSession()
+  const sessionState = getAuthSessionState({ hasUser: Boolean(session?.user), isPending: sessionPending, error: sessionError })
 
   const [errands, setErrands] = useState<Errand[]>([])
   const [acceptedErrands, setAcceptedErrands] = useState<Errand[]>([])
@@ -252,12 +254,18 @@ export default function TaskerDashboardPage() {
   }, [])
 
   useEffect(() => {
-    if (sessionPending) {
+    if (sessionState === 'loading') {
       return
     }
 
-    if (!session?.user?.id) {
-      router.push('/auth')
+    if (sessionState === 'unavailable') {
+      setLoadingTaskerProfile(false)
+      setError('We could not verify your session right now. Check your connection and try again.')
+      return
+    }
+
+    if (sessionState === 'unauthenticated' || !session?.user?.id) {
+      router.replace('/auth?next=%2Ftasker-dashboard')
       return
     }
 
@@ -301,18 +309,18 @@ export default function TaskerDashboardPage() {
     return () => {
       cancelled = true
     }
-  }, [router, session?.user?.id, sessionPending])
+  }, [router, session?.user?.id, sessionState])
 
   const loadDashboard = useCallback(
     async (initial = false, options?: { silent?: boolean }) => {
       const silent = options?.silent === true
 
-      if (sessionPending || loadingTaskerProfile) {
+      if (sessionState === 'loading' || sessionState === 'unavailable' || loadingTaskerProfile) {
         return
       }
 
-      if (!session?.user?.id) {
-        router.push('/auth')
+      if (sessionState === 'unauthenticated' || !session?.user?.id) {
+        router.replace('/auth?next=%2Ftasker-dashboard')
         return
       }
 
@@ -462,7 +470,7 @@ export default function TaskerDashboardPage() {
         }
       }
     },
-    [loadingTaskerProfile, work.data?.checkedIn, locationFilter, reportDashboardDiagnostic, router, session?.user?.id, sessionPending, taskerProfile, taskTypeFilter, triggerNewTaskAlert],
+    [loadingTaskerProfile, work.data?.checkedIn, locationFilter, reportDashboardDiagnostic, router, session?.user?.id, sessionState, taskerProfile, taskTypeFilter, triggerNewTaskAlert],
   )
 
   useEffect(() => {

@@ -1,4 +1,5 @@
 export const DEFAULT_SITE_URL = "https://www.swiftdu.org";
+export const PRODUCTION_SITE_ORIGINS = ["https://swiftdu.org", DEFAULT_SITE_URL] as const;
 const ADSENSE_PUBLISHER_ID = "4657526411072658";
 
 function normalizeUrl(value?: string | null) {
@@ -38,7 +39,13 @@ export function getSiteUrl() {
   }
 
   const configured = getConfiguredUrl();
-  if (configured) return configured;
+  if (configured) {
+    const hostname = new URL(configured).hostname;
+    if (process.env.NODE_ENV === "production" && (hostname === "swiftdu.org" || hostname === "www.swiftdu.org")) {
+      return DEFAULT_SITE_URL;
+    }
+    return configured;
+  }
 
   if (process.env.NODE_ENV !== "production") return "http://localhost:3000";
   return DEFAULT_SITE_URL;
@@ -68,8 +75,7 @@ export function getTrustedOrigins() {
     origins.add("http://localhost:3000")
     origins.add(getAuthBaseUrl())
   } else {
-    origins.add(DEFAULT_SITE_URL)
-    origins.add("https://www.swiftdu.org")
+    for (const origin of PRODUCTION_SITE_ORIGINS) origins.add(origin)
     origins.add(getAuthBaseUrl())
   }
 

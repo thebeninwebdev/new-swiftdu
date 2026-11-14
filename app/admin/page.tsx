@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { authClient } from '@/lib/auth-client'
+import { getAuthSessionState } from '@/lib/auth-session-state'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -76,14 +77,19 @@ export default function AdminDashboard() {
     const checkAuth = async () => {
       try {
         const { data, error } = await authClient.getSession()
-        if (error || !data?.user) {
+        const sessionState = getAuthSessionState({ hasUser: Boolean(data?.user), error })
+        if (sessionState === 'unauthenticated') {
           router.push('/auth')
           return
         }
+        if (sessionState === 'unavailable') {
+          console.warn('[admin] Session verification is temporarily unavailable.')
+          return
+        }
         // TODO: Add admin role check
-        setAdmin(data.user)
-      } catch {
-        router.push('/auth')
+        if (data?.user) setAdmin(data.user)
+      } catch (error) {
+        console.warn('[admin] Session verification is temporarily unavailable.', error)
       } finally {
         setIsLoading(false)
       }

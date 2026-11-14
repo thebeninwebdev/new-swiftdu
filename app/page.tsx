@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { authClient } from '@/lib/auth-client';
+import { getAuthSessionState } from '@/lib/auth-session-state';
+import { getSignedInDestination } from '@/lib/profile-completion';
 import {useEffect, useRef, useState} from "react"
 import {
   Wallet,
@@ -456,11 +458,14 @@ function Hero() {
 
 export default function LandingPage() {
   const router = useRouter();
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending, error: sessionError } = authClient.useSession();
+  const sessionState = getAuthSessionState({ hasUser: Boolean(session?.user), isPending, error: sessionError });
 
   useEffect(() => {
-    if (!isPending && session?.user) router.replace('/dashboard');
-  }, [isPending, router, session?.user]);
+    if (sessionState === 'authenticated' && session?.user) {
+      router.replace(getSignedInDestination(session.user));
+    }
+  }, [router, session?.user, sessionState]);
 
   return (
     <div className="min-h-screen bg-white font-sans selection:bg-indigo-100 selection:text-indigo-900">

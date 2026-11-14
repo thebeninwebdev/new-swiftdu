@@ -5,7 +5,19 @@ import { resolveAuthContinuation } from "@/lib/auth-continuation";
 import { COMPLETE_PROFILE_PATH, getPostAuthRedirect } from "@/lib/profile-completion";
 
 export async function GET(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: request.headers });
+  let session;
+  try {
+    session = await auth.api.getSession({ headers: request.headers });
+  } catch (error) {
+    console.error('[auth:continue]', {
+      code: 'session_verification_unavailable',
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
+    return new NextResponse('Unable to verify your session. Please retry.', {
+      status: 503,
+      headers: { 'Cache-Control': 'private, no-store', 'Retry-After': '5' },
+    });
+  }
   const reference = request.nextUrl.searchParams.get("continuation");
 
   if (!session?.user) {

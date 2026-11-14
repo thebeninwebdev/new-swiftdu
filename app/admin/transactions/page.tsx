@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
+import { getAuthSessionState } from '@/lib/auth-session-state'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -76,14 +77,19 @@ export default function AdminTransactionsPage() {
     const checkAuth = async () => {
       try {
         const { data, error } = await authClient.getSession()
-        if (error || !data?.user) {
+        const sessionState = getAuthSessionState({ hasUser: Boolean(data?.user), error })
+        if (sessionState === 'unauthenticated') {
           router.push('/auth')
           return
         }
+        if (sessionState === 'unavailable') {
+          toast.error('Unable to verify your session. Check your connection and try again.')
+          return
+        }
         // TODO: Add admin role check
-        setAdmin(data.user)
+        if (data?.user) setAdmin(data.user)
       } catch {
-        router.push('/auth')
+        toast.error('Unable to verify your session. Check your connection and try again.')
       } finally {
         setIsLoading(false)
       }

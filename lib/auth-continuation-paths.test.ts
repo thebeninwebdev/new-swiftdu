@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { buildAuthCallbackPaths, buildAuthContinuationPath } from "./auth-continuation-paths";
-import { AUTH_SESSION_SETTINGS, getAuthCookieAttributes, SESSION_RESPONSE_HEADERS } from "./auth-session-config";
+import { AUTH_SESSION_SETTINGS, getAuthCookieAttributes, getCrossSubdomainCookieConfig, SESSION_RESPONSE_HEADERS } from "./auth-session-config";
 import { getSafeNextPath } from "./profile-completion";
 
 const reference = "a".repeat(32);
@@ -46,4 +46,13 @@ test("session policy remains thirty days with secure lax production cookies and 
   assert.match(SESSION_RESPONSE_HEADERS["Cache-Control"], /no-store/);
   assert.equal(SESSION_RESPONSE_HEADERS["CDN-Cache-Control"], "no-store");
   assert.equal(SESSION_RESPONSE_HEADERS.Vary, "Cookie");
+  assert.deepEqual(getCrossSubdomainCookieConfig("https://www.swiftdu.org", "production"), {
+    enabled: true,
+    domain: "swiftdu.org",
+  });
+  assert.deepEqual(getCrossSubdomainCookieConfig("https://swiftdu.org", "production"), {
+    enabled: true,
+    domain: "swiftdu.org",
+  });
+  assert.equal(getCrossSubdomainCookieConfig("http://localhost:3000", "development"), null);
 });

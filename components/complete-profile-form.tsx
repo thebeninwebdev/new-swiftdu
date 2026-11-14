@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowLeft, ArrowRight, Check, Loader2 } from "lucide-react";
 import { authClient } from "@/lib/auth-client";
+import { getAuthSessionState } from "@/lib/auth-session-state";
 import { buildAuthContinuationPath } from "@/lib/auth-continuation-paths";
 import { getSafeContinuationReference } from "@/lib/auth-continuation-reference";
 import {
@@ -40,7 +41,8 @@ export function CompleteProfileForm() {
   const router = useRouter();
   const search = useSearchParams();
   const reduceMotion = useReducedMotion();
-  const { data: session, isPending } = authClient.useSession();
+  const { data: session, isPending, error: sessionError } = authClient.useSession();
+  const sessionState = getAuthSessionState({ hasUser: Boolean(session?.user), isPending, error: sessionError });
   const contentRef = useRef<HTMLDivElement>(null);
   const stepRef = useRef<OnboardingStep>("name");
   const [form, setForm] = useState(INITIAL_PROFILE);
@@ -54,11 +56,15 @@ export function CompleteProfileForm() {
   useEffect(() => { stepRef.current = step; }, [step]);
 
   useEffect(() => {
-    if (!isPending && !session?.user) {
+    if (sessionState === "unauthenticated") {
       const continuation = getSafeContinuationReference(search.get("continuation"));
       router.replace(continuation ? `/auth?continuation=${continuation}` : "/auth");
     }
-  }, [isPending, router, search, session?.user]);
+    if (sessionState === "unavailable") {
+      setLoading(false);
+      setServerError("We couldn't verify your session right now. Check your connection and try again.");
+    }
+  }, [router, search, sessionState]);
 
   useEffect(() => {
     if (!session?.user) return;

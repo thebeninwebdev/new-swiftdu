@@ -23,12 +23,9 @@ export function getProfileCompletion(user?: AuthProfileUser | null) {
   return { completedFields: fields.length - missingFields.length, totalFields: fields.length, percentage: Math.round(((fields.length - missingFields.length) / fields.length) * 100), missingFields };
 }
 export function getSignedInDestination(user?: AuthProfileUser | null) {
-  // EXCO members should arrive in the workspace they use day-to-day. Their
-  // admin access remains available from the dashboard menu.
   if (user?.role === "tasker") return "/tasker-dashboard";
-  if (normalizeExcoRole(user?.excoRole)) return "/dashboard";
-  if (user?.role === "admin") return "/admin";
-  return "/";
+  if (user?.role === "admin" || normalizeExcoRole(user?.excoRole)) return "/admin";
+  return "/dashboard";
 }
 const REDIRECT_QUERY_KEYS = /^(?:next|callbackurl|redirect|returnto|url)$/i;
 function hasUnsafeEncoding(value: string) {
@@ -65,10 +62,14 @@ export function getSafeNextPath(nextPath?: string | null) {
 }
 export function buildCompleteProfilePath(nextPath?: string | null) { const safe = getSafeNextPath(nextPath); return safe ? `${COMPLETE_PROFILE_PATH}?next=${encodeURIComponent(safe)}` : COMPLETE_PROFILE_PATH; }
 export function getPostProfileCompletionPath(user?: AuthProfileUser | null, nextPath?: string | null) {
-  // A tasker's sign-in/profile-completion landing page is always the tasker
-  // dashboard. Deep links remain available once authentication has finished.
-  if (user?.role === "tasker") return "/tasker-dashboard";
-  return getSafeNextPath(nextPath) ?? getSignedInDestination(user);
+  const candidate = getSafeNextPath(nextPath);
+  const safeNextPath = candidate === "/" ? null : candidate;
+  if (user?.role === "tasker") {
+    return safeNextPath?.startsWith("/tasker-dashboard")
+      ? safeNextPath
+      : getSignedInDestination(user);
+  }
+  return safeNextPath ?? getSignedInDestination(user);
 }
 export function getPostAuthRedirect(user?: AuthProfileUser | null, nextPath?: string | null) { if (!user) return "/auth"; return getPostProfileCompletionPath(user, nextPath); }
 export function normalizePhoneNumber(_dialCode: string, rawPhone: string) { const digits = rawPhone.replace(/\D/g, "").replace(/^0+/, ""); if (!digits) return ""; return digits.startsWith("234") ? `+${digits}` : `+234${digits}`; }

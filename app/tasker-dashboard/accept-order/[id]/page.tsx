@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { authClient } from '@/lib/auth-client'
+import { getAuthSessionState } from '@/lib/auth-session-state'
 
 function dashboardNotice(notice: string) {
   return `/tasker-dashboard?notice=${encodeURIComponent(notice)}`
@@ -12,15 +13,16 @@ function dashboardNotice(notice: string) {
 export default function AcceptOrderPage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
-  const { data: session, isPending } = authClient.useSession()
+  const { data: session, isPending, error: sessionError } = authClient.useSession()
+  const sessionState = getAuthSessionState({ hasUser: Boolean(session?.user), isPending, error: sessionError })
   const attempted = useRef(false)
   const orderId = String(params?.id || '')
 
   useEffect(() => {
-    if (isPending || attempted.current) return
+    if (sessionState === 'loading' || sessionState === 'unavailable' || attempted.current) return
 
     const acceptPath = `/tasker-dashboard/accept-order/${encodeURIComponent(orderId)}`
-    if (!session?.user?.id) {
+    if (sessionState === 'unauthenticated' || !session?.user?.id) {
       attempted.current = true
       router.replace(`/auth?next=${encodeURIComponent(acceptPath)}`)
       return
@@ -72,13 +74,13 @@ export default function AcceptOrderPage() {
         router.replace(dashboardNotice('not-available'))
       }
     })()
-  }, [isPending, orderId, router, session?.user?.id])
+  }, [orderId, router, session?.user?.id, sessionState])
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 dark:bg-slate-950">
       <div className="flex items-center gap-3 text-sm font-semibold text-slate-600 dark:text-slate-300">
         <Loader2 className="h-5 w-5 animate-spin text-violet-600" aria-hidden="true" />
-        Accepting order...
+        {sessionState === 'unavailable' ? 'Unable to verify your session. Reconnect and try again.' : 'Accepting order...'}
       </div>
     </main>
   )

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
+import { getAuthSessionState } from '@/lib/auth-session-state'
 import { downloadPendingTaskerApplicationsPdf } from '@/lib/tasker-applications-pdf'
 
 
@@ -73,11 +74,13 @@ export default function AdminTaskersPage() {
     const checkAuth = async () => {
       try {
         const { data, error } = await authClient.getSession()
-        if (error || !data?.user) { router.push('/auth'); return }
+        const sessionState = getAuthSessionState({ hasUser: Boolean(data?.user), error })
+        if (sessionState === 'unauthenticated') { router.push('/auth'); return }
+        if (sessionState === 'unavailable') { toast.error('Unable to verify your session. Check your connection and try again.'); return }
         // if (data.user.role !== 'admin') { router.push('/'); return }
-        setAdmin(data.user)
+        if (data?.user) setAdmin(data.user)
       } catch {
-        router.push('/auth')
+        toast.error('Unable to verify your session. Check your connection and try again.')
       } finally {
         setIsLoading(false)
       }

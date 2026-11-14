@@ -5,6 +5,7 @@ import React, { Suspense, useState, useEffect, useCallback, useRef } from 'react
 import { useRouter, useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
 import { authClient } from '@/lib/auth-client'
+import { getAuthSessionState } from '@/lib/auth-session-state'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -169,14 +170,19 @@ function AdminOrdersPage({ scope }: { scope: AdminOrderScope }) {
     const checkAuth = async () => {
       try {
         const { data, error } = await authClient.getSession()
-        if (error || !data?.user) {
+        const sessionState = getAuthSessionState({ hasUser: Boolean(data?.user), error })
+        if (sessionState === 'unauthenticated') {
           router.push('/auth')
           return
         }
+        if (sessionState === 'unavailable') {
+          toast.error('Unable to verify your session. Check your connection and try again.')
+          return
+        }
         // The admin proxy protects this page; every data/action API repeats the server-side role check.
-        setAdmin(data.user)
+        if (data?.user) setAdmin(data.user)
       } catch {
-        router.push('/auth')
+        toast.error('Unable to verify your session. Check your connection and try again.')
       } finally {
         setIsLoading(false)
       }

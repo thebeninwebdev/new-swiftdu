@@ -9,13 +9,15 @@ import { authClient } from "@/lib/auth-client";
 import { buildAuthCallbackPaths, buildAuthContinuationPath } from "@/lib/auth-continuation-paths";
 import { getSafeContinuationReference } from "@/lib/auth-continuation-reference";
 import { buildCompleteProfilePath, getPostAuthRedirect, getSafeNextPath, isProfileComplete } from "@/lib/profile-completion";
+import { getAuthSessionState } from "@/lib/auth-session-state";
 
 const COOLDOWN = 60;
 
 export function AuthEntry() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { data: session, isPending: sessionPending } = authClient.useSession();
+  const { data: session, isPending: sessionPending, error: sessionError, refetch: refetchSession } = authClient.useSession();
+  const sessionState = getAuthSessionState({ hasUser: Boolean(session?.user), isPending: sessionPending, error: sessionError });
   const [email, setEmail] = useState("");
   const [sentTo, setSentTo] = useState("");
   const [emailMethod, setEmailMethod] = useState<"magic" | "otp">("magic");
@@ -30,7 +32,7 @@ export function AuthEntry() {
   const [resettingLogin, setResettingLogin] = useState(false);
 
   useEffect(() => {
-    if (!sessionPending && session?.user) {
+    if (sessionState === "authenticated" && session?.user) {
       if (!isProfileComplete(session.user)) {
         router.replace(continuationReference
           ? buildAuthContinuationPath(continuationReference, { newUser: true })
@@ -41,7 +43,7 @@ export function AuthEntry() {
         ? buildAuthContinuationPath(continuationReference)
         : getPostAuthRedirect(session.user, requestedPath));
     }
-  }, [continuationReference, requestedPath, router, session?.user, sessionPending]);
+  }, [continuationReference, requestedPath, router, session?.user, sessionState]);
 
   useEffect(() => {
     if (seconds <= 0) return;
@@ -223,8 +225,20 @@ async function resetSwiftDULogin() {
     }
   }
 
-  if (sessionPending || session?.user) {
+  if (sessionState === "loading" || sessionState === "authenticated") {
     return <main className="flex min-h-screen items-center justify-center bg-[#f6f7fb]"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" aria-label="Loading" /></main>;
+  }
+
+  if (sessionState === "unavailable") {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#f6f7fb] px-4">
+        <div className="w-full max-w-md rounded-2xl border border-amber-200 bg-white p-6 text-center shadow-sm">
+          <h1 className="text-xl font-bold text-slate-950">We couldn&apos;t verify your sign-in</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-600">Your session may still be active. Check your connection and try again; you have not been signed out.</p>
+          <button type="button" onClick={() => void refetchSession()} className="mt-5 h-12 w-full rounded-xl bg-indigo-600 px-4 font-semibold text-white hover:bg-indigo-700">Try again</button>
+        </div>
+      </main>
+    );
   }
 
   return (
