@@ -38,6 +38,10 @@ export interface ITasker extends Document {
   completedTasks: number;
   isSettlementSuspended?: boolean;
   settlementSuspendedAt?: Date | null;
+  isAutomaticSettlementSuspended?: boolean;
+  automaticSettlementSuspendedAt?: Date | null;
+  isSettlementAdminSuspended?: boolean;
+  settlementAdminSuspendedAt?: Date | null;
 
   bankDetails: {
     bankCode?: string;
@@ -216,6 +220,22 @@ const TaskerSchema = new Schema<ITasker>(
       default: false,
     },
     settlementSuspendedAt: {
+      type: Date,
+      default: null,
+    },
+    isAutomaticSettlementSuspended: {
+      type: Boolean,
+      default: false,
+    },
+    automaticSettlementSuspendedAt: {
+      type: Date,
+      default: null,
+    },
+    isSettlementAdminSuspended: {
+      type: Boolean,
+      default: false,
+    },
+    settlementAdminSuspendedAt: {
       type: Date,
       default: null,
     },

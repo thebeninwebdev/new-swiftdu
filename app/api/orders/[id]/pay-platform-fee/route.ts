@@ -9,6 +9,7 @@ import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import { isDevelopmentSettlementSimulation } from '@/lib/settlement-mode'
 import { completeTrainingSettlement } from '@/lib/training-settlement'
 import { emitOrderUpdated } from '@/lib/socket'
+import { clearNonPayableSettlement } from '@/lib/settlement-state'
 import {
   PendingSettlementVerificationError,
   verifyAndMarkOrderSettlementPaid,
@@ -56,6 +57,7 @@ export async function POST(
     }
 
     if (order.platformFee <= 0 || order.platformFeeWaivedForFastCompletion) {
+      if (clearNonPayableSettlement(order)) await order.save()
       return NextResponse.json({ noSettlementRequired: true, order, message: 'No platform fee to remit.' });
     }
 

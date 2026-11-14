@@ -7,6 +7,7 @@ import { connectDB } from "@/lib/db";
 import { ensureCompletionTimer } from "@/lib/completion-timer";
 import { emitOrderUpdated } from "@/lib/socket";
 import { syncTaskerSettlementStatus } from "@/lib/tasker-settlement";
+import { clearNonPayableSettlement } from "@/lib/settlement-state";
 import { issueTaskerOnboardingLink } from "@/lib/tasker-onboarding";
 import { Order } from "@/models/order";
 import { Review } from "@/models/review";
@@ -578,11 +579,18 @@ export async function PATCH(request: NextRequest) {
       tasker.isVerified = false;
       tasker.isRejected = true;
     } else if (action === "suspend") {
+      const now = new Date();
+      tasker.isSettlementAdminSuspended = true;
+      tasker.settlementAdminSuspendedAt = now;
       tasker.isSettlementSuspended = true;
-      tasker.settlementSuspendedAt = new Date();
+      tasker.settlementSuspendedAt ||= now;
     } else if (action === "activate") {
-      tasker.isSettlementSuspended = false;
-      tasker.settlementSuspendedAt = null;
+      tasker.isSettlementAdminSuspended = false;
+      tasker.settlementAdminSuspendedAt = null;
+      tasker.isSettlementSuspended = Boolean(tasker.isAutomaticSettlementSuspended);
+      tasker.settlementSuspendedAt = tasker.isSettlementSuspended
+        ? tasker.automaticSettlementSuspendedAt || tasker.settlementSuspendedAt
+        : null;
     }
 
     if (hasBankDetails) {
@@ -658,15 +666,7 @@ export async function PATCH(request: NextRequest) {
     if (!order.hasPaid) {
       order.paymentStatus = "cancelled";
     }
-    order.settlementStatus = "not_due";
-    order.settlementReference = undefined;
-    order.settlementAccessCode = undefined;
-    order.settlementCheckoutUrl = undefined;
-    order.settlementTransactionId = undefined;
-    order.settlementInitializedAt = undefined;
-    order.settlementPaidAt = undefined;
-    order.settlementDueAt = undefined;
-    order.settlementFailureReason = undefined;
+    clearNonPayableSettlement(order, true);
 
     await saveOrderLifecycle(order);
     emitOrderUpdated(order);

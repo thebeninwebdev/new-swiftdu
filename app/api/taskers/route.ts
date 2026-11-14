@@ -275,14 +275,15 @@ export async function GET(req: NextRequest) {
     }
 
     await syncTaskerSettlementStatus(taskerId)
+    const reconciledTasker = await Tasker.findById(taskerId).lean()
 
     const stats = await calculateTaskerStats(taskerId)
 
     return NextResponse.json(
       {
         tasker: {
-          ...tasker,
-          taskerMode: getTaskerMode(tasker),
+          ...(reconciledTasker || tasker),
+          taskerMode: getTaskerMode(reconciledTasker || tasker),
           completedTasks: stats.completedTasks,
           rating: stats.rating,
         },

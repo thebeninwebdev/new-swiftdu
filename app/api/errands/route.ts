@@ -288,7 +288,7 @@ export async function POST(request: NextRequest) {
 
     const settlementStatus = await syncTaskerSettlementStatus(tasker._id.toString())
 
-    if (settlementStatus.isSettlementSuspended || tasker.isSettlementSuspended) {
+    if (settlementStatus.isSettlementSuspended) {
       return NextResponse.json(
         {
           error:

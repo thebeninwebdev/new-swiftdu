@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { syncTaskerStats } from '@/lib/tasker-stats';
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement';
+import { clearNonPayableSettlement } from '@/lib/settlement-state';
 import {Order} from "@/models/order"
 import CampusLocation from '@/models/campus-location'
 import { auth } from '@/lib/auth'; 
@@ -352,7 +353,7 @@ export async function PATCH(
           );
         }
 
-        let pricing: PricingResult = calculateOrderPricing({
+        const pricing: PricingResult = calculateOrderPricing({
           amount: Number(order.itemPrice ?? order.amount ?? 0),
           taskType: order.taskType,
           store: order.store,
@@ -699,7 +700,7 @@ export async function PATCH(
         }
       }
 
-      let pricing: PricingResult = calculateOrderPricing({
+      const pricing: PricingResult = calculateOrderPricing({
         amount:
           nextCafeInquiry || nextTaskType === 'copy_notes' || nextTaskType === WATER_TASK_TYPE
             ? 0
@@ -870,15 +871,7 @@ export async function PATCH(
         if (!order.hasPaid) {
           order.paymentStatus = 'cancelled';
         }
-        order.settlementStatus = 'not_due';
-        order.settlementReference = undefined;
-        order.settlementAccessCode = undefined;
-        order.settlementCheckoutUrl = undefined;
-        order.settlementTransactionId = undefined;
-        order.settlementInitializedAt = undefined;
-        order.settlementPaidAt = undefined;
-        order.settlementDueAt = undefined;
-        order.settlementFailureReason = undefined;
+        clearNonPayableSettlement(order, true);
       } else if (status === 'cancelled' && isTaskerOwner) {
         if (!canTaskerCancelOrder(order)) {
           return NextResponse.json(
@@ -897,15 +890,7 @@ export async function PATCH(
         if (!order.hasPaid) {
           order.paymentStatus = 'cancelled';
         }
-        order.settlementStatus = 'not_due';
-        order.settlementReference = undefined;
-        order.settlementAccessCode = undefined;
-        order.settlementCheckoutUrl = undefined;
-        order.settlementTransactionId = undefined;
-        order.settlementInitializedAt = undefined;
-        order.settlementPaidAt = undefined;
-        order.settlementDueAt = undefined;
-        order.settlementFailureReason = undefined;
+        clearNonPayableSettlement(order, true);
       } else if (status === 'completed') {
         if (!isTaskerOwner) {
           return NextResponse.json(

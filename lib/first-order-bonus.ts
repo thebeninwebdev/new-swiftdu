@@ -5,6 +5,7 @@ import { AcademicSession } from '@/models/academic-session'
 import { FirstOrderBonusClaim } from '@/models/first-order-bonus-claim'
 import { AUTOMATIC_FIRST_ORDER_BONUS_ENABLED, canReleaseFirstOrderReservation, priceWithOrderDiscounts } from './first-order-pricing'
 import type { PricingResult } from './pricing'
+import { clearNonPayableSettlement } from './settlement-state'
 
 export class OrderChangedError extends Error { constructor() { super('Order changed. Refresh and try again.') } }
 export class NoActiveAcademicSessionError extends Error { constructor() { super('No active SwiftDU session is configured. Please contact an administrator.') } }
@@ -188,7 +189,9 @@ export async function saveNewOrderWithBonus(order: IOrder, pricing: PricingResul
   throw lastError
 }
 
-export function clearZeroFeeSettlement(order: IOrder) { if (order.platformFee > 0) return; order.settlementStatus = 'not_due'; order.settlementDueAt = undefined; order.settlementFailureReason = undefined }
+export function clearZeroFeeSettlement(order: IOrder) {
+  clearNonPayableSettlement(order)
+}
 
 export async function saveOrderLifecycle(order: IOrder) {
   if (order.status !== 'completed' && order.status !== 'cancelled') { order.$where = { updatedAt: order.updatedAt, status: { $nin: ['completed', 'cancelled'] } }; await order.save(); return }

@@ -93,7 +93,7 @@ export async function PATCH(request: NextRequest) {
     // Check suspension if trying to enable order alerts
     if (hasAlertsUpdate && body.orderAlertsEnabled) {
       const settlement = await syncTaskerSettlementStatus(tasker._id.toString())
-      if (settlement.isSettlementSuspended || tasker.isSettlementSuspended) {
+      if (settlement.isSettlementSuspended) {
         return NextResponse.json(
           {
             error:

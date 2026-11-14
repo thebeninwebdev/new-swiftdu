@@ -14,6 +14,7 @@ import {
 } from '@/lib/push-notifications'
 import { consumeServiceFeeDiscountForCompletedOrder } from '@/lib/service-fee-discount'
 import { shouldSendOrderNotification } from '@/lib/test-orders'
+import { clearNonPayableSettlement } from '@/lib/settlement-state'
 
 // ─── PATCH /api/admin/orders/[id] ───────────────────────────────────────────
 // Update order status (cancel, complete).
@@ -66,15 +67,7 @@ export async function PATCH(
       if (!order.hasPaid) {
         order.paymentStatus = 'cancelled'
       }
-      order.settlementStatus = 'not_due'
-      order.settlementReference = undefined
-      order.settlementAccessCode = undefined
-      order.settlementCheckoutUrl = undefined
-      order.settlementTransactionId = undefined
-      order.settlementInitializedAt = undefined
-      order.settlementPaidAt = undefined
-      order.settlementDueAt = undefined
-      order.settlementFailureReason = undefined
+      clearNonPayableSettlement(order, true)
     } else if (action === 'complete') {
       if (order.cafeInquiryStatus && (!canPayCafeInquiry(order.cafeInquiryStatus) || !order.hasPaid)) return NextResponse.json({ error: 'Cafe arrival and inquiry payment must be complete.' }, { status: 409 })
       if (order.cafeInquiryStatus) order.cafeInquiryStatus = 'completed'

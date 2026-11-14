@@ -17,7 +17,8 @@
     "test:giveaway": "tsx --test lib/giveaway-wheel-math.test.ts lib/giveaway-realtime-config.test.ts",
     "businesses:backfill-embeddings": "tsx scripts/backfill-business-embeddings.ts",
     "backfill:order-sessions": "tsx scripts/backfill-order-sessions.ts",
-    "migrate:order-idempotency-index": "tsx scripts/migrate-order-idempotency-index.ts"
+    "migrate:order-idempotency-index": "tsx scripts/migrate-order-idempotency-index.ts",
+    "reconcile:settlements": "tsx scripts/reconcile-settlements.ts"
   },
   "dependencies": {
     "@ably/pubsub-device": "^3.1.0",

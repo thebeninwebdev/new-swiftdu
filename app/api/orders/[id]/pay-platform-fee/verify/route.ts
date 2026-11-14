@@ -6,6 +6,7 @@ import {
   PendingSettlementVerificationError,
   verifyAndMarkOrderSettlementPaid,
 } from '@/lib/settlement-payment'
+import { clearNonPayableSettlement } from '@/lib/settlement-state'
 import { emitOrderUpdated } from '@/lib/socket'
 import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 import { Order } from '@/models/order'
@@ -41,6 +42,7 @@ export async function POST(
     }
 
     if (order.platformFee <= 0 || order.platformFeeWaivedForFastCompletion) {
+      if (clearNonPayableSettlement(order)) await order.save()
       return NextResponse.json({ noSettlementRequired: true, order });
     }
 

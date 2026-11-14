@@ -77,11 +77,18 @@ export async function PATCH(
       tasker.isRejected = true
       if (tasker.userId) await User.findByIdAndUpdate(tasker.userId, { $unset: { taskerId: 1 } })
     } else if (action === 'suspend') {
+      const now = new Date()
+      tasker.isSettlementAdminSuspended = true
+      tasker.settlementAdminSuspendedAt = now
       tasker.isSettlementSuspended = true
-      tasker.settlementSuspendedAt = new Date()
+      tasker.settlementSuspendedAt ||= now
     } else if (action === 'activate') {
-      tasker.isSettlementSuspended = false
-      tasker.settlementSuspendedAt = null
+      tasker.isSettlementAdminSuspended = false
+      tasker.settlementAdminSuspendedAt = null
+      tasker.isSettlementSuspended = Boolean(tasker.isAutomaticSettlementSuspended)
+      tasker.settlementSuspendedAt = tasker.isSettlementSuspended
+        ? tasker.automaticSettlementSuspendedAt || tasker.settlementSuspendedAt
+        : null
     }
 
     if (nextBankDetails) {

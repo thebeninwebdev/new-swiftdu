@@ -6,6 +6,7 @@ import { User } from '@/models/user'
 import Tasker from '@/models/tasker'
 import { getTaskerMode } from '@/lib/test-orders'
 import { reconcileTaskerIdentityForUser } from '@/lib/tasker-onboarding'
+import { syncTaskerSettlementStatus } from '@/lib/tasker-settlement'
 
 export async function GET(request: NextRequest) {
   try {
@@ -43,6 +44,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (tasker.isRejected) return NextResponse.json({ error: 'Your previous Tasker application was not accepted. You can apply again.', code: 'TASKER_REAPPLICATION_REQUIRED' }, { status: 403 })
+
+    await syncTaskerSettlementStatus(String(tasker._id))
+    tasker = await Tasker.findById(tasker._id).lean()
+    if (!tasker) return NextResponse.json({ error: 'Tasker account not found.' }, { status: 404 })
 
     return NextResponse.json({ tasker: { ...tasker, taskerMode: getTaskerMode(tasker) } }, {
       headers: { 'Cache-Control': 'no-store' },

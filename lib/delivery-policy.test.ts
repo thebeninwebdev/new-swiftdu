@@ -237,7 +237,10 @@ test('direct acceptance ignores gender while preserving every non-gender guard',
   verified = false; await expectBlockedBeforeAssignment(403); verified = true
   rejected = true; await expectBlockedBeforeAssignment(403); rejected = false
   settlementSuspended = true; await expectBlockedBeforeAssignment(403); settlementSuspended = false
-  taskerSuspended = true; await expectBlockedBeforeAssignment(403); taskerSuspended = false
+  // The pre-sync document may be stale. Fresh reconciliation is authoritative.
+  taskerSuspended = true
+  assert.equal((await accept()).status, 200)
+  taskerSuspended = false
   checkedIn = false; await expectBlockedBeforeAssignment(403); checkedIn = true
   taskerMode = 'training'; await expectBlockedBeforeAssignment(403); taskerMode = 'live'
   testOrder = true; await expectBlockedBeforeAssignment(403); testOrder = false
@@ -245,7 +248,7 @@ test('direct acceptance ignores gender while preserving every non-gender guard',
   orderStatus = 'in_progress'; await expectBlockedBeforeAssignment(409); orderStatus = 'pending'
   atomicAssignmentWins = false
   assert.equal((await accept()).status, 409)
-  assert.equal(assignments, 5)
+  assert.equal(assignments, 6)
 })
 
 test('direct Indomie batch acceptance does not treat routing gender as authorization', async t => {
