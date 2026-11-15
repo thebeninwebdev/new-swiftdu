@@ -201,7 +201,7 @@ export async function proxy(request: NextRequest) {
   // Netlify's proxy runs at the edge; MongoDB session validation must run
   // in the Node.js API route. Vercel and local deployments retain their
   // existing direct Better Auth session validation.
-  if (process.env.NETLIFY === 'true') {
+  if (process.env.NETLIFY === 'true' || process.env.SWIFTDU_NETLIFY_AUTH_PROXY === 'true') {
     return handleProxy(request, () => loadNetlifyProxySession(request));
   }
   return handleProxy(request, loadProxySession);
