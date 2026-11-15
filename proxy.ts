@@ -47,6 +47,44 @@ async function loadProxySession(headers: Headers): Promise<ProxySession> {
   return auth.api.getSession({ headers });
 }
 
+/**
+ * Netlify runs Next.js proxy through an Edge Function, where importing the
+ * MongoDB-backed Better Auth instance is not supported reliably. The existing
+ * same-origin server route handles full session verification in Node.js.
+ * Never trust a cookie alone; malformed or unavailable responses fail closed.
+ */
+export async function loadNetlifyProxySession(request: NextRequest): Promise<ProxySession> {
+  const url = new URL('/api/auth/get-session', request.url);
+  const cookie = request.headers.get('cookie');
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Accept: 'application/json',
+      ...(cookie ? { Cookie: cookie } : {}),
+    },
+    cache: 'no-store',
+    redirect: 'manual',
+    signal: AbortSignal.timeout(8000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Session API returned HTTP ${response.status}`);
+  }
+  const result: unknown = await response.json();
+  if (result === null) return null;
+  if (typeof result !== 'object' || !result || !('user' in result)) {
+    throw new Error('Session API returned an invalid response');
+  }
+  const user = (result as { user?: unknown }).user;
+  if (user === null) return null;
+  if (!user || typeof user !== 'object' ||
+      typeof (user as { id?: unknown }).id !== 'string' ||
+      !(user as { id: string }).id) {
+    throw new Error('Session API returned an invalid user');
+  }
+  return result as ProxySession;
+}
+
 export function getTaskerDashboardRouteForRole(role?: string | null, excoRole?: string | null) {
   if (role === 'tasker') return null;
   if (role === 'admin' || normalizeExcoRole(excoRole)) return '/admin';
@@ -160,6 +198,12 @@ export async function handleProxy(
 }
 
 export async function proxy(request: NextRequest) {
+  // Netlify's proxy runs at the edge; MongoDB session validation must run
+  // in the Node.js API route. Vercel and local deployments retain their
+  // existing direct Better Auth session validation.
+  if (process.env.NETLIFY === 'true') {
+    return handleProxy(request, () => loadNetlifyProxySession(request));
+  }
   return handleProxy(request, loadProxySession);
 }
 
