@@ -14,7 +14,6 @@ import {
   ShoppingBag,
   ShieldCheck,
   SlidersHorizontal,
-  Gift,
   Store,
   Truck,
   RadioTower,
@@ -71,12 +70,6 @@ const adminNavigation = [
     href: '/admin/message-templates',
     icon: MessageSquareQuote,
     description: 'Customer WhatsApp templates',
-  },
-  {
-    label: 'Giveaway',
-    href: '/admin/giveaway',
-    icon: Gift,
-    description: 'Run the live wheel event',
   },
 ]
 

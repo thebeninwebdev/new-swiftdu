@@ -1,23 +1,5 @@
 This is the SwiftDU Next.js application.
 
-## SwiftDU Giveaway Realtime Server - Render
-
-- Service type: Web Service
-- Repository: the same SwiftDU repository (Vercel remains the main Next.js deployment)
-- Runtime: Node
-- Build command: `npm ci`
-- Start command: `npm run start:realtime`
-- Environment variables: `GIVEAWAY_ALLOWED_ORIGINS`, `GIVEAWAY_SOCKET_SECRET`, `MONGODB_URI`
-- Health check path: `/health`
-
-The realtime service is a lightweight Socket.IO process; Render does not run Next.js or `next build` for it. Once Render provides a URL such as `https://swiftdu-realtime.onrender.com`, set this on Vercel:
-
-```bash
-GIVEAWAY_SOCKET_URL=https://swiftdu-realtime.onrender.com
-```
-
-The `GIVEAWAY_SOCKET_SECRET` value must match on Vercel and Render. The public event is `/giveaway`; authorized admins use `/admin/giveaway`. Add exact Vercel preview origins to `GIVEAWAY_ALLOWED_ORIGINS` when preview testing is required.
-
 ## Getting Started
 
 First, run the development server:
